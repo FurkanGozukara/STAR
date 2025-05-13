@@ -1100,7 +1100,7 @@ The total combined prompt length is limited to 77 tokens."""
                  with gr.Row():
                      target_h_num = gr.Number(
                          label="Max Target Height (px)",
-                         value=1920, minimum=128, step=16, 
+                         value=1280, minimum=128, step=16, 
                          info="""Maximum allowed height for the output video. Overrides Upscale Factor if enabled.
     - VRAM Impact: Very High (Lower value = Less VRAM).
     - Quality Impact: Direct (Lower value = Less detail).
@@ -1108,7 +1108,7 @@ The total combined prompt length is limited to 77 tokens."""
                      )
                      target_w_num = gr.Number(
                          label="Max Target Width (px)",
-                         value=1920, minimum=128, step=16,
+                         value=1280, minimum=128, step=16,
                          info="""Maximum allowed width for the output video. Overrides Upscale Factor if enabled.
     - VRAM Impact: Very High (Lower value = Less VRAM).
     - Quality Impact: Direct (Lower value = Less detail).
