@@ -547,20 +547,19 @@ def run_upscale(
         progress(0.2, desc="Upscaling frames...")
         total_noise_levels = 900
         
-        all_lr_frames_for_colorfix = []
+        all_lr_frames_bgr_for_preprocess = [] # Renamed for clarity: stores BGR frames
         for frame_filename in frame_files:
             frame_lr_bgr = cv2.imread(os.path.join(input_frames_dir, frame_filename))
             if frame_lr_bgr is None:
                 logger.error(f"Could not read frame {frame_filename} from {input_frames_dir}. Skipping.")
-                # Add a placeholder or handle missing frame if necessary for sequence length
-                all_lr_frames_for_colorfix.append(np.zeros((orig_h, orig_w, 3), dtype=np.uint8)) # Example placeholder
+                # Add a placeholder; its color format for this specific error case is less critical
+                all_lr_frames_bgr_for_preprocess.append(np.zeros((orig_h, orig_w, 3), dtype=np.uint8)) 
                 continue
-            frame_lr_rgb = cv2.cvtColor(frame_lr_bgr, cv2.COLOR_BGR2RGB)
-            all_lr_frames_for_colorfix.append(frame_lr_rgb)
+            # frame_lr_rgb = cv2.cvtColor(frame_lr_bgr, cv2.COLOR_BGR2RGB) # REMOVED: No explicit RGB conversion here
+            all_lr_frames_bgr_for_preprocess.append(frame_lr_bgr) # Store BGR frames
         
-        if len(all_lr_frames_for_colorfix) != frame_count:
-             logger.warning(f"Mismatch in frame count and loaded LR frames for colorfix: {len(all_lr_frames_for_colorfix)} vs {frame_count}")
-             # Potentially pad or truncate all_lr_frames_for_colorfix if this causes issues downstream
+        if len(all_lr_frames_bgr_for_preprocess) != frame_count:
+             logger.warning(f"Mismatch in frame count and loaded LR frames for colorfix: {len(all_lr_frames_bgr_for_preprocess)} vs {frame_count}")
 
         if enable_tiling:
             status_log.append(f"Tiling enabled: Tile Size={tile_size}, Overlap={tile_overlap}.")
@@ -574,8 +573,8 @@ def run_upscale(
                     if os.path.exists(placeholder_path):
                         shutil.copy2(placeholder_path, os.path.join(output_frames_dir, frame_filename))
                     continue
-                frame_lr_rgb = cv2.cvtColor(frame_lr_bgr, cv2.COLOR_BGR2RGB)
-                single_lr_frame_tensor_norm = preprocess([frame_lr_rgb]) 
+                # frame_lr_rgb = cv2.cvtColor(frame_lr_bgr, cv2.COLOR_BGR2RGB) # REMOVED
+                single_lr_frame_tensor_norm = preprocess([frame_lr_bgr]) # Pass BGR frame to preprocess
                 
                 spliter = ImageSpliterTh(single_lr_frame_tensor_norm, int(tile_size), int(tile_overlap), sf=upscale_factor)
 
@@ -595,11 +594,10 @@ def run_upscale(
                     patch_sr_frames_uint8 = tensor2vid(patch_sr_tensor_bcthw)
                     
                     if color_fix_method != 'None':
-                        patch_lr_tensor_01 = (patch_lr_video_data + 1.0) / 2.0
                         if color_fix_method == 'AdaIN':
-                            patch_sr_frames_uint8 = adain_color_fix(patch_sr_frames_uint8, patch_lr_tensor_01)
+                            patch_sr_frames_uint8 = adain_color_fix(patch_sr_frames_uint8, patch_lr_video_data)
                         elif color_fix_method == 'Wavelet':
-                            patch_sr_frames_uint8 = wavelet_color_fix(patch_sr_frames_uint8, patch_lr_tensor_01)
+                            patch_sr_frames_uint8 = wavelet_color_fix(patch_sr_frames_uint8, patch_lr_video_data)
 
                     result_patch_chw_01 = torch.from_numpy(patch_sr_frames_uint8.cpu().numpy()[0,0]).permute(2,0,1).float() / 255.0
                     spliter.update_gaussian(result_patch_chw_01.unsqueeze(0), patch_coords) 
@@ -652,14 +650,14 @@ def run_upscale(
 
                 window_frame_names = frame_files[start_idx:end_idx]
                 # Ensure all_lr_frames_for_colorfix has enough frames for this window
-                if end_idx > len(all_lr_frames_for_colorfix):
-                    logger.error(f"Sliding window range {start_idx}-{end_idx} exceeds available LR frames {len(all_lr_frames_for_colorfix)}")
+                if end_idx > len(all_lr_frames_bgr_for_preprocess): # Check against the BGR list
+                    logger.error(f"Sliding window range {start_idx}-{end_idx} exceeds available LR frames {len(all_lr_frames_bgr_for_preprocess)}")
                     continue # Skip this malformed window
                 
-                window_lr_frames_rgb = [all_lr_frames_for_colorfix[j] for j in range(start_idx, end_idx)]
-                if not window_lr_frames_rgb: continue
+                window_lr_frames_bgr = [all_lr_frames_bgr_for_preprocess[j] for j in range(start_idx, end_idx)] # Get BGR frames
+                if not window_lr_frames_bgr: continue
 
-                window_lr_video_data = preprocess(window_lr_frames_rgb) 
+                window_lr_video_data = preprocess(window_lr_frames_bgr) # Pass BGR frames to preprocess
 
                 window_pre_data = {'video_data': window_lr_video_data, 'y': final_prompt,
                                    'target_res': (final_h, final_w)}
@@ -673,11 +671,10 @@ def run_upscale(
                 window_sr_frames_uint8 = tensor2vid(window_sr_tensor_bcthw) 
 
                 if color_fix_method != 'None':
-                    window_lr_video_data_01 = (window_lr_video_data.unsqueeze(0) + 1.0) / 2.0 
                     if color_fix_method == 'AdaIN':
-                        window_sr_frames_uint8 = adain_color_fix(window_sr_frames_uint8, window_lr_video_data_01)
+                        window_sr_frames_uint8 = adain_color_fix(window_sr_frames_uint8, window_lr_video_data)
                     elif color_fix_method == 'Wavelet':
-                        window_sr_frames_uint8 = wavelet_color_fix(window_sr_frames_uint8, window_lr_video_data_01)
+                        window_sr_frames_uint8 = wavelet_color_fix(window_sr_frames_uint8, window_lr_video_data)
                 
                 # Determine which frames from this window's output to save (local indices within window_sr_frames_uint8)
                 local_save_start = 0
@@ -730,14 +727,14 @@ def run_upscale(
                 current_chunk_len = end_idx - start_idx
                 if current_chunk_len == 0: continue
                 
-                if end_idx > len(all_lr_frames_for_colorfix):
-                     logger.error(f"Chunk range {start_idx}-{end_idx} exceeds available LR frames {len(all_lr_frames_for_colorfix)}")
+                if end_idx > len(all_lr_frames_bgr_for_preprocess): # Check against BGR list
+                     logger.error(f"Chunk range {start_idx}-{end_idx} exceeds available LR frames {len(all_lr_frames_bgr_for_preprocess)}")
                      continue
 
-                chunk_lr_frames_rgb = all_lr_frames_for_colorfix[start_idx:end_idx]
-                if not chunk_lr_frames_rgb: continue
+                chunk_lr_frames_bgr = all_lr_frames_bgr_for_preprocess[start_idx:end_idx] # Get BGR frames
+                if not chunk_lr_frames_bgr: continue
 
-                chunk_lr_video_data = preprocess(chunk_lr_frames_rgb) 
+                chunk_lr_video_data = preprocess(chunk_lr_frames_bgr) # Pass BGR frames to preprocess
 
                 chunk_pre_data = {'video_data': chunk_lr_video_data, 'y': final_prompt,
                                   'target_res': (final_h, final_w)}
@@ -751,11 +748,10 @@ def run_upscale(
                 chunk_sr_frames_uint8 = tensor2vid(chunk_sr_tensor_bcthw) 
 
                 if color_fix_method != 'None':
-                    chunk_lr_video_data_01 = (chunk_lr_video_data + 1.0) / 2.0
                     if color_fix_method == 'AdaIN':
-                        chunk_sr_frames_uint8 = adain_color_fix(chunk_sr_frames_uint8, chunk_lr_video_data_01)
+                        chunk_sr_frames_uint8 = adain_color_fix(chunk_sr_frames_uint8, chunk_lr_video_data)
                     elif color_fix_method == 'Wavelet':
-                        chunk_sr_frames_uint8 = wavelet_color_fix(chunk_sr_frames_uint8, chunk_lr_video_data_01)
+                        chunk_sr_frames_uint8 = wavelet_color_fix(chunk_sr_frames_uint8, chunk_lr_video_data)
                 
                 for k, frame_name in enumerate(frame_files[start_idx:end_idx]):
                     frame_np_hwc_uint8 = chunk_sr_frames_uint8[k].cpu().numpy()
@@ -898,11 +894,12 @@ The total combined prompt length is limited to 77 tokens."""
             with gr.Accordion("Performance & VRAM Optimization", open=True):
                 max_chunk_len_slider = gr.Slider(
                     label="Max Frames per Batch (VRAM)",
-                    minimum=4, maximum=64, value=32, step=4,
-                    info="""IMPORTANT for VRAM. Controls max latent frames processed by the main model simultaneously.
+                    minimum=4, maximum=96, value=32, step=4,
+                    info="""IMPORTANT for VRAM. This is the standard way the application manages VRAM. It divides the entire sequence of video frames into sequential, non-overlapping chunks.
+- Mechanism: The STAR model processes one complete chunk (of this many frames) at a time.
 - VRAM Impact: High Reduction (Lower value = Less VRAM).
-- Quality Impact: Can reduce Temporal Consistency (flicker/motion issues) if too low. Keep as high as VRAM allows.
-- Speed Impact: Slower (Lower value = Slower)."""
+- Quality Impact: Can reduce Temporal Consistency (flicker/motion issues) between chunks if too low, as the model doesn't have context across chunk boundaries. Keep as high as VRAM allows.
+- Speed Impact: Slower (Lower value = Slower, as more chunks are processed)."""
                 )
                 vae_chunk_slider = gr.Slider(
                     label="VAE Decode Chunk (VRAM)",
@@ -969,17 +966,18 @@ The total combined prompt length is limited to 77 tokens."""
                  enable_sliding_window_check = gr.Checkbox(
                      label="Enable Sliding Window",
                      value=False,
-                     info="""Processes the video in overlapping temporal chunks (windows). Useful for long videos that exceed VRAM limits even with adjusted 'Max Frames per Batch'.
-- VRAM Impact: High Reduction (limits frames processed temporally).
-- Quality Impact: Moderate risk of discontinuities at window boundaries if overlap is small. Reduces temporal context compared to processing larger chunks.
-- Speed Impact: Slower (due to overlap processing)."""
+                     info="""Processes the video in overlapping temporal chunks (windows). Use for very long videos where 'Max Frames per Batch' isn't enough or causes too many artifacts.
+- Mechanism: Takes a 'Window Size' of frames, processes it, saves results from the central part, then slides the window forward by 'Window Step', processing overlapping frames.
+- VRAM Impact: High Reduction (limits frames processed temporally, similar to Max Frames per Batch but with overlap).
+- Quality Impact: Moderate risk of discontinuities at window boundaries if overlap (Window Size - Window Step) is small. Aims for better consistency than small non-overlapping chunks.
+- Speed Impact: Slower (due to processing overlapping frames multiple times). When enabled, 'Window Size' dictates batch size instead of 'Max Frames per Batch'."""
                  )
-                 window_size_num = gr.Number(
+                 window_size_num = gr.Slider(
                      label="Window Size (frames)",
-                     value=32, minimum=8, step=4, interactive=False,
+                     value=32, minimum=2, step=4, interactive=False,
                      info="Number of frames in each temporal window. Acts like 'Max Frames per Batch' but applied as a sliding window. Lower value = less VRAM, less temporal context."
                  )
-                 window_step_num = gr.Number(
+                 window_step_num = gr.Slider(
                      label="Window Step (frames)",
                      value=16, minimum=1, step=1, interactive=False,
                      info="How many frames to advance for the next window. (Window Size - Window Step) = Overlap. Smaller step = more overlap = better consistency but slower. Recommended: Step = Size / 2."
