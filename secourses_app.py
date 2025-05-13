@@ -23,6 +23,18 @@ parser.add_argument('--share', action='store_true', help="Enable Gradio live sha
 parser.add_argument('--outputs_folder', type=str, default="outputs", help="Main folder for output videos and related files")
 args = parser.parse_args()
 
+# Helper function to format seconds into HH:MM:SS
+def format_time(seconds):
+    if seconds is None or seconds < 0:
+        return "N/A"
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    if hours > 0:
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    else:
+        return f"{minutes:02d}:{secs:02d}"
+
 try:
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -574,7 +586,8 @@ def run_upscale(
         raise gr.Error("Please upload a valid input video.")
 
     setup_seed(666)
-    start_time = time.time() 
+    overall_process_start_time = time.time() 
+    logger.info("Overall upscaling process started.")
 
     base_output_filename_no_ext, output_video_path = get_next_filename(DEFAULT_OUTPUT_DIR)
     
@@ -608,6 +621,7 @@ def run_upscale(
     try:
         progress(0, desc="Initializing...")
         status_log.append("Initializing upscaling process...")
+        logger.info("Initializing upscaling process...")
         yield None, "\n".join(status_log) 
 
         final_prompt = (user_prompt.strip() + ". " + positive_prompt.strip()).strip()
@@ -618,6 +632,7 @@ def run_upscale(
 
         orig_h, orig_w = get_video_resolution(input_video_path)
         status_log.append(f"Original resolution: {orig_w}x{orig_h}")
+        logger.info(f"Original resolution: {orig_w}x{orig_h}")
         progress(0.05, desc="Calculating target resolution...")
 
         if enable_target_res:
@@ -625,9 +640,13 @@ def run_upscale(
                 orig_h, orig_w, target_h, target_w, target_res_mode
             )
             status_log.append(f"Target resolution mode: {target_res_mode}. Calculated upscale: {upscale_factor:.2f}x. Target output: {final_w}x{final_h}")
+            logger.info(f"Target resolution mode: {target_res_mode}. Calculated upscale: {upscale_factor:.2f}x. Target output: {final_w}x{final_h}")
             if needs_downscale:
+                downscale_stage_start_time = time.time()
                 progress(0.07, desc="Downscaling input video...")
-                status_log.append(f"Downscaling input to {ds_w}x{ds_h} before upscaling.")
+                downscale_status_msg = f"Downscaling input to {ds_w}x{ds_h} before upscaling."
+                status_log.append(downscale_status_msg)
+                logger.info(downscale_status_msg)
                 yield None, "\n".join(status_log)
                 downscaled_temp_video = os.path.join(temp_dir, "downscaled_input.mp4")
                 scale_filter = f"scale='trunc(iw*min({ds_w}/iw,{ds_h}/ih)/2)*2':'trunc(ih*min({ds_w}/iw,{ds_h}/ih)/2)*2'"
@@ -645,33 +664,50 @@ def run_upscale(
                 run_ffmpeg_command(cmd, "Input Downscaling with Audio Copy")
                 current_input_video_for_frames = downscaled_temp_video
                 orig_h, orig_w = get_video_resolution(downscaled_temp_video) 
+                downscale_duration_msg = f"Input downscaling finished. Time: {format_time(time.time() - downscale_stage_start_time)}"
+                status_log.append(downscale_duration_msg)
+                logger.info(downscale_duration_msg)
+                yield None, "\n".join(status_log)
         else:
             upscale_factor = upscale_factor_slider
             final_h = int(round(orig_h * upscale_factor / 2) * 2) 
             final_w = int(round(orig_w * upscale_factor / 2) * 2) 
-            status_log.append(f"Direct upscale: {upscale_factor:.2f}x. Target output: {final_w}x{final_h}")
+            direct_upscale_msg = f"Direct upscale: {upscale_factor:.2f}x. Target output: {final_w}x{final_h}"
+            status_log.append(direct_upscale_msg)
+            logger.info(direct_upscale_msg)
         
         yield None, "\n".join(status_log)
 
         progress(0.1, desc="Loading STAR model...")
+        star_model_load_start_time = time.time()
         model_cfg = EasyDict() 
         model_cfg.model_path = model_file_path
 
         star_model = VideoToVideo_sr(model_cfg)
-        status_log.append("STAR model loaded.")
+        model_load_msg = f"STAR model loaded. Time: {format_time(time.time() - star_model_load_start_time)}"
+        status_log.append(model_load_msg)
+        logger.info(model_load_msg)
         yield None, "\n".join(status_log)
 
         progress(0.15, desc="Extracting frames...")
+        frame_extraction_start_time = time.time()
         frame_count, input_fps, frame_files = extract_frames(current_input_video_for_frames, input_frames_dir)
-        status_log.append(f"Extracted {frame_count} frames at {input_fps:.2f} FPS.")
+        frame_extract_msg = f"Extracted {frame_count} frames at {input_fps:.2f} FPS. Time: {format_time(time.time() - frame_extraction_start_time)}"
+        status_log.append(frame_extract_msg)
+        logger.info(frame_extract_msg)
         yield None, "\n".join(status_log)
 
         if save_frames and input_frames_dir and input_frames_permanent_save_path:
-            status_log.append(f"Copying {frame_count} input frames to permanent storage...")
+            copy_input_frames_start_time = time.time()
+            copy_input_msg = f"Copying {frame_count} input frames to permanent storage: {input_frames_permanent_save_path}"
+            status_log.append(copy_input_msg)
+            logger.info(copy_input_msg)
             yield None, "\n".join(status_log)
             for frame_file in os.listdir(input_frames_dir):
                 shutil.copy2(os.path.join(input_frames_dir, frame_file), os.path.join(input_frames_permanent_save_path, frame_file))
-            status_log.append(f"Input frames copied to {input_frames_permanent_save_path}")
+            copied_input_msg = f"Input frames copied. Time: {format_time(time.time() - copy_input_frames_start_time)}"
+            status_log.append(copied_input_msg)
+            logger.info(copied_input_msg)
             yield None, "\n".join(status_log)
 
         progress(0.2, desc="Upscaling frames...")
@@ -689,10 +725,22 @@ def run_upscale(
         if len(all_lr_frames_bgr_for_preprocess) != frame_count:
              logger.warning(f"Mismatch in frame count and loaded LR frames for colorfix: {len(all_lr_frames_bgr_for_preprocess)} vs {frame_count}")
 
+        # Main upscaling process start time
+        upscaling_loop_start_time = time.time()
+
         if enable_tiling:
-            status_log.append(f"Tiling enabled: Tile Size={tile_size}, Overlap={tile_overlap}.")
+            loop_name = "Tiling Process"
+            tiling_status_msg = f"Tiling enabled: Tile Size={tile_size}, Overlap={tile_overlap}. Processing {len(frame_files)} frames."
+            status_log.append(tiling_status_msg)
+            logger.info(tiling_status_msg)
             yield None, "\n".join(status_log)
-            for i, frame_filename in enumerate(progress.tqdm(frame_files, desc="Frames (Tiling)")):
+            
+            total_frames_to_tile = len(frame_files)
+            # Outer loop for frames
+            frame_tqdm_iterator = progress.tqdm(enumerate(frame_files), total=total_frames_to_tile, desc=f"{loop_name} - Initializing...")
+
+            for i, frame_filename in frame_tqdm_iterator:
+                frame_proc_start_time = time.time()
                 frame_lr_bgr = cv2.imread(os.path.join(input_frames_dir, frame_filename))
                 if frame_lr_bgr is None: 
                     logger.warning(f"Skipping frame {frame_filename} due to read error during tiling.")
@@ -702,10 +750,18 @@ def run_upscale(
                     continue
                 
                 single_lr_frame_tensor_norm = preprocess([frame_lr_bgr]) 
-                
                 spliter = ImageSpliterTh(single_lr_frame_tensor_norm, int(tile_size), int(tile_overlap), sf=upscale_factor)
+                
+                try:
+                    num_patches_this_frame = len(list(spliter)) # Consume to get len, re-init for iteration
+                    spliter = ImageSpliterTh(single_lr_frame_tensor_norm, int(tile_size), int(tile_overlap), sf=upscale_factor) # Re-initialize
+                except: # Fallback if len() not directly available or spliter is not trivially re-initializable for len
+                    num_patches_this_frame = getattr(spliter, 'num_patches', 'N/A') # Hypothetical attribute
 
-                for patch_lr_tensor_norm, patch_coords in progress.tqdm(spliter, desc=f"Patches Frame {i+1}"):
+                patch_tqdm_iterator = progress.tqdm(enumerate(spliter), total=num_patches_this_frame if isinstance(num_patches_this_frame, int) else None, desc=f"Frame {i+1}/{total_frames_to_tile} Patches")
+                
+                for patch_idx, (patch_lr_tensor_norm, patch_coords) in patch_tqdm_iterator:
+                    patch_proc_start_time = time.time()
                     patch_lr_video_data = patch_lr_tensor_norm
 
                     patch_pre_data = {'video_data': patch_lr_video_data, 'y': final_prompt,
@@ -713,11 +769,14 @@ def run_upscale(
                                                      int(round(patch_lr_tensor_norm.shape[-1] * upscale_factor)))} 
                     patch_data_tensor_cuda = collate_fn(patch_pre_data, 'cuda:0')
                     
+                    # Log before STAR model call
+                    logger.info(f"{loop_name} - Frame {i+1}/{total_frames_to_tile}, Patch {patch_idx+1}/{num_patches_this_frame}: Starting STAR model processing.")
                     with torch.no_grad():
                         patch_sr_tensor_bcthw = star_model.test( 
                             patch_data_tensor_cuda, total_noise_levels, steps=steps, solver_mode=solver_mode,
                             guide_scale=cfg_scale, max_chunk_len=1, vae_decoder_chunk_size=1
                         )
+                    logger.info(f"{loop_name} - Frame {i+1}/{total_frames_to_tile}, Patch {patch_idx+1}/{num_patches_this_frame}: Finished STAR model processing.")
                     patch_sr_frames_uint8 = tensor2vid(patch_sr_tensor_bcthw)
                     
                     if color_fix_method != 'None':
@@ -734,45 +793,73 @@ def run_upscale(
                     del patch_data_tensor_cuda, patch_sr_tensor_bcthw, patch_sr_frames_uint8
                     if torch.cuda.is_available(): torch.cuda.empty_cache()
 
+                    patch_duration = time.time() - patch_proc_start_time
+                    patch_tqdm_iterator.set_description_str(f"Frame {i+1} Patch {patch_idx+1}/{num_patches_this_frame} (took {patch_duration:.2f}s)")
+                
                 final_frame_tensor_chw = spliter.gather() 
                 final_frame_np_hwc_uint8 = (final_frame_tensor_chw.squeeze(0).permute(1, 2, 0).clamp(0, 1).cpu().numpy() * 255).astype(np.uint8)
                 final_frame_bgr = cv2.cvtColor(final_frame_np_hwc_uint8, cv2.COLOR_RGB2BGR)
                 cv2.imwrite(os.path.join(output_frames_dir, frame_filename), final_frame_bgr)
-                status_log[-1] = f"Tiling: Processed frame {i+1}/{frame_count}"
+
+                # Frame-level progress for tiling
+                frames_processed_tile = i + 1
+                current_tile_loop_time = time.time() - upscaling_loop_start_time
+                avg_time_per_frame_tile = current_tile_loop_time / frames_processed_tile
+                eta_seconds_tile = (total_frames_to_tile - frames_processed_tile) * avg_time_per_frame_tile if frames_processed_tile < total_frames_to_tile else 0
+                speed_tile = 1 / avg_time_per_frame_tile if avg_time_per_frame_tile > 0 else 0
+                
+                frame_tqdm_desc = f"{loop_name}: {frames_processed_tile}/{total_frames_to_tile} frames | ETA: {format_time(eta_seconds_tile)} | Speed: {speed_tile:.2f} f/s"
+                frame_tqdm_iterator.set_description_str(frame_tqdm_desc)
+                
+                detailed_frame_msg = f"{frame_tqdm_desc} | Current frame processed in {time.time() - frame_proc_start_time:.2f}s. Total elapsed: {format_time(current_tile_loop_time)}"
+                status_log.append(detailed_frame_msg)
+                logger.info(detailed_frame_msg)
                 yield None, "\n".join(status_log)
 
 
         elif enable_sliding_window:
-            status_log.append(f"Sliding Window: Size={window_size}, Step={window_step}.")
+            loop_name = "Sliding Window Process"
+            sliding_status_msg = f"Sliding Window: Size={window_size}, Step={window_step}."
+            status_log.append(sliding_status_msg)
+            logger.info(sliding_status_msg)
             yield None, "\n".join(status_log)
+            
             processed_frame_filenames = [None] * frame_count 
-
             effective_window_size = int(window_size)
             effective_window_step = int(window_step)
             
-            n_windows = math.ceil(frame_count / effective_window_step) if effective_window_step > 0 else 1
-            if effective_window_step == 0 and frame_count > 0 : n_windows = 1 
+            # Calculate total number of windows
+            if effective_window_step <= 0 or frame_count == 0:
+                n_windows = 1 if frame_count > 0 else 0
+            else:
+                n_windows = math.ceil(frame_count / effective_window_step)
+                # A common adjustment for the last window: if the last step doesn't make a full window,
+                # it might be handled by extending the second to last, or processing a smaller final one.
+                # The current logic already handles `end_idx` and `is_last_window_iteration` for length.
+                # For `n_windows` for progress, this initial calculation should be fine for `tqdm`.
 
-            save_from_start_offset = 0
-            save_to_end_offset = effective_window_size
-            if n_windows > 1 and effective_window_step < effective_window_size : 
-                overlap_amount = effective_window_size - effective_window_step
-                save_from_start_offset = overlap_amount // 2
-                save_to_end_offset = effective_window_size - (overlap_amount - save_from_start_offset)
 
+            window_indices_to_process = list(range(0, frame_count, effective_window_step))
+            total_windows_to_process = len(window_indices_to_process)
 
-            for i in progress.tqdm(range(0, frame_count, effective_window_step), desc="Windows"):
+            sliding_tqdm_iterator = progress.tqdm(enumerate(window_indices_to_process), total=total_windows_to_process, desc=f"{loop_name} - Initializing...")
+
+            for window_iter_idx, i in sliding_tqdm_iterator: # i is start_idx of window
+                window_proc_start_time = time.time()
                 start_idx = i
                 end_idx = min(i + effective_window_size, frame_count)
                 current_window_len = end_idx - start_idx
 
                 if current_window_len == 0: continue
                 
-                is_last_window_iteration = (i + effective_window_step >= frame_count)
-                if is_last_window_iteration and current_window_len < effective_window_size and frame_count >= effective_window_size:
+                is_last_window_iteration = (i + effective_window_step >= frame_count) # or window_iter_idx == total_windows_to_process -1
+                # Adjust start_idx for the very last iteration if it results in a window smaller than effective_window_size
+                # and we want to ensure the last few frames are processed within a full-size (or near full-size) context.
+                if is_last_window_iteration and current_window_len < effective_window_size and frame_count >= effective_window_size :
                     start_idx = max(0, frame_count - effective_window_size)
-                    end_idx = frame_count
+                    end_idx = frame_count # Ensure it goes to the end
                     current_window_len = end_idx - start_idx
+                    logger.info(f"{loop_name} - Adjusted last window to start_idx: {start_idx} to cover final frames.")
 
 
                 window_frame_names = frame_files[start_idx:end_idx]
@@ -790,11 +877,13 @@ def run_upscale(
                                    'target_res': (final_h, final_w)}
                 window_data_cuda = collate_fn(window_pre_data, 'cuda:0')
 
+                logger.info(f"{loop_name} - Window {window_iter_idx+1}/{total_windows_to_process} (frames {start_idx}-{end_idx-1}): Starting STAR model processing.")
                 with torch.no_grad():
                     window_sr_tensor_bcthw = star_model.test(
                         window_data_cuda, total_noise_levels, steps=steps, solver_mode=solver_mode,
                         guide_scale=cfg_scale, max_chunk_len=current_window_len, vae_decoder_chunk_size=min(vae_chunk, current_window_len)
                     )
+                logger.info(f"{loop_name} - Window {window_iter_idx+1}/{total_windows_to_process}: Finished STAR model processing.")
                 window_sr_frames_uint8 = tensor2vid(window_sr_tensor_bcthw) 
 
                 if color_fix_method != 'None':
@@ -803,23 +892,29 @@ def run_upscale(
                     elif color_fix_method == 'Wavelet':
                         window_sr_frames_uint8 = wavelet_color_fix(window_sr_frames_uint8, window_lr_video_data)
                 
-                local_save_start = 0
-                local_save_end = current_window_len
-
-                if n_windows > 1:
-                    if i == 0: 
-                        local_save_end = save_to_end_offset
-                    elif is_last_window_iteration: 
-                        local_save_start = save_from_start_offset if current_window_len == effective_window_size else 0 
-                    else: 
-                        local_save_start = save_from_start_offset
-                        local_save_end = save_to_end_offset
+                # Determine which frames from this window to save (handling overlaps)
+                save_from_start_offset_local = 0
+                save_to_end_offset_local = current_window_len
                 
-                local_save_start = max(0, min(local_save_start, current_window_len -1))
-                local_save_end = max(local_save_start, min(local_save_end, current_window_len))
+                if total_windows_to_process > 1: # Only apply overlap logic if there's more than one window
+                    overlap_amount = effective_window_size - effective_window_step
+                    if overlap_amount > 0 : # Ensure there is actual overlap
+                        # First window: save from start up to a point before overlap affects next window's center
+                        if window_iter_idx == 0:
+                            save_to_end_offset_local = effective_window_size - (overlap_amount // 2) if overlap_amount > 0 else current_window_len
+                        # Last window: save from a point after previous window's center up to end
+                        elif is_last_window_iteration : # Check based on iteration index
+                            save_from_start_offset_local = (overlap_amount // 2) if overlap_amount > 0 else 0
+                        # Middle windows: save central part
+                        else:
+                            save_from_start_offset_local = (overlap_amount // 2) if overlap_amount > 0 else 0
+                            save_to_end_offset_local = effective_window_size - (overlap_amount - save_from_start_offset_local) if overlap_amount > 0 else current_window_len
+                    # Ensure valid ranges
+                    save_from_start_offset_local = max(0, min(save_from_start_offset_local, current_window_len -1 if current_window_len > 0 else 0))
+                    save_to_end_offset_local = max(save_from_start_offset_local, min(save_to_end_offset_local, current_window_len))
 
 
-                for k_local in range(local_save_start, local_save_end):
+                for k_local in range(save_from_start_offset_local, save_to_end_offset_local):
                     k_global = start_idx + k_local
                     if k_global < frame_count and processed_frame_filenames[k_global] is None: 
                         frame_np_hwc_uint8 = window_sr_frames_uint8[k_local].cpu().numpy()
@@ -830,24 +925,53 @@ def run_upscale(
 
                 del window_data_cuda, window_sr_tensor_bcthw, window_sr_frames_uint8
                 if torch.cuda.is_available(): torch.cuda.empty_cache()
-                status_log[-1] = f"Sliding Window: Processed window for frames {start_idx}-{end_idx-1}/{frame_count}"
-                yield None, "\n".join(status_log)
 
+                windows_processed_slide = window_iter_idx + 1
+                current_slide_loop_time = time.time() - upscaling_loop_start_time # upscaling_loop_start_time is the start of this whole stage
+                avg_time_per_window = current_slide_loop_time / windows_processed_slide
+                eta_seconds_slide = (total_windows_to_process - windows_processed_slide) * avg_time_per_window if windows_processed_slide < total_windows_to_process else 0
+                speed_slide = 1 / avg_time_per_window if avg_time_per_window > 0 else 0
+                
+                slide_tqdm_desc = f"{loop_name}: {windows_processed_slide}/{total_windows_to_process} windows | ETA: {format_time(eta_seconds_slide)} | Speed: {speed_slide:.2f} w/s"
+                sliding_tqdm_iterator.set_description_str(slide_tqdm_desc)
+                
+                detailed_slide_msg = f"{slide_tqdm_desc} | Current window (frames {start_idx}-{end_idx-1}) processed in {time.time() - window_proc_start_time:.2f}s. Total elapsed: {format_time(current_slide_loop_time)}"
+                status_log.append(detailed_slide_msg)
+                logger.info(detailed_slide_msg)
+                yield None, "\n".join(status_log)
+            
+            # Fallback for any missed frames
+            num_missed_fallback = 0
             for idx, fname in enumerate(frame_files):
                 if processed_frame_filenames[idx] is None:
+                    num_missed_fallback +=1
                     logger.warning(f"Frame {fname} (index {idx}) was not processed by sliding window, copying LR frame.")
                     lr_frame_path = os.path.join(input_frames_dir, fname)
                     if os.path.exists(lr_frame_path):
                          shutil.copy2(lr_frame_path, os.path.join(output_frames_dir, fname))
                     else: 
                          logger.error(f"LR frame {lr_frame_path} not found for fallback copy.")
+            if num_missed_fallback > 0:
+                missed_msg = f"{loop_name} - Copied {num_missed_fallback} LR frames as fallback for unprocessed frames."
+                status_log.append(missed_msg)
+                logger.info(missed_msg)
+                yield None, "\n".join(status_log)
 
 
         else: 
-            status_log.append("Normal chunked processing.")
+            loop_name = "Chunked Processing"
+            chunk_status_msg = "Normal chunked processing."
+            status_log.append(chunk_status_msg)
+            logger.info(chunk_status_msg)
             yield None, "\n".join(status_log)
-            num_chunks = math.ceil(frame_count / max_chunk_len)
-            for i in progress.tqdm(range(num_chunks), desc="Chunks"):
+
+            num_chunks = math.ceil(frame_count / max_chunk_len) if max_chunk_len > 0 else (1 if frame_count > 0 else 0)
+            if num_chunks == 0 and frame_count > 0: num_chunks = 1 # Ensure at least one chunk if frames exist
+
+            chunk_tqdm_iterator = progress.tqdm(range(num_chunks), total=num_chunks, desc=f"{loop_name} - Initializing...")
+
+            for i in chunk_tqdm_iterator: # i is current chunk index
+                chunk_proc_start_time = time.time()
                 start_idx = i * max_chunk_len
                 end_idx = min((i + 1) * max_chunk_len, frame_count)
                 current_chunk_len = end_idx - start_idx
@@ -866,11 +990,13 @@ def run_upscale(
                                   'target_res': (final_h, final_w)}
                 chunk_data_cuda = collate_fn(chunk_pre_data, 'cuda:0')
 
+                logger.info(f"{loop_name} - Chunk {i+1}/{num_chunks} (frames {start_idx}-{end_idx-1}): Starting STAR model processing.")
                 with torch.no_grad():
                     chunk_sr_tensor_bcthw = star_model.test(
                         chunk_data_cuda, total_noise_levels, steps=steps, solver_mode=solver_mode,
                         guide_scale=cfg_scale, max_chunk_len=current_chunk_len, vae_decoder_chunk_size=min(vae_chunk, current_chunk_len)
                     )
+                logger.info(f"{loop_name} - Chunk {i+1}/{num_chunks}: Finished STAR model processing.")
                 chunk_sr_frames_uint8 = tensor2vid(chunk_sr_tensor_bcthw) 
 
                 if color_fix_method != 'None':
@@ -886,26 +1012,53 @@ def run_upscale(
                 
                 del chunk_data_cuda, chunk_sr_tensor_bcthw, chunk_sr_frames_uint8
                 if torch.cuda.is_available(): torch.cuda.empty_cache()
-                status_log[-1] = f"Chunked Processing: Processed chunk {i+1}/{num_chunks} (frames {start_idx}-{end_idx-1})"
+
+                chunks_processed = i + 1
+                current_chunk_loop_time = time.time() - upscaling_loop_start_time # upscaling_loop_start_time is the start of this whole stage
+                avg_time_per_chunk = current_chunk_loop_time / chunks_processed
+                eta_seconds_chunk = (num_chunks - chunks_processed) * avg_time_per_chunk if chunks_processed < num_chunks else 0
+                speed_chunk = 1 / avg_time_per_chunk if avg_time_per_chunk > 0 else 0
+                
+                chunk_tqdm_desc = f"{loop_name}: {chunks_processed}/{num_chunks} chunks | ETA: {format_time(eta_seconds_chunk)} | Speed: {speed_chunk:.2f} ch/s"
+                chunk_tqdm_iterator.set_description_str(chunk_tqdm_desc)
+                
+                detailed_chunk_msg = f"{chunk_tqdm_desc} | Current chunk (frames {start_idx}-{end_idx-1}) processed in {time.time() - chunk_proc_start_time:.2f}s. Total elapsed: {format_time(current_chunk_loop_time)}"
+                status_log.append(detailed_chunk_msg)
+                logger.info(detailed_chunk_msg)
                 yield None, "\n".join(status_log)
+        
+        upscaling_total_duration_msg = f"All frame upscaling operations finished. Total upscaling time: {format_time(time.time() - upscaling_loop_start_time)}"
+        status_log.append(upscaling_total_duration_msg)
+        logger.info(upscaling_total_duration_msg)
+        yield None, "\n".join(status_log)
 
 
         progress(0.9, desc="Reassembling video...")
+        reassembly_start_time = time.time()
         status_log.append("Reassembling final video...")
+        logger.info("Reassembling final video...")
         yield None, "\n".join(status_log)
         
         if save_frames and output_frames_dir and processed_frames_permanent_save_path:
-            status_log.append(f"Copying {len(os.listdir(output_frames_dir))} processed frames to permanent storage...")
+            copy_processed_start_time = time.time()
+            num_processed_frames_to_copy = len(os.listdir(output_frames_dir))
+            copy_proc_msg = f"Copying {num_processed_frames_to_copy} processed frames to permanent storage: {processed_frames_permanent_save_path}"
+            status_log.append(copy_proc_msg)
+            logger.info(copy_proc_msg)
             yield None, "\n".join(status_log)
             for frame_file in os.listdir(output_frames_dir):
                 shutil.copy2(os.path.join(output_frames_dir, frame_file), os.path.join(processed_frames_permanent_save_path, frame_file))
-            status_log.append(f"Processed frames copied to {processed_frames_permanent_save_path}")
+            copied_proc_msg = f"Processed frames copied. Time: {format_time(time.time() - copy_processed_start_time)}"
+            status_log.append(copied_proc_msg)
+            logger.info(copied_proc_msg)
             yield None, "\n".join(status_log)
 
         silent_upscaled_video_path = os.path.join(temp_dir, "silent_upscaled_video.mp4")
         create_video_from_frames(output_frames_dir, silent_upscaled_video_path, input_fps, ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu)
         
-        status_log.append("Silent upscaled video created. Merging audio...")
+        silent_video_msg = "Silent upscaled video created. Merging audio..."
+        status_log.append(silent_video_msg)
+        logger.info(silent_video_msg)
         yield None, "\n".join(status_log)
 
         audio_source_video = current_input_video_for_frames
@@ -915,14 +1068,20 @@ def run_upscale(
             logger.warning(f"Audio source video '{audio_source_video}' not found. Output will be video-only.")
             shutil.copy2(silent_upscaled_video_path, final_output_path)
         else:
-            merge_cmd = f'ffmpeg -y -i "{silent_upscaled_video_path}" -i "{audio_source_video}" -c:v copy -c:a copy -map 0:v:0 -map 1:a:0? -shortest "{final_output_path}"'
-            run_ffmpeg_command(merge_cmd, "Final Video and Audio Merge")
+            run_ffmpeg_command(f'ffmpeg -y -i "{silent_upscaled_video_path}" -i "{audio_source_video}" -c:v copy -c:a copy -map 0:v:0 -map 1:a:0? -shortest "{final_output_path}"', "Final Video and Audio Merge")
 
-        status_log.append(f"Upscaled video saved to: {final_output_path}")
+        reassembly_done_msg = f"Video reassembly and audio merge finished. Time: {format_time(time.time() - reassembly_start_time)}"
+        status_log.append(reassembly_done_msg)
+        logger.info(reassembly_done_msg)
+
+        final_save_msg = f"Upscaled video saved to: {final_output_path}"
+        status_log.append(final_save_msg)
+        logger.info(final_save_msg)
         progress(1.0, "Finished!")
 
         if save_metadata:
-            processing_time = time.time() - start_time
+            metadata_save_start_time = time.time()
+            processing_time = time.time() - overall_process_start_time # Use overall start time
             metadata_filepath = os.path.join(DEFAULT_OUTPUT_DIR, f"{base_output_filename_no_ext}.txt")
             params_to_save = {
                 "input_video_path": os.path.abspath(input_video_path) if input_video_path else "N/A",
@@ -955,14 +1114,16 @@ def run_upscale(
                 "effective_input_fps": f"{input_fps:.2f}" if 'input_fps' in locals() else "N/A",
                 "calculated_upscale_factor": f"{upscale_factor:.2f}" if 'upscale_factor' in locals() else "N/A",
                 "final_output_resolution_wh": (final_w, final_h) if 'final_w' in locals() and 'final_h' in locals() else "N/A",
-                "processing_time_seconds": f"{processing_time:.2f}"
+                "processing_time_seconds": f"{processing_time:.2f}",
+                "processing_time_formatted": format_time(processing_time)
             }
             try:
                 with open(metadata_filepath, 'w', encoding='utf-8') as f:
                     for key, value in params_to_save.items():
                         f.write(f"{key}: {value}\n")
-                status_log.append(f"Metadata saved to: {metadata_filepath}")
-                logger.info(f"Metadata saved to: {metadata_filepath}")
+                meta_saved_msg = f"Metadata saved to: {metadata_filepath}. Time to save: {format_time(time.time() - metadata_save_start_time)}"
+                status_log.append(meta_saved_msg)
+                logger.info(meta_saved_msg)
             except Exception as e_meta:
                 status_log.append(f"Error saving metadata: {e_meta}")
                 logger.error(f"Error saving metadata to {metadata_filepath}: {e_meta}")
@@ -991,11 +1152,21 @@ def run_upscale(
         logger.info("STAR upscaling process finished and cleaned up.")
         
         cleanup_temp_dir(temp_dir) # Ensure temp dir is cleaned up
+        
+        total_process_duration = time.time() - overall_process_start_time
+        final_cleanup_msg = f"STAR upscaling process finished and cleaned up. Total processing time: {format_time(total_process_duration)}"
+        logger.info(final_cleanup_msg)
+        # status_log.append(final_cleanup_msg) # This might be yielded too late if error occurred earlier
 
         if 'output_video_path' not in locals() or not os.path.exists(output_video_path):
              if status_log and status_log[-1] and not status_log[-1].startswith("Error:") and not status_log[-1].startswith("Critical Error:"):
-                status_log.append("Processing finished, but output video was not found or not created.")
-             yield None, "\n".join(status_log)
+                no_output_msg = "Processing finished, but output video was not found or not created."
+                status_log.append(no_output_msg)
+                logger.warning(no_output_msg)
+             # Yield last status if an error didn't already cause a yield/raise
+             # This path might be tricky if an error was already raised.
+             # For now, let's assume the error handlers manage the final yield.
+             # yield None, "\n".join(status_log)
 
 
         if 'base_output_filename_no_ext' in locals() and base_output_filename_no_ext:
