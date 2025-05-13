@@ -579,7 +579,7 @@ def run_upscale(
                 spliter = ImageSpliterTh(single_lr_frame_tensor_norm, int(tile_size), int(tile_overlap), sf=upscale_factor)
 
                 for patch_lr_tensor_norm, patch_coords in progress.tqdm(spliter, desc=f"Patches Frame {i+1}"):
-                    patch_lr_video_data = patch_lr_tensor_norm.unsqueeze(2) 
+                    patch_lr_video_data = patch_lr_tensor_norm
 
                     patch_pre_data = {'video_data': patch_lr_video_data, 'y': final_prompt,
                                       'target_res': (int(round(patch_lr_tensor_norm.shape[-2] * upscale_factor)), 
@@ -599,7 +599,10 @@ def run_upscale(
                         elif color_fix_method == 'Wavelet':
                             patch_sr_frames_uint8 = wavelet_color_fix(patch_sr_frames_uint8, patch_lr_video_data)
 
-                    result_patch_chw_01 = torch.from_numpy(patch_sr_frames_uint8.cpu().numpy()[0,0]).permute(2,0,1).float() / 255.0
+                    # patch_sr_frames_uint8 is expected to be a tensor of shape (1, H_patch_sr, W_patch_sr, C)
+                    single_patch_frame_hwc = patch_sr_frames_uint8[0] # Get the (H, W, C) tensor
+                    result_patch_chw_01 = single_patch_frame_hwc.permute(2,0,1).float() / 255.0 # Permute to (C,H,W) and normalize
+
                     spliter.update_gaussian(result_patch_chw_01.unsqueeze(0), patch_coords) 
                     
                     del patch_data_tensor_cuda, patch_sr_tensor_bcthw, patch_sr_frames_uint8

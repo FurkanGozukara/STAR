@@ -16,7 +16,6 @@ from video_super_resolution.color_fix import adain_color_fix
 
 from inference_utils import *
 
-from tilelib import TileX
 from util_image import ImageSpliterTh
 from video_super_resolution.color_fix import adain_color_fix, wavelet_color_fix
 
@@ -153,7 +152,7 @@ def parse_args():
     parser.add_argument("--input_path", required=True, type=str, help="input video path")
     parser.add_argument("--save_dir", type=str, default='results', help="save directory")
     parser.add_argument("--file_name", type=str, help="file name")
-    parser.add_argument("--model_path", type=str, default='./pretrained_weight/model.pt', help="model path")
+    parser.add_argument("--model_path", type=str, default='./pretrained_weight/light_deg.pt', help="model path")
     parser.add_argument("--prompt", type=str, default='a good video', help="prompt")
     parser.add_argument("--upscale", type=float, default=4, help='up-scale')
     parser.add_argument("--max_chunk_len", type=int, default=32, help='max_chunk_len')

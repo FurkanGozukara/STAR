@@ -100,22 +100,28 @@ class ImageSpliterTh:
         self.im_res[:, :, h_start:h_end, w_start:w_end] += pch_res
         self.pixel_count[:, :, h_start:h_end, w_start:w_end] += 1
 
-    def update_gaussian(self, pch_res, index_infos):
-        '''
-        Input:
-            pch_res: n x c x pch_size x pch_size, float
-            index_infos: (h_start, h_end, w_start, w_end)
-        '''
-        if index_infos is None:
-            w_start, w_end = self.w_start, self.w_end
-            h_start, h_end = self.h_start, self.h_end
+    def update_gaussian(self, pch_res, index_info):
+        # pch_res: (B,C,H,W)
+        # index_info: (h_start, h_end, w_start, w_end)
+        h_start, h_end, w_start, w_end = index_info
+
+        # Resize self.weight to match the spatial dimensions of pch_res
+        # self.weight is initially (H_in_patch, W_in_patch)
+        # pch_res is (B, C, H_out_patch, W_out_patch)
+        if self.weight.shape[-2:] != pch_res.shape[-2:]:
+            resized_weight = torch.nn.functional.interpolate(
+                self.weight.to(pch_res.device, dtype=pch_res.dtype), # Pass self.weight (4D) directly
+                size=pch_res.shape[-2:], # Target (H_out_patch, W_out_patch)
+                mode='bilinear',
+                align_corners=False
+            )
         else:
-            h_start, h_end, w_start, w_end = index_infos
+            resized_weight = self.weight.to(pch_res.device, dtype=pch_res.dtype)
 
-        self.im_res[:, :, h_start:h_end, w_start:w_end] += pch_res * self.weight
-        self.pixel_count[:, :, h_start:h_end, w_start:w_end] += self.weight
+        self.im_res[:, :, h_start:h_end, w_start:w_end] += pch_res * resized_weight
+        self.pixel_count[:, :, h_start:h_end, w_start:w_end] += resized_weight
 
-    def gather(self):
+    def gather(self, mode='gaussian'):
         assert torch.all(self.pixel_count != 0)
         return self.im_res.div(self.pixel_count)
 
