@@ -75,7 +75,8 @@ class VideoToVideo_sr():
 
 
     def test(self, input: Dict[str, Any], total_noise_levels=1000, \
-                 steps=50, solver_mode='fast', guide_scale=7.5, max_chunk_len=32, vae_decoder_chunk_size=3):
+                 steps=50, solver_mode='fast', guide_scale=7.5, max_chunk_len=32, vae_decoder_chunk_size=3,
+                 progress_callback=None):
         video_data = input['video_data']
         y = input['y']
         (target_h, target_w) = input['target_res']
@@ -122,7 +123,8 @@ class VideoToVideo_sr():
                 t_max=total_noise_levels - 1,
                 t_min=0,
                 discretization='trailing',
-                chunk_inds=chunk_inds,)
+                chunk_inds=chunk_inds,
+                progress_callback=progress_callback)
             torch.cuda.empty_cache()
 
             logger.info(f'sampling, finished.')

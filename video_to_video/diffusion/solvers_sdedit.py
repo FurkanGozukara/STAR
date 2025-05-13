@@ -148,7 +148,8 @@ def sample_dpmpp_2m_sde(noise,
                         s_noise=1.,
                         solver_type='midpoint',
                         show_progress=True,
-                        variant_info=None):
+                        variant_info=None,
+                        progress_callback=None):
     """
     DPM-Solver++ (2M) SDE.
     """
@@ -161,8 +162,13 @@ def sample_dpmpp_2m_sde(noise,
     old_denoised = None
     h_last = None
 
-    for i in trange(len(sigmas) - 1, disable=not show_progress):
-        logger.info(f'step: {i}')
+    total_steps_in_solver = len(sigmas) - 1
+    for i in trange(total_steps_in_solver, disable=not show_progress, desc="Diffusion Steps"):
+        current_step = i + 1
+        logger.info(f'Diffusion Step: {current_step}/{total_steps_in_solver}')
+        if progress_callback:
+            progress_callback(step=current_step, total_steps=total_steps_in_solver)
+
         if sigmas[i] == float('inf'):
             # Euler method
             denoised = model(noise, sigmas[i], variant_info=variant_info)
