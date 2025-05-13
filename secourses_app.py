@@ -142,11 +142,36 @@ def extract_frames(video_path, temp_dir):
         raise gr.Error("Failed to extract any frames. Check video file and ffmpeg installation.")
     return frame_count, fps, frame_files
 
-def create_video_from_frames(frame_dir, output_path, fps):
-    logger.info(f"Creating video from frames in '{frame_dir}' to '{output_path}' at {fps} FPS")
+def create_video_from_frames(frame_dir, output_path, fps, ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu):
+    logger.info(f"Creating video from frames in '{frame_dir}' to '{output_path}' at {fps} FPS with preset: {ffmpeg_preset}, quality: {ffmpeg_quality_value}, GPU: {ffmpeg_use_gpu}")
     input_pattern = os.path.join(frame_dir, "frame_%06d.png")
-    cmd = f'ffmpeg -y -framerate {fps} -i "{input_pattern}" -c:v libx264 -preset ultrafast -qp 0 -pix_fmt yuv420p "{output_path}"'
-    run_ffmpeg_command(cmd, "Video Reassembly")
+    
+    video_codec_opts = ""
+    if ffmpeg_use_gpu:
+        # Assuming h264_nvenc. Presets for nvenc are different (e.g., p1-p7, or slow/medium/fast)
+        # We'll map common presets to nvenc compatible ones.
+        # For simplicity, this example uses a generic 'preset' flag which might need adjustment based on nvenc specifics.
+        # NVENC often uses -cq for quality (Constrained Quality) or -qp.
+        # A mapping from libx264 presets to nvenc presets might be needed for optimal results.
+        # For now, we'll pass the preset directly, users should be aware.
+        # Example: -preset:v slow (for nvenc).
+        # Common nvenc presets: slow (high quality), medium, fast (lower quality).
+        # Defaulting to 'medium' if the passed preset is not directly compatible or too aggressive.
+        nvenc_preset = ffmpeg_preset
+        if ffmpeg_preset in ["ultrafast", "superfast", "veryfast", "faster", "fast"]:
+            nvenc_preset = "fast" # Or a specific P-level like p1/p2
+        elif ffmpeg_preset in ["slower", "veryslow"]:
+            nvenc_preset = "slow" # Or p7
+        
+        video_codec_opts = f'-c:v h264_nvenc -preset:v {nvenc_preset} -cq:v {ffmpeg_quality_value} -pix_fmt yuv420p'
+        # Add -bf 2 for B-frames on Turing+ if desired, or other nvenc specific options.
+        logger.info(f"Using NVIDIA NVENC with preset {nvenc_preset} and CQ {ffmpeg_quality_value}.")
+    else:
+        video_codec_opts = f'-c:v libx264 -preset {ffmpeg_preset} -crf {ffmpeg_quality_value} -pix_fmt yuv420p'
+        logger.info(f"Using libx264 with preset {ffmpeg_preset} and CRF {ffmpeg_quality_value}.")
+
+    cmd = f'ffmpeg -y -framerate {fps} -i "{input_pattern}" {video_codec_opts} "{output_path}"'
+    run_ffmpeg_command(cmd, "Video Reassembly (silent)")
 
 def get_next_filename(output_dir):
     os.makedirs(output_dir, exist_ok=True)
@@ -467,6 +492,7 @@ def run_upscale(
     enable_tiling, tile_size, tile_overlap,
     enable_sliding_window, window_size, window_step,
     enable_target_res, target_h, target_w, target_res_mode,
+    ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu,
     progress=gr.Progress(track_tqdm=True)
 ):
     if not input_video_path or not os.path.exists(input_video_path):
@@ -518,8 +544,20 @@ def run_upscale(
                 yield None, "\n".join(status_log)
                 downscaled_temp_video = os.path.join(temp_dir, "downscaled_input.mp4")
                 scale_filter = f"scale='trunc(iw*min({ds_w}/iw,{ds_h}/ih)/2)*2':'trunc(ih*min({ds_w}/iw,{ds_h}/ih)/2)*2'"
-                cmd = f'ffmpeg -i "{input_video_path}" -vf "{scale_filter}" -c:a copy "{downscaled_temp_video}"'
-                run_ffmpeg_command(cmd, "Input Downscaling")
+                
+                # Incorporate FFmpeg settings for downscaling
+                ffmpeg_opts_downscale = ""
+                if ffmpeg_use_gpu:
+                    # Simplified nvenc preset mapping for downscaling
+                    nvenc_preset_down = ffmpeg_preset
+                    if ffmpeg_preset in ["ultrafast", "superfast", "veryfast", "faster", "fast"]: nvenc_preset_down = "fast"
+                    elif ffmpeg_preset in ["slower", "veryslow"]: nvenc_preset_down = "slow"
+                    ffmpeg_opts_downscale = f'-c:v h264_nvenc -preset:v {nvenc_preset_down} -cq:v {ffmpeg_quality_value} -pix_fmt yuv420p'
+                else:
+                    ffmpeg_opts_downscale = f'-c:v libx264 -preset {ffmpeg_preset} -crf {ffmpeg_quality_value} -pix_fmt yuv420p'
+
+                cmd = f'ffmpeg -y -i "{input_video_path}" -vf "{scale_filter}" {ffmpeg_opts_downscale} -c:a copy "{downscaled_temp_video}"'
+                run_ffmpeg_command(cmd, "Input Downscaling with Audio Copy")
                 current_input_video_for_frames = downscaled_temp_video
                 # Update effective input dimensions based on actual output of ffmpeg if possible, or use ds_h, ds_w
                 orig_h, orig_w = get_video_resolution(downscaled_temp_video) # Get actual res after ffmpeg
@@ -770,11 +808,32 @@ def run_upscale(
         progress(0.9, desc="Reassembling video...")
         status_log.append("Reassembling final video...")
         yield None, "\n".join(status_log)
-        create_video_from_frames(output_frames_dir, output_path, input_fps)
         
-        status_log.append(f"Upscaled video saved to: {output_path}")
+        silent_upscaled_video_path = os.path.join(temp_dir, "silent_upscaled_video.mp4")
+        create_video_from_frames(output_frames_dir, silent_upscaled_video_path, input_fps, ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu)
+        
+        status_log.append("Silent upscaled video created. Merging audio...")
+        yield None, "\n".join(status_log)
+
+        # Audio source is current_input_video_for_frames (original or downscaled which has audio copied)
+        audio_source_video = current_input_video_for_frames
+        final_output_path = output_path # from get_next_filename
+
+        # Check if audio source actually exists before trying to use it
+        if not os.path.exists(audio_source_video):
+            logger.warning(f"Audio source video '{audio_source_video}' not found. Output will be video-only.")
+            # If audio source is missing, just copy the silent video to final output
+            shutil.copy2(silent_upscaled_video_path, final_output_path)
+        else:
+            # Check if audio source has an audio stream
+            # This is a basic check; ffprobe could give more detailed info.
+            # For now, rely on ffmpeg's map? to handle missing streams gracefully.
+            merge_cmd = f'ffmpeg -y -i "{silent_upscaled_video_path}" -i "{audio_source_video}" -c:v copy -c:a copy -map 0:v:0 -map 1:a:0? -shortest "{final_output_path}"'
+            run_ffmpeg_command(merge_cmd, "Final Video and Audio Merge")
+
+        status_log.append(f"Upscaled video saved to: {final_output_path}")
         progress(1.0, "Finished!")
-        yield output_path, "\n".join(status_log)
+        yield final_output_path, "\n".join(status_log)
 
     except gr.Error as e: 
         logger.error(f"A Gradio UI Error occurred: {e}", exc_info=True)
@@ -1016,6 +1075,24 @@ The total combined prompt length is limited to 77 tokens."""
             else:
                 gr.Markdown("_(Auto-captioning disabled as CogVLM2 components are not fully available.)_")
 
+            with gr.Accordion("FFmpeg Encoding Settings", open=False): # New Accordion for FFmpeg
+                ffmpeg_use_gpu_check = gr.Checkbox(
+                    label="Use NVIDIA GPU for FFmpeg (h264_nvenc)",
+                    value=False,
+                    info="If checked, uses NVIDIA's NVENC for FFmpeg video encoding (downscaling and final video creation). Requires NVIDIA GPU and correctly configured FFmpeg with NVENC support."
+                )
+                ffmpeg_preset_dropdown = gr.Dropdown(
+                    label="FFmpeg Preset",
+                    choices=['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow'],
+                    value='medium',
+                    info="Controls encoding speed vs. compression efficiency. 'ultrafast' is fastest with lowest quality/compression, 'veryslow' is slowest with highest quality/compression. Note: NVENC presets behave differently (e.g. p1-p7 or specific names like 'slow', 'medium', 'fast')."
+                )
+                ffmpeg_quality_slider = gr.Slider(
+                    label="FFmpeg Quality (CRF for libx264 / CQ for NVENC)", # Label will be updated by event
+                    minimum=0, maximum=51, value=23, step=1, # Default for CRF
+                    info="For libx264 (CPU): Constant Rate Factor (CRF). Lower values mean higher quality (0 is lossless, 23 is default). For h264_nvenc (GPU): Constrained Quality (CQ). Lower values generally mean better quality. Typical range for NVENC CQ is 18-28."
+                )
+
 
             upscale_button = gr.Button("Upscale Video", variant="primary")
 
@@ -1038,6 +1115,22 @@ The total combined prompt length is limited to 77 tokens."""
     # There is no UI toggle for this; it's automatically enabled for performance and VRAM savings.
     # Forcing full FP16 is generally not recommended due to potential instability.
 
+    def update_ffmpeg_quality_settings(use_gpu):
+        if use_gpu:
+            # Defaults for NVENC CQ. NVENC CQ often good around 20-30. Let's pick ~25.
+            # Label indicates CQ for NVENC.
+            return gr.Slider(label="FFmpeg Quality (CQ for NVENC)", value=25, info="For h264_nvenc (GPU): Constrained Quality (CQ). Lower values generally mean better quality. Typical range for NVENC CQ is 18-28.")
+        else:
+            # Defaults for libx264 CRF.
+            # Label indicates CRF for libx264.
+            return gr.Slider(label="FFmpeg Quality (CRF for libx264)", value=23, info="For libx264 (CPU): Constant Rate Factor (CRF). Lower values mean higher quality (0 is lossless, 23 is default).")
+
+    ffmpeg_use_gpu_check.change(
+        fn=update_ffmpeg_quality_settings,
+        inputs=ffmpeg_use_gpu_check,
+        outputs=ffmpeg_quality_slider
+    )
+
     upscale_button.click(
         fn=run_upscale,
         inputs=[
@@ -1046,7 +1139,8 @@ The total combined prompt length is limited to 77 tokens."""
             max_chunk_len_slider, vae_chunk_slider, color_fix_dropdown,
             enable_tiling_check, tile_size_num, tile_overlap_num,
             enable_sliding_window_check, window_size_num, window_step_num,
-            enable_target_res_check, target_h_num, target_w_num, target_res_mode_radio
+            enable_target_res_check, target_h_num, target_w_num, target_res_mode_radio,
+            ffmpeg_preset_dropdown, ffmpeg_quality_slider, ffmpeg_use_gpu_check
         ],
         outputs=[output_video, status_textbox]
     )
