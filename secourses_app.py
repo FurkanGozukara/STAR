@@ -699,7 +699,7 @@ def run_upscale(
                 for k_local in range(local_save_start, local_save_end):
                     k_global = start_idx + k_local
                     if k_global < frame_count and processed_frame_filenames[k_global] is None: 
-                        frame_np_hwc_uint8 = window_sr_frames_uint8[0, k_local].cpu().numpy() 
+                        frame_np_hwc_uint8 = window_sr_frames_uint8[k_local].cpu().numpy()
                         frame_bgr = cv2.cvtColor(frame_np_hwc_uint8, cv2.COLOR_RGB2BGR)
                         out_f_path = os.path.join(output_frames_dir, frame_files[k_global])
                         cv2.imwrite(out_f_path, frame_bgr)
@@ -751,14 +751,14 @@ def run_upscale(
                 chunk_sr_frames_uint8 = tensor2vid(chunk_sr_tensor_bcthw) 
 
                 if color_fix_method != 'None':
-                    chunk_lr_video_data_01 = (chunk_lr_video_data.unsqueeze(0) + 1.0) / 2.0 
+                    chunk_lr_video_data_01 = (chunk_lr_video_data + 1.0) / 2.0
                     if color_fix_method == 'AdaIN':
                         chunk_sr_frames_uint8 = adain_color_fix(chunk_sr_frames_uint8, chunk_lr_video_data_01)
                     elif color_fix_method == 'Wavelet':
                         chunk_sr_frames_uint8 = wavelet_color_fix(chunk_sr_frames_uint8, chunk_lr_video_data_01)
                 
                 for k, frame_name in enumerate(frame_files[start_idx:end_idx]):
-                    frame_np_hwc_uint8 = chunk_sr_frames_uint8[0, k].cpu().numpy()
+                    frame_np_hwc_uint8 = chunk_sr_frames_uint8[k].cpu().numpy()
                     frame_bgr = cv2.cvtColor(frame_np_hwc_uint8, cv2.COLOR_RGB2BGR)
                     cv2.imwrite(os.path.join(output_frames_dir, frame_name), frame_bgr)
                 
@@ -788,7 +788,7 @@ def run_upscale(
         yield None, "\n".join(status_log)
         raise gr.Error(f"Upscaling failed critically: {e}")
     finally:
-        cleanup_temp_dir(temp_dir) # temp_dir (base for this run) cleaned here
+        # cleanup_temp_dir(temp_dir) # TEMP: Disabled for debugging
         # downscaled_temp_video is inside temp_dir, so it's removed by cleanup_temp_dir
         # if downscaled_temp_video and os.path.exists(downscaled_temp_video):
         #     try: os.remove(downscaled_temp_video) # No longer needed if temp_dir is removed

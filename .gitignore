@@ -9,3 +9,7 @@ video_to_video/diffusion/__pycache__/
 video_to_video/modules/__pycache__/
 video_to_video/utils/__pycache__/
 models
+upscaled_videos
+video_super_resolution/scripts/a.mp4
+video_super_resolution/scripts/results/
+video_to_video/downscaled_input.mp4
