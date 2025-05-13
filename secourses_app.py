@@ -1018,7 +1018,7 @@ input[type='range'] { accent-color: black; }
 """
 
 with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
-    gr.Markdown("# Ultimate SECourses STAR Video Upscaler V7 : ")
+    gr.Markdown("# Ultimate SECourses STAR Video Upscaler V8")
 
     with gr.Row():
         with gr.Column(scale=1):
@@ -1026,7 +1026,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 input_video = gr.Video(
                     label="Input Video",
                     sources=["upload"],
-                    interactive=True
+                    interactive=True,height=512
                 )
                 with gr.Row():
                     user_prompt = gr.Textbox(
@@ -1219,7 +1219,8 @@ The total combined prompt length is limited to 77 tokens."""
                     steps_slider = gr.Slider(
                         label="Diffusion Steps",
                         minimum=5, maximum=100, value=15, step=1,
-                        info="Number of denoising steps. Value changes automatically based on Solver Mode (Fast: ~15, Normal: ~50). Higher steps take longer."
+                        info="Number of denoising steps. 'Fast' mode uses a fixed ~15 steps. 'Normal' mode uses the value set here.",
+                        interactive=False # Default to non-interactive as 'fast' mode is default and fixed
                     )
                 color_fix_dropdown = gr.Dropdown(
                     label="Color Correction",
@@ -1264,7 +1265,10 @@ The total combined prompt length is limited to 77 tokens."""
                 open_output_folder_button = gr.Button("Open Output Folder")
 
     def update_steps_display(mode):
-        return gr.Slider(value=15 if mode == 'fast' else 50) 
+        if mode == 'fast':
+            return gr.update(value=15, interactive=False)
+        else:  # 'normal'
+            return gr.update(value=50, interactive=True)
     solver_mode_radio.change(update_steps_display, solver_mode_radio, steps_slider)
 
     enable_target_res_check.change(lambda x: [gr.update(interactive=x)]*3, inputs=enable_target_res_check, outputs=[target_h_num, target_w_num, target_res_mode_radio])
