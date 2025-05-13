@@ -16,28 +16,11 @@ import threading
 from easydict import EasyDict
 from argparse import ArgumentParser, Namespace # Keep if STAR scripts expect it
 
-# --- Add diagnostic print ---
 try:
-    print(f"INFO: torch version: {torch.__version__}")
-    print(f"INFO: torchvision version: {torchvision.__version__}")
-    print(f"INFO: torchvision path: {torchvision.__file__}")
-except Exception as e_diag:
-    print(f"ERROR: Could not get torchvision version/path: {e_diag}")
-# --- End diagnostic print ---
 
-# --- Add STAR repo to path ---
-# This assumes app.py is in the root of the STAR repository.
-# If it's elsewhere, this path needs to be adjusted.
-try:
-    # Try to determine base_path relative to this script file
-    # This should work if app.py is inside the 'STAR' directory
     script_dir = os.path.dirname(os.path.abspath(__file__))
     base_path = script_dir # If app.py is in STAR's root.
-    # If app.py is in a subdirectory like 'gradio_app' inside STAR, then:
-    # base_path = os.path.dirname(script_dir)
 
-    # Ensure the base_path is correctly pointing to the STAR repository root
-    # A simple check could be to see if a known directory like 'video_to_video' exists
     if not os.path.isdir(os.path.join(base_path, 'video_to_video')):
         # Fallback or raise error if structure is not as expected
         print(f"Warning: 'video_to_video' directory not found in inferred base_path: {base_path}. Attempting to use parent directory.")
@@ -45,11 +28,6 @@ try:
         if not os.path.isdir(os.path.join(base_path, 'video_to_video')):
             print(f"Error: Could not auto-determine STAR repository root. Please set 'base_path' manually.")
             print(f"Current inferred base_path: {base_path}")
-            # As a last resort for development, you can hardcode it:
-            # base_path = "E:/path/to/your/STAR_repository" # Example:
-            # Or expect it to be the current working directory if run from STAR root
-            # base_path = os.getcwd()
-
 
     print(f"Using STAR repository base_path: {base_path}")
     if base_path not in sys.path:
@@ -118,8 +96,6 @@ if not os.path.exists(HEAVY_DEG_MODEL):
 cogvlm_model_state = {"model": None, "tokenizer": None, "device": None, "quant": None}
 cogvlm_lock = threading.Lock()
 
-# --- Helper Functions (Copied from previous response, ensure they are robust) ---
-
 def run_ffmpeg_command(cmd, desc="ffmpeg command"):
     logger.info(f"Running {desc}: {cmd}")
     try:
@@ -168,7 +144,6 @@ def extract_frames(video_path, temp_dir):
 
 def create_video_from_frames(frame_dir, output_path, fps):
     logger.info(f"Creating video from frames in '{frame_dir}' to '{output_path}' at {fps} FPS")
-    # Use os.path.join for robust path construction
     input_pattern = os.path.join(frame_dir, "frame_%06d.png")
     cmd = f'ffmpeg -y -framerate {fps} -i "{input_pattern}" -c:v libx264 -preset ultrafast -qp 0 -pix_fmt yuv420p "{output_path}"'
     run_ffmpeg_command(cmd, "Video Reassembly")
@@ -249,7 +224,6 @@ def calculate_upscale_params(orig_h, orig_w, target_h, target_w, target_res_mode
     return needs_downscale, downscale_h, downscale_w, final_upscale_factor, final_h, final_w
 
 
-# --- CogVLM2 Functions ---
 def load_cogvlm_model(quantization, device):
     global cogvlm_model_state
     logger.info(f"Attempting to load CogVLM2 model with quantization: {quantization} on device: {device}")
@@ -301,9 +275,6 @@ def load_cogvlm_model(quantization, device):
                 device_map=current_device_map # MODIFIED HERE
             )
 
-            # If not using BNB and not using device_map="auto" (i.e. non-quantized cases, or CPU)
-            # then move to target device manually.
-            # BNB models with device_map="auto" are already placed.
             if not bnb_config and current_device_map is None : 
                 logger.info(f"Moving non-quantized model to target device: {device}")
                 model = model.to(device)
@@ -388,30 +359,12 @@ def auto_caption(video_path, quantization, unload_strategy, progress=gr.Progress
     
     try:
         progress(0.1, desc="Loading CogVLM2 for captioning...")
-        # Pass the determined cogvlm_device to load_cogvlm_model
         model, tokenizer = load_cogvlm_model(quantization, cogvlm_device)
         
-        # Determine the actual device the model (or its parts) ended up on for inference input placement.
-        # For BNB models with device_map="auto", model.device might be a map.
-        # For single-device models, next(model.parameters()).device is common.
-        # The inputs need to be on the same device as the model expects.
-        # For images, it's usually the device of the vision tower or where computations happen.
-        # Let's assume it's the cogvlm_device primarily if CUDA, or parts might be on different GPUs with "auto".
-        # For simplicity, we'll prepare inputs for cogvlm_device and let HF handle internal transfers if any.
-        
-        # Get model's actual compute device for inputs, robustly
         if hasattr(model, 'device') and isinstance(model.device, torch.device) : # Non-BNB or BNB on single device after loading
             model_compute_device = model.device
         elif hasattr(model, 'hf_device_map'): # BNB model with device_map
-            # Heuristic: use the device of the first module, or a known module like language_model
-            # This can be complex. For now, assume inputs should target the primary 'cogvlm_device' (e.g. 'cuda:0' if 'cuda')
-            # and trust internal handling or specific module device if known.
-            # A common approach is to use the device of the embedding layer or a core part.
-            # For now, we'll use cogvlm_device, which is 'cuda' or 'cpu'. Transformers usually handles this with .to(model_input_device)
-            # For images specifically, they need to go to vision tower device.
-             # A common pattern: check `model.vision_model.device` or similar if model has such attribute.
-             # Or, more generally, assume the primary 'cogvlm_device' is where inputs need to start.
-             # The CLI uses inputs.to(DEVICE) which is 'cuda' or 'cpu'.
+
             model_compute_device = torch.device(cogvlm_device) # Default to the main requested device
             # Try to get a more specific device if possible, e.g., from a known submodule
             if hasattr(model, 'transformer') and hasattr(model.transformer, 'device'): # Llama-like structure
@@ -502,13 +455,11 @@ def auto_caption(video_path, quantization, unload_strategy, progress=gr.Progress
         caption = f"Error during captioning: {str(e)[:100]}" 
     finally:
         progress(1.0, desc="Finalizing captioning...")
-        # Pass the original requested device ('cuda' or 'cpu') to unload_cogvlm_model
-        # as cogvlm_model_state["device"] stores this.
+
         unload_cogvlm_model(unload_strategy)
     return caption, f"Captioning status: {'Success' if not caption.startswith('Error') else caption}"
 
 
-# --- Core Upscaling Function (Adapted from previous response with fixes) ---
 def run_upscale(
     input_video_path, user_prompt, positive_prompt, negative_prompt, model_choice,
     upscale_factor_slider, cfg_scale, steps, solver_mode,
@@ -583,6 +534,7 @@ def run_upscale(
         progress(0.1, desc="Loading STAR model...")
         model_cfg = EasyDict() 
         model_cfg.model_path = model_file_path
+
         star_model = VideoToVideo_sr(model_cfg)
         status_log.append("STAR model loaded.")
         yield None, "\n".join(status_log)
@@ -625,9 +577,9 @@ def run_upscale(
                 frame_lr_rgb = cv2.cvtColor(frame_lr_bgr, cv2.COLOR_BGR2RGB)
                 single_lr_frame_tensor_norm = preprocess([frame_lr_rgb]) 
                 
-                spliter = ImageSpliterTh(single_lr_frame_tensor_norm.squeeze(0), int(tile_size), int(tile_overlap), sf=upscale_factor)
+                spliter = ImageSpliterTh(single_lr_frame_tensor_norm, int(tile_size), int(tile_overlap), sf=upscale_factor)
 
-                for patch_lr_tensor_norm, patch_coords in progress.tqdm(spliter, desc=f"Patches Frame {i+1}", leave=False):
+                for patch_lr_tensor_norm, patch_coords in progress.tqdm(spliter, desc=f"Patches Frame {i+1}"):
                     patch_lr_video_data = patch_lr_tensor_norm.unsqueeze(2) 
 
                     patch_pre_data = {'video_data': patch_lr_video_data, 'y': final_prompt,
@@ -855,7 +807,7 @@ def run_upscale(
                 yield None, "\n".join(status_log)
 
 
-# --- Gradio UI Definition (Mostly same as before, with fixes for Radio) ---
+# --- Gradio UI Definition ---
 css = """
 .gradio-container { font-family: 'IBM Plex Sans', sans-serif; }
 .gr-button { color: white; border-color: black; background: black; }
@@ -876,43 +828,162 @@ with gr.Blocks(css=css, theme=gr.themes.Soft(primary_hue="zinc", neutral_hue="zi
                     sources=["upload"],
                     interactive=True
                 )
-                user_prompt = gr.Textbox(label="Describe the Video Content (Prompt)", lines=3, placeholder="e.g., A panda playing guitar by a lake at sunset.")
+                user_prompt = gr.Textbox(
+                    label="Describe the Video Content (Prompt)",
+                    lines=3,
+                    placeholder="e.g., A panda playing guitar by a lake at sunset.",
+                    info="""Describe the main subject and action in the video. This guides the upscaling process.
+Combined with the Positive Prompt below, the effective text length influencing the model is limited to 77 tokens.
+If CogVLM2 is available, you can use the button below to generate a caption automatically."""
+                )
                 if COG_VLM_AVAILABLE:
                     auto_caption_btn = gr.Button("Generate Caption with CogVLM2")
                     caption_status = gr.Textbox(label="Captioning Status", interactive=False, visible=False)
 
             with gr.Accordion("Prompt Settings", open=True):
-                 pos_prompt = gr.Textbox(label="Default Positive Prompt (Appended)", value=DEFAULT_POS_PROMPT, lines=2)
-                 neg_prompt = gr.Textbox(label="Default Negative Prompt (Appended)", value=DEFAULT_NEG_PROMPT, lines=2)
+                 pos_prompt = gr.Textbox(
+                     label="Default Positive Prompt (Appended)",
+                     value=DEFAULT_POS_PROMPT,
+                     lines=2,
+                     info="""Appended to your 'Describe Video Content' prompt. Focuses on desired quality aspects (e.g., realism, detail).
+The total combined prompt length is limited to 77 tokens."""
+                 )
+                 neg_prompt = gr.Textbox(
+                     label="Default Negative Prompt (Appended)",
+                     value=DEFAULT_NEG_PROMPT,
+                     lines=2,
+                     info="Guides the model *away* from undesired aspects (e.g., bad quality, artifacts, specific styles). This does NOT count towards the 77 token limit for positive guidance."
+                 )
 
             with gr.Group():
                 gr.Markdown("### Core Upscaling Settings")
-                model_selector = gr.Dropdown(label="STAR Model", choices=["Light Degradation", "Heavy Degradation"], value="Light Degradation")
-                upscale_factor_slider = gr.Slider(label="Upscale Factor (if Target Res disabled)", minimum=1.0, maximum=8.0, value=4.0, step=0.1)
-                cfg_slider = gr.Slider(label="Guidance Scale (CFG)", minimum=1.0, maximum=15.0, value=7.5, step=0.5)
-                solver_mode_radio = gr.Radio(label="Solver Mode", choices=['fast', 'normal'], value='fast')
-                steps_slider = gr.Slider(label="Diffusion Steps", minimum=5, maximum=100, value=15, step=1) # Default for fast
-                color_fix_dropdown = gr.Dropdown(label="Color Correction", choices=['AdaIN', 'Wavelet', 'None'], value='AdaIN')
+                model_selector = gr.Dropdown(
+                    label="STAR Model",
+                    choices=["Light Degradation", "Heavy Degradation"],
+                    value="Light Degradation",
+                    info="""Choose the model based on input video quality.
+'Light Degradation': Better for relatively clean inputs (e.g., downloaded web videos).
+'Heavy Degradation': Better for inputs with significant compression artifacts, noise, or blur."""
+                )
+                upscale_factor_slider = gr.Slider(
+                    label="Upscale Factor (if Target Res disabled)",
+                    minimum=1.0, maximum=8.0, value=4.0, step=0.1,
+                    info="Simple multiplication factor for output resolution if 'Enable Max Target Resolution' is OFF. E.g., 4.0 means 4x height and 4x width."
+                )
+                cfg_slider = gr.Slider(
+                    label="Guidance Scale (CFG)",
+                    minimum=1.0, maximum=15.0, value=7.5, step=0.5,
+                    info="Controls how strongly the model follows your combined text prompt. Higher values mean stricter adherence, lower values allow more creativity. Typical values: 5.0-10.0."
+                )
+                solver_mode_radio = gr.Radio(
+                    label="Solver Mode",
+                    choices=['fast', 'normal'], value='fast',
+                    info="""Diffusion solver type.
+'fast': Fewer steps (default ~15), much faster, good quality usually.
+'normal': More steps (default ~50), slower, potentially slightly better detail/coherence."""
+                )
+                steps_slider = gr.Slider(
+                    label="Diffusion Steps",
+                    minimum=5, maximum=100, value=15, step=1,
+                    info="Number of denoising steps. Value changes automatically based on Solver Mode (Fast: ~15, Normal: ~50). Higher steps take longer."
+                )
+                color_fix_dropdown = gr.Dropdown(
+                    label="Color Correction",
+                    choices=['AdaIN', 'Wavelet', 'None'], value='AdaIN',
+                    info="""Attempts to match the color tone of the output to the input video. Helps prevent color shifts.
+'AdaIN' / 'Wavelet': Different algorithms for color matching. AdaIN is often a good default.
+'None': Disables color correction."""
+                 )
 
             with gr.Accordion("Performance & VRAM Optimization", open=True):
-                max_chunk_len_slider = gr.Slider(label="Max Frames per Batch (VRAM)", minimum=4, maximum=64, value=32, step=4)
-                vae_chunk_slider = gr.Slider(label="VAE Decode Chunk (VRAM)", minimum=1, maximum=16, value=3, step=1)
+                max_chunk_len_slider = gr.Slider(
+                    label="Max Frames per Batch (VRAM)",
+                    minimum=4, maximum=64, value=32, step=4,
+                    info="""IMPORTANT for VRAM. Controls max latent frames processed by the main model simultaneously.
+- VRAM Impact: High Reduction (Lower value = Less VRAM).
+- Quality Impact: Can reduce Temporal Consistency (flicker/motion issues) if too low. Keep as high as VRAM allows.
+- Speed Impact: Slower (Lower value = Slower)."""
+                )
+                vae_chunk_slider = gr.Slider(
+                    label="VAE Decode Chunk (VRAM)",
+                    minimum=1, maximum=16, value=3, step=1,
+                    info="""Controls max latent frames decoded back to pixels by VAE simultaneously.
+- VRAM Impact: High Reduction (Lower value = Less VRAM during decode stage).
+- Quality Impact: Minimal / Negligible. Safe to lower.
+- Speed Impact: Slower (Lower value = Slower decoding)."""
+                )
 
             with gr.Accordion("Advanced: Target Resolution", open=True):
-                 enable_target_res_check = gr.Checkbox(label="Enable Max Target Resolution", value=False)
-                 target_h_num = gr.Number(label="Max Target Height (px)", value=720, minimum=128, step=16, interactive=False)
-                 target_w_num = gr.Number(label="Max Target Width (px)", value=1280, minimum=128, step=16, interactive=False)
-                 target_res_mode_radio = gr.Radio(label="Target Resolution Mode", choices=['Ratio Upscale', 'Downscale then 4x'], value='Ratio Upscale', interactive=False)
+                 enable_target_res_check = gr.Checkbox(
+                     label="Enable Max Target Resolution",
+                     value=True,
+                     info="Check this to manually control the maximum output resolution instead of using the simple Upscale Factor."
+                 )
+                 target_res_mode_radio = gr.Radio(
+                     label="Target Resolution Mode",
+                     choices=['Ratio Upscale', 'Downscale then 4x'], value='Downscale then 4x', interactive=False,
+                     info="""How to apply the target H/W limits.
+'Ratio Upscale': Upscales by the largest factor possible without exceeding Target H/W, preserving aspect ratio.
+'Downscale then 4x': If input is large, downscales it towards Target H/W divided by 4, THEN applies a 4x upscale. Can clean noisy high-res input before upscaling."""
+                 )
+                 with gr.Row():
+                     target_h_num = gr.Number(
+                         label="Max Target Height (px)",
+                         value=1920, minimum=128, step=16, interactive=False,
+                         info="""Maximum allowed height for the output video. Overrides Upscale Factor if enabled.
+    - VRAM Impact: Very High (Lower value = Less VRAM).
+    - Quality Impact: Direct (Lower value = Less detail).
+    - Speed Impact: Faster (Lower value = Faster)."""
+                     )
+                     target_w_num = gr.Number(
+                         label="Max Target Width (px)",
+                         value=1920, minimum=128, step=16, interactive=False,
+                         info="""Maximum allowed width for the output video. Overrides Upscale Factor if enabled.
+    - VRAM Impact: Very High (Lower value = Less VRAM).
+    - Quality Impact: Direct (Lower value = Less detail).
+    - Speed Impact: Faster (Lower value = Faster)."""
+                     )
+
 
             with gr.Accordion("Advanced: Tiling (Very High Res / Low VRAM)", open=True):
-                 enable_tiling_check = gr.Checkbox(label="Enable Tiled Upscaling", value=False)
-                 tile_size_num = gr.Number(label="Tile Size (px, input res)", value=256, minimum=64, step=32, interactive=False)
-                 tile_overlap_num = gr.Number(label="Tile Overlap (px, input res)", value=64, minimum=0, step=16, interactive=False)
+                 enable_tiling_check = gr.Checkbox(
+                     label="Enable Tiled Upscaling",
+                     value=False,
+                     info="""Processes each frame in small spatial patches (tiles). Use ONLY if necessary for extreme resolutions or very low VRAM.
+- VRAM Impact: Very High Reduction.
+- Quality Impact: High risk of tile seams/artifacts. Can harm global coherence and severely reduce temporal consistency.
+- Speed Impact: Extremely Slow."""
+                )
+                 tile_size_num = gr.Number(
+                     label="Tile Size (px, input res)",
+                     value=256, minimum=64, step=32, interactive=False,
+                     info="Size of the square patches (in input resolution pixels) to process. Smaller = less VRAM per tile but more tiles = slower."
+                 )
+                 tile_overlap_num = gr.Number(
+                     label="Tile Overlap (px, input res)",
+                     value=64, minimum=0, step=16, interactive=False,
+                     info="How much the tiles overlap (in input resolution pixels). Higher overlap helps reduce seams but increases processing time. Recommend 1/4 to 1/2 of Tile Size."
+                 )
 
             with gr.Accordion("Advanced: Sliding Window (Long Videos)", open=True):
-                 enable_sliding_window_check = gr.Checkbox(label="Enable Sliding Window", value=False)
-                 window_size_num = gr.Number(label="Window Size (frames)", value=32, minimum=8, step=4, interactive=False)
-                 window_step_num = gr.Number(label="Window Step (frames)", value=16, minimum=1, step=1, interactive=False)
+                 enable_sliding_window_check = gr.Checkbox(
+                     label="Enable Sliding Window",
+                     value=False,
+                     info="""Processes the video in overlapping temporal chunks (windows). Useful for long videos that exceed VRAM limits even with adjusted 'Max Frames per Batch'.
+- VRAM Impact: High Reduction (limits frames processed temporally).
+- Quality Impact: Moderate risk of discontinuities at window boundaries if overlap is small. Reduces temporal context compared to processing larger chunks.
+- Speed Impact: Slower (due to overlap processing)."""
+                 )
+                 window_size_num = gr.Number(
+                     label="Window Size (frames)",
+                     value=32, minimum=8, step=4, interactive=False,
+                     info="Number of frames in each temporal window. Acts like 'Max Frames per Batch' but applied as a sliding window. Lower value = less VRAM, less temporal context."
+                 )
+                 window_step_num = gr.Number(
+                     label="Window Step (frames)",
+                     value=16, minimum=1, step=1, interactive=False,
+                     info="How many frames to advance for the next window. (Window Size - Window Step) = Overlap. Smaller step = more overlap = better consistency but slower. Recommended: Step = Size / 2."
+                 )
             
             if COG_VLM_AVAILABLE:
                 with gr.Accordion("Auto-Captioning Settings (CogVLM2)", open=True):
@@ -931,10 +1002,16 @@ with gr.Blocks(css=css, theme=gr.themes.Soft(primary_hue="zinc", neutral_hue="zi
                         label="CogVLM2 Quantization",
                         choices=cogvlm_quant_radio_choices_display,
                         value=default_quant_display,
-                        info="INT4/8 may reduce VRAM but can affect quality/speed. Requires CUDA & bitsandbytes.",
+                        info="Quantization for the CogVLM2 captioning model (uses less VRAM). INT4/8 require CUDA & bitsandbytes.",
                         interactive=True if len(cogvlm_quant_radio_choices_display) > 1 else False
                     )
-                    cogvlm_unload_radio = gr.Radio(label="CogVLM2 After-Use", choices=['full', 'cpu'], value='full', info="'full': Unload. 'cpu': Keep in RAM (not for BNB).")
+                    cogvlm_unload_radio = gr.Radio(
+                        label="CogVLM2 After-Use",
+                        choices=['full', 'cpu'], value='full',
+                        info="""Memory management after captioning.
+'full': Unload model completely from VRAM/RAM (frees most memory).
+'cpu': Move model to RAM (faster next time, uses RAM, not for quantized models)."""
+                    )
             else:
                 gr.Markdown("_(Auto-captioning disabled as CogVLM2 components are not fully available.)_")
 
@@ -954,6 +1031,11 @@ with gr.Blocks(css=css, theme=gr.themes.Soft(primary_hue="zinc", neutral_hue="zi
     enable_target_res_check.change(lambda x: [gr.update(interactive=x)]*3, inputs=enable_target_res_check, outputs=[target_h_num, target_w_num, target_res_mode_radio])
     enable_tiling_check.change(lambda x: [gr.update(interactive=x)]*2, inputs=enable_tiling_check, outputs=[tile_size_num, tile_overlap_num])
     enable_sliding_window_check.change(lambda x: [gr.update(interactive=x)]*2, inputs=enable_sliding_window_check, outputs=[window_size_num, window_step_num])
+
+    # --- Precision Note for User ---
+    # The STAR model uses automatic mixed precision (FP16/FP32) on CUDA by default (`cfg.use_fp16 = True`).
+    # There is no UI toggle for this; it's automatically enabled for performance and VRAM savings.
+    # Forcing full FP16 is generally not recommended due to potential instability.
 
     upscale_button.click(
         fn=run_upscale,
@@ -988,4 +1070,6 @@ if __name__ == "__main__":
     logger.info(f"STAR Models expected at: {LIGHT_DEG_MODEL}, {HEAVY_DEG_MODEL}")
     if COG_VLM_AVAILABLE:
         logger.info(f"CogVLM2 Model expected at: {COG_VLM_MODEL_PATH}")
-    demo.queue().launch(debug=True, max_threads=100,inbrowser=True)
+    demo.queue().launch(debug=True, max_threads=100, inbrowser=True)
+
+# --- END OF FILE secourses_app.py ---
