@@ -17,6 +17,7 @@ import threading
 import gc # Import gc for garbage collection
 from easydict import EasyDict
 from argparse import ArgumentParser, Namespace
+import logging
 
 parser = ArgumentParser(description="Ultimate SECourses STAR Video Upscaler")
 parser.add_argument('--share', action='store_true', help="Enable Gradio live share")
@@ -89,6 +90,28 @@ except ImportError as e:
 
 
 logger = get_logger()
+# --- Diagnostic: Force logger level and console handler level ---
+logger.setLevel(logging.INFO)
+found_stream_handler = False
+for handler in logger.handlers:
+    if isinstance(handler, logging.StreamHandler):
+        handler.setLevel(logging.INFO)
+        found_stream_handler = True
+        logger.info("Diagnostic: Explicitly set StreamHandler level to INFO.")
+if not found_stream_handler:
+    # If no stream handler was found on our specific logger, let's add one.
+    # This is unlikely given the logger.py code but good for robustness.
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    # Assuming 'formatter' is defined globally in logger.py, 
+    # we might need to define a basic one here if it's not accessible.
+    # For now, let's rely on the default formatter or one potentially set by get_logger.
+    # If logs appear unformatted, this is a point to revisit.
+    logger.addHandler(ch)
+    logger.info("Diagnostic: No StreamHandler found, added a new one with INFO level.")
+logger.info(f"Logger '{logger.name}' configured with level: {logging.getLevelName(logger.level)}. Handlers: {logger.handlers}")
+# --- End Diagnostic ---
+
 DEFAULT_OUTPUT_DIR = "upscaled_videos"
 
 DEFAULT_OUTPUT_DIR = os.path.abspath(args.outputs_folder)
@@ -771,12 +794,14 @@ def run_upscale(
                     
                     # Log before STAR model call
                     logger.info(f"{loop_name} - Frame {i+1}/{total_frames_to_tile}, Patch {patch_idx+1}/{num_patches_this_frame}: Starting STAR model processing.")
+                    star_model_call_patch_start_time = time.time()
                     with torch.no_grad():
                         patch_sr_tensor_bcthw = star_model.test( 
                             patch_data_tensor_cuda, total_noise_levels, steps=steps, solver_mode=solver_mode,
                             guide_scale=cfg_scale, max_chunk_len=1, vae_decoder_chunk_size=1
                         )
-                    logger.info(f"{loop_name} - Frame {i+1}/{total_frames_to_tile}, Patch {patch_idx+1}/{num_patches_this_frame}: Finished STAR model processing.")
+                    star_model_call_patch_duration = time.time() - star_model_call_patch_start_time
+                    logger.info(f"{loop_name} - Frame {i+1}/{total_frames_to_tile}, Patch {patch_idx+1}/{num_patches_this_frame}: Finished STAR model processing. Duration: {format_time(star_model_call_patch_duration)}")
                     patch_sr_frames_uint8 = tensor2vid(patch_sr_tensor_bcthw)
                     
                     if color_fix_method != 'None':
@@ -814,6 +839,8 @@ def run_upscale(
                 detailed_frame_msg = f"{frame_tqdm_desc} | Current frame processed in {time.time() - frame_proc_start_time:.2f}s. Total elapsed: {format_time(current_tile_loop_time)}"
                 status_log.append(detailed_frame_msg)
                 logger.info(detailed_frame_msg)
+                # Update Gradio progress bar
+                progress(frames_processed_tile / total_frames_to_tile, desc=frame_tqdm_desc)
                 yield None, "\n".join(status_log)
 
 
@@ -878,12 +905,14 @@ def run_upscale(
                 window_data_cuda = collate_fn(window_pre_data, 'cuda:0')
 
                 logger.info(f"{loop_name} - Window {window_iter_idx+1}/{total_windows_to_process} (frames {start_idx}-{end_idx-1}): Starting STAR model processing.")
+                star_model_call_window_start_time = time.time()
                 with torch.no_grad():
                     window_sr_tensor_bcthw = star_model.test(
                         window_data_cuda, total_noise_levels, steps=steps, solver_mode=solver_mode,
                         guide_scale=cfg_scale, max_chunk_len=current_window_len, vae_decoder_chunk_size=min(vae_chunk, current_window_len)
                     )
-                logger.info(f"{loop_name} - Window {window_iter_idx+1}/{total_windows_to_process}: Finished STAR model processing.")
+                star_model_call_window_duration = time.time() - star_model_call_window_start_time
+                logger.info(f"{loop_name} - Window {window_iter_idx+1}/{total_windows_to_process}: Finished STAR model processing. Duration: {format_time(star_model_call_window_duration)}")
                 window_sr_frames_uint8 = tensor2vid(window_sr_tensor_bcthw) 
 
                 if color_fix_method != 'None':
@@ -938,6 +967,8 @@ def run_upscale(
                 detailed_slide_msg = f"{slide_tqdm_desc} | Current window (frames {start_idx}-{end_idx-1}) processed in {time.time() - window_proc_start_time:.2f}s. Total elapsed: {format_time(current_slide_loop_time)}"
                 status_log.append(detailed_slide_msg)
                 logger.info(detailed_slide_msg)
+                # Update Gradio progress bar
+                progress(windows_processed_slide / total_windows_to_process, desc=slide_tqdm_desc)
                 yield None, "\n".join(status_log)
             
             # Fallback for any missed frames
@@ -991,12 +1022,14 @@ def run_upscale(
                 chunk_data_cuda = collate_fn(chunk_pre_data, 'cuda:0')
 
                 logger.info(f"{loop_name} - Chunk {i+1}/{num_chunks} (frames {start_idx}-{end_idx-1}): Starting STAR model processing.")
+                star_model_call_chunk_start_time = time.time()
                 with torch.no_grad():
                     chunk_sr_tensor_bcthw = star_model.test(
                         chunk_data_cuda, total_noise_levels, steps=steps, solver_mode=solver_mode,
                         guide_scale=cfg_scale, max_chunk_len=current_chunk_len, vae_decoder_chunk_size=min(vae_chunk, current_chunk_len)
                     )
-                logger.info(f"{loop_name} - Chunk {i+1}/{num_chunks}: Finished STAR model processing.")
+                star_model_call_chunk_duration = time.time() - star_model_call_chunk_start_time
+                logger.info(f"{loop_name} - Chunk {i+1}/{num_chunks}: Finished STAR model processing. Duration: {format_time(star_model_call_chunk_duration)}")
                 chunk_sr_frames_uint8 = tensor2vid(chunk_sr_tensor_bcthw) 
 
                 if color_fix_method != 'None':
@@ -1020,11 +1053,13 @@ def run_upscale(
                 speed_chunk = 1 / avg_time_per_chunk if avg_time_per_chunk > 0 else 0
                 
                 chunk_tqdm_desc = f"{loop_name}: {chunks_processed}/{num_chunks} chunks | ETA: {format_time(eta_seconds_chunk)} | Speed: {speed_chunk:.2f} ch/s"
-                chunk_tqdm_iterator.set_description_str(chunk_tqdm_desc)
+                # chunk_tqdm_iterator.set_description_str(chunk_tqdm_desc)
                 
                 detailed_chunk_msg = f"{chunk_tqdm_desc} | Current chunk (frames {start_idx}-{end_idx-1}) processed in {time.time() - chunk_proc_start_time:.2f}s. Total elapsed: {format_time(current_chunk_loop_time)}"
                 status_log.append(detailed_chunk_msg)
                 logger.info(detailed_chunk_msg)
+                # Update Gradio progress bar
+                progress(chunks_processed / num_chunks, desc=chunk_tqdm_desc)
                 yield None, "\n".join(status_log)
         
         upscaling_total_duration_msg = f"All frame upscaling operations finished. Total upscaling time: {format_time(time.time() - upscaling_loop_start_time)}"
@@ -1189,7 +1224,7 @@ input[type='range'] { accent-color: black; }
 """
 
 with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
-    gr.Markdown("# Ultimate SECourses STAR Video Upscaler V8")
+    gr.Markdown("# Ultimate SECourses STAR Video Upscaler V9")
 
     with gr.Row():
         with gr.Column(scale=1):
@@ -1234,6 +1269,36 @@ The total combined prompt length is limited to 77 tokens."""
                      info="Guides the model *away* from undesired aspects (e.g., bad quality, artifacts, specific styles). This does NOT count towards the 77 token limit for positive guidance."
                  )
 
+            with gr.Accordion("Advanced: Target Resolution", open=True):
+                 enable_target_res_check = gr.Checkbox(
+                     label="Enable Max Target Resolution",
+                     value=True,
+                     info="Check this to manually control the maximum output resolution instead of using the simple Upscale Factor."
+                 )
+                 target_res_mode_radio = gr.Radio(
+                     label="Target Resolution Mode",
+                     choices=['Ratio Upscale', 'Downscale then 4x'], value='Downscale then 4x', 
+                     info="""How to apply the target H/W limits.
+'Ratio Upscale': Upscales by the largest factor possible without exceeding Target H/W, preserving aspect ratio.
+'Downscale then 4x': If input is large, downscales it towards Target H/W divided by 4, THEN applies a 4x upscale. Can clean noisy high-res input before upscaling."""
+                 )
+                 with gr.Row():
+                     target_h_num = gr.Slider(
+                         label="Max Target Height (px)",
+                         value=512, minimum=128, maximum=4096, step=16, # Max increased for slider
+                         info="""Maximum allowed height for the output video. Overrides Upscale Factor if enabled.
+    - VRAM Impact: Very High (Lower value = Less VRAM).
+    - Quality Impact: Direct (Lower value = Less detail).
+    - Speed Impact: Faster (Lower value = Faster)."""
+                     )
+                     target_w_num = gr.Slider(
+                         label="Max Target Width (px)",
+                         value=512, minimum=128, maximum=4096, step=16, # Max increased for slider
+                         info="""Maximum allowed width for the output video. Overrides Upscale Factor if enabled.
+    - VRAM Impact: Very High (Lower value = Less VRAM).
+    - Quality Impact: Direct (Lower value = Less detail).
+    - Speed Impact: Faster (Lower value = Faster)."""
+                     )
 
 
             with gr.Accordion("Performance & VRAM Optimization", open=True):
@@ -1255,36 +1320,7 @@ The total combined prompt length is limited to 77 tokens."""
 - Speed Impact: Slower (Lower value = Slower decoding)."""
                 )
 
-            with gr.Accordion("Advanced: Target Resolution", open=True):
-                 enable_target_res_check = gr.Checkbox(
-                     label="Enable Max Target Resolution",
-                     value=True,
-                     info="Check this to manually control the maximum output resolution instead of using the simple Upscale Factor."
-                 )
-                 target_res_mode_radio = gr.Radio(
-                     label="Target Resolution Mode",
-                     choices=['Ratio Upscale', 'Downscale then 4x'], value='Downscale then 4x', 
-                     info="""How to apply the target H/W limits.
-'Ratio Upscale': Upscales by the largest factor possible without exceeding Target H/W, preserving aspect ratio.
-'Downscale then 4x': If input is large, downscales it towards Target H/W divided by 4, THEN applies a 4x upscale. Can clean noisy high-res input before upscaling."""
-                 )
-                 with gr.Row():
-                     target_h_num = gr.Number(
-                         label="Max Target Height (px)",
-                         value=1280, minimum=128, step=16, 
-                         info="""Maximum allowed height for the output video. Overrides Upscale Factor if enabled.
-    - VRAM Impact: Very High (Lower value = Less VRAM).
-    - Quality Impact: Direct (Lower value = Less detail).
-    - Speed Impact: Faster (Lower value = Faster)."""
-                     )
-                     target_w_num = gr.Number(
-                         label="Max Target Width (px)",
-                         value=1280, minimum=128, step=16,
-                         info="""Maximum allowed width for the output video. Overrides Upscale Factor if enabled.
-    - VRAM Impact: Very High (Lower value = Less VRAM).
-    - Quality Impact: Direct (Lower value = Less detail).
-    - Speed Impact: Faster (Lower value = Faster)."""
-                     )
+
             
             if COG_VLM_AVAILABLE:
                 with gr.Accordion("Auto-Captioning Settings (CogVLM2)", open=True):
