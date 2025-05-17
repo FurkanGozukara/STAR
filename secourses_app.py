@@ -858,12 +858,22 @@ def run_upscale(
                     
                     # --- Diffusion Callback for Tiling Patch ---
                     def diffusion_callback_for_patch(step, total_steps):
+                        current_time = time.time()
+                        step_duration = current_time - callback_step_timer['last_time']
+                        callback_step_timer['last_time'] = current_time
+
                         current_patch_desc = f"Frame {i+1}/{total_frames_to_tile}, Patch {patch_idx+1}/{num_patches_this_frame}"
-                        diffusion_prog_desc = f"Diffusion: {step}/{total_steps}"
-                        patch_tqdm_iterator.desc = f"{current_patch_desc} - {diffusion_prog_desc}"
-                        logger.info(f"    ↳ {loop_name} - {current_patch_desc} - {diffusion_prog_desc}")
+                        
+                        # For TQDM
+                        tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps})" if step_duration > 0.001 else f"{step}/{total_steps}"
+                        patch_tqdm_iterator.desc = f"{current_patch_desc} - Diffusion: {tqdm_step_info}"
+
+                        # For logger
+                        log_step_info = f"{step_duration:.2f} second / it" if step_duration > 0.001 else f"step {step}/{total_steps}"
+                        logger.info(f"    ↳ {loop_name} - {current_patch_desc} - {log_step_info} - so see step speed")
 
                     star_model_call_patch_start_time = time.time()
+                    callback_step_timer = {'last_time': time.time()} # Initialize timer for patch steps
                     with torch.no_grad():
                         patch_sr_tensor_bcthw = star_model.test( 
                             patch_data_tensor_cuda, total_noise_levels, steps=ui_total_diffusion_steps, solver_mode=solver_mode,
@@ -966,17 +976,27 @@ def run_upscale(
                 current_window_display_num = window_iter_idx + 1
 
                 def diffusion_callback_for_window(step, total_steps): # total_steps is from solver
+                    current_time = time.time()
+                    step_duration = current_time - callback_step_timer['last_time']
+                    callback_step_timer['last_time'] = current_time
+
                     _current_slide_loop_time_cb = time.time() - upscaling_loop_start_time
                     _avg_time_per_window_cb = _current_slide_loop_time_cb / current_window_display_num if current_window_display_num > 0 else 0
                     _eta_seconds_slide_cb = (total_windows_to_process - current_window_display_num) * _avg_time_per_window_cb if current_window_display_num < total_windows_to_process and _avg_time_per_window_cb > 0 else 0
                     _speed_slide_cb = 1 / _avg_time_per_window_cb if _avg_time_per_window_cb > 0 else 0
 
                     base_desc_win = f"{loop_name}: {current_window_display_num}/{total_windows_to_process} windows (frames {start_idx}-{end_idx-1}) | ETA: {format_time(_eta_seconds_slide_cb)} | Speed: {_speed_slide_cb:.2f} w/s"
-                    diffusion_prog_desc = f"Diffusion: {step}/{ui_total_diffusion_steps}"
-                    sliding_tqdm_iterator.desc = f"{base_desc_win} - {diffusion_prog_desc}"
-                    logger.info(f"    ↳ {loop_name} - Window {current_window_display_num}/{total_windows_to_process} (frames {start_idx}-{end_idx-1}) - {diffusion_prog_desc}")
+                    
+                    # For TQDM
+                    tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps})" if step_duration > 0.001 else f"{step}/{total_steps}"
+                    sliding_tqdm_iterator.desc = f"{base_desc_win} - Diffusion: {tqdm_step_info}"
+
+                    # For logger
+                    log_step_info = f"{step_duration:.2f} second / it" if step_duration > 0.001 else f"step {step}/{total_steps}"
+                    logger.info(f"    ↳ {loop_name} - Window {current_window_display_num}/{total_windows_to_process} (frames {start_idx}-{end_idx-1}) - {log_step_info} - so see step speed")
                 
                 star_model_call_window_start_time = time.time()
+                callback_step_timer = {'last_time': time.time()} # Initialize timer for window steps
                 with torch.no_grad():
                     window_sr_tensor_bcthw = star_model.test(
                         window_data_cuda, total_noise_levels, steps=ui_total_diffusion_steps, solver_mode=solver_mode,
@@ -1089,17 +1109,27 @@ def run_upscale(
                 current_chunk_display_num = i_chunk_idx + 1
 
                 def diffusion_callback_for_chunk(step, total_steps): 
+                    current_time = time.time()
+                    step_duration = current_time - callback_step_timer['last_time']
+                    callback_step_timer['last_time'] = current_time
+                    
                     _current_chunk_loop_time_cb = time.time() - upscaling_loop_start_time 
                     _avg_time_per_chunk_cb = _current_chunk_loop_time_cb / current_chunk_display_num if current_chunk_display_num > 0 else 0
                     _eta_seconds_chunk_cb = (num_chunks - current_chunk_display_num) * _avg_time_per_chunk_cb if current_chunk_display_num < num_chunks and _avg_time_per_chunk_cb > 0 else 0
                     _speed_chunk_cb = 1 / _avg_time_per_chunk_cb if _avg_time_per_chunk_cb > 0 else 0
 
                     base_desc_chunk = f"{loop_name}: {current_chunk_display_num}/{num_chunks} chunks | ETA: {format_time(_eta_seconds_chunk_cb)} | Speed: {_speed_chunk_cb:.2f} ch/s"
-                    diffusion_prog_desc = f"Diffusion: {step}/{ui_total_diffusion_steps}"
-                    chunk_tqdm_iterator.desc = f"{base_desc_chunk} - {diffusion_prog_desc}"
-                    logger.info(f"    ↳ {loop_name} - Chunk {current_chunk_display_num}/{num_chunks} (frames {start_idx}-{end_idx-1}) - {diffusion_prog_desc}")
+                    
+                    # For TQDM
+                    tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps})" if step_duration > 0.001 else f"{step}/{total_steps}"
+                    chunk_tqdm_iterator.desc = f"{base_desc_chunk} - Diffusion: {tqdm_step_info}"
+
+                    # For logger
+                    log_step_info = f"{step_duration:.2f} second / it" if step_duration > 0.001 else f"step {step}/{total_steps}"
+                    logger.info(f"    ↳ {loop_name} - Chunk {current_chunk_display_num}/{num_chunks} (frames {start_idx}-{end_idx-1}) - {log_step_info} - so see step speed")
 
                 star_model_call_chunk_start_time = time.time()
+                callback_step_timer = {'last_time': time.time()} # Initialize timer for chunk steps
                 with torch.no_grad():
                     chunk_sr_tensor_bcthw = star_model.test(
                         chunk_data_cuda, total_noise_levels, steps=ui_total_diffusion_steps, solver_mode=solver_mode,

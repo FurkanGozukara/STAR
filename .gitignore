@@ -14,3 +14,5 @@ video_super_resolution/scripts/a.mp4
 video_super_resolution/scripts/results/
 video_to_video/downscaled_input.mp4
 outputs
+split_videos
+a.mp4
