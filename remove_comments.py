@@ -44,7 +44,7 @@ def remove_comments_and_docstrings(source):
 
 # File I/O
 input_file = 'secourses_app.py'
-output_file = 'secourses_app_no_comment.py'
+output_file = 'secourses_app.py'
 
 try:
     with open(input_file, 'r', encoding='utf-8') as f:
