@@ -19,6 +19,8 @@ import logging
 import re 
 from pathlib import Path 
 
+from logic import config as app_config
+
 from logic .cogvlm_utils import (
 load_cogvlm_model as util_load_cogvlm_model ,
 unload_cogvlm_model as util_unload_cogvlm_model ,
@@ -61,6 +63,8 @@ set_gpu_device as util_set_gpu_device ,
 get_gpu_device as util_get_gpu_device ,
 validate_gpu_availability as util_validate_gpu_availability 
 )
+
+
 
 SELECTED_GPU_ID =0 
 
@@ -432,7 +436,7 @@ save_metadata =False , metadata_params_base =None
                 scene_video_path ,
                 cogvlm_quant ,
                 cogvlm_unload ,
-                COG_VLM_MODEL_PATH ,
+                app_config.COG_VLM_MODEL_PATH ,
                 logger =logger ,
                 progress =progress 
                 )
@@ -883,22 +887,26 @@ if not found_stream_handler :
     logger .info ("Diagnostic: No StreamHandler found, added a new one with INFO level.")
 logger .info (f"Logger '{logger.name}' configured with level: {logging.getLevelName(logger.level)}. Handlers: {logger.handlers}")
 
-DEFAULT_OUTPUT_DIR ="upscaled_videos"
+# Initialize configuration (paths, prompts) using values from secourses_app.py
+app_config.initialize_paths_and_prompts(base_path, args.outputs_folder, star_cfg)
 
-DEFAULT_OUTPUT_DIR =os .path .abspath (args .outputs_folder )
-os .makedirs (DEFAULT_OUTPUT_DIR ,exist_ok =True )
+# Ensure DEFAULT_OUTPUT_DIR from config (which is now initialized) is used for folder creation
+os.makedirs(app_config.DEFAULT_OUTPUT_DIR, exist_ok=True)
 
-COG_VLM_MODEL_PATH =os .path .join (base_path ,'models','cogvlm2-video-llama3-chat')
-LIGHT_DEG_MODEL =os .path .join (base_path ,'pretrained_weight','light_deg.pt')
-HEAVY_DEG_MODEL =os .path .join (base_path ,'pretrained_weight','heavy_deg.pt')
+# The following constants are now sourced from config.py, so their definitions here are removed.
+# DEFAULT_OUTPUT_DIR ="upscaled_videos"
+# DEFAULT_OUTPUT_DIR =os .path .abspath (args .outputs_folder )
+# os .makedirs (DEFAULT_OUTPUT_DIR ,exist_ok =True )
+# COG_VLM_MODEL_PATH =os .path .join (base_path ,'models','cogvlm2-video-llama3-chat')
+# LIGHT_DEG_MODEL =os .path .join (base_path ,'pretrained_weight','light_deg.pt')
+# HEAVY_DEG_MODEL =os .path .join (base_path ,'pretrained_weight','heavy_deg.pt')
+# DEFAULT_POS_PROMPT =star_cfg .positive_prompt 
+# DEFAULT_NEG_PROMPT =star_cfg .negative_prompt 
 
-DEFAULT_POS_PROMPT =star_cfg .positive_prompt 
-DEFAULT_NEG_PROMPT =star_cfg .negative_prompt 
-
-if not os .path .exists (LIGHT_DEG_MODEL ):
-     logger .error (f"FATAL: Light degradation model not found at {LIGHT_DEG_MODEL}.")
-if not os .path .exists (HEAVY_DEG_MODEL ):
-     logger .error (f"FATAL: Heavy degradation model not found at {HEAVY_DEG_MODEL}.")
+if not os .path .exists (app_config.LIGHT_DEG_MODEL_PATH ):
+     logger .error (f"FATAL: Light degradation model not found at {app_config.LIGHT_DEG_MODEL_PATH}.")
+if not os .path .exists (app_config.HEAVY_DEG_MODEL_PATH ):
+     logger .error (f"FATAL: Heavy degradation model not found at {app_config.HEAVY_DEG_MODEL_PATH}.")
 
 def run_upscale (
 input_video_path ,user_prompt ,positive_prompt ,negative_prompt ,model_choice ,
@@ -960,8 +968,8 @@ progress =gr .Progress (track_tqdm =True )
         base_output_filename_no_ext ,output_video_path ,batch_main_dir =util_get_batch_filename (batch_output_dir ,original_filename )
         main_output_dir =batch_main_dir 
     else :
-        base_output_filename_no_ext ,output_video_path =util_get_next_filename (DEFAULT_OUTPUT_DIR )
-        main_output_dir =DEFAULT_OUTPUT_DIR 
+        base_output_filename_no_ext ,output_video_path =util_get_next_filename (app_config.DEFAULT_OUTPUT_DIR )
+        main_output_dir =app_config.DEFAULT_OUTPUT_DIR 
 
     run_id =f"star_run_{int(time.time())}_{np.random.randint(1000, 9999)}"
     temp_dir_base =tempfile .gettempdir ()
@@ -1013,7 +1021,7 @@ progress =gr .Progress (track_tqdm =True )
 
         final_prompt =(user_prompt .strip ()+". "+positive_prompt .strip ()).strip ()
 
-        model_file_path =LIGHT_DEG_MODEL if model_choice =="Light Degradation"else HEAVY_DEG_MODEL 
+        model_file_path =app_config.LIGHT_DEG_MODEL_PATH if model_choice ==app_config.DEFAULT_MODEL_CHOICE else app_config.HEAVY_DEG_MODEL_PATH 
         if not os .path .exists (model_file_path ):
             raise gr .Error (f"STAR model weight not found: {model_file_path}")
 
@@ -1984,7 +1992,7 @@ progress =gr .Progress (track_tqdm =True )
                 logger .warning (no_output_msg )
 
         if 'base_output_filename_no_ext'in locals ()and base_output_filename_no_ext :
-            tmp_lock_file_to_delete =os .path .join (DEFAULT_OUTPUT_DIR ,f"{base_output_filename_no_ext}.tmp")
+            tmp_lock_file_to_delete =os .path .join (app_config.DEFAULT_OUTPUT_DIR ,f"{base_output_filename_no_ext}.tmp")
             if os .path .exists (tmp_lock_file_to_delete ):
                 try :
                     os .remove (tmp_lock_file_to_delete )
@@ -2014,7 +2022,7 @@ def wrapper_split_video_only_for_gradio(
         scene_frame_skip_num_val, scene_threshold_num_val, scene_min_content_val_num_val, scene_frame_window_num_val,
         scene_copy_streams_check_val, scene_use_mkvmerge_check_val, scene_rate_factor_num_val, scene_preset_dropdown_val, scene_quiet_ffmpeg_check_val,
         scene_manual_split_type_radio_val, scene_manual_split_value_num_val,
-        DEFAULT_OUTPUT_DIR, 
+        app_config.DEFAULT_OUTPUT_DIR, 
         logger,
         progress=progress
     )
@@ -2040,7 +2048,7 @@ Combined with the Positive Prompt below, the effective text length influencing t
 If CogVLM2 is available, you can use the button below to generate a caption automatically."""
                     )
                 with gr.Row():
-                    auto_caption_then_upscale_check =gr.Checkbox(label ="Auto-caption then Upscale",value =False ,info ="If checked, clicking 'Upscale Video' will first generate a caption and use it as the prompt.")
+                    auto_caption_then_upscale_check =gr.Checkbox(label ="Auto-caption then Upscale",value =app_config.DEFAULT_AUTO_CAPTION_THEN_UPSCALE ,info ="If checked, clicking 'Upscale Video' will first generate a caption and use it as the prompt.")
 
                     available_gpus =util_get_available_gpus ()
                     gpu_choices =["Auto"]+available_gpus if available_gpus else ["Auto","No CUDA GPUs detected"]
@@ -2054,7 +2062,7 @@ If CogVLM2 is available, you can use the button below to generate a caption auto
                     scale =1 
                     )
 
-                if UTIL_COG_VLM_AVAILABLE :
+                if app_config.UTIL_COG_VLM_AVAILABLE :
                     with gr.Row():
                         auto_caption_btn =gr.Button ("Generate Caption with CogVLM2",variant ="primary",icon ="icons/caption.png")
                         upscale_button =gr.Button ("Upscale Video",variant ="primary",icon ="icons/upscale.png")
@@ -2065,14 +2073,14 @@ If CogVLM2 is available, you can use the button below to generate a caption auto
             with gr.Accordion ("Prompt Settings",open =True ):
                  pos_prompt =gr.Textbox (
                  label ="Default Positive Prompt (Appended)",
-                 value =DEFAULT_POS_PROMPT ,
+                 value =app_config.DEFAULT_POS_PROMPT , # From config
                  lines =2 ,
                  info="""Appended to your 'Describe Video Content' prompt. Focuses on desired quality aspects (e.g., realism, detail).
 The total combined prompt length is limited to 77 tokens."""
                  )
                  neg_prompt =gr.Textbox (
                  label ="Default Negative Prompt (Appended)",
-                 value =DEFAULT_NEG_PROMPT ,
+                 value =app_config.DEFAULT_NEG_PROMPT , # From config
                  lines =2 ,
                  info ="Guides the model *away* from undesired aspects (e.g., bad quality, artifacts, specific styles). This does NOT count towards the 77 token limit for positive guidance."
                  )
@@ -2080,12 +2088,12 @@ The total combined prompt length is limited to 77 tokens."""
             with gr.Accordion ("Advanced: Target Resolution",open =True ):
                  enable_target_res_check =gr.Checkbox (
                  label ="Enable Max Target Resolution",
-                 value =True ,
+                 value =app_config.DEFAULT_ENABLE_TARGET_RES , # From config
                  info ="Check this to manually control the maximum output resolution instead of using the simple Upscale Factor."
                  )
                  target_res_mode_radio =gr.Radio (
                  label ="Target Resolution Mode",
-                 choices =['Ratio Upscale','Downscale then 4x'],value ='Downscale then 4x',
+                 choices =['Ratio Upscale','Downscale then 4x'],value =app_config.DEFAULT_TARGET_RES_MODE, # From config
                  info="""How to apply the target H/W limits.
 'Ratio Upscale': Upscales by the largest factor possible without exceeding Target H/W, preserving aspect ratio.
 'Downscale then 4x': If input is large, downscales it towards Target H/W divided by 4, THEN applies a 4x upscale. Can clean noisy high-res input before upscaling."""
@@ -2093,7 +2101,7 @@ The total combined prompt length is limited to 77 tokens."""
                  with gr.Row():
                      target_h_num =gr.Slider (
                      label ="Max Target Height (px)",
-                     value =512 ,minimum =128 ,maximum =4096 ,step =16 ,
+                     value =app_config.DEFAULT_TARGET_H ,minimum =128 ,maximum =4096 ,step =16 , # From config
                      info="""Maximum allowed height for the output video. Overrides Upscale Factor if enabled.
 - VRAM Impact: Very High (Lower value = Less VRAM).
 - Quality Impact: Direct (Lower value = Less detail).
@@ -2101,7 +2109,7 @@ The total combined prompt length is limited to 77 tokens."""
                      )
                      target_w_num =gr.Slider (
                      label ="Max Target Width (px)",
-                     value =512 ,minimum =128 ,maximum =4096 ,step =16 ,
+                     value =app_config.DEFAULT_TARGET_W ,minimum =128 ,maximum =4096 ,step =16 , # From config
                      info="""Maximum allowed width for the output video. Overrides Upscale Factor if enabled.
 - VRAM Impact: Very High (Lower value = Less VRAM).
 - Quality Impact: Direct (Lower value = Less detail).
@@ -2111,7 +2119,7 @@ The total combined prompt length is limited to 77 tokens."""
             with gr.Accordion ("Performance & VRAM Optimization",open =True ):
                 max_chunk_len_slider =gr.Slider (
                 label ="Max Frames per Batch (VRAM)",
-                minimum =4 ,maximum =96 ,value =32 ,step =4 ,
+                minimum =4 ,maximum =96 ,value =app_config.DEFAULT_MAX_CHUNK_LEN ,step =4 , # From config
                 info="""IMPORTANT for VRAM. This is the standard way the application manages VRAM. It divides the entire sequence of video frames into sequential, non-overlapping chunks.
 - Mechanism: The STAR model processes one complete chunk (of this many frames) at a time.
 - VRAM Impact: High Reduction (Lower value = Less VRAM).
@@ -2120,34 +2128,30 @@ The total combined prompt length is limited to 77 tokens."""
                 )
                 vae_chunk_slider =gr.Slider (
                 label ="VAE Decode Chunk (VRAM)",
-                minimum =1 ,maximum =16 ,value =3 ,step =1 ,
+                minimum =1 ,maximum =16 ,value =app_config.DEFAULT_VAE_CHUNK ,step =1 , # From config
                 info="""Controls max latent frames decoded back to pixels by VAE simultaneously.
 - VRAM Impact: High Reduction (Lower value = Less VRAM during decode stage).
 - Quality Impact: Minimal / Negligible. Safe to lower.
 - Speed Impact: Slower (Lower value = Slower decoding)."""
                 )
 
-            if UTIL_COG_VLM_AVAILABLE :
+            if app_config.UTIL_COG_VLM_AVAILABLE :
                 with gr.Accordion ("Auto-Captioning Settings (CogVLM2)",open =True ):
-                    cogvlm_quant_choices_map ={0 :"FP16/BF16"}
-                    if torch .cuda .is_available ()and UTIL_BITSANDBYTES_AVAILABLE :
-                        cogvlm_quant_choices_map [4 ]="INT4 (CUDA)"
-                        cogvlm_quant_choices_map [8 ]="INT8 (CUDA)"
-
-                    cogvlm_quant_radio_choices_display =list (cogvlm_quant_choices_map .values ())
-                    default_quant_display_val ="INT4 (CUDA)"if 4 in cogvlm_quant_choices_map else "FP16/BF16"
+                    cogvlm_quant_choices_map = app_config.get_cogvlm_quant_choices_map(torch.cuda.is_available(), app_config.UTIL_BITSANDBYTES_AVAILABLE)
+                    cogvlm_quant_radio_choices_display = list(cogvlm_quant_choices_map.values())
+                    default_quant_display_val = app_config.get_default_cogvlm_quant_display(cogvlm_quant_choices_map)
 
                     with gr.Row():
                         cogvlm_quant_radio =gr.Radio (
                         label ="CogVLM2 Quantization",
                         choices =cogvlm_quant_radio_choices_display ,
-                        value =default_quant_display_val ,
+                        value =default_quant_display_val , # From config helper
                         info ="Quantization for the CogVLM2 captioning model (uses less VRAM). INT4/8 require CUDA & bitsandbytes.",
                         interactive =True if len (cogvlm_quant_radio_choices_display )>1 else False 
                         )
                         cogvlm_unload_radio =gr.Radio (
                         label ="CogVLM2 After-Use",
-                        choices =['full','cpu'],value ='full',
+                        choices =['full','cpu'],value =app_config.DEFAULT_COGVLM_UNLOAD_AFTER_USE, # From config
                         info ="""Memory management after captioning.
 'full': Unload model completely from VRAM/RAM (frees most memory).
 'cpu': Move model to RAM (faster next time, uses RAM, not for quantized models)."""
@@ -2158,26 +2162,27 @@ The total combined prompt length is limited to 77 tokens."""
             with gr.Accordion ("FFmpeg Encoding Settings",open =True ):
                 ffmpeg_use_gpu_check =gr.Checkbox (
                 label ="Use NVIDIA GPU for FFmpeg (h264_nvenc)",
-                value =False ,
+                value =app_config.DEFAULT_FFMPEG_USE_GPU , # From config
                 info ="If checked, uses NVIDIA's NVENC for FFmpeg video encoding (downscaling and final video creation). Requires NVIDIA GPU and correctly configured FFmpeg with NVENC support."
                 )
                 with gr.Row():
                     ffmpeg_preset_dropdown =gr.Dropdown (
                     label ="FFmpeg Preset",
                     choices =['ultrafast','superfast','veryfast','faster','fast','medium','slow','slower','veryslow'],
-                    value ='medium',
+                    value =app_config.DEFAULT_FFMPEG_PRESET, # From config
                     info ="Controls encoding speed vs. compression efficiency. 'ultrafast' is fastest with lowest quality/compression, 'veryslow' is slowest with highest quality/compression. Note: NVENC presets behave differently (e.g. p1-p7 or specific names like 'slow', 'medium', 'fast')."
                     )
+                    # Default value for ffmpeg_quality_slider will be set by its change function based on ffmpeg_use_gpu_check
                     ffmpeg_quality_slider =gr.Slider (
                     label ="FFmpeg Quality (CRF for libx264 / CQ for NVENC)",
-                    minimum =0 ,maximum =51 ,value =23 ,step =1 ,
+                    minimum =0 ,maximum =51 ,value =app_config.DEFAULT_FFMPEG_QUALITY_CPU ,step =1 , # Initial default
                     info ="For libx264 (CPU): Constant Rate Factor (CRF). Lower values mean higher quality (0 is lossless, 23 is default). For h264_nvenc (GPU): Constrained Quality (CQ). Lower values generally mean better quality. Typical range for NVENC CQ is 18-28."
                     )
 
             with gr.Accordion ("Advanced: Sliding Window (Long Videos)",open =True ):
                  enable_sliding_window_check =gr.Checkbox (
                  label ="Enable Sliding Window",
-                 value =False ,
+                 value =app_config.DEFAULT_ENABLE_SLIDING_WINDOW , # From config
                  info ="""Processes the video in overlapping temporal chunks (windows). Use for very long videos where 'Max Frames per Batch' isn't enough or causes too many artifacts.
 - Mechanism: Takes a 'Window Size' of frames, processes it, saves results from the central part, then slides the window forward by 'Window Step', processing overlapping frames.
 - VRAM Impact: High Reduction (limits frames processed temporally, similar to Max Frames per Batch but with overlap).
@@ -2187,19 +2192,19 @@ The total combined prompt length is limited to 77 tokens."""
                  with gr.Row():
                      window_size_num =gr.Slider (
                      label ="Window Size (frames)",
-                     value =32 ,minimum =2 ,step =4 ,
+                     value =app_config.DEFAULT_WINDOW_SIZE ,minimum =2 ,step =4 , # From config
                      info ="Number of frames in each temporal window. Acts like 'Max Frames per Batch' but applied as a sliding window. Lower value = less VRAM, less temporal context."
                      )
                      window_step_num =gr.Slider (
                      label ="Window Step (frames)",
-                     value =16 ,minimum =1 ,step =1 ,
+                     value =app_config.DEFAULT_WINDOW_STEP ,minimum =1 ,step =1 , # From config
                      info ="How many frames to advance for the next window. (Window Size - Window Step) = Overlap. Smaller step = more overlap = better consistency but slower. Recommended: Step = Size / 2."
                      )
 
             with gr.Accordion ("Advanced: Tiling (Very High Res / Low VRAM)",open =True ):
                  enable_tiling_check =gr.Checkbox (
                  label ="Enable Tiled Upscaling",
-                 value =False ,
+                 value =app_config.DEFAULT_ENABLE_TILING , # From config
                  info ="""Processes each frame in small spatial patches (tiles). Use ONLY if necessary for extreme resolutions or very low VRAM.
 - VRAM Impact: Very High Reduction.
 - Quality Impact: High risk of tile seams/artifacts. Can harm global coherence and severely reduce temporal consistency.
@@ -2208,12 +2213,12 @@ The total combined prompt length is limited to 77 tokens."""
                  with gr.Row():
                      tile_size_num =gr.Number (
                      label ="Tile Size (px, input res)",
-                     value =256 ,minimum =64 ,step =32 ,
+                     value =app_config.DEFAULT_TILE_SIZE ,minimum =64 ,step =32 , # From config
                      info ="Size of the square patches (in input resolution pixels) to process. Smaller = less VRAM per tile but more tiles = slower."
                      )
                      tile_overlap_num =gr.Number (
                      label ="Tile Overlap (px, input res)",
-                     value =64 ,minimum =0 ,step =16 ,
+                     value =app_config.DEFAULT_TILE_OVERLAP ,minimum =0 ,step =16 , # From config
                      info ="How much the tiles overlap (in input resolution pixels). Higher overlap helps reduce seams but increases processing time. Recommend 1/4 to 1/2 of Tile Size."
                      )
 
@@ -2240,38 +2245,39 @@ The total combined prompt length is limited to 77 tokens."""
                 model_selector =gr.Dropdown(
                 label ="STAR Model",
                 choices =["Light Degradation","Heavy Degradation"],
-                value ="Light Degradation",
+                value =app_config.DEFAULT_MODEL_CHOICE, # From config
                 info ="""Choose the model based on input video quality.
 'Light Degradation': Better for relatively clean inputs (e.g., downloaded web videos).
 'Heavy Degradation': Better for inputs with significant compression artifacts, noise, or blur."""
                 )
                 upscale_factor_slider =gr.Slider(
                 label ="Upscale Factor (if Target Res disabled)",
-                minimum =1.0 ,maximum =8.0 ,value =4.0 ,step =0.1 ,
+                minimum =1.0 ,maximum =8.0 ,value =app_config.DEFAULT_UPSCALE_FACTOR ,step =0.1 , # From config
                 info ="Simple multiplication factor for output resolution if 'Enable Max Target Resolution' is OFF. E.g., 4.0 means 4x height and 4x width."
                 )
                 cfg_slider =gr.Slider(
                 label ="Guidance Scale (CFG)",
-                minimum =1.0 ,maximum =15.0 ,value =7.5 ,step =0.5 ,
+                minimum =1.0 ,maximum =15.0 ,value =app_config.DEFAULT_CFG_SCALE ,step =0.5 , # From config
                 info ="Controls how strongly the model follows your combined text prompt. Higher values mean stricter adherence, lower values allow more creativity. Typical values: 5.0-10.0."
                 )
                 with gr.Row():
                     solver_mode_radio =gr.Radio(
                     label ="Solver Mode",
-                    choices =['fast','normal'],value ='fast',
+                    choices =['fast','normal'],value =app_config.DEFAULT_SOLVER_MODE, # From config
                     info ="""Diffusion solver type.
 'fast': Fewer steps (default ~15), much faster, good quality usually.
 'normal': More steps (default ~50), slower, potentially slightly better detail/coherence."""
                     )
+                    # Default value for steps_slider will be set by its change function based on solver_mode_radio
                     steps_slider =gr.Slider(
                     label ="Diffusion Steps",
-                    minimum =5 ,maximum =100 ,value =15 ,step =1 ,
+                    minimum =5 ,maximum =100 ,value =app_config.DEFAULT_DIFFUSION_STEPS_FAST ,step =1 , # Initial default
                     info ="Number of denoising steps. 'Fast' mode uses a fixed ~15 steps. 'Normal' mode uses the value set here.",
                     interactive =False 
                     )
                 color_fix_dropdown =gr.Dropdown(
                 label ="Color Correction",
-                choices =['AdaIN','Wavelet','None'],value ='AdaIN',
+                choices =['AdaIN','Wavelet','None'],value =app_config.DEFAULT_COLOR_FIX_METHOD, # From config
                 info ="""Attempts to match the color tone of the output to the input video. Helps prevent color shifts.
 'AdaIN' / 'Wavelet': Different algorithms for color matching. AdaIN is often a good default.
 'None': Disables color correction."""
@@ -2280,7 +2286,7 @@ The total combined prompt length is limited to 77 tokens."""
             with gr.Accordion("Scene Splitting",open =True ):
                 enable_scene_split_check =gr.Checkbox(
                 label ="Enable Scene Splitting",
-                value =False ,
+                value =app_config.DEFAULT_ENABLE_SCENE_SPLIT , # From config
                 info ="""Split video into scenes and process each scene individually. This can improve quality and speed by processing similar content together.
 - Quality Impact: Better temporal consistency within scenes, improved auto-captioning per scene.
 - Speed Impact: Can be faster for long videos with distinct scenes.
@@ -2290,7 +2296,7 @@ The total combined prompt length is limited to 77 tokens."""
                 with gr.Row():
                     scene_split_mode_radio =gr.Radio(
                     label ="Split Mode",
-                    choices =['automatic','manual'],value ='automatic',
+                    choices =['automatic','manual'],value =app_config.DEFAULT_SCENE_SPLIT_MODE, # From config
                     info ="""'automatic': Uses scene detection algorithms to find natural scene boundaries.
 'manual': Splits video at fixed intervals (duration or frame count)."""
                     )
@@ -2300,41 +2306,41 @@ The total combined prompt length is limited to 77 tokens."""
                     with gr.Row():
                         scene_min_scene_len_num =gr.Number(
                         label ="Min Scene Length (seconds)",
-                        value =0.6 ,minimum =0.1 ,step =0.1 ,
+                        value =app_config.DEFAULT_SCENE_MIN_SCENE_LEN ,minimum =0.1 ,step =0.1 , # From config
                         info ="Minimum duration for a scene. Shorter scenes will be merged or dropped."
                         )
                         scene_threshold_num =gr.Number(
                         label ="Detection Threshold",
-                        value =3.0 ,minimum =0.1 ,maximum =10.0 ,step =0.1 ,
+                        value =app_config.DEFAULT_SCENE_THRESHOLD ,minimum =0.1 ,maximum =10.0 ,step =0.1 , # From config
                         info ="Sensitivity of scene detection. Lower values detect more scenes."
                         )
 
                     with gr.Row():
                         scene_drop_short_check =gr.Checkbox(
                         label ="Drop Short Scenes",
-                        value =False ,
+                        value =app_config.DEFAULT_SCENE_DROP_SHORT , # From config
                         info ="If enabled, scenes shorter than minimum length are dropped instead of merged."
                         )
                         scene_merge_last_check =gr.Checkbox(
                         label ="Merge Last Scene",
-                        value =True ,
+                        value =app_config.DEFAULT_SCENE_MERGE_LAST , # From config
                         info ="If the last scene is too short, merge it with the previous scene."
                         )
 
                     with gr.Row():
                         scene_frame_skip_num =gr.Number(
                         label ="Frame Skip",
-                        value =0 ,minimum =0 ,step =1 ,
+                        value =app_config.DEFAULT_SCENE_FRAME_SKIP ,minimum =0 ,step =1 , # From config
                         info ="Skip frames during detection to speed up processing. 0 = analyze every frame."
                         )
                         scene_min_content_val_num =gr.Number(
                         label ="Min Content Value",
-                        value =15.0 ,minimum =0.0 ,step =1.0 ,
+                        value =app_config.DEFAULT_SCENE_MIN_CONTENT_VAL ,minimum =0.0 ,step =1.0 , # From config
                         info ="Minimum content change required to detect a scene boundary."
                         )
                         scene_frame_window_num =gr.Number(
                         label ="Frame Window",
-                        value =2 ,minimum =1 ,step =1 ,
+                        value =app_config.DEFAULT_SCENE_FRAME_WINDOW ,minimum =1 ,step =1 , # From config
                         info ="Number of frames to analyze for scene detection."
                         )
 
@@ -2343,13 +2349,13 @@ The total combined prompt length is limited to 77 tokens."""
                     with gr.Row():
                         scene_manual_split_type_radio =gr.Radio(
                         label ="Manual Split Type",
-                        choices =['duration','frame_count'],value ='duration',
+                        choices =['duration','frame_count'],value =app_config.DEFAULT_SCENE_MANUAL_SPLIT_TYPE, # From config
                         info ="""'duration': Split every N seconds.
 'frame_count': Split every N frames."""
                         )
                         scene_manual_split_value_num =gr.Number(
                         label ="Split Value",
-                        value =30.0 ,minimum =1.0 ,step =1.0 ,
+                        value =app_config.DEFAULT_SCENE_MANUAL_SPLIT_VALUE ,minimum =1.0 ,step =1.0 , # From config
                         info ="Duration in seconds or number of frames for manual splitting."
                         )
 
@@ -2358,31 +2364,31 @@ The total combined prompt length is limited to 77 tokens."""
                     with gr.Row():
                         scene_copy_streams_check =gr.Checkbox(
                         label ="Copy Streams",
-                        value =True ,
+                        value =app_config.DEFAULT_SCENE_COPY_STREAMS , # From config
                         info ="Copy video/audio streams without re-encoding during scene splitting (faster)."
                         )
                         scene_use_mkvmerge_check =gr.Checkbox(
                         label ="Use MKVMerge",
-                        value =True ,
+                        value =app_config.DEFAULT_SCENE_USE_MKVMERGE , # From config
                         info ="Use mkvmerge instead of ffmpeg for splitting (if available)."
                         )
 
                     with gr.Row():
                         scene_rate_factor_num =gr.Number(
                         label ="Rate Factor (CRF)",
-                        value =12 ,minimum =0 ,maximum =51 ,step =1 ,
+                        value =app_config.DEFAULT_SCENE_RATE_FACTOR ,minimum =0 ,maximum =51 ,step =1 , # From config
                         info ="Quality setting for re-encoding (lower = better quality). Only used if Copy Streams is disabled."
                         )
                         scene_preset_dropdown =gr.Dropdown(
                         label ="Encoding Preset",
                         choices =['ultrafast','superfast','veryfast','faster','fast','medium','slow','slower','veryslow'],
-                        value ='slower',
+                        value =app_config.DEFAULT_SCENE_ENCODING_PRESET, # From config
                         info ="Encoding speed vs quality trade-off. Only used if Copy Streams is disabled."
                         )
 
                     scene_quiet_ffmpeg_check =gr.Checkbox(
                     label ="Quiet FFmpeg",
-                    value =True ,
+                    value =app_config.DEFAULT_SCENE_QUIET_FFMPEG , # From config
                     info ="Suppress ffmpeg output during scene splitting."
                     )
 
@@ -2402,17 +2408,17 @@ The total combined prompt length is limited to 77 tokens."""
             with gr.Accordion("Output Options",open =True ):
                 save_frames_checkbox =gr.Checkbox(
                 label ="Save Input and Processed Frames",
-                value =True ,
+                value =app_config.DEFAULT_SAVE_FRAMES , # From config
                 info ="If checked, saves the extracted input frames and the upscaled output frames into a subfolder named after the output video (e.g., '0001/input_frames' and '0001/processed_frames')."
                 )
                 save_metadata_checkbox =gr.Checkbox(
                 label ="Save Processing Metadata",
-                value =True ,
+                value =app_config.DEFAULT_SAVE_METADATA , # From config
                 info ="If checked, saves a .txt file (e.g., '0001.txt') in the main output folder, containing all processing parameters and total processing time."
                 )
                 save_chunks_checkbox =gr.Checkbox(
                 label ="Save Processed Chunks",
-                value =True ,
+                value =app_config.DEFAULT_SAVE_CHUNKS , # From config
                 info ="If checked, saves each processed chunk as a video file in a 'chunks' subfolder (e.g., '0001/chunks/chunk_0001.mp4'). Uses the same FFmpeg settings as the final video."
                 )
                 open_output_folder_button =gr.Button("Open Output Folder")
@@ -2423,9 +2429,9 @@ The total combined prompt length is limited to 77 tokens."""
 
     def update_steps_display(mode):
         if mode =='fast':
-            return gr.update(value =15 ,interactive =False )
+            return gr.update(value =app_config.DEFAULT_DIFFUSION_STEPS_FAST ,interactive =False ) # From config
         else :
-            return gr.update(value =50 ,interactive =True )
+            return gr.update(value =app_config.DEFAULT_DIFFUSION_STEPS_NORMAL ,interactive =True ) # From config
     solver_mode_radio.change(update_steps_display ,solver_mode_radio ,steps_slider )
 
     enable_target_res_check.change(lambda x :[gr.update(interactive =x )]*3 ,inputs =enable_target_res_check ,outputs =[target_h_num ,target_w_num ,target_res_mode_radio ])
@@ -2443,9 +2449,9 @@ The total combined prompt length is limited to 77 tokens."""
 
     def update_ffmpeg_quality_settings(use_gpu):
         if use_gpu :
-            return gr.Slider(label ="FFmpeg Quality (CQ for NVENC)",value =25 ,info ="For h264_nvenc (GPU): Constrained Quality (CQ). Lower values generally mean better quality. Typical range for NVENC CQ is 18-28.")
+            return gr.Slider(label ="FFmpeg Quality (CQ for NVENC)",value =app_config.DEFAULT_FFMPEG_QUALITY_GPU ,info ="For h264_nvenc (GPU): Constrained Quality (CQ). Lower values generally mean better quality. Typical range for NVENC CQ is 18-28.") # From config
         else :
-            return gr.Slider(label ="FFmpeg Quality (CRF for libx264)",value =23 ,info ="For libx264 (CPU): Constant Rate Factor (CRF). Lower values mean higher quality (0 is lossless, 23 is default).")
+            return gr.Slider(label ="FFmpeg Quality (CRF for libx264)",value =app_config.DEFAULT_FFMPEG_QUALITY_CPU ,info ="For libx264 (CPU): Constant Rate Factor (CRF). Lower values mean higher quality (0 is lossless, 23 is default).") # From config
 
     ffmpeg_use_gpu_check.change(
     fn =update_ffmpeg_quality_settings ,
@@ -2454,17 +2460,14 @@ The total combined prompt length is limited to 77 tokens."""
     )
 
     open_output_folder_button.click(
-    fn =lambda :util_open_folder(DEFAULT_OUTPUT_DIR ),
+    fn =lambda :util_open_folder(app_config.DEFAULT_OUTPUT_DIR ),
     inputs =[],
     outputs =[]
     )
 
     cogvlm_display_to_quant_val_map_global ={}
-    if UTIL_COG_VLM_AVAILABLE :
-        _temp_map ={0 :"FP16/BF16"}
-        if torch.cuda.is_available()and UTIL_BITSANDBYTES_AVAILABLE :
-            _temp_map [4 ]="INT4 (CUDA)"
-            _temp_map [8 ]="INT8 (CUDA)"
+    if app_config.UTIL_COG_VLM_AVAILABLE :
+        _temp_map = app_config.get_cogvlm_quant_choices_map(torch.cuda.is_available(), app_config.UTIL_BITSANDBYTES_AVAILABLE) # From config helper
         cogvlm_display_to_quant_val_map_global ={v :k for k ,v in _temp_map.items()}
 
     def get_quant_value_from_display(display_val):
@@ -2506,7 +2509,7 @@ The total combined prompt length is limited to 77 tokens."""
                 input_video_val ,
                 quant_val ,
                 cogvlm_unload_radio_val ,
-                COG_VLM_MODEL_PATH ,
+                app_config.COG_VLM_MODEL_PATH ,
                 logger =logger ,
                 progress =progress 
                 )
@@ -2570,12 +2573,12 @@ The total combined prompt length is limited to 77 tokens."""
             if chunk_status_val :
                 final_chunk_status =chunk_status_val 
 
-            caption_status_update =caption_status.value if UTIL_COG_VLM_AVAILABLE and do_auto_caption_first_val else ""
+            caption_status_update =caption_status.value if app_config.UTIL_COG_VLM_AVAILABLE and do_auto_caption_first_val else ""
 
             yield final_video_output ,final_status_output.strip(),output_updates_for_prompt_box ,caption_status_update ,final_chunk_video ,final_chunk_status 
             output_updates_for_prompt_box =gr.update()
 
-        final_caption_status =caption_status.value if UTIL_COG_VLM_AVAILABLE and hasattr(caption_status ,'value')else ""
+        final_caption_status =caption_status.value if app_config.UTIL_COG_VLM_AVAILABLE and hasattr(caption_status ,'value')else ""
         yield final_video_output ,final_status_output.strip(),output_updates_for_prompt_box ,final_caption_status ,final_chunk_video ,final_chunk_status 
 
     click_inputs =[
@@ -2595,12 +2598,12 @@ The total combined prompt length is limited to 77 tokens."""
     ]
 
     click_outputs_list =[output_video ,status_textbox ,user_prompt ]
-    if UTIL_COG_VLM_AVAILABLE :
+    if app_config.UTIL_COG_VLM_AVAILABLE :
         click_outputs_list.append(caption_status )
 
     click_outputs_list.extend([last_chunk_video ,chunk_status_text ])
 
-    if UTIL_COG_VLM_AVAILABLE :
+    if app_config.UTIL_COG_VLM_AVAILABLE :
         click_inputs.extend([cogvlm_quant_radio ,cogvlm_unload_radio ,auto_caption_then_upscale_check ])
     else :
         click_inputs.extend([gr.State(None ),gr.State(None ),gr.State(False )])
@@ -2611,9 +2614,9 @@ The total combined prompt length is limited to 77 tokens."""
     outputs =click_outputs_list 
     )
 
-    if UTIL_COG_VLM_AVAILABLE :
+    if app_config.UTIL_COG_VLM_AVAILABLE :
         auto_caption_btn.click(
-        fn =lambda vid ,quant_display ,unload_strat ,progress =gr.Progress(track_tqdm =True ):util_auto_caption(vid ,get_quant_value_from_display(quant_display ),unload_strat ,COG_VLM_MODEL_PATH ,logger =logger ,progress =progress ),
+        fn =lambda vid ,quant_display ,unload_strat ,progress =gr.Progress(track_tqdm =True ):util_auto_caption(vid ,get_quant_value_from_display(quant_display ),unload_strat ,app_config.COG_VLM_MODEL_PATH ,logger =logger ,progress =progress ),
         inputs =[input_video ,cogvlm_quant_radio ,cogvlm_unload_radio ],
         outputs =[user_prompt ,caption_status ]
         ).then(lambda :gr.update(visible =True ),outputs =caption_status )
@@ -2646,7 +2649,7 @@ The total combined prompt length is limited to 77 tokens."""
     scene_frame_skip_num ,scene_threshold_num ,scene_min_content_val_num ,scene_frame_window_num ,
     scene_copy_streams_check ,scene_use_mkvmerge_check ,scene_rate_factor_num ,scene_preset_dropdown ,scene_quiet_ffmpeg_check ,
     scene_manual_split_type_radio ,scene_manual_split_value_num 
-    ]+([cogvlm_quant_radio ,cogvlm_unload_radio ,auto_caption_then_upscale_check ]if UTIL_COG_VLM_AVAILABLE else [gr.State(None ),gr.State(None ),gr.State(False )]),
+    ]+([cogvlm_quant_radio ,cogvlm_unload_radio ,auto_caption_then_upscale_check ]if app_config.UTIL_COG_VLM_AVAILABLE else [gr.State(None ),gr.State(None ),gr.State(False )]),
     outputs =[output_video ,status_textbox ]
     )
 
@@ -2657,11 +2660,13 @@ The total combined prompt length is limited to 77 tokens."""
     )
 
 if __name__ =="__main__":
-    os.makedirs(DEFAULT_OUTPUT_DIR ,exist_ok =True )
-    logger.info(f"Gradio App Starting. Default output to: {os.path.abspath(DEFAULT_OUTPUT_DIR)}")
-    logger.info(f"STAR Models expected at: {LIGHT_DEG_MODEL}, {HEAVY_DEG_MODEL}")
-    if UTIL_COG_VLM_AVAILABLE :
-        logger.info(f"CogVLM2 Model expected at: {COG_VLM_MODEL_PATH}")
+    # The main DEFAULT_OUTPUT_DIR is initialized by initialize_paths_and_prompts above,
+    # so direct os.makedirs(DEFAULT_OUTPUT_DIR) is fine here as it uses the config one.
+    os.makedirs(app_config.DEFAULT_OUTPUT_DIR ,exist_ok =True )
+    logger.info(f"Gradio App Starting. Default output to: {os.path.abspath(app_config.DEFAULT_OUTPUT_DIR)}")
+    logger.info(f"STAR Models expected at: {app_config.LIGHT_DEG_MODEL_PATH}, {app_config.HEAVY_DEG_MODEL_PATH}")
+    if app_config.UTIL_COG_VLM_AVAILABLE :
+        logger.info(f"CogVLM2 Model expected at: {app_config.COG_VLM_MODEL_PATH}")
 
     available_gpus =util_get_available_gpus()
     if available_gpus :
@@ -2672,7 +2677,7 @@ if __name__ =="__main__":
         logger.info("No CUDA GPUs detected, using CPU mode")
         util_set_gpu_device("Auto",logger =logger )
 
-    effective_allowed_paths =util_get_available_drives(DEFAULT_OUTPUT_DIR ,base_path )
+    effective_allowed_paths =util_get_available_drives(app_config.DEFAULT_OUTPUT_DIR ,base_path )
 
     demo.queue().launch(
     debug =True ,
