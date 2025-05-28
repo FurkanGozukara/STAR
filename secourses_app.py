@@ -45,6 +45,12 @@ get_available_drives as util_get_available_drives ,
 open_folder as util_open_folder 
 )
 
+from logic .scene_utils import (
+    split_video_into_scenes as util_split_video_into_scenes,
+    merge_scene_videos as util_merge_scene_videos,
+    split_video_only as util_split_video_only
+)
+
 from logic .gpu_utils import (
 get_available_gpus as util_get_available_gpus ,
 set_gpu_device as util_set_gpu_device ,
@@ -59,208 +65,6 @@ parser .add_argument ('--share',action ='store_true',help ="Enable Gradio live s
 parser .add_argument ('--outputs_folder',type =str ,default ="outputs",help ="Main folder for output videos and related files")
 args =parser .parse_args ()
 
-def split_video_into_scenes (input_video_path ,temp_dir ,scene_split_params ,progress_callback =None ):
-
-    try :
-
-        from scenedetect import (
-        AdaptiveDetector ,ContentDetector ,CropRegion ,FrameTimecode ,
-        Interpolation ,SceneManager ,open_video 
-        )
-        from scenedetect .backends import AVAILABLE_BACKENDS 
-        from scenedetect .output import (
-        SceneMetadata ,VideoMetadata ,is_ffmpeg_available ,is_mkvmerge_available ,
-        split_video_ffmpeg ,split_video_mkvmerge 
-        )
-        import scenedetect 
-
-        logger .info (f"Starting scene detection for: {input_video_path}")
-
-        scenes_dir =os .path .join (temp_dir ,"scenes")
-        os .makedirs (scenes_dir ,exist_ok =True )
-
-        video =open_video (str (input_video_path ),backend ="opencv")
-
-        stats_manager =scenedetect .StatsManager ()if scene_split_params .get ('save_stats')else None 
-        scene_manager =SceneManager (stats_manager =stats_manager )
-
-        if scene_split_params ['split_mode']=='automatic':
-
-            detector_weights =ContentDetector .Components (
-            delta_hue =scene_split_params ['weights'][0 ],
-            delta_sat =scene_split_params ['weights'][1 ],
-            delta_lum =scene_split_params ['weights'][2 ],
-            delta_edges =scene_split_params ['weights'][3 ]
-            )
-
-            min_scene_len_ft =FrameTimecode (scene_split_params ['min_scene_len'],video .frame_rate )
-
-            scene_manager .add_detector (
-            AdaptiveDetector (
-            adaptive_threshold =scene_split_params ['threshold'],
-            min_content_val =scene_split_params ['min_content_val'],
-            window_width =scene_split_params ['frame_window'],
-            weights =detector_weights ,
-            kernel_size =scene_split_params .get ('kernel_size'),
-            min_scene_len =min_scene_len_ft 
-            )
-            )
-
-            if progress_callback :
-                progress_callback (0.3 ,"Detecting scenes...")
-
-            num_frames_processed =scene_manager .detect_scenes (
-            video =video ,
-            frame_skip =scene_split_params ['frame_skip'],
-            show_progress =False 
-            )
-
-            scene_list =scene_manager .get_scene_list (start_in_scene =True )
-
-            global_min_scene_len_ft =FrameTimecode (scene_split_params ['min_scene_len'],video .frame_rate )
-            filtered_scene_list =[]
-
-            if scene_list :
-                for i ,(start ,end )in enumerate (scene_list ):
-                    current_scene_duration =end -start 
-                    if current_scene_duration <global_min_scene_len_ft :
-                        if scene_split_params ['drop_short_scenes']:
-                            logger .info (f"Dropping short scene ({i+1}): {start.get_timecode()} - {end.get_timecode()}")
-                            continue 
-                        elif filtered_scene_list and not (scene_split_params ['merge_last_scene']and i ==len (scene_list )-1 ):
-                            prev_start ,_ =filtered_scene_list .pop ()
-                            filtered_scene_list .append ((prev_start ,end ))
-                            logger .info (f"Merging short scene ({i+1}) with previous")
-                            continue 
-                    filtered_scene_list .append ((start ,end ))
-
-                scene_list =filtered_scene_list 
-
-                if scene_split_params ['merge_last_scene']and len (scene_list )>1 :
-                    last_start ,last_end =scene_list [-1 ]
-                    if (last_end -last_start )<global_min_scene_len_ft :
-                        prev_start ,_ =scene_list [-2 ]
-                        scene_list =scene_list [:-2 ]+[(prev_start ,last_end )]
-        else :
-
-            if progress_callback :
-                progress_callback (0.3 ,"Calculating manual split points...")
-
-            total_frames =int (video .frame_rate *video .duration .get_seconds ())
-            scene_list =[]
-
-            if scene_split_params ['manual_split_type']=='duration':
-                split_duration_seconds =scene_split_params ['manual_split_value']
-                split_duration_frames =int (split_duration_seconds *video .frame_rate )
-            else :
-                split_duration_frames =scene_split_params ['manual_split_value']
-
-            current_frame =0 
-            scene_num =1 
-            while current_frame <total_frames :
-                start_frame =current_frame 
-                end_frame =min (current_frame +split_duration_frames ,total_frames )
-
-                start_tc =FrameTimecode (start_frame ,video .frame_rate )
-                end_tc =FrameTimecode (end_frame ,video .frame_rate )
-
-                scene_list .append ((start_tc ,end_tc ))
-                current_frame =end_frame 
-                scene_num +=1 
-
-        if not scene_list :
-            logger .warning ("No scenes detected, using entire video as single scene")
-            scene_list =[(FrameTimecode (0 ,video .frame_rate ),video .duration )]
-
-        logger .info (f"Found {len(scene_list)} scenes to split")
-
-        if progress_callback :
-            progress_callback (0.6 ,f"Splitting video into {len(scene_list)} scenes...")
-
-        def scene_filename_formatter (video ,scene ):
-            scene_num =scene_list .index ((scene .start ,scene .end ))+1 
-            return f"scene_{scene_num:04d}.mp4"
-
-        if scene_split_params ['use_mkvmerge']and is_mkvmerge_available ():
-            return_code =split_video_mkvmerge (
-            input_video_path =str (input_video_path ),
-            scene_list =scene_list ,
-            output_dir =scenes_dir ,
-            video_name =Path (input_video_path ).stem ,
-            show_output =not scene_split_params ['quiet_ffmpeg'],
-            formatter =scene_filename_formatter 
-            )
-        else :
-
-            if scene_split_params ['copy_streams']:
-                ffmpeg_args ="-map 0:v:0 -map 0:a? -map 0:s? -c:v copy -c:a copy -avoid_negative_ts make_zero"
-            else :
-                ffmpeg_args =f"-map 0:v:0 -map 0:a? -map 0:s? -c:v libx264 -preset {scene_split_params['preset']} -crf {scene_split_params['rate_factor']} -c:a aac -avoid_negative_ts make_zero"
-
-            return_code =split_video_ffmpeg (
-            input_video_path =str (input_video_path ),
-            scene_list =scene_list ,
-            output_dir =scenes_dir ,
-            video_name =Path (input_video_path ).stem ,
-            arg_override =ffmpeg_args ,
-            show_progress =scene_split_params ['show_progress'],
-            show_output =not scene_split_params ['quiet_ffmpeg'],
-            formatter =scene_filename_formatter 
-            )
-
-        if return_code !=0 :
-            raise Exception (f"Scene splitting failed with return code: {return_code}")
-
-        scene_files =sorted ([f for f in os .listdir (scenes_dir )if f .endswith ('.mp4')])
-        scene_paths =[os .path .join (scenes_dir ,f )for f in scene_files ]
-
-        logger .info (f"Successfully split video into {len(scene_paths)} scene files")
-
-        if progress_callback :
-            progress_callback (1.0 ,f"Scene splitting complete: {len(scene_paths)} scenes")
-
-        return scene_paths 
-
-    except Exception as e :
-        logger .error (f"Error during scene splitting: {e}")
-        raise gr .Error (f"Scene splitting failed: {e}")
-    finally :
-        if 'video'in locals ():
-            del video 
-
-def merge_scene_videos (scene_video_paths ,output_path ,temp_dir ,ffmpeg_preset ="medium",ffmpeg_quality =23 ,use_gpu =False ):
-
-    try :
-        logger .info (f"Merging {len(scene_video_paths)} scene videos into: {output_path}")
-
-        concat_file =os .path .join (temp_dir ,"concat_list.txt")
-        with open (concat_file ,'w',encoding ='utf-8')as f :
-            for scene_path in scene_video_paths :
-
-                scene_path_normalized =scene_path .replace ('\\','/')
-                f .write (f"file '{scene_path_normalized}'\n")
-
-        if use_gpu :
-            nvenc_preset =ffmpeg_preset 
-            if ffmpeg_preset in ["ultrafast","superfast","veryfast","faster","fast"]:
-                nvenc_preset ="fast"
-            elif ffmpeg_preset in ["slower","veryslow"]:
-                nvenc_preset ="slow"
-
-            ffmpeg_opts =f'-c:v h264_nvenc -preset:v {nvenc_preset} -cq:v {ffmpeg_quality} -pix_fmt yuv420p'
-        else :
-            ffmpeg_opts =f'-c:v libx264 -preset {ffmpeg_preset} -crf {ffmpeg_quality} -pix_fmt yuv420p'
-
-        cmd =f'ffmpeg -y -f concat -safe 0 -i "{concat_file}" {ffmpeg_opts} -c:a copy "{output_path}"'
-
-        util_run_ffmpeg_command (cmd ,"Scene Video Merging",logger =logger )
-
-        logger .info (f"Successfully merged scene videos into: {output_path}")
-        return True 
-
-    except Exception as e :
-        logger .error (f"Error merging scene videos: {e}")
-        raise gr .Error (f"Failed to merge scene videos: {e}")
 
 def process_batch_videos (
 batch_input_folder_val ,batch_output_folder_val ,
@@ -372,7 +176,8 @@ solver_mode ,cfg_scale ,max_chunk_len ,vae_chunk ,color_fix_method ,
 enable_tiling ,tile_size ,tile_overlap ,enable_sliding_window ,window_size ,window_step ,
 save_frames ,scene_output_dir ,progress_callback =None ,
 
-enable_auto_caption_per_scene =False ,cogvlm_quant =0 ,cogvlm_unload ='full'
+enable_auto_caption_per_scene =False ,cogvlm_quant =0 ,cogvlm_unload ='full',
+progress =None , save_chunks =False , chunks_permanent_save_path =None , ffmpeg_preset ="medium", ffmpeg_quality_value =23 , ffmpeg_use_gpu =False
 ):
 
     try :
@@ -642,30 +447,41 @@ enable_auto_caption_per_scene =False ,cogvlm_quant =0 ,cogvlm_unload ='full'
                     frame_bgr =cv2 .cvtColor (frame_np_hwc_uint8 ,cv2 .COLOR_RGB2BGR )
                     cv2 .imwrite (os .path .join (scene_output_frames_dir ,frame_name ),frame_bgr )
 
-                if save_chunks and chunks_permanent_save_path :
-                    chunk_video_filename =f"chunk_{current_chunk_display_num:04d}.mp4"
-                    chunk_video_path =os .path .join (chunks_permanent_save_path ,chunk_video_filename )
-                    chunk_temp_dir =os .path .join (temp_dir ,f"chunk_{current_chunk_display_num}")
-                    os .makedirs (chunk_temp_dir ,exist_ok =True )
+                if save_chunks and scene_output_dir and scene_name:
+                    current_scene_chunks_save_path = os.path.join(scene_output_dir, "scenes", scene_name, "chunks")
+                    os.makedirs(current_scene_chunks_save_path, exist_ok=True)
 
-                    for k ,frame_name in enumerate (frame_files [start_idx :end_idx ]):
-                        src_frame =os .path .join (scene_output_frames_dir ,frame_name )
-                        dst_frame =os .path .join (chunk_temp_dir ,f"frame_{k+1:06d}.png")
-                        shutil .copy2 (src_frame ,dst_frame )
+                    chunk_video_filename = f"chunk_{chunk_idx+1:04d}.mp4"
+                    chunk_video_path = os.path.join(current_scene_chunks_save_path, chunk_video_filename)
+                    
+                    chunk_temp_assembly_dir = os.path.join(temp_dir, scene_name, f"temp_chunk_{chunk_idx+1}")
+                    os.makedirs(chunk_temp_assembly_dir, exist_ok=True)
 
-                    util_create_video_from_frames (chunk_temp_dir ,chunk_video_path ,input_fps ,
-                    ffmpeg_preset ,ffmpeg_quality_value ,ffmpeg_use_gpu ,logger =logger )
-
-                    shutil .rmtree (chunk_temp_dir )
-
-                    chunk_save_msg =f"Saved chunk {current_chunk_display_num}/{num_chunks} to: {chunk_video_path}"
-                    status_log .append (chunk_save_msg )
-                    logger .info (chunk_save_msg )
-
-                    last_chunk_video_path =chunk_video_path 
-                    last_chunk_status =f"Chunk {current_chunk_display_num}/{num_chunks} (frames {start_idx+1}-{end_idx})"
-
-                    yield None ,"\n".join (status_log ),last_chunk_video_path ,last_chunk_status 
+                    frames_for_this_video_chunk = []
+                    for k_chunk_frame, frame_name_in_chunk in enumerate(scene_frame_files[start_idx:end_idx]):
+                        src_frame_for_chunk = os.path.join(scene_output_frames_dir, frame_name_in_chunk)
+                        dst_frame_for_chunk = os.path.join(chunk_temp_assembly_dir, f"frame_{k_chunk_frame+1:06d}.png")
+                        if os.path.exists(src_frame_for_chunk):
+                            shutil.copy2(src_frame_for_chunk, dst_frame_for_chunk)
+                            frames_for_this_video_chunk.append(dst_frame_for_chunk)
+                        else:
+                            logger.warning(f"Source frame {src_frame_for_chunk} not found for scene chunk video (Scene: {scene_name}, Chunk: {chunk_idx+1}).")
+                    
+                    if frames_for_this_video_chunk:
+                        util_create_video_from_frames(
+                            chunk_temp_assembly_dir,
+                            chunk_video_path,
+                            scene_fps,
+                            ffmpeg_preset,
+                            ffmpeg_quality_value,
+                            ffmpeg_use_gpu,
+                            logger=logger
+                        )
+                        logger.info(f"Saved scene chunk {chunk_idx+1}/{num_chunks} for scene {scene_name} to: {chunk_video_path}")
+                    else:
+                        logger.warning(f"No frames copied for scene chunk {chunk_idx+1}/{num_chunks} (Scene: {scene_name}), video not created.")
+                    
+                    shutil.rmtree(chunk_temp_assembly_dir)
 
                 del chunk_data_cuda ,chunk_sr_tensor_bcthw ,chunk_sr_frames_uint8 
                 if torch .cuda .is_available ():
@@ -1019,11 +835,12 @@ progress =gr .Progress (track_tqdm =True )
                 progress (current_scene_progress ,desc =desc )
 
             try :
-                scene_video_paths =split_video_into_scenes (
+                scene_video_paths =util_split_video_into_scenes (
                 current_input_video_for_frames ,
                 temp_dir ,
                 scene_split_params ,
-                scene_progress_callback 
+                scene_progress_callback ,
+                logger =logger 
                 )
                 scenes_temp_dir =os .path .join (temp_dir ,"scenes")
 
@@ -1131,7 +948,12 @@ progress =gr .Progress (track_tqdm =True )
                     save_frames ,frames_output_subfolder ,scene_upscale_progress_callback ,
 
                     enable_auto_caption_per_scene =enable_auto_caption_per_scene ,
-                    cogvlm_quant =cogvlm_quant ,cogvlm_unload =cogvlm_unload 
+                    cogvlm_quant =cogvlm_quant ,cogvlm_unload =cogvlm_unload ,
+                    progress =progress , save_chunks =save_chunks ,
+                    chunks_permanent_save_path =chunks_permanent_save_path ,
+                    ffmpeg_preset =ffmpeg_preset ,
+                    ffmpeg_quality_value =ffmpeg_quality_value ,
+                    ffmpeg_use_gpu =ffmpeg_use_gpu 
                     )
                     processed_scene_videos .append (processed_scene_video )
 
@@ -1151,8 +973,8 @@ progress =gr .Progress (track_tqdm =True )
             progress (current_overall_progress ,desc ="Merging processed scenes...")
 
             silent_upscaled_video_path =os .path .join (temp_dir ,"silent_upscaled_video.mp4")
-            merge_scene_videos (processed_scene_videos ,silent_upscaled_video_path ,temp_dir ,
-            ffmpeg_preset ,ffmpeg_quality_value ,ffmpeg_use_gpu )
+            util_merge_scene_videos (processed_scene_videos ,silent_upscaled_video_path ,temp_dir ,
+            ffmpeg_preset ,ffmpeg_quality_value ,ffmpeg_use_gpu ,logger =logger )
 
             current_overall_progress =scene_merge_progress_start +stage_weights ["scene_merge"]
             progress (current_overall_progress ,desc ="Scene merging complete")
@@ -1507,30 +1329,41 @@ progress =gr .Progress (track_tqdm =True )
                     frame_bgr =cv2 .cvtColor (frame_np_hwc_uint8 ,cv2 .COLOR_RGB2BGR )
                     cv2 .imwrite (os .path .join (output_frames_dir ,frame_name ),frame_bgr )
 
-                if save_chunks and chunks_permanent_save_path :
-                    chunk_video_filename =f"chunk_{current_chunk_display_num:04d}.mp4"
-                    chunk_video_path =os .path .join (chunks_permanent_save_path ,chunk_video_filename )
-                    chunk_temp_dir =os .path .join (temp_dir ,f"chunk_{current_chunk_display_num}")
-                    os .makedirs (chunk_temp_dir ,exist_ok =True )
+                if save_chunks and scene_output_dir and scene_name:
+                    current_scene_chunks_save_path = os.path.join(scene_output_dir, "scenes", scene_name, "chunks")
+                    os.makedirs(current_scene_chunks_save_path, exist_ok=True)
 
-                    for k ,frame_name in enumerate (frame_files [start_idx :end_idx ]):
-                        src_frame =os .path .join (output_frames_dir ,frame_name )
-                        dst_frame =os .path .join (chunk_temp_dir ,f"frame_{k+1:06d}.png")
-                        shutil .copy2 (src_frame ,dst_frame )
+                    chunk_video_filename = f"chunk_{i_chunk_idx+1:04d}.mp4"
+                    chunk_video_path = os.path.join(current_scene_chunks_save_path, chunk_video_filename)
+                    
+                    chunk_temp_assembly_dir = os.path.join(temp_dir, scene_name, f"temp_chunk_{i_chunk_idx+1}")
+                    os.makedirs(chunk_temp_assembly_dir, exist_ok=True)
 
-                    util_create_video_from_frames (chunk_temp_dir ,chunk_video_path ,input_fps ,
-                    ffmpeg_preset ,ffmpeg_quality_value ,ffmpeg_use_gpu ,logger =logger )
-
-                    shutil .rmtree (chunk_temp_dir )
-
-                    chunk_save_msg =f"Saved chunk {current_chunk_display_num}/{num_chunks} to: {chunk_video_path}"
-                    status_log .append (chunk_save_msg )
-                    logger .info (chunk_save_msg )
-
-                    last_chunk_video_path =chunk_video_path 
-                    last_chunk_status =f"Chunk {current_chunk_display_num}/{num_chunks} (frames {start_idx+1}-{end_idx})"
-
-                    yield None ,"\n".join (status_log ),last_chunk_video_path ,last_chunk_status 
+                    frames_for_this_video_chunk = []
+                    for k_chunk_frame, frame_name_in_chunk in enumerate(frame_files[start_idx:end_idx]):
+                        src_frame_for_chunk = os.path.join(scene_output_frames_dir, frame_name_in_chunk)
+                        dst_frame_for_chunk = os.path.join(chunk_temp_assembly_dir, f"frame_{k_chunk_frame+1:06d}.png")
+                        if os.path.exists(src_frame_for_chunk):
+                            shutil.copy2(src_frame_for_chunk, dst_frame_for_chunk)
+                            frames_for_this_video_chunk.append(dst_frame_for_chunk)
+                        else:
+                            logger.warning(f"Source frame {src_frame_for_chunk} not found for scene chunk video (Scene: {scene_name}, Chunk: {i_chunk_idx+1}).")
+                    
+                    if frames_for_this_video_chunk:
+                        util_create_video_from_frames(
+                            chunk_temp_assembly_dir,
+                            chunk_video_path,
+                            scene_fps,
+                            ffmpeg_preset,
+                            ffmpeg_quality_value,
+                            ffmpeg_use_gpu,
+                            logger=logger
+                        )
+                        logger.info(f"Saved scene chunk {i_chunk_idx+1}/{num_chunks} for scene {scene_name} to: {chunk_video_path}")
+                    else:
+                        logger.warning(f"No frames copied for scene chunk {i_chunk_idx+1}/{num_chunks} (Scene: {scene_name}), video not created.")
+                    
+                    shutil.rmtree(chunk_temp_assembly_dir)
 
                 del chunk_data_cuda ,chunk_sr_tensor_bcthw ,chunk_sr_frames_uint8 
                 if torch .cuda .is_available ():torch .cuda .empty_cache ()
@@ -1755,80 +1588,6 @@ progress =gr .Progress (track_tqdm =True )
             else :
                 logger .warning (f"Lock file {tmp_lock_file_to_delete} not found for deletion.")
 
-def split_video_only (
-input_video_val ,scene_split_mode_radio_val ,scene_min_scene_len_num_val ,scene_drop_short_check_val ,scene_merge_last_check_val ,
-scene_frame_skip_num_val ,scene_threshold_num_val ,scene_min_content_val_num_val ,scene_frame_window_num_val ,
-scene_copy_streams_check_val ,scene_use_mkvmerge_check_val ,scene_rate_factor_num_val ,scene_preset_dropdown_val ,scene_quiet_ffmpeg_check_val ,
-scene_manual_split_type_radio_val ,scene_manual_split_value_num_val ,
-progress =gr .Progress (track_tqdm =True )
-):
-
-    if not input_video_val or not os .path .exists (input_video_val ):
-        raise gr .Error ("Please upload a valid input video.")
-
-    try :
-        progress (0.1 ,desc ="Initializing scene splitting...")
-
-        run_id =f"split_only_{int(time.time())}_{np.random.randint(1000, 9999)}"
-        temp_dir_base =tempfile .gettempdir ()
-        temp_dir =os .path .join (temp_dir_base ,run_id )
-        os .makedirs (temp_dir ,exist_ok =True )
-
-        scene_split_params ={
-        'split_mode':scene_split_mode_radio_val ,
-        'min_scene_len':scene_min_scene_len_num_val ,
-        'drop_short_scenes':scene_drop_short_check_val ,
-        'merge_last_scene':scene_merge_last_check_val ,
-        'frame_skip':scene_frame_skip_num_val ,
-        'threshold':scene_threshold_num_val ,
-        'min_content_val':scene_min_content_val_num_val ,
-        'frame_window':scene_frame_window_num_val ,
-        'weights':[1.0 ,1.0 ,1.0 ,0.0 ],
-        'copy_streams':scene_copy_streams_check_val ,
-        'use_mkvmerge':scene_use_mkvmerge_check_val ,
-        'rate_factor':scene_rate_factor_num_val ,
-        'preset':scene_preset_dropdown_val ,
-        'quiet_ffmpeg':scene_quiet_ffmpeg_check_val ,
-        'show_progress':True ,
-        'manual_split_type':scene_manual_split_type_radio_val ,
-        'manual_split_value':scene_manual_split_value_num_val 
-        }
-
-        def scene_progress_callback (progress_val ,desc ):
-            progress (0.1 +(progress_val *0.8 ),desc =desc )
-
-        scene_video_paths =split_video_into_scenes (
-        input_video_val ,
-        temp_dir ,
-        scene_split_params ,
-        scene_progress_callback 
-        )
-
-        base_output_filename_no_ext ,_ =util_get_next_filename (DEFAULT_OUTPUT_DIR )
-        split_output_dir =os .path .join (DEFAULT_OUTPUT_DIR ,f"{base_output_filename_no_ext}_scenes")
-        os .makedirs (split_output_dir ,exist_ok =True )
-
-        progress (0.9 ,desc ="Copying scene files...")
-        copied_scenes =[]
-        for i ,scene_path in enumerate (scene_video_paths ):
-            scene_filename =f"scene_{i+1:04d}.mp4"
-            output_scene_path =os .path .join (split_output_dir ,scene_filename )
-            shutil .copy2 (scene_path ,output_scene_path )
-            copied_scenes .append (output_scene_path )
-
-        progress (1.0 ,desc ="Scene splitting complete!")
-
-        util_cleanup_temp_dir (temp_dir )
-
-        status_msg =f"Successfully split video into {len(copied_scenes)} scenes.\nOutput folder: {split_output_dir}"
-        return None ,status_msg 
-
-    except Exception as e :
-        logger .error (f"Error during split-only operation: {e}")
-        if 'temp_dir'in locals ():
-            util_cleanup_temp_dir (temp_dir )
-        raise gr .Error (f"Scene splitting failed: {e}")
-
 def process_batch_videos_DUPLICATE_REMOVED (
 batch_input_folder_val ,batch_output_folder_val ,
 user_prompt_val ,pos_prompt_val ,neg_prompt_val ,model_selector_val ,
@@ -1938,6 +1697,24 @@ css ="""
 input[type='range'] { accent-color: black; }
 .dark input[type='range'] { accent-color: #dfdfdf; }
 """
+
+def wrapper_split_video_only_for_gradio(
+    input_video_val, scene_split_mode_radio_val, scene_min_scene_len_num_val, scene_drop_short_check_val, scene_merge_last_check_val,
+    scene_frame_skip_num_val, scene_threshold_num_val, scene_min_content_val_num_val, scene_frame_window_num_val,
+    scene_copy_streams_check_val, scene_use_mkvmerge_check_val, scene_rate_factor_num_val, scene_preset_dropdown_val, scene_quiet_ffmpeg_check_val,
+    scene_manual_split_type_radio_val, scene_manual_split_value_num_val,
+    progress=gr.Progress(track_tqdm=True)
+):
+    # logger and DEFAULT_OUTPUT_DIR are accessed from the global scope of secourses_app.py
+    return util_split_video_only(
+        input_video_val, scene_split_mode_radio_val, scene_min_scene_len_num_val, scene_drop_short_check_val, scene_merge_last_check_val,
+        scene_frame_skip_num_val, scene_threshold_num_val, scene_min_content_val_num_val, scene_frame_window_num_val,
+        scene_copy_streams_check_val, scene_use_mkvmerge_check_val, scene_rate_factor_num_val, scene_preset_dropdown_val, scene_quiet_ffmpeg_check_val,
+        scene_manual_split_type_radio_val, scene_manual_split_value_num_val,
+        DEFAULT_OUTPUT_DIR, 
+        logger,
+        progress=progress
+    )
 
 with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
     gr .Markdown ("# Ultimate SECourses STAR Video Upscaler V10")
@@ -2354,7 +2131,7 @@ The total combined prompt length is limited to 77 tokens."""
     enable_sliding_window_check .change (lambda x :[gr .update (interactive =x )]*2 ,inputs =enable_sliding_window_check ,outputs =[window_size_num ,window_step_num ])
 
     enable_scene_split_check .change (
-    lambda x :[gr .update (interactive =x )]*14 ,
+    lambda x :[gr .update (interactive =x )]*15 ,
     inputs =enable_scene_split_check ,
     outputs =[scene_split_mode_radio ,scene_min_scene_len_num ,scene_threshold_num ,scene_drop_short_check ,scene_merge_last_check ,
     scene_frame_skip_num ,scene_min_content_val_num ,scene_frame_window_num ,
@@ -2375,7 +2152,7 @@ The total combined prompt length is limited to 77 tokens."""
     )
 
     open_output_folder_button .click (
-    fn =lambda :open_folder (DEFAULT_OUTPUT_DIR ),
+    fn =lambda :util_open_folder (DEFAULT_OUTPUT_DIR ),
     inputs =[],
     outputs =[]
     )
@@ -2540,7 +2317,7 @@ The total combined prompt length is limited to 77 tokens."""
         ).then (lambda :gr .update (visible =True ),outputs =caption_status )
 
     split_only_button .click (
-    fn =split_video_only ,
+    fn =wrapper_split_video_only_for_gradio ,
     inputs =[
     input_video ,scene_split_mode_radio ,scene_min_scene_len_num ,scene_drop_short_check ,scene_merge_last_check ,
     scene_frame_skip_num ,scene_threshold_num ,scene_min_content_val_num ,scene_frame_window_num ,
