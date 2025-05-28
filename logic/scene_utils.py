@@ -1,0 +1,299 @@
+import os
+import time
+import tempfile
+import shutil
+import numpy as np
+import gradio as gr
+from pathlib import Path
+from .ffmpeg_utils import run_ffmpeg_command
+from .file_utils import get_next_filename, cleanup_temp_dir
+from .cogvlm_utils import auto_caption, COG_VLM_AVAILABLE
+
+def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, progress_callback=None, logger=None):
+    """Split video into scenes using PySceneDetect."""
+    try:
+        # Import PySceneDetect components
+        from scenedetect import (
+            AdaptiveDetector, ContentDetector, CropRegion, FrameTimecode,
+            Interpolation, SceneManager, open_video
+        )
+        from scenedetect.backends import AVAILABLE_BACKENDS
+        from scenedetect.output import (
+            SceneMetadata, VideoMetadata, is_ffmpeg_available, is_mkvmerge_available,
+            split_video_ffmpeg, split_video_mkvmerge
+        )
+        import scenedetect
+
+        if logger:
+            logger.info(f"Starting scene detection for: {input_video_path}")
+
+        scenes_dir = os.path.join(temp_dir, "scenes")
+        os.makedirs(scenes_dir, exist_ok=True)
+
+        video = open_video(str(input_video_path), backend="opencv")
+
+        stats_manager = scenedetect.StatsManager() if scene_split_params.get('save_stats') else None
+        scene_manager = SceneManager(stats_manager=stats_manager)
+
+        if scene_split_params['split_mode'] == 'automatic':
+            # Automatic scene detection
+            detector_weights = ContentDetector.Components(
+                delta_hue=scene_split_params['weights'][0],
+                delta_sat=scene_split_params['weights'][1],
+                delta_lum=scene_split_params['weights'][2],
+                delta_edges=scene_split_params['weights'][3]
+            )
+
+            min_scene_len_ft = FrameTimecode(scene_split_params['min_scene_len'], video.frame_rate)
+
+            scene_manager.add_detector(
+                AdaptiveDetector(
+                    adaptive_threshold=scene_split_params['threshold'],
+                    min_content_val=scene_split_params['min_content_val'],
+                    window_width=scene_split_params['frame_window'],
+                    weights=detector_weights,
+                    kernel_size=scene_split_params.get('kernel_size'),
+                    min_scene_len=min_scene_len_ft
+                )
+            )
+
+            if progress_callback:
+                progress_callback(0.3, "Detecting scenes...")
+
+            num_frames_processed = scene_manager.detect_scenes(
+                video=video,
+                frame_skip=scene_split_params['frame_skip'],
+                show_progress=False
+            )
+
+            scene_list = scene_manager.get_scene_list(start_in_scene=True)
+
+            global_min_scene_len_ft = FrameTimecode(scene_split_params['min_scene_len'], video.frame_rate)
+            filtered_scene_list = []
+
+            if scene_list:
+                for i, (start, end) in enumerate(scene_list):
+                    current_scene_duration = end - start
+                    if current_scene_duration < global_min_scene_len_ft:
+                        if scene_split_params['drop_short_scenes']:
+                            if logger:
+                                logger.info(f"Dropping short scene ({i+1}): {start.get_timecode()} - {end.get_timecode()}")
+                            continue
+                        elif filtered_scene_list and not (scene_split_params['merge_last_scene'] and i == len(scene_list) - 1):
+                            prev_start, _ = filtered_scene_list.pop()
+                            filtered_scene_list.append((prev_start, end))
+                            if logger:
+                                logger.info(f"Merging short scene ({i+1}) with previous")
+                            continue
+                    filtered_scene_list.append((start, end))
+
+                scene_list = filtered_scene_list
+
+                if scene_split_params['merge_last_scene'] and len(scene_list) > 1:
+                    last_start, last_end = scene_list[-1]
+                    if (last_end - last_start) < global_min_scene_len_ft:
+                        prev_start, _ = scene_list[-2]
+                        scene_list = scene_list[:-2] + [(prev_start, last_end)]
+        else:
+            # Manual scene splitting
+            if progress_callback:
+                progress_callback(0.3, "Calculating manual split points...")
+
+            total_frames = int(video.frame_rate * video.duration.get_seconds())
+            scene_list = []
+
+            if scene_split_params['manual_split_type'] == 'duration':
+                split_duration_seconds = scene_split_params['manual_split_value']
+                split_duration_frames = int(split_duration_seconds * video.frame_rate)
+            else:
+                split_duration_frames = scene_split_params['manual_split_value']
+
+            current_frame = 0
+            scene_num = 1
+            while current_frame < total_frames:
+                start_frame = current_frame
+                end_frame = min(current_frame + split_duration_frames, total_frames)
+
+                start_tc = FrameTimecode(start_frame, video.frame_rate)
+                end_tc = FrameTimecode(end_frame, video.frame_rate)
+
+                scene_list.append((start_tc, end_tc))
+                current_frame = end_frame
+                scene_num += 1
+
+        if not scene_list:
+            if logger:
+                logger.warning("No scenes detected, using entire video as single scene")
+            scene_list = [(FrameTimecode(0, video.frame_rate), video.duration)]
+
+        if logger:
+            logger.info(f"Found {len(scene_list)} scenes to split")
+
+        if progress_callback:
+            progress_callback(0.6, f"Splitting video into {len(scene_list)} scenes...")
+
+        def scene_filename_formatter(video, scene):
+            scene_num = scene_list.index((scene.start, scene.end)) + 1
+            return f"scene_{scene_num:04d}.mp4"
+
+        if scene_split_params['use_mkvmerge'] and is_mkvmerge_available():
+            return_code = split_video_mkvmerge(
+                input_video_path=str(input_video_path),
+                scene_list=scene_list,
+                output_dir=scenes_dir,
+                video_name=Path(input_video_path).stem,
+                show_output=not scene_split_params['quiet_ffmpeg'],
+                formatter=scene_filename_formatter
+            )
+        else:
+            # Use FFmpeg for splitting
+            if scene_split_params['copy_streams']:
+                ffmpeg_args = "-map 0:v:0 -map 0:a? -map 0:s? -c:v copy -c:a copy -avoid_negative_ts make_zero"
+            else:
+                ffmpeg_args = f"-map 0:v:0 -map 0:a? -map 0:s? -c:v libx264 -preset {scene_split_params['preset']} -crf {scene_split_params['rate_factor']} -c:a aac -avoid_negative_ts make_zero"
+
+            return_code = split_video_ffmpeg(
+                input_video_path=str(input_video_path),
+                scene_list=scene_list,
+                output_dir=scenes_dir,
+                video_name=Path(input_video_path).stem,
+                arg_override=ffmpeg_args,
+                show_progress=scene_split_params['show_progress'],
+                show_output=not scene_split_params['quiet_ffmpeg'],
+                formatter=scene_filename_formatter
+            )
+
+        if return_code != 0:
+            raise Exception(f"Scene splitting failed with return code: {return_code}")
+
+        scene_files = sorted([f for f in os.listdir(scenes_dir) if f.endswith('.mp4')])
+        scene_paths = [os.path.join(scenes_dir, f) for f in scene_files]
+
+        if logger:
+            logger.info(f"Successfully split video into {len(scene_paths)} scene files")
+
+        if progress_callback:
+            progress_callback(1.0, f"Scene splitting complete: {len(scene_paths)} scenes")
+
+        return scene_paths
+
+    except Exception as e:
+        if logger:
+            logger.error(f"Error during scene splitting: {e}")
+        raise gr.Error(f"Scene splitting failed: {e}")
+    finally:
+        if 'video' in locals():
+            del video
+
+def merge_scene_videos(scene_video_paths, output_path, temp_dir, ffmpeg_preset="medium", ffmpeg_quality=23, use_gpu=False, logger=None):
+    """Merge scene videos back into a single video."""
+    try:
+        if logger:
+            logger.info(f"Merging {len(scene_video_paths)} scene videos into: {output_path}")
+
+        concat_file = os.path.join(temp_dir, "concat_list.txt")
+        with open(concat_file, 'w', encoding='utf-8') as f:
+            for scene_path in scene_video_paths:
+                # Normalize path for FFmpeg
+                scene_path_normalized = scene_path.replace('\\', '/')
+                f.write(f"file '{scene_path_normalized}'\n")
+
+        if use_gpu:
+            nvenc_preset = ffmpeg_preset
+            if ffmpeg_preset in ["ultrafast", "superfast", "veryfast", "faster", "fast"]:
+                nvenc_preset = "fast"
+            elif ffmpeg_preset in ["slower", "veryslow"]:
+                nvenc_preset = "slow"
+
+            ffmpeg_opts = f'-c:v h264_nvenc -preset:v {nvenc_preset} -cq:v {ffmpeg_quality} -pix_fmt yuv420p'
+        else:
+            ffmpeg_opts = f'-c:v libx264 -preset {ffmpeg_preset} -crf {ffmpeg_quality} -pix_fmt yuv420p'
+
+        cmd = f'ffmpeg -y -f concat -safe 0 -i "{concat_file}" {ffmpeg_opts} -c:a copy "{output_path}"'
+
+        run_ffmpeg_command(cmd, "Scene Video Merging", logger)
+
+        if logger:
+            logger.info(f"Successfully merged scene videos into: {output_path}")
+        return True
+
+    except Exception as e:
+        if logger:
+            logger.error(f"Error merging scene videos: {e}")
+        raise gr.Error(f"Failed to merge scene videos: {e}")
+
+def split_video_only(
+    input_video_val, scene_split_mode_radio_val, scene_min_scene_len_num_val, scene_drop_short_check_val, scene_merge_last_check_val,
+    scene_frame_skip_num_val, scene_threshold_num_val, scene_min_content_val_num_val, scene_frame_window_num_val,
+    scene_copy_streams_check_val, scene_use_mkvmerge_check_val, scene_rate_factor_num_val, scene_preset_dropdown_val, scene_quiet_ffmpeg_check_val,
+    scene_manual_split_type_radio_val, scene_manual_split_value_num_val,
+    default_output_dir, logger=None, progress=gr.Progress(track_tqdm=True)
+):
+    """Split video into scenes only (no upscaling)."""
+    if not input_video_val or not os.path.exists(input_video_val):
+        raise gr.Error("Please upload a valid input video.")
+
+    try:
+        progress(0.1, desc="Initializing scene splitting...")
+
+        run_id = f"split_only_{int(time.time())}_{np.random.randint(1000, 9999)}"
+        temp_dir_base = tempfile.gettempdir()
+        temp_dir = os.path.join(temp_dir_base, run_id)
+        os.makedirs(temp_dir, exist_ok=True)
+
+        scene_split_params = {
+            'split_mode': scene_split_mode_radio_val,
+            'min_scene_len': scene_min_scene_len_num_val,
+            'drop_short_scenes': scene_drop_short_check_val,
+            'merge_last_scene': scene_merge_last_check_val,
+            'frame_skip': scene_frame_skip_num_val,
+            'threshold': scene_threshold_num_val,
+            'min_content_val': scene_min_content_val_num_val,
+            'frame_window': scene_frame_window_num_val,
+            'weights': [1.0, 1.0, 1.0, 0.0],
+            'copy_streams': scene_copy_streams_check_val,
+            'use_mkvmerge': scene_use_mkvmerge_check_val,
+            'rate_factor': scene_rate_factor_num_val,
+            'preset': scene_preset_dropdown_val,
+            'quiet_ffmpeg': scene_quiet_ffmpeg_check_val,
+            'show_progress': True,
+            'manual_split_type': scene_manual_split_type_radio_val,
+            'manual_split_value': scene_manual_split_value_num_val
+        }
+
+        def scene_progress_callback(progress_val, desc):
+            progress(0.1 + (progress_val * 0.8), desc=desc)
+
+        scene_video_paths = split_video_into_scenes(
+            input_video_val,
+            temp_dir,
+            scene_split_params,
+            scene_progress_callback,
+            logger
+        )
+
+        base_output_filename_no_ext, _ = get_next_filename(default_output_dir, logger)
+        split_output_dir = os.path.join(default_output_dir, f"{base_output_filename_no_ext}_scenes")
+        os.makedirs(split_output_dir, exist_ok=True)
+
+        progress(0.9, desc="Copying scene files...")
+        copied_scenes = []
+        for i, scene_path in enumerate(scene_video_paths):
+            scene_filename = f"scene_{i+1:04d}.mp4"
+            output_scene_path = os.path.join(split_output_dir, scene_filename)
+            shutil.copy2(scene_path, output_scene_path)
+            copied_scenes.append(output_scene_path)
+
+        progress(1.0, desc="Scene splitting complete!")
+
+        cleanup_temp_dir(temp_dir, logger)
+
+        status_msg = f"Successfully split video into {len(copied_scenes)} scenes.\nOutput folder: {split_output_dir}"
+        return None, status_msg
+
+    except Exception as e:
+        if logger:
+            logger.error(f"Error during split-only operation: {e}")
+        if 'temp_dir' in locals():
+            cleanup_temp_dir(temp_dir, logger)
+        raise gr.Error(f"Scene splitting failed: {e}") 

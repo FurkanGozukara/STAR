@@ -19,6 +19,14 @@ import logging
 import re
 from pathlib import Path
 
+from logic.cogvlm_utils import (
+    load_cogvlm_model as util_load_cogvlm_model,
+    unload_cogvlm_model as util_unload_cogvlm_model,
+    auto_caption as util_auto_caption,
+    COG_VLM_AVAILABLE as UTIL_COG_VLM_AVAILABLE,
+    BITSANDBYTES_AVAILABLE as UTIL_BITSANDBYTES_AVAILABLE
+)
+
 # GPU detection and management functions
 SELECTED_GPU_ID = 0  # Global variable to track selected GPU ID (0, 1, 2, etc.)
 
@@ -508,12 +516,20 @@ def process_single_scene(
         
         # Auto-caption this scene if enabled
         scene_prompt = final_prompt
-        if enable_auto_caption_per_scene and COG_VLM_AVAILABLE:
+        if enable_auto_caption_per_scene:
             if progress_callback:
                 progress_callback(0.15, f"Scene {scene_index+1}: Generating caption...")
             
             try:
-                scene_caption, _ = auto_caption(scene_video_path, cogvlm_quant, cogvlm_unload)
+                # Use util_auto_caption and pass COG_VLM_MODEL_PATH and logger
+                scene_caption, _ = util_auto_caption(
+                    scene_video_path, 
+                    cogvlm_quant, 
+                    cogvlm_unload, 
+                    COG_VLM_MODEL_PATH, # Pass COG_VLM_MODEL_PATH
+                    logger=logger, # Pass logger
+                    progress=progress
+                )
                 if not scene_caption.startswith("Error:"):
                     scene_prompt = scene_caption
                     logger.info(f"Scene {scene_index+1} auto-caption: {scene_caption[:100]}...")
@@ -857,22 +873,6 @@ except ImportError as e :
     print ("Please ensure the STAR repository is correctly in the Python path (set by base_path) and all dependencies from 'requirements.txt' are installed.")
     sys .exit (1 )
 
-COG_VLM_AVAILABLE =False 
-BITSANDBYTES_AVAILABLE =False 
-try :
-    from transformers import AutoModelForCausalLM ,AutoTokenizer 
-    from decord import cpu ,VideoReader ,bridge 
-    import io 
-    try :
-        from transformers import BitsAndBytesConfig 
-        BITSANDBYTES_AVAILABLE =True 
-    except ImportError :
-        print ("Warning: bitsandbytes not found. INT4/INT8 quantization for CogVLM2 will not be available.")
-    COG_VLM_AVAILABLE =True 
-except ImportError as e :
-    print (f"Warning: CogVLM2 related components (transformers, decord) not fully found: {e}")
-    print ("Auto-captioning feature will be disabled.")
-
 logger =get_logger ()
 
 logger .setLevel (logging .INFO )
@@ -907,9 +907,6 @@ if not os .path .exists (LIGHT_DEG_MODEL ):
      logger .error (f"FATAL: Light degradation model not found at {LIGHT_DEG_MODEL}.")
 if not os .path .exists (HEAVY_DEG_MODEL ):
      logger .error (f"FATAL: Heavy degradation model not found at {HEAVY_DEG_MODEL}.")
-
-cogvlm_model_state ={"model":None ,"tokenizer":None ,"device":None ,"quant":None }
-cogvlm_lock =threading .RLock ()
 
 def run_ffmpeg_command (cmd ,desc ="ffmpeg command"):
     logger .info (f"Running {desc}: {cmd}")
@@ -1092,284 +1089,6 @@ def calculate_upscale_params (orig_h ,orig_w ,target_h ,target_w ,target_res_mod
 
     logger .info (f"Calculated final target resolution: {final_w}x{final_h} with upscale {final_upscale_factor:.2f}")
     return needs_downscale ,downscale_h ,downscale_w ,final_upscale_factor ,final_h ,final_w 
-
-def load_cogvlm_model (quantization ,device ):
-    global cogvlm_model_state 
-    logger .info (f"Attempting to load CogVLM2 model with quantization: {quantization} on device: {device}")
-
-    with cogvlm_lock :
-        if cogvlm_model_state ["model"]is not None and cogvlm_model_state ["quant"]==quantization and cogvlm_model_state ["device"]==device :
-            logger .info ("CogVLM2 model already loaded with correct settings.")
-            return cogvlm_model_state ["model"],cogvlm_model_state ["tokenizer"]
-        elif cogvlm_model_state ["model"]is not None :
-            logger .info ("Different CogVLM2 model/settings currently loaded, unloading before loading new one.")
-            unload_cogvlm_model ('full')
-
-        try :
-            logger .info (f"Loading tokenizer from: {COG_VLM_MODEL_PATH}")
-            tokenizer =AutoTokenizer .from_pretrained (COG_VLM_MODEL_PATH ,trust_remote_code =True )
-
-            logger .info ("Tokenizer loaded successfully.")
-
-            bnb_config =None 
-            model_dtype =torch .bfloat16 if (device =='cuda'and torch .cuda .is_available ()and torch .cuda .get_device_capability ()[0 ]>=8 )else torch .float16 
-
-            if BITSANDBYTES_AVAILABLE and device =='cuda':
-                if quantization ==4 :
-                    bnb_config =BitsAndBytesConfig (load_in_4bit =True ,bnb_4bit_compute_dtype =model_dtype )
-                elif quantization ==8 :
-                    bnb_config =BitsAndBytesConfig (load_in_8bit =True )
-            elif quantization in [4 ,8 ]and device !='cuda':
-                 logger .warning ("BitsAndBytes quantization is only available on CUDA. Loading in FP16/BF16.")
-                 quantization =0 
-
-            current_device_map =None 
-            if bnb_config and device =='cuda':
-                # When using quantization, auto device_map will use the available GPUs
-                current_device_map ="auto"
-
-            effective_low_cpu_mem_usage =True if bnb_config else False 
-
-            logger .info (f"Preparing to load model from: {COG_VLM_MODEL_PATH} with quant: {quantization}, dtype: {model_dtype}, device: {device}, device_map: {current_device_map}, low_cpu_mem: {effective_low_cpu_mem_usage}")
-
-            model =AutoModelForCausalLM .from_pretrained (
-            COG_VLM_MODEL_PATH ,
-            torch_dtype =model_dtype if device =='cuda'else torch .float32 ,
-            trust_remote_code =True ,
-            quantization_config =bnb_config ,
-            low_cpu_mem_usage =effective_low_cpu_mem_usage ,
-            device_map =current_device_map 
-            )
-
-            if not bnb_config and current_device_map is None :
-                logger .info (f"Moving non-quantized model to target device: {device}")
-                # Use the actual GPU device string when moving model
-                actual_device = get_gpu_device() if device == 'cuda' else device
-                model =model .to (actual_device )
-            elif bnb_config and current_device_map =="auto":
-                 logger .info (f"BNB model loaded with device_map='auto'. Should be on target CUDA device(s).")
-
-            model =model .eval ()
-
-            cogvlm_model_state ["model"]=model 
-            cogvlm_model_state ["tokenizer"]=tokenizer 
-            cogvlm_model_state ["device"]=device 
-            cogvlm_model_state ["quant"]=quantization 
-
-            final_device_str ="N/A"
-            final_dtype_str ="N/A"
-            try :
-                first_param =next (model .parameters (),None )
-                if hasattr (model ,'device')and isinstance (model .device ,torch .device ):
-                    final_device_str =str (model .device )
-                elif hasattr (model ,'hf_device_map'):
-                    final_device_str =str (model .hf_device_map )
-                elif first_param is not None and hasattr (first_param ,'device'):
-                     final_device_str =str (first_param .device )
-
-                if first_param is not None and hasattr (first_param ,'dtype'):
-                    final_dtype_str =str (first_param .dtype )
-            except Exception as e_dev_dtype :
-                logger .warning (f"Could not reliably determine final model device/dtype: {e_dev_dtype}")
-
-            logger .info (f"CogVLM2 model loaded (Quant: {quantization}, Requested Device: {device}, Final Device(s): {final_device_str}, Dtype: {final_dtype_str}).")
-            return model ,tokenizer 
-        except Exception as e :
-            logger .error (f"Failed to load CogVLM2 model from path: {COG_VLM_MODEL_PATH}")
-            logger .error (f"Exception type: {type(e).__name__}")
-            logger .error (f"Exception details: {e}",exc_info =True )
-
-            _model_ref =cogvlm_model_state .pop ("model",None )
-            _tokenizer_ref =cogvlm_model_state .pop ("tokenizer",None )
-            if _model_ref :del _model_ref 
-            if _tokenizer_ref :del _tokenizer_ref 
-            cogvlm_model_state .update ({"model":None ,"tokenizer":None ,"device":None ,"quant":None })
-            if torch .cuda .is_available ():torch .cuda .empty_cache ()
-            raise gr .Error (f"Could not load CogVLM2 model (check logs for details): {str(e)[:200]}")
-
-def unload_cogvlm_model (strategy ):
-    global cogvlm_model_state 
-    logger .info (f"Unloading CogVLM2 model with strategy: {strategy}")
-    with cogvlm_lock :
-        if cogvlm_model_state .get ("model")is None and cogvlm_model_state .get ("tokenizer")is None :
-            logger .info ("CogVLM2 model/tokenizer not loaded or already unloaded.")
-            return 
-
-        if strategy =='cpu':
-            try :
-                model =cogvlm_model_state .get ("model")
-                if model is not None :
-                    if cogvlm_model_state .get ("quant")in [4 ,8 ]:
-                        logger .info ("BNB quantized model cannot be moved to CPU. Keeping on GPU or use 'full' unload.")
-                        return 
-
-                    if cogvlm_model_state .get ("device")=='cuda'and torch .cuda .is_available ():
-                        model .to ('cpu')
-                        cogvlm_model_state ["device"]='cpu'
-                        logger .info ("CogVLM2 model moved to CPU.")
-                    else :
-                        logger .info ("CogVLM2 model already on CPU or CUDA not available for move.")
-                else :
-                    logger .info ("No model found in state to move to CPU.")
-            except Exception as e :
-                logger .error (f"Failed to move CogVLM2 model to CPU: {e}")
-        elif strategy =='full':
-            model_obj =cogvlm_model_state .pop ("model",None )
-            tokenizer_obj =cogvlm_model_state .pop ("tokenizer",None )
-
-            cogvlm_model_state .update ({"model":None ,"tokenizer":None ,"device":None ,"quant":None })
-
-            if model_obj is not None :
-                del model_obj 
-                logger .info ("Explicitly deleted popped model object.")
-            if tokenizer_obj is not None :
-                del tokenizer_obj 
-                logger .info ("Explicitly deleted popped tokenizer object.")
-
-            gc .collect ()
-            logger .info ("Python garbage collection triggered.")
-
-            if torch .cuda .is_available ():
-                torch .cuda .empty_cache ()
-                logger .info ("CUDA cache emptied.")
-            logger .info ("CogVLM2 model and tokenizer fully unloaded and CUDA cache (if applicable) cleared.")
-        else :
-            logger .warning (f"Unknown unload strategy: {strategy}")
-
-def auto_caption (video_path ,quantization ,unload_strategy ,progress =gr .Progress (track_tqdm =True )):
-    if not COG_VLM_AVAILABLE :
-        raise gr .Error ("CogVLM2 components not available. Captioning disabled.")
-    if not video_path or not os .path .exists (video_path ):
-        raise gr .Error ("Please provide a valid video file for captioning.")
-
-    cogvlm_device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    # For CogVLM, we need just the device name (e.g., 'cuda' not 'cuda:0')
-    # cogvlm_device = 'cuda' if cogvlm_device.startswith('0') or cogvlm_device == 'cuda' else 'cpu' # Old logic
-    
-    if quantization in [4 ,8 ]and cogvlm_device =='cpu':
-        raise gr .Error ("INT4/INT8 quantization requires CUDA. Please select FP16/BF16 for CPU or ensure CUDA is available.")
-
-    caption ="Error: Caption generation failed."
-
-    local_model_ref =None 
-    local_tokenizer_ref =None 
-    inputs_on_device =None 
-    video_data_cog =None 
-    outputs_tensor =None 
-
-    try :
-        progress (0.1 ,desc ="Loading CogVLM2 for captioning...")
-        local_model_ref ,local_tokenizer_ref =load_cogvlm_model (quantization ,cogvlm_device )
-
-        model_compute_device =cogvlm_device 
-        model_actual_dtype =torch .float32 
-
-        if local_model_ref is not None :
-            first_param =next (local_model_ref .parameters (),None )
-            if hasattr (local_model_ref ,'device')and isinstance (local_model_ref .device ,torch .device ):
-                 model_compute_device =local_model_ref .device 
-            elif hasattr (local_model_ref ,'hf_device_map'):
-
-                 if first_param is not None :model_compute_device =first_param .device 
-                 else :model_compute_device =torch .device (cogvlm_device )
-            elif first_param is not None :
-                 model_compute_device =first_param .device 
-
-            if first_param is not None :
-                model_actual_dtype =first_param .dtype 
-            elif cogvlm_device =='cuda':
-                model_actual_dtype =torch .bfloat16 if torch .cuda .get_device_capability ()[0 ]>=8 else torch .float16 
-
-        # Use the actual GPU device for inputs
-        if isinstance(model_compute_device, str) and model_compute_device == 'cuda':
-            model_compute_device = torch.device(get_gpu_device())
-        elif not isinstance(model_compute_device, torch.device):
-            model_compute_device = torch.device(model_compute_device)
-
-        logger .info (f"CogVLM2 for captioning. Inputs will target device: {model_compute_device}, dtype: {model_actual_dtype}")
-
-        progress (0.3 ,desc ="Preparing video for CogVLM2...")
-        bridge .set_bridge ('torch')
-        with open (video_path ,'rb')as f :video_bytes =f .read ()
-
-        decord_vr =VideoReader (io .BytesIO (video_bytes ),ctx =cpu (0 ))
-        num_frames_cog =24 
-        total_frames_decord =len (decord_vr )
-
-        if total_frames_decord ==0 :
-            raise gr .Error ("Video has no frames or could not be read by decord.")
-
-        timestamps =decord_vr .get_frame_timestamp (np .arange (total_frames_decord ))
-        timestamps =[ts [0 ]for ts in timestamps ]
-
-        frame_id_list =[]
-        if timestamps :
-            max_second =int (round (max (timestamps )if timestamps else 0 ))+1 
-            unique_indices =set ()
-            for sec in range (max_second ):
-                if len (unique_indices )>=num_frames_cog :break 
-                closest_time_diff =float ('inf')
-                closest_idx =-1 
-                for idx ,ts_val in enumerate (timestamps ):
-                    diff =abs (ts_val -sec )
-                    if diff <closest_time_diff :
-                        closest_time_diff =diff 
-                        closest_idx =idx 
-                if closest_idx !=-1 :
-                    unique_indices .add (closest_idx )
-            frame_id_list =sorted (list (unique_indices ))[:num_frames_cog ]
-
-        if len (frame_id_list )<num_frames_cog :
-            logger .warning (f"Sampled {len(frame_id_list)} frames, need {num_frames_cog}. Using linspace.")
-            step =max (1 ,total_frames_decord //num_frames_cog )
-            frame_id_list =[min (i *step ,total_frames_decord -1 )for i in range (num_frames_cog )]
-            frame_id_list =sorted (list (set (frame_id_list )))
-            frame_id_list =frame_id_list [:num_frames_cog ]
-
-        if not frame_id_list :
-            logger .warning ("Frame ID list is empty, using first N frames or all if less than N.")
-            frame_id_list =list (range (min (num_frames_cog ,total_frames_decord )))
-
-        logger .info (f"CogVLM2 using frame indices: {frame_id_list}")
-        video_data_cog =decord_vr .get_batch (frame_id_list ).permute (3 ,0 ,1 ,2 )
-
-        query ="Please describe this video in detail."
-        inputs =local_model_ref .build_conversation_input_ids (
-        tokenizer =local_tokenizer_ref ,query =query ,images =[video_data_cog ],history =[],template_version ='chat'
-        )
-
-        inputs_on_device ={
-        'input_ids':inputs ['input_ids'].unsqueeze (0 ).to (model_compute_device ),
-        'token_type_ids':inputs ['token_type_ids'].unsqueeze (0 ).to (model_compute_device ),
-        'attention_mask':inputs ['attention_mask'].unsqueeze (0 ).to (model_compute_device ),
-        'images':[[inputs ['images'][0 ].to (model_compute_device ).to (model_actual_dtype )]],
-        }
-
-        gen_kwargs ={"max_new_tokens":256 ,"pad_token_id":local_tokenizer_ref .eos_token_id or 128002 ,"top_k":5 ,"do_sample":True ,"top_p":0.8 ,"temperature":0.8 }
-
-        progress (0.6 ,desc ="Generating caption with CogVLM2...")
-        with torch .no_grad ():
-            outputs_tensor =local_model_ref .generate (**inputs_on_device ,**gen_kwargs )
-        outputs_tensor =outputs_tensor [:,inputs_on_device ['input_ids'].shape [1 ]:]
-        caption =local_tokenizer_ref .decode (outputs_tensor [0 ],skip_special_tokens =True ).strip ()
-        logger .info (f"Generated Caption: {caption}")
-        progress (0.9 ,desc ="Caption generated.")
-
-    except Exception as e :
-        logger .error (f"Error during auto-captioning: {e}",exc_info =True )
-        caption =f"Error during captioning: {str(e)[:100]}"
-    finally :
-        progress (1.0 ,desc ="Finalizing captioning...")
-
-        if outputs_tensor is not None :del outputs_tensor 
-        if inputs_on_device is not None :inputs_on_device .clear ();del inputs_on_device 
-        if video_data_cog is not None :del video_data_cog 
-
-        if local_model_ref is not None :del local_model_ref 
-        if local_tokenizer_ref is not None :del local_tokenizer_ref 
-
-        unload_cogvlm_model (unload_strategy )
-    return caption ,f"Captioning status: {'Success' if not caption.startswith('Error') else caption}"
 
 def run_upscale (
 input_video_path ,user_prompt ,positive_prompt ,negative_prompt ,model_choice ,
@@ -2559,7 +2278,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         scale=1
                     )
 
-                if COG_VLM_AVAILABLE :
+                if UTIL_COG_VLM_AVAILABLE :
                     with gr .Row ():
                         auto_caption_btn =gr .Button ("Generate Caption with CogVLM2",variant ="primary",icon ="icons/caption.png")
                         upscale_button =gr .Button ("Upscale Video",variant ="primary",icon ="icons/upscale.png")
@@ -2632,10 +2351,10 @@ The total combined prompt length is limited to 77 tokens."""
 - Speed Impact: Slower (Lower value = Slower decoding)."""
                 )
 
-            if COG_VLM_AVAILABLE :
+            if UTIL_COG_VLM_AVAILABLE :
                 with gr .Accordion ("Auto-Captioning Settings (CogVLM2)",open =True ):
                     cogvlm_quant_choices_map ={0 :"FP16/BF16"}
-                    if torch .cuda .is_available ()and BITSANDBYTES_AVAILABLE :
+                    if torch .cuda .is_available ()and UTIL_BITSANDBYTES_AVAILABLE :
                         cogvlm_quant_choices_map [4 ]="INT4 (CUDA)"
                         cogvlm_quant_choices_map [8 ]="INT8 (CUDA)"
 
@@ -2973,9 +2692,9 @@ The total combined prompt length is limited to 77 tokens."""
     )
 
     cogvlm_display_to_quant_val_map_global ={}
-    if COG_VLM_AVAILABLE :
+    if UTIL_COG_VLM_AVAILABLE :
         _temp_map ={0 :"FP16/BF16"}
-        if torch .cuda .is_available ()and BITSANDBYTES_AVAILABLE :
+        if torch .cuda .is_available ()and UTIL_BITSANDBYTES_AVAILABLE :
             _temp_map [4 ]="INT4 (CUDA)"
             _temp_map [8 ]="INT8 (CUDA)"
         cogvlm_display_to_quant_val_map_global ={v :k for k ,v in _temp_map .items ()}
@@ -3005,21 +2724,29 @@ The total combined prompt length is limited to 77 tokens."""
         status_updates =[]
         output_updates_for_prompt_box =gr .update ()
 
-        logger.info(f"In upscale_director_logic. COG_VLM_AVAILABLE: {COG_VLM_AVAILABLE}, do_auto_caption_first_val: {do_auto_caption_first_val}, User prompt: '{user_prompt_val[:50]}...'")
+        logger.info(f"In upscale_director_logic. do_auto_caption_first_val: {do_auto_caption_first_val}, User prompt: '{user_prompt_val[:50]}...'")
 
-        if COG_VLM_AVAILABLE and do_auto_caption_first_val :
+        if do_auto_caption_first_val :
             logger.info("Attempting auto-captioning before upscale.")
             progress(0, desc="Starting auto-captioning before upscale...")
             yield None, "Starting auto-captioning...", output_updates_for_prompt_box, gr.update(visible=True), None, "Starting auto-captioning..."
             try:
-                logger.info("Preparing to call auto_caption function.") # New log
+                logger.info("Preparing to call util_auto_caption function.") 
                 quant_val = get_quant_value_from_display(cogvlm_quant_radio_val)
-                caption_text, caption_stat_msg = auto_caption(input_video_val, quant_val, cogvlm_unload_radio_val, progress=progress)
-                logger.info(f"auto_caption function returned. Caption text (first 50 chars): '{caption_text[:50]}...'") # New log
+                # Call util_auto_caption from cogvlm_utils
+                caption_text, caption_stat_msg = util_auto_caption(
+                    input_video_val, 
+                    quant_val, 
+                    cogvlm_unload_radio_val, 
+                    COG_VLM_MODEL_PATH, # Pass COG_VLM_MODEL_PATH
+                    logger=logger,      # Pass logger
+                    progress=progress
+                )
+                logger.info(f"util_auto_caption function returned. Caption text (first 50 chars): '{caption_text[:50]}...'") 
                 status_updates.append(f"Auto-caption status: {caption_stat_msg}")
                 if not caption_text.startswith("Error:"):
                     current_user_prompt = caption_text
-                    logger.info(f"Using generated caption as prompt for upscaling: '{current_user_prompt}'") # New log
+                    logger.info(f"Using generated caption as prompt for upscaling: '{current_user_prompt}'")
                     status_updates.append(f"Using generated caption as prompt: '{caption_text[:50]}...'")
                     output_updates_for_prompt_box = gr.update(value=current_user_prompt)
                 else:
@@ -3027,7 +2754,7 @@ The total combined prompt length is limited to 77 tokens."""
 
                 yield None, "\n".join(status_updates), output_updates_for_prompt_box, caption_stat_msg, None, "Auto-captioning finished."
             except Exception as e_ac:
-                logger.error(f"Exception during auto-caption call or its setup: {e_ac}", exc_info=True) # Enhanced log
+                logger.error(f"Exception during auto-caption call or its setup: {e_ac}", exc_info=True)
                 status_updates.append(f"Error during auto-caption pre-step: {e_ac}")
                 yield None, "\n".join(status_updates), gr.update(), str(e_ac), None, f"Error during auto-caption: {e_ac}"
         else:
@@ -3075,12 +2802,12 @@ The total combined prompt length is limited to 77 tokens."""
             if chunk_status_val:
                 final_chunk_status = chunk_status_val
 
-            caption_status_update = caption_status.value if COG_VLM_AVAILABLE and do_auto_caption_first_val else ""
+            caption_status_update = caption_status.value if UTIL_COG_VLM_AVAILABLE and do_auto_caption_first_val else ""
 
             yield final_video_output, final_status_output.strip(), output_updates_for_prompt_box, caption_status_update, final_chunk_video, final_chunk_status
             output_updates_for_prompt_box = gr.update()
 
-        final_caption_status = caption_status.value if COG_VLM_AVAILABLE and hasattr(caption_status, 'value') else ""
+        final_caption_status = caption_status.value if UTIL_COG_VLM_AVAILABLE and hasattr(caption_status, 'value') else ""
         yield final_video_output, final_status_output.strip(), output_updates_for_prompt_box, final_caption_status, final_chunk_video, final_chunk_status
 
     click_inputs =[
@@ -3100,13 +2827,13 @@ The total combined prompt length is limited to 77 tokens."""
     ]
 
     click_outputs_list =[output_video ,status_textbox ,user_prompt ]
-    if COG_VLM_AVAILABLE :
+    if UTIL_COG_VLM_AVAILABLE :
         click_outputs_list .append (caption_status )
     
     # Add chunk video outputs
     click_outputs_list.extend([last_chunk_video, chunk_status_text])
 
-    if COG_VLM_AVAILABLE :
+    if UTIL_COG_VLM_AVAILABLE :
         click_inputs .extend ([cogvlm_quant_radio ,cogvlm_unload_radio ,auto_caption_then_upscale_check ])
     else :
         click_inputs .extend ([gr .State (None ),gr .State (None ),gr .State (False )])
@@ -3117,12 +2844,12 @@ The total combined prompt length is limited to 77 tokens."""
     outputs =click_outputs_list 
     )
 
-    if COG_VLM_AVAILABLE :
+    if UTIL_COG_VLM_AVAILABLE :
         auto_caption_btn .click (
-        fn =lambda vid ,quant_display ,unload_strat ,progress_bar =gr .Progress (track_tqdm =True ):auto_caption (vid ,get_quant_value_from_display (quant_display ),unload_strat ,progress_bar ),
+        fn =lambda vid ,quant_display ,unload_strat ,progress =gr .Progress (track_tqdm =True ):util_auto_caption(vid ,get_quant_value_from_display (quant_display ),unload_strat ,COG_VLM_MODEL_PATH, logger=logger, progress=progress ),
         inputs =[input_video ,cogvlm_quant_radio ,cogvlm_unload_radio ],
         outputs =[user_prompt ,caption_status ]
-        ).then (lambda :gr .update (visible =True ),outputs =caption_status )
+    ).then (lambda :gr .update (visible =True ),outputs =caption_status )
 
     # Split-only button
     split_only_button.click(
@@ -3154,7 +2881,7 @@ The total combined prompt length is limited to 77 tokens."""
             scene_frame_skip_num, scene_threshold_num, scene_min_content_val_num, scene_frame_window_num,
             scene_copy_streams_check, scene_use_mkvmerge_check, scene_rate_factor_num, scene_preset_dropdown, scene_quiet_ffmpeg_check,
             scene_manual_split_type_radio, scene_manual_split_value_num
-        ] + ([cogvlm_quant_radio, cogvlm_unload_radio, auto_caption_then_upscale_check] if COG_VLM_AVAILABLE else [gr.State(None), gr.State(None), gr.State(False)]),
+        ] + ([cogvlm_quant_radio, cogvlm_unload_radio, auto_caption_then_upscale_check] if UTIL_COG_VLM_AVAILABLE else [gr.State(None), gr.State(None), gr.State(False)]),
         outputs=[output_video, status_textbox]
     )
 
@@ -3210,7 +2937,7 @@ if __name__ =="__main__":
     os .makedirs (DEFAULT_OUTPUT_DIR ,exist_ok =True )
     logger .info (f"Gradio App Starting. Default output to: {os.path.abspath(DEFAULT_OUTPUT_DIR)}")
     logger .info (f"STAR Models expected at: {LIGHT_DEG_MODEL}, {HEAVY_DEG_MODEL}")
-    if COG_VLM_AVAILABLE :
+    if UTIL_COG_VLM_AVAILABLE :
         logger .info (f"CogVLM2 Model expected at: {COG_VLM_MODEL_PATH}")
 
     # Initialize GPU selection with the first available GPU
