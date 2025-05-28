@@ -27,6 +27,8 @@ from logic.cogvlm_utils import (
     BITSANDBYTES_AVAILABLE as UTIL_BITSANDBYTES_AVAILABLE
 )
 
+from logic.common_utils import format_time
+
 # GPU detection and management functions
 SELECTED_GPU_ID = 0  # Global variable to track selected GPU ID (0, 1, 2, etc.)
 
@@ -826,17 +828,6 @@ def process_single_scene(
     except Exception as e:
         logger.error(f"Error processing scene {scene_index+1}: {e}")
         raise e
-
-def format_time (seconds ):
-    if seconds is None or seconds <0 :
-        return "N/A"
-    hours =int (seconds //3600 )
-    minutes =int ((seconds %3600 )//60 )
-    secs =int (seconds %60 )
-    if hours >0 :
-        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
-    else :
-        return f"{minutes:02d}:{secs:02d}"
 
 try :
 
