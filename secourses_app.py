@@ -51,6 +51,10 @@ from logic .scene_utils import (
     split_video_only as util_split_video_only
 )
 
+from logic .upscaling_utils import (
+    calculate_upscale_params as util_calculate_upscale_params
+)
+
 from logic .gpu_utils import (
 get_available_gpus as util_get_available_gpus ,
 set_gpu_device as util_set_gpu_device ,
@@ -896,42 +900,6 @@ if not os .path .exists (LIGHT_DEG_MODEL ):
 if not os .path .exists (HEAVY_DEG_MODEL ):
      logger .error (f"FATAL: Heavy degradation model not found at {HEAVY_DEG_MODEL}.")
 
-def calculate_upscale_params (orig_h ,orig_w ,target_h ,target_w ,target_res_mode ):
-    final_h =int (target_h )
-    final_w =int (target_w )
-    needs_downscale =False 
-    downscale_h ,downscale_w =orig_h ,orig_w 
-
-    if target_res_mode =='Downscale then 4x':
-        intermediate_h =final_h /4.0 
-        intermediate_w =final_w /4.0 
-        if orig_h >intermediate_h or orig_w >intermediate_w :
-            needs_downscale =True 
-            ratio =min (intermediate_h /orig_h ,intermediate_w /orig_w )
-            downscale_h =int (round (orig_h *ratio /2 )*2 )
-            downscale_w =int (round (orig_w *ratio /2 )*2 )
-            logger .info (f"Downscaling required: {orig_h}x{orig_w} -> {downscale_w}x{downscale_h} for 4x target.")
-        else :
-            logger .info ("No downscaling needed for 'Downscale then 4x' mode.")
-        final_upscale_factor =4.0 
-
-        final_h =int (round (downscale_h *final_upscale_factor /2 )*2 )
-        final_w =int (round (downscale_w *final_upscale_factor /2 )*2 )
-
-    elif target_res_mode =='Ratio Upscale':
-        if orig_h ==0 or orig_w ==0 :raise ValueError ("Original dimensions cannot be zero.")
-        ratio_h =final_h /orig_h 
-        ratio_w =final_w /orig_w 
-        final_upscale_factor =min (ratio_h ,ratio_w )
-        final_h =int (round (orig_h *final_upscale_factor /2 )*2 )
-        final_w =int (round (orig_w *final_upscale_factor /2 )*2 )
-        logger .info (f"Ratio Upscale mode: Using upscale factor {final_upscale_factor:.2f}")
-    else :
-        raise ValueError (f"Invalid target_res_mode: {target_res_mode}")
-
-    logger .info (f"Calculated final target resolution: {final_w}x{final_h} with upscale {final_upscale_factor:.2f}")
-    return needs_downscale ,downscale_h ,downscale_w ,final_upscale_factor ,final_h ,final_w 
-
 def run_upscale (
 input_video_path ,user_prompt ,positive_prompt ,negative_prompt ,model_choice ,
 upscale_factor_slider ,cfg_scale ,steps ,solver_mode ,
@@ -978,7 +946,7 @@ progress =gr .Progress (track_tqdm =True )
     "metadata":0.02 
     }
 
-    if not enable_target_res or not calculate_upscale_params (1 ,1 ,1 ,1 ,target_res_mode )[0 ]:
+    if not enable_target_res or not util_calculate_upscale_params (1 ,1 ,1 ,1 ,target_res_mode, logger=logger )[0 ]:
         stage_weights ["downscale"]=0.0 
     if not save_frames :
         stage_weights ["copy_input_frames"]=0.0 
@@ -1057,8 +1025,8 @@ progress =gr .Progress (track_tqdm =True )
         progress (current_overall_progress ,desc ="Calculating target resolution...")
 
         if enable_target_res :
-            needs_downscale ,ds_h ,ds_w ,upscale_factor ,final_h ,final_w =calculate_upscale_params (
-            orig_h ,orig_w ,target_h ,target_w ,target_res_mode 
+            needs_downscale ,ds_h ,ds_w ,upscale_factor ,final_h ,final_w =util_calculate_upscale_params (
+            orig_h ,orig_w ,target_h ,target_w ,target_res_mode, logger=logger 
             )
             status_log .append (f"Target resolution mode: {target_res_mode }. Calculated upscale: {upscale_factor:.2f}x. Target output: {final_w}x{final_h}")
             logger .info (f"Target resolution mode: {target_res_mode }. Calculated upscale: {upscale_factor:.2f}x. Target output: {final_w}x{final_h}")
