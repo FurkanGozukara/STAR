@@ -230,6 +230,7 @@ def process_single_scene(
                 )
 
         scene_prompt = final_prompt
+        generated_scene_caption = None  # Track the generated caption for this scene
         if enable_auto_caption_per_scene:
             if progress_callback:
                 progress_callback(0.15, f"Scene {scene_index + 1}: Generating caption...")
@@ -246,7 +247,12 @@ def process_single_scene(
                 )
                 if not scene_caption.startswith("Error:"):
                     scene_prompt = scene_caption
+                    generated_scene_caption = scene_caption  # Store the generated caption
                     logger.info(f"Scene {scene_index + 1} auto-caption: {scene_caption[:100]}...")
+                    
+                    # If this is the first scene, immediately signal for prompt update
+                    if scene_index == 0:
+                        logger.info(f"FIRST_SCENE_CAPTION_IMMEDIATE_UPDATE: {scene_caption}")
                 else:
                     logger.warning(f"Scene {scene_index + 1} auto-caption failed, using original prompt")
             except Exception as e:
@@ -439,8 +445,7 @@ def process_single_scene(
                         processed_frame_filenames[k_global] = scene_frame_files[k_global]
 
                 del window_data_cuda, window_sr_tensor_bcthw, window_sr_frames_uint8
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+                if torch.cuda.is_available(): torch.cuda.empty_cache()
 
                 # if progress_callback: # Updated by diffusion callback
                 #     window_progress = 0.3 + (window_iter_idx / total_windows_to_process) * 0.5
@@ -664,7 +669,7 @@ def process_single_scene(
                 logger.warning(f"Failed to save scene {scene_index+1} metadata: {message}")
 
 
-        return scene_output_video, scene_frame_count, scene_fps
+        return scene_output_video, scene_frame_count, scene_fps, generated_scene_caption
 
     except Exception as e:
         logger.error(f"Error processing scene {scene_index + 1}: {e}")
@@ -760,6 +765,7 @@ def run_upscale(
 
     last_chunk_video_path = None 
     last_chunk_status = "No chunks processed yet" 
+    first_scene_caption_for_prompt_update = None  # Track first scene caption for main prompt update
 
     setup_seed(666) 
     overall_process_start_time = time.time()
@@ -1107,6 +1113,31 @@ def run_upscale(
         if enable_scene_split and scene_video_paths:
             processed_scene_videos = [] 
             total_scenes = len(scene_video_paths)
+            first_scene_caption = None  # Track the first scene's caption to update the main prompt
+            
+            # If auto-captioning is enabled, caption the first scene immediately to update the main prompt
+            if enable_auto_caption_per_scene and total_scenes > 0:
+                logger.info("Auto-captioning first scene to update main prompt before processing...")
+                progress(current_overall_progress, desc="Generating caption for first scene...")
+                
+                try:
+                    first_scene_caption_result, _ = util_auto_caption(
+                        scene_video_paths[0], actual_cogvlm_quant_val, cogvlm_unload,
+                        app_config.COG_VLM_MODEL_PATH, logger=logger, progress=progress
+                    )
+                    if not first_scene_caption_result.startswith("Error:"):
+                        first_scene_caption = first_scene_caption_result
+                        logger.info(f"First scene caption generated for main prompt: '{first_scene_caption[:100]}...'")
+                        
+                        # Immediately yield the caption for prompt update
+                        caption_update_msg = f"First scene caption generated [FIRST_SCENE_CAPTION:{first_scene_caption}]"
+                        status_log.append(caption_update_msg)
+                        logger.info(f"Yielding first scene caption for immediate prompt update")
+                        yield None, "\n".join(status_log), last_chunk_video_path, caption_update_msg
+                    else:
+                        logger.warning("First scene auto-captioning failed, using original prompt")
+                except Exception as e:
+                    logger.error(f"Error auto-captioning first scene: {e}")
 
             for scene_idx, scene_video_path in enumerate(scene_video_paths):
                 scene_progress_start_abs = upscaling_loop_progress_start + (scene_idx / total_scenes) * stage_weights["upscaling_loop"]
@@ -1116,15 +1147,19 @@ def run_upscale(
                     progress(current_scene_overall_progress, desc=desc_scene) 
 
                 try:
-                    processed_scene_video, scene_frame_count_ret, scene_fps_ret = process_single_scene(
+                    # For the first scene, use the pre-generated caption if available
+                    scene_enable_auto_caption = enable_auto_caption_per_scene and scene_idx > 0  # Only auto-caption scenes after the first
+                    scene_prompt_override = first_scene_caption if scene_idx == 0 and first_scene_caption else final_prompt
+                    
+                    processed_scene_video, scene_frame_count_ret, scene_fps_ret, scene_caption = process_single_scene(
                         scene_video_path, scene_idx, total_scenes, temp_dir, star_model,
-                        final_prompt, upscale_factor_val, final_h_val, final_w_val, ui_total_diffusion_steps,
+                        scene_prompt_override, upscale_factor_val, final_h_val, final_w_val, ui_total_diffusion_steps,
                         solver_mode, cfg_scale, max_chunk_len, vae_chunk, color_fix_method,
                         enable_tiling, tile_size, tile_overlap, enable_sliding_window, window_size, window_step,
                         save_frames, frames_output_subfolder, 
                         scene_upscale_progress_callback, 
                         
-                        enable_auto_caption_per_scene=enable_auto_caption_per_scene, 
+                        enable_auto_caption_per_scene=scene_enable_auto_caption, 
                         cogvlm_quant=actual_cogvlm_quant_val, 
                         cogvlm_unload=cogvlm_unload, 
                         progress=progress, # Pass the main progress object for any direct use (e.g. CogVLM)
@@ -1134,9 +1169,17 @@ def run_upscale(
                         save_metadata=save_metadata, metadata_params_base=scene_metadata_base_params
                     )
                     processed_scene_videos.append(processed_scene_video)
-                    if scene_idx == 0: input_fps_val = scene_fps_ret 
+                    if scene_idx == 0: 
+                        input_fps_val = scene_fps_ret 
+                        # For the first scene, we already have the caption
+                        if first_scene_caption:
+                            logger.info(f"Using pre-generated caption for first scene: '{first_scene_caption[:100]}...'")
                     
                     scene_complete_msg = f"Scene {scene_idx + 1}/{total_scenes} processing complete"
+                    # If this is the first scene and we have a caption, include it in the message for prompt update
+                    if scene_idx == 0 and scene_caption and enable_auto_caption_per_scene:
+                        scene_complete_msg += f" [FIRST_SCENE_CAPTION:{scene_caption}]"
+                        logger.info(f"Scene 1 complete with caption for main prompt update")
                     status_log.append(scene_complete_msg)
                     logger.info(scene_complete_msg)
                     yield None, "\n".join(status_log), last_chunk_video_path, scene_complete_msg
@@ -2123,6 +2166,9 @@ The total combined prompt length is limited to 77 tokens."""
         current_caption_status_visible_val = False
         current_last_chunk_video_val = None
         current_chunk_status_text_val = "No chunks processed yet"
+        
+        # Flag to track if auto-caption was successful and prompt should be preserved
+        auto_caption_completed_successfully = False
 
         log_accumulator_director = [] 
 
@@ -2157,19 +2203,24 @@ The total combined prompt length is limited to 77 tokens."""
 
                 if not caption_text.startswith("Error:"):
                     current_user_prompt_val = caption_text 
+                    auto_caption_completed_successfully = True
                     log_accumulator_director.append(f"Using generated caption as prompt: '{caption_text[:50]}...'")
+                    logger.info(f"Auto-caption successful. Updated current_user_prompt_val to: '{current_user_prompt_val[:100]}...'")
                 else:
                     log_accumulator_director.append("Caption generation failed. Using original prompt.")
+                    logger.warning(f"Auto-caption failed. Keeping original prompt: '{current_user_prompt_val[:100]}...'")
                 
                 current_status_text_val = "\n".join(log_accumulator_director)
                 if app_config.UTIL_COG_VLM_AVAILABLE:
                     current_caption_status_text_val = caption_stat_msg 
                 
                 # Show the caption result, then hide the caption status for upscale process
+                logger.info(f"About to yield auto-caption result. current_user_prompt_val: '{current_user_prompt_val[:100]}...'")
                 yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val), 
                        gr.update(value=current_user_prompt_val), 
                        gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val), 
                        gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val))
+                logger.info("Auto-caption yield completed.")
                 
                 # Hide caption status for the upscale process
                 if app_config.UTIL_COG_VLM_AVAILABLE:
@@ -2195,9 +2246,28 @@ The total combined prompt length is limited to 77 tokens."""
             log_accumulator_director = []
 
         elif do_auto_caption_first_val and enable_scene_split_check_val and app_config.UTIL_COG_VLM_AVAILABLE:
-            msg = "Scene splitting enabled: Each scene will be auto-captioned individually by the upscaler."
+            msg = "Scene splitting enabled: Auto-captioning will be done per scene during upscaling."
             logger.info(msg)
-            log_accumulator_director.append(msg) 
+            log_accumulator_director.append(msg)
+            current_status_text_val = "\n".join(log_accumulator_director)
+            
+            # Yield to show the message about per-scene captioning
+            yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val), 
+                   gr.update(value=current_user_prompt_val), 
+                   gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val), 
+                   gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val))
+
+        elif do_auto_caption_first_val and not app_config.UTIL_COG_VLM_AVAILABLE:
+            msg = "Auto-captioning requested but CogVLM2 is not available. Using original prompt."
+            logger.warning(msg)
+            log_accumulator_director.append(msg)
+            current_status_text_val = "\n".join(log_accumulator_director)
+            
+            # Yield to show the warning message
+            yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val), 
+                   gr.update(value=current_user_prompt_val), 
+                   gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val), 
+                   gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val))
 
 
         upscale_generator = run_upscale(
@@ -2247,7 +2317,43 @@ The total combined prompt length is limited to 77 tokens."""
             current_status_text_val = combined_log_director.strip()
             status_text_update = gr.update(value=current_status_text_val)
 
-            # Update user_prompt (should generally not change here unless first captioning step failed and we revert)
+            # Check if this is the first scene completion with auto-caption
+            if yielded_status_log and "[FIRST_SCENE_CAPTION:" in yielded_status_log and not auto_caption_completed_successfully:
+                # Extract the caption from the status message
+                try:
+                    caption_start = yielded_status_log.find("[FIRST_SCENE_CAPTION:") + len("[FIRST_SCENE_CAPTION:")
+                    caption_end = yielded_status_log.find("]", caption_start)
+                    if caption_start > 20 and caption_end > caption_start:  # Basic validation
+                        extracted_caption = yielded_status_log[caption_start:caption_end]
+                        current_user_prompt_val = extracted_caption
+                        auto_caption_completed_successfully = True
+                        logger.info(f"Updated main prompt from first scene caption: '{extracted_caption[:100]}...'")
+                        log_accumulator_director.append(f"Main prompt updated with first scene caption: '{extracted_caption[:50]}...'")
+                        current_status_text_val = (combined_log_director + "\n" + "\n".join(log_accumulator_director)).strip()
+                        status_text_update = gr.update(value=current_status_text_val)
+                except Exception as e:
+                    logger.error(f"Error extracting first scene caption: {e}")
+            
+            # Also check for immediate first scene caption update signal
+            elif yielded_status_log and "FIRST_SCENE_CAPTION_IMMEDIATE_UPDATE:" in yielded_status_log and not auto_caption_completed_successfully:
+                # Extract the caption from the immediate update signal
+                try:
+                    caption_start = yielded_status_log.find("FIRST_SCENE_CAPTION_IMMEDIATE_UPDATE:") + len("FIRST_SCENE_CAPTION_IMMEDIATE_UPDATE:")
+                    extracted_caption = yielded_status_log[caption_start:].strip()
+                    if extracted_caption:  # Basic validation
+                        current_user_prompt_val = extracted_caption
+                        auto_caption_completed_successfully = True
+                        logger.info(f"Updated main prompt from immediate first scene caption: '{extracted_caption[:100]}...'")
+                        log_accumulator_director.append(f"Main prompt updated with first scene caption: '{extracted_caption[:50]}...'")
+                        current_status_text_val = (combined_log_director + "\n" + "\n".join(log_accumulator_director)).strip()
+                        status_text_update = gr.update(value=current_status_text_val)
+                except Exception as e:
+                    logger.error(f"Error extracting immediate first scene caption: {e}")
+
+            # Always ensure the user prompt reflects the current value (important for auto-caption updates)
+            # Log the current prompt value for debugging
+            if auto_caption_completed_successfully:
+                logger.info(f"Upscale generator yield (auto-caption completed): current_user_prompt_val = '{current_user_prompt_val[:100]}...'")
             user_prompt_update = gr.update(value=current_user_prompt_val)
 
             # Update caption_status
@@ -2276,6 +2382,7 @@ The total combined prompt length is limited to 77 tokens."""
             )
 
         # Final yield to ensure all states are correctly set at the very end.
+        logger.info(f"Final yield: current_user_prompt_val = '{current_user_prompt_val[:100]}...', auto_caption_completed = {auto_caption_completed_successfully}")
         yield (
             gr.update(value=current_output_video_val), 
             gr.update(value=current_status_text_val), 
