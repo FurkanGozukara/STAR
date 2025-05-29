@@ -143,8 +143,8 @@ def process_batch_videos(
 
                     is_batch_mode=True, batch_output_dir=batch_output_folder_val, original_filename=video_file,
 
-                    enable_auto_caption_per_scene=False,  # Batch mode might handle this differently or not at all for simplicity here
-                    cogvlm_quant=None, # Assuming batch uses UI settings or fixed ones
+                    enable_auto_caption_per_scene=False, 
+                    cogvlm_quant=None, 
                     cogvlm_unload=None,
                     progress=progress
                 )
@@ -242,7 +242,7 @@ def process_single_scene(
                     cogvlm_unload,
                     app_config.COG_VLM_MODEL_PATH,
                     logger=logger,
-                    progress=progress # Pass the main progress object if needed for sub-steps
+                    progress=progress 
                 )
                 if not scene_caption.startswith("Error:"):
                     scene_prompt = scene_caption
@@ -299,9 +299,9 @@ def process_single_scene(
                         scene_patch_diffusion_timer['last_time'] = current_time
                         
                         _desc_for_log = f"Scene {scene_index+1} Frame {i+1}/{scene_frame_count}, Patch {patch_idx+1}/{num_patches_this_frame_for_cb}"
-                        logger.info(f"  ↳ {_desc_for_log} - {step_duration:.2f}s/it (Step {step}/{total_steps})")
-                        if progress and hasattr(progress, "tqdm") and hasattr(progress.tqdm, "set_description"): # Check if main progress can be updated
-                             progress.tqdm.set_description(f"{_desc_for_log} (Diff: {step}/{total_steps})")
+                        # logger.info(f"  ↳ {_desc_for_log} - {step_duration:.2f}s/it (Step {step}/{total_steps})") # Reduced verbosity
+                        if progress_callback: # Use the main progress_callback if available to update UI
+                           progress_callback( (0.3 + ( (i + ( (patch_idx+1)/num_patches_this_frame_for_cb if num_patches_this_frame_for_cb > 0 else 1) ) /scene_frame_count)*0.5), f"{_desc_for_log} (Diff: {step}/{total_steps})")
 
 
                     patch_lr_video_data = patch_lr_tensor_norm
@@ -318,7 +318,7 @@ def process_single_scene(
                         patch_sr_tensor_bcthw = star_model.test(
                             patch_data_tensor_cuda, total_noise_levels, steps=ui_total_diffusion_steps,
                             solver_mode=solver_mode, guide_scale=cfg_scale,
-                            max_chunk_len=1, vae_decoder_chunk_size=1, # For single patch
+                            max_chunk_len=1, vae_decoder_chunk_size=1, 
                             progress_callback=current_scene_patch_diffusion_cb
                         )
 
@@ -344,9 +344,9 @@ def process_single_scene(
                 final_frame_bgr = cv2.cvtColor(final_frame_np_hwc_uint8, cv2.COLOR_RGB2BGR)
                 cv2.imwrite(os.path.join(scene_output_frames_dir, frame_filename), final_frame_bgr)
 
-                if progress_callback:
-                    frame_progress = 0.3 + (i / scene_frame_count) * 0.5
-                    progress_callback(frame_progress, f"Scene {scene_index + 1}: Processing frame {i + 1}/{scene_frame_count}")
+                # if progress_callback: # Main frame progress updated by patch callback
+                #     frame_progress = 0.3 + (i / scene_frame_count) * 0.5
+                #     progress_callback(frame_progress, f"Scene {scene_index + 1}: Processing frame {i + 1}/{scene_frame_count}")
 
         elif enable_sliding_window:
 
@@ -384,9 +384,9 @@ def process_single_scene(
                     scene_window_diffusion_timer['last_time'] = current_time
 
                     _desc_for_log = f"Scene {scene_index+1} Window {window_iter_idx+1}/{total_windows_to_process} (frames {start_idx}-{end_idx-1})"
-                    logger.info(f"  ↳ {_desc_for_log} - {step_duration:.2f}s/it (Step {step}/{total_steps})")
-                    if progress and hasattr(progress, "tqdm") and hasattr(progress.tqdm, "set_description"):
-                        progress.tqdm.set_description(f"{_desc_for_log} (Diff: {step}/{total_steps})")
+                    # logger.info(f"  ↳ {_desc_for_log} - {step_duration:.2f}s/it (Step {step}/{total_steps})")
+                    if progress_callback:
+                        progress_callback( (0.3 + ( (window_iter_idx + (step/total_steps if total_steps > 0 else 1)) /total_windows_to_process)*0.5), f"{_desc_for_log} (Diff: {step}/{total_steps})")
 
 
                 window_lr_video_data = preprocess(window_lr_frames_bgr)
@@ -416,17 +416,16 @@ def process_single_scene(
                 
                 save_from_start_offset_local = 0
                 save_to_end_offset_local = current_window_len
-                if total_windows_to_process > 1: # More than one window total
+                if total_windows_to_process > 1: 
                     overlap_amount = effective_window_size - effective_window_step
                     if overlap_amount > 0:
-                        if window_iter_idx == 0: # First window
+                        if window_iter_idx == 0: 
                             save_to_end_offset_local = effective_window_size - (overlap_amount // 2)
-                        elif is_last_window_iteration: # Last window
+                        elif is_last_window_iteration: 
                             save_from_start_offset_local = (overlap_amount // 2)
-                        else: # Middle windows
+                        else: 
                             save_from_start_offset_local = (overlap_amount // 2)
-                            save_to_end_offset_local = effective_window_size - (overlap_amount - save_from_start_offset_local) # effectively size - overlap/2
-                    # Ensure offsets are within current_window_len bounds
+                            save_to_end_offset_local = effective_window_size - (overlap_amount - save_from_start_offset_local) 
                     save_from_start_offset_local = max(0, min(save_from_start_offset_local, current_window_len -1 if current_window_len >0 else 0))
                     save_to_end_offset_local = max(save_from_start_offset_local, min(save_to_end_offset_local, current_window_len))
 
@@ -443,9 +442,9 @@ def process_single_scene(
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
 
-                if progress_callback:
-                    window_progress = 0.3 + (window_iter_idx / total_windows_to_process) * 0.5
-                    progress_callback(window_progress, f"Scene {scene_index + 1}: Processing window {window_iter_idx + 1}/{total_windows_to_process}")
+                # if progress_callback: # Updated by diffusion callback
+                #     window_progress = 0.3 + (window_iter_idx / total_windows_to_process) * 0.5
+                #     progress_callback(window_progress, f"Scene {scene_index + 1}: Processing window {window_iter_idx + 1}/{total_windows_to_process}")
             
             num_missed_fallback = 0
             for idx_fb, fname_fb in enumerate(scene_frame_files):
@@ -463,7 +462,7 @@ def process_single_scene(
                 logger.info(missed_msg)
 
 
-        else: # Standard chunked processing
+        else: 
             num_chunks = math.ceil(scene_frame_count / max_chunk_len) if max_chunk_len > 0 else 1
 
             for chunk_idx in range(num_chunks):
@@ -483,9 +482,9 @@ def process_single_scene(
                     scene_chunk_diffusion_timer['last_time'] = current_time
                     
                     _desc_for_log = f"Scene {scene_index+1} Chunk {chunk_idx+1}/{num_chunks} (frames {start_idx}-{end_idx-1})"
-                    logger.info(f"  ↳ {_desc_for_log} - {step_duration:.2f}s/it (Step {step}/{total_steps})")
-                    if progress and hasattr(progress, "tqdm") and hasattr(progress.tqdm, "set_description"):
-                        progress.tqdm.set_description(f"{_desc_for_log} (Diff: {step}/{total_steps})")
+                    # logger.info(f"  ↳ {_desc_for_log} - {step_duration:.2f}s/it (Step {step}/{total_steps})")
+                    if progress_callback:
+                         progress_callback( (0.3 + ( (chunk_idx + (step/total_steps if total_steps > 0 else 1)) /num_chunks)*0.5), f"{_desc_for_log} (Diff: {step}/{total_steps})")
 
 
                 chunk_lr_frames_bgr = all_lr_frames_bgr[start_idx:end_idx]
@@ -519,7 +518,7 @@ def process_single_scene(
                     frame_bgr = cv2.cvtColor(frame_np_hwc_uint8, cv2.COLOR_RGB2BGR)
                     cv2.imwrite(os.path.join(scene_output_frames_dir, frame_name), frame_bgr)
 
-                if save_chunks and scene_output_dir and scene_name: # scene_output_dir is frames_output_subfolder from run_upscale
+                if save_chunks and scene_output_dir and scene_name: 
                     current_scene_chunks_save_path = os.path.join(scene_output_dir, "scenes", scene_name, "chunks")
                     os.makedirs(current_scene_chunks_save_path, exist_ok=True)
 
@@ -555,7 +554,7 @@ def process_single_scene(
 
                     shutil.rmtree(chunk_temp_assembly_dir)
                     
-                    chunk_save_msg = f"Saved chunk {chunk_idx+1}/{num_chunks} to: {chunk_video_path}" # This message is for logger, not UI status_log.
+                    chunk_save_msg = f"Saved chunk {chunk_idx+1}/{num_chunks} to: {chunk_video_path}" 
                     logger.info(chunk_save_msg)
 
 
@@ -573,11 +572,11 @@ def process_single_scene(
                             scene_chunk_status_info = {
                                 "current_chunk": chunk_idx + 1,
                                 "total_chunks": num_chunks,
-                                "overall_process_start_time": scene_start_time, # This scene's start time
+                                "overall_process_start_time": scene_start_time, 
                             }
 
                             temp_params_for_chunk_meta = metadata_params_base.copy()
-                            temp_params_for_chunk_meta['input_fps'] = scene_fps # This scene's FPS
+                            temp_params_for_chunk_meta['input_fps'] = scene_fps 
                             current_prompt_for_this_scene_chunks = scene_prompt if 'scene_prompt' in locals() and scene_prompt and scene_prompt != final_prompt else final_prompt
                             temp_params_for_chunk_meta['scene_prompt_used_for_chunk'] = current_prompt_for_this_scene_chunks
 
@@ -598,9 +597,9 @@ def process_single_scene(
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
 
-                if progress_callback:
-                    chunk_progress = 0.3 + (chunk_idx / num_chunks) * 0.5
-                    progress_callback(chunk_progress, f"Scene {scene_index + 1}: Processing chunk {chunk_idx + 1}/{num_chunks}")
+                # if progress_callback: # Updated by diffusion callback
+                #     chunk_progress = 0.3 + (chunk_idx / num_chunks) * 0.5
+                #     progress_callback(chunk_progress, f"Scene {scene_index + 1}: Processing chunk {chunk_idx + 1}/{num_chunks}")
 
         if save_frames and scene_output_frames_permanent:
             if progress_callback:
@@ -629,35 +628,34 @@ def process_single_scene(
         logger.info(f"Scene {scene_name} processed successfully in {format_time(scene_duration)}")
 
 
-        if save_metadata and metadata_params_base and scene_output_dir: # scene_output_dir = frames_output_subfolder
+        if save_metadata and metadata_params_base and scene_output_dir: 
             if progress_callback:
                 progress_callback(0.95, f"Scene {scene_index+1}: Saving metadata...")
 
-            # Construct path relative to the scene's output directory
             scene_metadata_dir = os.path.join(scene_output_dir, "scenes", scene_name)
             os.makedirs(scene_metadata_dir, exist_ok=True)
 
             current_scene_specific_data = {
                 "scene_index": scene_index + 1,
                 "scene_name": scene_name,
-                "scene_prompt": scene_prompt, # The prompt used for this specific scene
+                "scene_prompt": scene_prompt, 
                 "scene_frame_count": scene_frame_count,
                 "scene_fps": scene_fps,
                 "scene_processing_time": scene_duration,
-                "scene_video_path": scene_output_video # Temp path, final merged path is different
+                "scene_video_path": scene_output_video 
             }
             
             final_scene_status_info = {
                 "scene_specific_data": current_scene_specific_data,
-                "processing_time_total": scene_duration # For this scene
+                "processing_time_total": scene_duration 
             }
 
             success, message = metadata_handler.save_metadata(
                 save_flag=True,
                 output_dir=scene_metadata_dir, 
                 base_filename_no_ext=f"{scene_name}_metadata",
-                params_dict=metadata_params_base, # Base params from main upscale
-                status_info=final_scene_status_info, # Scene-specific status
+                params_dict=metadata_params_base, 
+                status_info=final_scene_status_info, 
                 logger=logger
             )
             if success:
@@ -674,18 +672,15 @@ def process_single_scene(
 
 
 try:
-    # Determine the script's directory and the base path for the STAR repository
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    base_path = script_dir  # Initial assumption
+    base_path = script_dir  
 
-    # Check if 'video_to_video' is in the current base_path, if not, try parent
     if not os.path.isdir(os.path.join(base_path, 'video_to_video')):
         print(f"Warning: 'video_to_video' directory not found in inferred base_path: {base_path}. Attempting to use parent directory.")
-        base_path = os.path.dirname(base_path)  # Go up one level
+        base_path = os.path.dirname(base_path)  
         if not os.path.isdir(os.path.join(base_path, 'video_to_video')):
             print(f"Error: Could not auto-determine STAR repository root. Please set 'base_path' manually.")
             print(f"Current inferred base_path: {base_path}")
-            # Potentially raise an error or exit if essential
     
     print(f"Using STAR repository base_path: {base_path}")
     if base_path not in sys.path:
@@ -704,32 +699,27 @@ try:
     from video_super_resolution.color_fix import adain_color_fix, wavelet_color_fix
     from inference_utils import tensor2vid, preprocess, collate_fn
     from video_super_resolution.scripts.util_image import ImageSpliterTh
-    from video_to_video.utils.config import cfg as star_cfg # For default STAR model config values
+    from video_to_video.utils.config import cfg as star_cfg 
 except ImportError as e:
     print(f"Error importing STAR components: {e}")
-    print(f"Searched in sys.path: {sys.path}") # Show where Python is looking
+    print(f"Searched in sys.path: {sys.path}") 
     print("Please ensure the STAR repository is correctly in the Python path (set by base_path) and all dependencies from 'requirements.txt' are installed.")
     sys.exit(1)
 
 
 logger = get_logger()
-# Explicitly set logger level if not already configured to INFO or lower
-# This ensures application-level logs are visible.
 logger.setLevel(logging.INFO)
 found_stream_handler = False
 for handler in logger.handlers:
     if isinstance(handler, logging.StreamHandler):
-        handler.setLevel(logging.INFO) # Ensure existing stream handlers also get INFO
+        handler.setLevel(logging.INFO) 
         found_stream_handler = True
-        logger.info("Diagnostic: Explicitly set StreamHandler level to INFO.") # Diagnostic log
+        logger.info("Diagnostic: Explicitly set StreamHandler level to INFO.") 
 if not found_stream_handler:
-    # If no stream handler is found (e.g., in some execution environments), add one.
     ch = logging.StreamHandler()
     ch.setLevel(logging.INFO)
-    # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s') # Optional: custom format
-    # ch.setFormatter(formatter)
     logger.addHandler(ch)
-    logger.info("Diagnostic: No StreamHandler found, added a new one with INFO level.") # Diagnostic log
+    logger.info("Diagnostic: No StreamHandler found, added a new one with INFO level.") 
 logger.info(f"Logger '{logger.name}' configured with level: {logging.getLevelName(logger.level)}. Handlers: {logger.handlers}")
 
 
@@ -737,7 +727,6 @@ app_config.initialize_paths_and_prompts(base_path, args.outputs_folder, star_cfg
 
 os.makedirs(app_config.DEFAULT_OUTPUT_DIR, exist_ok=True)
 
-# Check for model files and log errors if not found
 if not os.path.exists(app_config.LIGHT_DEG_MODEL_PATH):
      logger.error(f"FATAL: Light degradation model not found at {app_config.LIGHT_DEG_MODEL_PATH}.")
 if not os.path.exists(app_config.HEAVY_DEG_MODEL_PATH):
@@ -759,114 +748,105 @@ def run_upscale(
     scene_copy_streams, scene_use_mkvmerge, scene_rate_factor, scene_preset, scene_quiet_ffmpeg,
     scene_manual_split_type, scene_manual_split_value,
     
-    is_batch_mode=False, batch_output_dir=None, original_filename=None, # Batch mode specific
+    is_batch_mode=False, batch_output_dir=None, original_filename=None, 
 
-    enable_auto_caption_per_scene=False, # For per-scene captioning if scene splitting is on
-    cogvlm_quant=0, # Resolved quant value
-    cogvlm_unload='full', # Resolved unload strategy
-    progress=gr.Progress(track_tqdm=True)
+    enable_auto_caption_per_scene=False, 
+    cogvlm_quant=0, 
+    cogvlm_unload='full', 
+    progress=gr.Progress(track_tqdm=True) # This progress object is for the main bar
 ):
     if not input_video_path or not os.path.exists(input_video_path):
         raise gr.Error("Please select a valid input video file.")
 
-    last_chunk_video_path = None # Holds the path to the latest processed chunk video
-    last_chunk_status = "No chunks processed yet" # Status message for the chunk preview
+    last_chunk_video_path = None 
+    last_chunk_status = "No chunks processed yet" 
 
-    setup_seed(666) # For reproducibility
+    setup_seed(666) 
     overall_process_start_time = time.time()
     logger.info("Overall upscaling process started.")
 
-    current_overall_progress = 0.0 # For the main progress bar (0.0 to 1.0)
+    current_overall_progress = 0.0 
 
     params_for_metadata = {
         "input_video_path": input_video_path, "user_prompt": user_prompt, "positive_prompt": positive_prompt,
         "negative_prompt": negative_prompt, "model_choice": model_choice,
         "upscale_factor_slider": upscale_factor_slider, "cfg_scale": cfg_scale,
-        "ui_total_diffusion_steps": steps, "solver_mode": solver_mode, # Note: steps is ui_total_diffusion_steps
+        "ui_total_diffusion_steps": steps, "solver_mode": solver_mode, 
         "max_chunk_len": max_chunk_len, "vae_chunk": vae_chunk, "color_fix_method": color_fix_method,
         "enable_tiling": enable_tiling, "tile_size": tile_size, "tile_overlap": tile_overlap,
         "enable_sliding_window": enable_sliding_window, "window_size": window_size, "window_step": window_step,
         "enable_target_res": enable_target_res, "target_h": target_h, "target_w": target_w,
         "target_res_mode": target_res_mode, "ffmpeg_preset": ffmpeg_preset,
         "ffmpeg_quality_value": ffmpeg_quality_value, "ffmpeg_use_gpu": ffmpeg_use_gpu,
-        # Scene split params
         "enable_scene_split": enable_scene_split, "scene_split_mode": scene_split_mode,
-        "scene_min_scene_len": scene_min_scene_len, "scene_threshold": scene_threshold, # Add others if needed
+        "scene_min_scene_len": scene_min_scene_len, "scene_threshold": scene_threshold, 
         "scene_manual_split_type": scene_manual_split_type, "scene_manual_split_value": scene_manual_split_value,
-        "is_batch_mode": is_batch_mode, "batch_output_dir": batch_output_dir, # Batch specific
+        "is_batch_mode": is_batch_mode, "batch_output_dir": batch_output_dir, 
 
-        # These will be filled in later
         "final_output_path": None, "orig_w": None, "orig_h": None,
         "input_fps": None, "upscale_factor": None, "final_w": None, "final_h": None,
     }
     
-    actual_cogvlm_quant_val = cogvlm_quant # Already resolved if coming from director
-    if isinstance(cogvlm_quant, str) and app_config.UTIL_COG_VLM_AVAILABLE: # Fallback if passed as string
+    actual_cogvlm_quant_val = cogvlm_quant 
+    if isinstance(cogvlm_quant, str) and app_config.UTIL_COG_VLM_AVAILABLE: 
         _temp_map_rev = {v: k for k, v in app_config.get_cogvlm_quant_choices_map(torch.cuda.is_available(), app_config.UTIL_BITSANDBYTES_AVAILABLE).items()}
         actual_cogvlm_quant_val = _temp_map_rev.get(cogvlm_quant, 0)
 
 
-    # Define weights for each major stage for progress calculation
     stage_weights = {
         "init_paths_res": 0.03,
-        "scene_split": 0.05 if enable_scene_split else 0.0, # Only if scene splitting enabled
-        "downscale": 0.07, # Potentially 0 if not needed
+        "scene_split": 0.05 if enable_scene_split else 0.0, 
+        "downscale": 0.07, 
         "model_load": 0.05,
-        "extract_frames": 0.10, # Reduced if scene splitting handles its own extraction
-        "copy_input_frames": 0.05, # Only if save_frames
-        "upscaling_loop": 0.50 if enable_scene_split else 0.60, # Main work, adjust if scene split
-        "scene_merge": 0.05 if enable_scene_split else 0.0, # Only if scene splitting
-        "reassembly_copy_processed": 0.05, # Only if save_frames and not scene_split
+        "extract_frames": 0.10, 
+        "copy_input_frames": 0.05, 
+        "upscaling_loop": 0.50 if enable_scene_split else 0.60, 
+        "scene_merge": 0.05 if enable_scene_split else 0.0, 
+        "reassembly_copy_processed": 0.05, 
         "reassembly_audio_merge": 0.03,
-        "metadata": 0.02 # If saving metadata
+        "metadata": 0.02 
     }
-    # Adjust weights based on actual operations
-    if not enable_target_res or not util_calculate_upscale_params(1,1,1,1,target_res_mode, logger=logger)[0]: # if no downscale needed
+    if not enable_target_res or not util_calculate_upscale_params(1,1,1,1,target_res_mode, logger=logger)[0]: 
         stage_weights["downscale"] = 0.0
     if not save_frames:
         stage_weights["copy_input_frames"] = 0.0
-        # reassembly_copy_processed is also affected by save_frames OR scene_split
-        if enable_scene_split: # If scene split, processed frames are handled per scene
+        if enable_scene_split: 
             stage_weights["reassembly_copy_processed"] = 0.0
 
 
-    # Normalize weights
     total_weight = sum(stage_weights.values())
     if total_weight > 0:
         for key in stage_weights:
             stage_weights[key] /= total_weight
-    else: # Avoid division by zero if all weights somehow become 0
+    else: 
         for key in stage_weights: stage_weights[key] = 1/len(stage_weights) if len(stage_weights) > 0 else 0
 
 
-    # Determine output paths
     if is_batch_mode and batch_output_dir and original_filename:
         base_output_filename_no_ext, output_video_path, batch_main_dir = util_get_batch_filename(batch_output_dir, original_filename)
-        main_output_dir = batch_main_dir # This is the specific subfolder for this video in batch mode
+        main_output_dir = batch_main_dir 
     else:
         base_output_filename_no_ext, output_video_path = util_get_next_filename(app_config.DEFAULT_OUTPUT_DIR)
-        main_output_dir = app_config.DEFAULT_OUTPUT_DIR # Main output dir for single files
+        main_output_dir = app_config.DEFAULT_OUTPUT_DIR 
 
-    params_for_metadata["final_output_path"] = output_video_path # Store the planned final path
+    params_for_metadata["final_output_path"] = output_video_path 
 
-    # Temporary directory setup
     run_id = f"star_run_{int(time.time())}_{np.random.randint(1000, 9999)}"
-    temp_dir_base = tempfile.gettempdir() # System's temp folder
+    temp_dir_base = tempfile.gettempdir() 
     temp_dir = os.path.join(temp_dir_base, run_id)
 
     input_frames_dir = os.path.join(temp_dir, "input_frames")
-    output_frames_dir = os.path.join(temp_dir, "output_frames") # For non-scene-split main processing
+    output_frames_dir = os.path.join(temp_dir, "output_frames") 
 
-    # Paths for saving frames permanently if enabled
-    frames_output_subfolder = None # Base for saved frames/chunks (e.g., outputs/0001/ or outputs/batch_item_xyz/)
+    frames_output_subfolder = None 
     input_frames_permanent_save_path = None
     processed_frames_permanent_save_path = None
-    chunks_permanent_save_path = None # For saved chunk videos
+    chunks_permanent_save_path = None 
 
     if save_frames:
-        if is_batch_mode: # In batch, frames go into the item's specific output folder
+        if is_batch_mode: 
             frames_output_subfolder = main_output_dir
-        else: # For single files, create a subfolder named after the output video
+        else: 
             frames_output_subfolder = os.path.join(main_output_dir, base_output_filename_no_ext)
         
         input_frames_permanent_save_path = os.path.join(frames_output_subfolder, "input_frames")
@@ -875,12 +855,10 @@ def run_upscale(
         os.makedirs(processed_frames_permanent_save_path, exist_ok=True)
         logger.info(f"Saving frames to: {frames_output_subfolder}")
 
-    if save_chunks: # Chunks are saved relative to the frames_output_subfolder
+    if save_chunks: 
         if is_batch_mode:
-            # For batch, chunks go into a 'chunks' subfolder within the item's main_output_dir
             chunks_permanent_save_path = os.path.join(main_output_dir, "chunks")
         else:
-            # For single files, chunks go into '0001/chunks/'
             chunks_permanent_save_path = os.path.join(main_output_dir, base_output_filename_no_ext, "chunks")
         os.makedirs(chunks_permanent_save_path, exist_ok=True)
         logger.info(f"Saving chunks to: {chunks_permanent_save_path}")
@@ -890,13 +868,13 @@ def run_upscale(
     os.makedirs(input_frames_dir, exist_ok=True)
     os.makedirs(output_frames_dir, exist_ok=True)
 
-    star_model = None # Initialize
-    current_input_video_for_frames = input_video_path # This might change if downscaling
-    downscaled_temp_video = None # Path to temp downscaled video
-    status_log = ["Process started..."] # For building up the log messages
+    star_model = None 
+    current_input_video_for_frames = input_video_path 
+    downscaled_temp_video = None 
+    status_log = ["Process started..."] 
 
-    ui_total_diffusion_steps = steps # From UI, used by model.test()
-    direct_upscale_msg = "" # For status log if no target_res downscaling
+    ui_total_diffusion_steps = steps 
+    direct_upscale_msg = "" 
 
     try:
         progress(current_overall_progress, desc="Initializing...")
@@ -904,15 +882,12 @@ def run_upscale(
         logger.info("Initializing upscaling process...")
         yield None, "\n".join(status_log), last_chunk_video_path, last_chunk_status
 
-        # Prepare final prompt
         final_prompt = (user_prompt.strip() + ". " + positive_prompt.strip()).strip()
 
-        # Determine model path
         model_file_path = app_config.LIGHT_DEG_MODEL_PATH if model_choice == app_config.DEFAULT_MODEL_CHOICE else app_config.HEAVY_DEG_MODEL_PATH
         if not os.path.exists(model_file_path):
             raise gr.Error(f"STAR model weight not found: {model_file_path}")
 
-        # Get original video resolution
         orig_h_val, orig_w_val = util_get_video_resolution(input_video_path)
         params_for_metadata["orig_h"] = orig_h_val
         params_for_metadata["orig_w"] = orig_w_val
@@ -922,8 +897,8 @@ def run_upscale(
         current_overall_progress += stage_weights["init_paths_res"]
         progress(current_overall_progress, desc="Calculating target resolution...")
 
-        upscale_factor_val = None # Actual upscale factor to be used
-        final_h_val, final_w_val = None, None # Final output resolution
+        upscale_factor_val = None 
+        final_h_val, final_w_val = None, None 
 
         if enable_target_res:
             needs_downscale, ds_h, ds_w, upscale_factor_calc, final_h_calc, final_w_calc = util_calculate_upscale_params(
@@ -938,20 +913,19 @@ def run_upscale(
 
             status_log.append(f"Target resolution mode: {target_res_mode}. Calculated upscale: {upscale_factor_val:.2f}x. Target output: {final_w_val}x{final_h_val}")
             logger.info(f"Target resolution mode: {target_res_mode}. Calculated upscale: {upscale_factor_val:.2f}x. Target output: {final_w_val}x{final_h_val}")
-            yield None, "\n".join(status_log), last_chunk_video_path, last_chunk_status # Update log
+            yield None, "\n".join(status_log), last_chunk_video_path, last_chunk_status 
 
             if needs_downscale:
                 downscale_stage_start_time = time.time()
                 
-                downscale_progress_start = current_overall_progress # Store progress before this stage
+                downscale_progress_start = current_overall_progress 
                 progress(current_overall_progress, desc="Downscaling input video...")
                 downscale_status_msg = f"Downscaling input to {ds_w}x{ds_h} before upscaling."
                 status_log.append(downscale_status_msg)
                 logger.info(downscale_status_msg)
-                yield None, "\n".join(status_log), last_chunk_video_path, "Input Downscaling..." # Chunk status for UI
+                yield None, "\n".join(status_log), last_chunk_video_path, "Input Downscaling..." 
 
                 downscaled_temp_video = os.path.join(temp_dir, "downscaled_input.mp4")
-                # Ensure divisible by 2 for many codecs
                 scale_filter = f"scale='trunc(iw*min({ds_w}/iw,{ds_h}/ih)/2)*2':'trunc(ih*min({ds_w}/iw,{ds_h}/ih)/2)*2'"
                 
                 ffmpeg_opts_downscale = ""
@@ -959,9 +933,8 @@ def run_upscale(
                 
                 if ffmpeg_use_gpu and not use_cpu_fallback:
                     nvenc_preset_down = ffmpeg_preset
-                    # Map general presets to rough NVENC equivalents if needed (NVENC has p1-p7, or 'slow', 'medium', 'fast' etc.)
-                    if ffmpeg_preset in ["ultrafast", "superfast", "veryfast", "faster", "fast"]: nvenc_preset_down = "fast" # Or a P-value like p1/p2
-                    elif ffmpeg_preset in ["slower", "veryslow"]: nvenc_preset_down = "slow" # Or p6/p7
+                    if ffmpeg_preset in ["ultrafast", "superfast", "veryfast", "faster", "fast"]: nvenc_preset_down = "fast" 
+                    elif ffmpeg_preset in ["slower", "veryslow"]: nvenc_preset_down = "slow" 
                     ffmpeg_opts_downscale = f'-c:v h264_nvenc -preset:v {nvenc_preset_down} -cq:v {ffmpeg_quality_value} -pix_fmt yuv420p'
                 else:
                     if use_cpu_fallback:
@@ -971,9 +944,8 @@ def run_upscale(
 
                 cmd = f'ffmpeg -y -i "{input_video_path}" -vf "{scale_filter}" {ffmpeg_opts_downscale} -c:a copy "{downscaled_temp_video}"'
                 util_run_ffmpeg_command(cmd, "Input Downscaling with Audio Copy", logger=logger)
-                current_input_video_for_frames = downscaled_temp_video # Use this for frame extraction
+                current_input_video_for_frames = downscaled_temp_video 
 
-                # Update original H/W for metadata to reflect the downscaled input that STAR sees
                 orig_h_val, orig_w_val = util_get_video_resolution(downscaled_temp_video)
                 params_for_metadata["orig_h"] = orig_h_val
                 params_for_metadata["orig_w"] = orig_w_val
@@ -984,14 +956,13 @@ def run_upscale(
                 current_overall_progress = downscale_progress_start + stage_weights["downscale"]
                 progress(current_overall_progress, desc="Downscaling complete.")
                 yield None, "\n".join(status_log), last_chunk_video_path, "Downscaling complete."
-            else: # No downscale needed
-                 current_overall_progress += stage_weights["downscale"] # Still advance progress if weight was non-zero
+            else: 
+                 current_overall_progress += stage_weights["downscale"] 
 
-        else: # Target resolution not enabled, use simple upscale_factor_slider
-            if stage_weights["downscale"] > 0: # If downscale had a weight, account for it
+        else: 
+            if stage_weights["downscale"] > 0: 
                 current_overall_progress += stage_weights["downscale"]
             upscale_factor_val = upscale_factor_slider
-            # Ensure final dimensions are divisible by 2
             final_h_val = int(round(orig_h_val * upscale_factor_val / 2) * 2)
             final_w_val = int(round(orig_w_val * upscale_factor_val / 2) * 2)
 
@@ -1002,13 +973,11 @@ def run_upscale(
             direct_upscale_msg = f"Direct upscale: {upscale_factor_val:.2f}x. Target output: {final_w_val}x{final_h_val}"
             status_log.append(direct_upscale_msg)
             logger.info(direct_upscale_msg)
-            # Yield this status to the log
             yield None, "\n".join(status_log), last_chunk_video_path, last_chunk_status
 
 
-        # --- Scene Splitting (if enabled) ---
-        scene_video_paths = [] # List of paths to individual scene videos
-        scenes_temp_dir = None # Temp dir for scene outputs
+        scene_video_paths = [] 
+        scenes_temp_dir = None 
         if enable_scene_split:
             scene_split_progress_start = current_overall_progress
             progress(current_overall_progress, desc="Splitting video into scenes...")
@@ -1019,27 +988,27 @@ def run_upscale(
                 'split_mode': scene_split_mode,
                 'min_scene_len': scene_min_scene_len, 'drop_short_scenes': scene_drop_short, 'merge_last_scene': scene_merge_last,
                 'frame_skip': scene_frame_skip, 'threshold': scene_threshold, 'min_content_val': scene_min_content_val, 'frame_window': scene_frame_window,
-                'weights': [1.0, 1.0, 1.0, 0.0], # Default weights for PySceneDetect content_val
+                'weights': [1.0, 1.0, 1.0, 0.0], 
                 'copy_streams': scene_copy_streams, 'use_mkvmerge': scene_use_mkvmerge,
                 'rate_factor': scene_rate_factor, 'preset': scene_preset, 'quiet_ffmpeg': scene_quiet_ffmpeg,
-                'show_progress': True, # For PySceneDetect internal progress
+                'show_progress': True, 
                 'manual_split_type': scene_manual_split_type, 'manual_split_value': scene_manual_split_value,
-                'use_gpu': ffmpeg_use_gpu # For FFmpeg operations within scene splitting if re-encoding
+                'use_gpu': ffmpeg_use_gpu 
             }
 
-            def scene_progress_callback(progress_val, desc): # For PySceneDetect's progress
+            def scene_progress_callback(progress_val, desc): 
                 current_scene_progress = scene_split_progress_start + (progress_val * stage_weights["scene_split"])
-                progress(current_scene_progress, desc=desc) # Update main progress bar
+                progress(current_scene_progress, desc=desc) 
 
             try:
                 scene_video_paths = util_split_video_into_scenes(
-                    current_input_video_for_frames, # Input is the (possibly downscaled) video
-                    temp_dir, # Base temp directory for scene outputs
+                    current_input_video_for_frames, 
+                    temp_dir, 
                     scene_split_params,
                     scene_progress_callback,
                     logger=logger
                 )
-                scenes_temp_dir = os.path.join(temp_dir, "scenes") # util_split_video_into_scenes creates this subdir
+                scenes_temp_dir = os.path.join(temp_dir, "scenes") 
 
                 scene_split_msg = f"Video split into {len(scene_video_paths)} scenes"
                 status_log.append(scene_split_msg)
@@ -1047,23 +1016,22 @@ def run_upscale(
                 
                 current_overall_progress = scene_split_progress_start + stage_weights["scene_split"]
                 progress(current_overall_progress, desc=f"Scene splitting complete: {len(scene_video_paths)} scenes")
-                yield None, "\n".join(status_log), last_chunk_video_path, scene_split_msg # Update log and chunk status
+                yield None, "\n".join(status_log), last_chunk_video_path, scene_split_msg 
 
             except Exception as e:
                 logger.error(f"Scene splitting failed: {e}")
                 status_log.append(f"Scene splitting failed: {e}")
                 yield None, "\n".join(status_log), last_chunk_video_path, f"Scene splitting failed: {e}"
                 raise gr.Error(f"Scene splitting failed: {e}")
-        else: # Scene splitting not enabled
-            current_overall_progress += stage_weights["scene_split"] # Still advance progress if weight was non-zero
+        else: 
+            current_overall_progress += stage_weights["scene_split"] 
 
 
-        # --- Load STAR Model ---
         model_load_progress_start = current_overall_progress
         progress(current_overall_progress, desc="Loading STAR model...")
         star_model_load_start_time = time.time()
         model_cfg = EasyDict()
-        model_cfg.model_path = model_file_path # Path to .pth file
+        model_cfg.model_path = model_file_path 
 
         model_device = torch.device(util_get_gpu_device(logger=logger)) if torch.cuda.is_available() else torch.device('cpu')
         star_model = VideoToVideo_sr(model_cfg, device=model_device)
@@ -1075,14 +1043,13 @@ def run_upscale(
         yield None, "\n".join(status_log), last_chunk_video_path, "STAR model loaded."
 
 
-        # --- Frame Extraction (only if not scene splitting, scenes handle their own frames) ---
-        input_fps_val = 30.0 # Default, will be overwritten
+        input_fps_val = 30.0 
         if not enable_scene_split:
             frame_extract_progress_start = current_overall_progress
             progress(current_overall_progress, desc="Extracting frames...")
             frame_extraction_start_time = time.time()
             frame_count, input_fps_val, frame_files = util_extract_frames(current_input_video_for_frames, input_frames_dir, logger=logger)
-            params_for_metadata["input_fps"] = input_fps_val # Store actual input FPS
+            params_for_metadata["input_fps"] = input_fps_val 
 
             frame_extract_msg = f"Extracted {frame_count} frames at {input_fps_val:.2f} FPS. Time: {format_time(time.time() - frame_extraction_start_time)}"
             status_log.append(frame_extract_msg)
@@ -1090,16 +1057,14 @@ def run_upscale(
             current_overall_progress = frame_extract_progress_start + stage_weights["extract_frames"]
             progress(current_overall_progress, desc=f"Extracted {frame_count} frames.")
             yield None, "\n".join(status_log), last_chunk_video_path, f"Extracted {frame_count} frames."
-        else: # Scene splitting enabled, frame extraction handled per scene
-            current_overall_progress += stage_weights["extract_frames"] # Still advance overall progress
+        else: 
+            current_overall_progress += stage_weights["extract_frames"] 
 
 
-        # --- Copy Input Frames (if save_frames and not scene_split) ---
         if save_frames and not enable_scene_split and input_frames_dir and input_frames_permanent_save_path:
             copy_input_frames_progress_start = current_overall_progress
             copy_input_frames_start_time = time.time()
             
-            # Ensure frame_count is available if called before frame extraction (should not happen with current flow)
             num_frames_to_copy_input = frame_count if 'frame_count' in locals() and frame_count is not None else len(os.listdir(input_frames_dir))
 
             copy_input_msg = f"Copying {num_frames_to_copy_input} input frames to permanent storage: {input_frames_permanent_save_path}"
@@ -1109,12 +1074,11 @@ def run_upscale(
             yield None, "\n".join(status_log), last_chunk_video_path, "Copying input frames..."
 
             frames_copied_count = 0
-            for frame_file_idx, frame_file_name in enumerate(os.listdir(input_frames_dir)): # Iterate to allow progress updates
+            for frame_file_idx, frame_file_name in enumerate(os.listdir(input_frames_dir)): 
                 shutil.copy2(os.path.join(input_frames_dir, frame_file_name), os.path.join(input_frames_permanent_save_path, frame_file_name))
                 frames_copied_count += 1
                 if frames_copied_count % 50 == 0 or frames_copied_count == num_frames_to_copy_input:
                     loop_progress_frac = frames_copied_count / num_frames_to_copy_input if num_frames_to_copy_input > 0 else 1.0
-                    # Update overall progress based on this sub-stage's completion
                     current_overall_progress_temp = copy_input_frames_progress_start + (loop_progress_frac * stage_weights["copy_input_frames"])
                     progress(current_overall_progress_temp, desc=f"Copying input frames: {frames_copied_count}/{num_frames_to_copy_input}")
             
@@ -1125,36 +1089,31 @@ def run_upscale(
             current_overall_progress = copy_input_frames_progress_start + stage_weights["copy_input_frames"]
             progress(current_overall_progress, desc="Input frames copied.")
             yield None, "\n".join(status_log), last_chunk_video_path, "Input frames copied."
-        else: # Not saving frames or scene splitting handles it
+        else: 
              current_overall_progress += stage_weights["copy_input_frames"]
 
 
-        # --- Main Upscaling Loop ---
         upscaling_loop_progress_start = current_overall_progress
-        progress(current_overall_progress, desc="Preparing for upscaling...")
-        total_noise_levels = 900 # Fixed for STAR model
+        progress(current_overall_progress, desc="Preparing for upscaling...") # General message before loop
+        total_noise_levels = 900 
 
-        upscaling_loop_start_time = time.time() # Timer for the entire upscaling part
+        upscaling_loop_start_time = time.time() 
 
-        gpu_device = util_get_gpu_device(logger=logger) # Get configured GPU device
+        gpu_device = util_get_gpu_device(logger=logger) 
 
-        # Base metadata params for potential per-scene metadata saving
         scene_metadata_base_params = params_for_metadata.copy() if enable_scene_split else None
 
 
         if enable_scene_split and scene_video_paths:
-            processed_scene_videos = [] # Store paths to upscaled scene videos
+            processed_scene_videos = [] 
             total_scenes = len(scene_video_paths)
 
             for scene_idx, scene_video_path in enumerate(scene_video_paths):
-                # Calculate progress for this specific scene within the overall upscaling loop
                 scene_progress_start_abs = upscaling_loop_progress_start + (scene_idx / total_scenes) * stage_weights["upscaling_loop"]
 
-                def scene_upscale_progress_callback(progress_val_rel, desc_scene): # progress_val_rel is 0-1 for this scene
-                    # progress_val_rel is progress within this single scene processing
-                    # stage_weights["upscaling_loop"] / total_scenes is the weight of this single scene
+                def scene_upscale_progress_callback(progress_val_rel, desc_scene): 
                     current_scene_overall_progress = scene_progress_start_abs + (progress_val_rel / total_scenes) * stage_weights["upscaling_loop"]
-                    progress(current_scene_overall_progress, desc=desc_scene) # Update main progress bar
+                    progress(current_scene_overall_progress, desc=desc_scene) 
 
                 try:
                     processed_scene_video, scene_frame_count_ret, scene_fps_ret = process_single_scene(
@@ -1162,25 +1121,24 @@ def run_upscale(
                         final_prompt, upscale_factor_val, final_h_val, final_w_val, ui_total_diffusion_steps,
                         solver_mode, cfg_scale, max_chunk_len, vae_chunk, color_fix_method,
                         enable_tiling, tile_size, tile_overlap, enable_sliding_window, window_size, window_step,
-                        save_frames, frames_output_subfolder, # Pass base for permanent frames
-                        scene_upscale_progress_callback, # Callback for this scene's progress
+                        save_frames, frames_output_subfolder, 
+                        scene_upscale_progress_callback, 
                         
-                        enable_auto_caption_per_scene=enable_auto_caption_per_scene, # If per-scene captioning is on
-                        cogvlm_quant=actual_cogvlm_quant_val, # Resolved quant value
-                        cogvlm_unload=cogvlm_unload, # Resolved unload strategy
-                        progress=progress, # Pass main progress object for CogVLM if it uses it
-                        save_chunks=save_chunks, # If chunks should be saved per scene
-                        chunks_permanent_save_path=frames_output_subfolder, # Base path for scene chunks (e.g. .../0001/scenes/scene_0001/chunks)
+                        enable_auto_caption_per_scene=enable_auto_caption_per_scene, 
+                        cogvlm_quant=actual_cogvlm_quant_val, 
+                        cogvlm_unload=cogvlm_unload, 
+                        progress=progress, # Pass the main progress object for any direct use (e.g. CogVLM)
+                        save_chunks=save_chunks, 
+                        chunks_permanent_save_path=frames_output_subfolder, 
                         ffmpeg_preset=ffmpeg_preset, ffmpeg_quality_value=ffmpeg_quality_value, ffmpeg_use_gpu=ffmpeg_use_gpu,
                         save_metadata=save_metadata, metadata_params_base=scene_metadata_base_params
                     )
                     processed_scene_videos.append(processed_scene_video)
-                    if scene_idx == 0: input_fps_val = scene_fps_ret # Get FPS from first scene for final merge
+                    if scene_idx == 0: input_fps_val = scene_fps_ret 
                     
                     scene_complete_msg = f"Scene {scene_idx + 1}/{total_scenes} processing complete"
                     status_log.append(scene_complete_msg)
                     logger.info(scene_complete_msg)
-                    # Yield updated log, no new main video yet, no new chunk preview from this level
                     yield None, "\n".join(status_log), last_chunk_video_path, scene_complete_msg
 
                 except Exception as e:
@@ -1189,7 +1147,7 @@ def run_upscale(
                     yield None, "\n".join(status_log), last_chunk_video_path, f"Scene {scene_idx + 1} processing failed: {e}"
                     raise gr.Error(f"Scene {scene_idx + 1} processing failed: {e}")
 
-            current_overall_progress = upscaling_loop_progress_start + stage_weights["upscaling_loop"] # Mark loop as done
+            current_overall_progress = upscaling_loop_progress_start + stage_weights["upscaling_loop"] 
             scene_merge_progress_start = current_overall_progress
             progress(current_overall_progress, desc="Merging processed scenes...")
             status_log.append("Merging processed scenes...")
@@ -1197,8 +1155,6 @@ def run_upscale(
 
 
             silent_upscaled_video_path = os.path.join(temp_dir, "silent_upscaled_video.mp4")
-            # FPS for merging scenes should ideally be consistent or handled by util_merge_scene_videos
-            # Using FPS from the first scene as a general guide if not passed explicitly for each
             util_merge_scene_videos(processed_scene_videos, silent_upscaled_video_path, temp_dir,
                                     ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger, target_fps=input_fps_val)
 
@@ -1210,21 +1166,18 @@ def run_upscale(
             logger.info(scene_merge_msg)
             yield None, "\n".join(status_log), last_chunk_video_path, scene_merge_msg
 
-        else: # Not scene splitting, process as a whole video
-            # Ensure frame_count, input_fps_val, frame_files are loaded if not done (e.g. if extract_frames stage was skipped)
+        else: 
             if 'frame_count' not in locals() or 'input_fps_val' not in locals() or 'frame_files' not in locals():
                 logger.warning("Re-extracting frames as they were not found before non-scene-split upscaling loop.")
                 frame_count, input_fps_val, frame_files = util_extract_frames(current_input_video_for_frames, input_frames_dir, logger=logger)
-                params_for_metadata["input_fps"] = input_fps_val # Store actual input FPS
+                params_for_metadata["input_fps"] = input_fps_val 
 
-            # Preload all LR frames for color fixing if needed later (or for direct processing)
             all_lr_frames_bgr_for_preprocess = []
             for frame_filename in frame_files:
                 frame_lr_bgr = cv2.imread(os.path.join(input_frames_dir, frame_filename))
                 if frame_lr_bgr is None:
                     logger.error(f"Could not read frame {frame_filename} from {input_frames_dir}. Skipping.")
-                    # Create a black placeholder if a frame is missing to avoid crashing preprocess
-                    placeholder_h = params_for_metadata["orig_h"] if params_for_metadata["orig_h"] else 256 # Use known or default
+                    placeholder_h = params_for_metadata["orig_h"] if params_for_metadata["orig_h"] else 256 
                     placeholder_w = params_for_metadata["orig_w"] if params_for_metadata["orig_w"] else 256
                     all_lr_frames_bgr_for_preprocess.append(np.zeros((placeholder_h, placeholder_w, 3), dtype=np.uint8))
                     continue
@@ -1234,177 +1187,146 @@ def run_upscale(
                  logger.warning(f"Mismatch in frame count and loaded LR frames for colorfix: {len(all_lr_frames_bgr_for_preprocess)} vs {frame_count}")
 
 
-            if not enable_scene_split and enable_tiling: # Tiling for single large video
+            if not enable_scene_split and enable_tiling: 
                 loop_name = "Tiling Process"
                 tiling_status_msg = f"Tiling enabled: Tile Size={tile_size}, Overlap={tile_overlap}. Processing {len(frame_files)} frames."
                 status_log.append(tiling_status_msg)
                 logger.info(tiling_status_msg)
-                yield None, "\n".join(status_log), last_chunk_video_path, tiling_status_msg
+                yield None, "\n".join(status_log), last_chunk_video_path, tiling_status_msg # This is for chunk_status_text
 
                 total_frames_to_tile = len(frame_files)
-                frame_tqdm_iterator = progress.tqdm(enumerate(frame_files), total=total_frames_to_tile, desc=f"{loop_name} - Initializing...")
-
-                for i, frame_filename in frame_tqdm_iterator: # Iterate through each frame
+                
+                # Use main progress object directly, no separate tqdm iterator variable needed here for run_upscale
+                # The diffusion callbacks will update the description of the main 'progress' object.
+                
+                for i, frame_filename in enumerate(progress.tqdm(frame_files, desc=f"{loop_name} - Initializing...", total=total_frames_to_tile)):
                     frame_proc_start_time = time.time()
                     frame_lr_bgr = cv2.imread(os.path.join(input_frames_dir, frame_filename))
                     if frame_lr_bgr is None:
                         logger.warning(f"Skipping frame {frame_filename} due to read error during tiling.")
-                        # Copy original LR frame to output if SR fails for this frame
                         placeholder_path = os.path.join(input_frames_dir, frame_filename)
                         if os.path.exists(placeholder_path):
                             shutil.copy2(placeholder_path, os.path.join(output_frames_dir, frame_filename))
                         continue
                     
-                    single_lr_frame_tensor_norm = preprocess([frame_lr_bgr]) # Preprocess single frame
+                    single_lr_frame_tensor_norm = preprocess([frame_lr_bgr]) 
                     spliter = ImageSpliterTh(single_lr_frame_tensor_norm, int(tile_size), int(tile_overlap), sf=upscale_factor_val)
                     
-                    try: # Get number of patches for progress display
-                        num_patches_this_frame = len(list(spliter)) # This consumes the generator once
-                        # Re-initialize spliter for actual iteration
-                        spliter = ImageSpliterTh(single_lr_frame_tensor_norm, int(tile_size), int(tile_overlap), sf=upscale_factor_val)
-                    except: # Fallback if len() fails (e.g. not a simple generator)
-                        num_patches_this_frame = getattr(spliter, 'num_patches', 'N/A')
+                    num_patches_this_frame = getattr(spliter, 'num_patches', sum(1 for _ in ImageSpliterTh(single_lr_frame_tensor_norm, int(tile_size), int(tile_overlap), sf=upscale_factor_val))) # Efficiently get count if possible
+                    spliter = ImageSpliterTh(single_lr_frame_tensor_norm, int(tile_size), int(tile_overlap), sf=upscale_factor_val) # Re-init
 
-
-                    patch_tqdm_iterator = progress.tqdm(enumerate(spliter), total=num_patches_this_frame if isinstance(num_patches_this_frame, int) else None, desc=f"Frame {i+1}/{total_frames_to_tile} Patches - Initializing...", leave=False)
-
-                    for patch_idx, (patch_lr_tensor_norm, patch_coords) in patch_tqdm_iterator:
+                    for patch_idx, (patch_lr_tensor_norm, patch_coords) in enumerate(spliter): # No new tqdm here
                         patch_proc_start_time_local = time.time()
-                        patch_lr_video_data = patch_lr_tensor_norm # This is (1, C, H, W)
+                        patch_lr_video_data = patch_lr_tensor_norm 
 
                         patch_pre_data = {'video_data': patch_lr_video_data, 'y': final_prompt,
                                           'target_res': (int(round(patch_lr_tensor_norm.shape[-2] * upscale_factor_val)),
                                                          int(round(patch_lr_tensor_norm.shape[-1] * upscale_factor_val)))}
                         patch_data_tensor_cuda = collate_fn(patch_pre_data, gpu_device)
                         
-                        callback_step_timer = {'last_time': time.time()} # Timer for diffusion steps within this patch
-                        def diffusion_callback_for_patch(step, total_steps):
+                        callback_step_timer_patch = {'last_time': time.time()} 
+                        def diffusion_callback_for_patch(step, total_steps_patch):
+                            nonlocal callback_step_timer_patch
                             current_time = time.time()
-                            step_duration = current_time - callback_step_timer['last_time']
-                            callback_step_timer['last_time'] = current_time
+                            step_duration = current_time - callback_step_timer_patch['last_time']
+                            callback_step_timer_patch['last_time'] = current_time
                             
                             current_patch_desc = f"Frame {i+1}/{total_frames_to_tile}, Patch {patch_idx+1}/{num_patches_this_frame}"
+                            tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps_patch})" if step_duration > 0.001 else f"{step}/{total_steps_patch}"
                             
-                            tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps})" if step_duration > 0.001 else f"{step}/{total_steps}"
-                            patch_tqdm_iterator.desc = f"{current_patch_desc} - Diffusion: {tqdm_step_info}"
-                            
-                            log_step_info = f"{step_duration:.2f} second/it" if step_duration > 0.001 else f"step {step}/{total_steps}"
-                            logger.info(f"    ↳ {loop_name} - {current_patch_desc} - {log_step_info}") # Detailed log per step
+                            # Update the main progress bar's description
+                            progress.update(desc=f"{current_patch_desc} - Diffusion: {tqdm_step_info}")
+                            # logger.info(f"    ↳ {loop_name} - {current_patch_desc} - Diffusion: {tqdm_step_info}")
+
 
                         star_model_call_patch_start_time = time.time()
                         with torch.no_grad():
                             patch_sr_tensor_bcthw = star_model.test(
                                 patch_data_tensor_cuda, total_noise_levels, steps=ui_total_diffusion_steps, solver_mode=solver_mode,
-                                guide_scale=cfg_scale, max_chunk_len=1, vae_decoder_chunk_size=1, # Patch is like a single frame video
+                                guide_scale=cfg_scale, max_chunk_len=1, vae_decoder_chunk_size=1, 
                                 progress_callback=diffusion_callback_for_patch
                             )
                         
-                        logger.info(f"{loop_name} - Frame {i+1}/{total_frames_to_tile}, Patch {patch_idx+1}/{num_patches_this_frame}: Finished STAR model processing. Duration: {format_time(time.time() - star_model_call_patch_start_time)}")
-                        patch_sr_frames_uint8 = tensor2vid(patch_sr_tensor_bcthw) # (N, H, W, C) tensor
+                        patch_sr_frames_uint8 = tensor2vid(patch_sr_tensor_bcthw) 
 
-                        if color_fix_method != 'None': # Color fix for this patch against its LR version
+                        if color_fix_method != 'None': 
                             if color_fix_method == 'AdaIN':
                                 patch_sr_frames_uint8 = adain_color_fix(patch_sr_frames_uint8, patch_lr_video_data)
                             elif color_fix_method == 'Wavelet':
                                 patch_sr_frames_uint8 = wavelet_color_fix(patch_sr_frames_uint8, patch_lr_video_data)
                         
-                        single_patch_frame_hwc = patch_sr_frames_uint8[0] # Get the single frame from the patch
-                        result_patch_chw_01 = single_patch_frame_hwc.permute(2,0,1).float() / 255.0 # CHW, 0-1 range
+                        single_patch_frame_hwc = patch_sr_frames_uint8[0] 
+                        result_patch_chw_01 = single_patch_frame_hwc.permute(2,0,1).float() / 255.0 
 
-                        spliter.update_gaussian(result_patch_chw_01.unsqueeze(0), patch_coords) # Add SR patch to merger
+                        spliter.update_gaussian(result_patch_chw_01.unsqueeze(0), patch_coords) 
 
                         del patch_data_tensor_cuda, patch_sr_tensor_bcthw, patch_sr_frames_uint8
                         if torch.cuda.is_available(): torch.cuda.empty_cache()
                         
-                        patch_tqdm_iterator.desc = f"Frame {i+1} Patch {patch_idx+1}/{num_patches_this_frame} (took {time.time() - patch_proc_start_time_local:.2f}s)"
-                    
-                    # After all patches for a frame are processed
-                    final_frame_tensor_chw = spliter.gather() # Merge patches
+                    final_frame_tensor_chw = spliter.gather() 
                     final_frame_np_hwc_uint8 = (final_frame_tensor_chw.squeeze(0).permute(1,2,0).clamp(0,1).cpu().numpy() * 255).astype(np.uint8)
                     final_frame_bgr = cv2.cvtColor(final_frame_np_hwc_uint8, cv2.COLOR_RGB2BGR)
-                    cv2.imwrite(os.path.join(output_frames_dir, frame_filename), final_frame_bgr) # Save SR frame
+                    cv2.imwrite(os.path.join(output_frames_dir, frame_filename), final_frame_bgr) 
 
-                    # Update progress for the frame TQDM
-                    frames_processed_tile = i + 1
-                    current_tile_loop_time = time.time() - upscaling_loop_start_time # Total time for tiling so far
-                    avg_time_per_frame_tile = current_tile_loop_time / frames_processed_tile if frames_processed_tile > 0 else 0
-                    eta_seconds_tile = (total_frames_to_tile - frames_processed_tile) * avg_time_per_frame_tile if frames_processed_tile < total_frames_to_tile and avg_time_per_frame_tile > 0 else 0
-                    speed_tile = 1 / avg_time_per_frame_tile if avg_time_per_frame_tile > 0 else 0
-                    
-                    frame_tqdm_desc = f"{loop_name}: {frames_processed_tile}/{total_frames_to_tile} frames | ETA: {format_time(eta_seconds_tile)} | Speed: {speed_tile:.2f} f/s"
-                    frame_tqdm_iterator.desc = frame_tqdm_desc
-                    
-                    detailed_frame_msg = f"{frame_tqdm_desc} | Current frame processed in {time.time() - frame_proc_start_time:.2f}s. Total elapsed: {format_time(current_tile_loop_time)}"
-                    # status_log.append(detailed_frame_msg) # Avoid cluttering main log with per-frame details
-                    logger.info(detailed_frame_msg) # Log it instead
-
-                    # Update overall progress
-                    loop_progress_frac = frames_processed_tile / total_frames_to_tile if total_frames_to_tile > 0 else 1.0
+                    # Update overall progress fractionally within the tiling loop's weight
+                    loop_progress_frac = (i + 1) / total_frames_to_tile if total_frames_to_tile > 0 else 1.0
                     current_overall_progress_temp = upscaling_loop_progress_start + (loop_progress_frac * stage_weights["upscaling_loop"])
-                    progress(current_overall_progress_temp, desc=frame_tqdm_iterator.desc)
-                    # Yield less frequently for tiling to avoid too many UI updates if needed, or use a different status for tiling chunk_status
-                    yield None, "\n".join(status_log), last_chunk_video_path, f"Tiling frame {frames_processed_tile}/{total_frames_to_tile} processed"
+                    # Description for main progress bar is handled by progress.tqdm and diffusion_callback
+                    progress(current_overall_progress_temp) # Update just the fraction
+                    
+                    # Yield status for the chunk_status_text in UI
+                    yield None, "\n".join(status_log), last_chunk_video_path, f"Tiling frame {i+1}/{total_frames_to_tile} processed"
 
 
-            elif not enable_scene_split and enable_sliding_window: # Sliding window for single large video
+            elif not enable_scene_split and enable_sliding_window: 
                 loop_name = "Sliding Window Process"
                 sliding_status_msg = f"Sliding Window: Size={window_size}, Step={window_step}. Processing {frame_count} frames."
                 status_log.append(sliding_status_msg)
                 logger.info(sliding_status_msg)
                 yield None, "\n".join(status_log), last_chunk_video_path, sliding_status_msg
 
-                processed_frame_filenames = [None] * frame_count # To track which global frames are saved
+                processed_frame_filenames = [None] * frame_count 
                 effective_window_size = int(window_size)
                 effective_window_step = int(window_step)
 
                 window_indices_to_process = list(range(0, frame_count, effective_window_step))
                 total_windows_to_process = len(window_indices_to_process)
 
-                sliding_tqdm_iterator = progress.tqdm(enumerate(window_indices_to_process), total=total_windows_to_process, desc=f"{loop_name} - Initializing...")
-
-                for window_iter_idx, i_start_idx in sliding_tqdm_iterator:
+                for window_iter_idx, i_start_idx in enumerate(progress.tqdm(window_indices_to_process, desc=f"{loop_name} - Initializing...", total=total_windows_to_process)):
                     start_idx = i_start_idx
                     end_idx = min(i_start_idx + effective_window_size, frame_count)
                     current_window_len = end_idx - start_idx
 
                     if current_window_len == 0: continue
 
-                    # Adjust last window to ensure it's full size if possible, to avoid tiny trailing windows
                     is_last_window_iteration = (window_iter_idx == total_windows_to_process - 1)
-                    if is_last_window_iteration and current_window_len < effective_window_size and frame_count >= effective_window_size : # If it's the last iteration AND the naturally calculated window is too short AND we have enough frames overall for a full window
-                        start_idx = max(0, frame_count - effective_window_size) # Slide back to get a full window
+                    if is_last_window_iteration and current_window_len < effective_window_size and frame_count >= effective_window_size : 
+                        start_idx = max(0, frame_count - effective_window_size) 
                         end_idx = frame_count
                         current_window_len = end_idx - start_idx
                     
                     window_lr_frames_bgr = all_lr_frames_bgr_for_preprocess[start_idx:end_idx]
                     if not window_lr_frames_bgr: continue
 
-                    window_lr_video_data = preprocess(window_lr_frames_bgr) # (1, T, C, H, W)
+                    window_lr_video_data = preprocess(window_lr_frames_bgr) 
 
                     window_pre_data = {'video_data': window_lr_video_data, 'y': final_prompt,
-                                       'target_res': (final_h_val, final_w_val)} # Target SR resolution
+                                       'target_res': (final_h_val, final_w_val)} 
                     window_data_cuda = collate_fn(window_pre_data, gpu_device)
 
                     current_window_display_num = window_iter_idx + 1
-                    callback_step_timer = {'last_time': time.time()}
-                    def diffusion_callback_for_window(step, total_steps):
+                    callback_step_timer_window = {'last_time': time.time()}
+                    def diffusion_callback_for_window(step, total_steps_window):
+                        nonlocal callback_step_timer_window
                         current_time = time.time()
-                        step_duration = current_time - callback_step_timer['last_time']
-                        callback_step_timer['last_time'] = current_time
+                        step_duration = current_time - callback_step_timer_window['last_time']
+                        callback_step_timer_window['last_time'] = current_time
                         
-                        # ETA calculation for TQDM
-                        _current_slide_loop_time_cb = time.time() - upscaling_loop_start_time
-                        _avg_time_per_window_cb = _current_slide_loop_time_cb / current_window_display_num if current_window_display_num > 0 else 0
-                        _eta_seconds_slide_cb = (total_windows_to_process - current_window_display_num) * _avg_time_per_window_cb if current_window_display_num < total_windows_to_process and _avg_time_per_window_cb > 0 else 0
-                        _speed_slide_cb = 1 / _avg_time_per_window_cb if _avg_time_per_window_cb > 0 else 0
-                        
-                        base_desc_win = f"{loop_name}: {current_window_display_num}/{total_windows_to_process} windows (frames {start_idx}-{end_idx-1}) | ETA: {format_time(_eta_seconds_slide_cb)} | Speed: {_speed_slide_cb:.2f} w/s"
-                        
-                        tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps})" if step_duration > 0.001 else f"{step}/{total_steps}"
-                        sliding_tqdm_iterator.desc = f"{base_desc_win} - Diffusion: {tqdm_step_info}"
-                        
-                        log_step_info = f"{step_duration:.2f} second/it" if step_duration > 0.001 else f"step {step}/{total_steps}"
-                        logger.info(f"    ↳ {loop_name} - Window {current_window_display_num}/{total_windows_to_process} (frames {start_idx}-{end_idx-1}) - {log_step_info}")
+                        base_desc_win = f"{loop_name}: {current_window_display_num}/{total_windows_to_process} windows (frames {start_idx}-{end_idx-1})"
+                        tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps_window})" if step_duration > 0.001 else f"{step}/{total_steps_window}"
+                        progress.update(desc=f"{base_desc_win} - Diffusion: {tqdm_step_info}")
+                        # logger.info(f"    ↳ {base_desc_win} - Diffusion: {tqdm_step_info}")
+
 
                     star_model_call_window_start_time = time.time()
                     with torch.no_grad():
@@ -1413,8 +1335,7 @@ def run_upscale(
                             guide_scale=cfg_scale, max_chunk_len=current_window_len, vae_decoder_chunk_size=min(vae_chunk, current_window_len),
                             progress_callback=diffusion_callback_for_window
                         )
-                    logger.info(f"{loop_name} - Window {current_window_display_num}/{total_windows_to_process}: Finished STAR model processing. Duration: {format_time(time.time() - star_model_call_window_start_time)}")
-                    window_sr_frames_uint8 = tensor2vid(window_sr_tensor_bcthw) # List of (H,W,C) uint8 tensors
+                    window_sr_frames_uint8 = tensor2vid(window_sr_tensor_bcthw) 
 
                     if color_fix_method != 'None':
                         if color_fix_method == 'AdaIN':
@@ -1422,42 +1343,38 @@ def run_upscale(
                         elif color_fix_method == 'Wavelet':
                             window_sr_frames_uint8 = wavelet_color_fix(window_sr_frames_uint8, window_lr_video_data)
 
-                    # Determine which frames from this window to save (center part, handling edges)
-                    save_from_start_offset_local = 0 # Offset within current window_sr_frames_uint8
+                    save_from_start_offset_local = 0 
                     save_to_end_offset_local = current_window_len
-                    if total_windows_to_process > 1: # More than one window total
+                    if total_windows_to_process > 1: 
                         overlap_amount = effective_window_size - effective_window_step
                         if overlap_amount > 0:
-                            if window_iter_idx == 0: # First window
+                            if window_iter_idx == 0: 
                                 save_to_end_offset_local = effective_window_size - (overlap_amount // 2)
-                            elif is_last_window_iteration: # Last window
+                            elif is_last_window_iteration: 
                                 save_from_start_offset_local = (overlap_amount // 2)
-                            else: # Middle windows
+                            else: 
                                 save_from_start_offset_local = (overlap_amount // 2)
-                                save_to_end_offset_local = effective_window_size - (overlap_amount - save_from_start_offset_local) # effectively size - overlap/2
-                        # Ensure offsets are within current_window_len bounds
+                                save_to_end_offset_local = effective_window_size - (overlap_amount - save_from_start_offset_local) 
                         save_from_start_offset_local = max(0, min(save_from_start_offset_local, current_window_len -1 if current_window_len >0 else 0))
                         save_to_end_offset_local = max(save_from_start_offset_local, min(save_to_end_offset_local, current_window_len))
 
                     for k_local in range(save_from_start_offset_local, save_to_end_offset_local):
-                        k_global = start_idx + k_local # Global frame index
-                        if 0 <= k_global < frame_count and processed_frame_filenames[k_global] is None: # If valid and not yet saved
+                        k_global = start_idx + k_local 
+                        if 0 <= k_global < frame_count and processed_frame_filenames[k_global] is None: 
                             frame_np_hwc_uint8 = window_sr_frames_uint8[k_local].cpu().numpy()
                             frame_bgr = cv2.cvtColor(frame_np_hwc_uint8, cv2.COLOR_RGB2BGR)
                             out_f_path = os.path.join(output_frames_dir, frame_files[k_global])
                             cv2.imwrite(out_f_path, frame_bgr)
-                            processed_frame_filenames[k_global] = frame_files[k_global] # Mark as saved
+                            processed_frame_filenames[k_global] = frame_files[k_global] 
 
                     del window_data_cuda, window_sr_tensor_bcthw, window_sr_frames_uint8
                     if torch.cuda.is_available(): torch.cuda.empty_cache()
 
-                    # Update overall progress
                     loop_progress_frac = current_window_display_num / total_windows_to_process if total_windows_to_process > 0 else 1.0
                     current_overall_progress_temp = upscaling_loop_progress_start + (loop_progress_frac * stage_weights["upscaling_loop"])
-                    progress(current_overall_progress_temp, desc=sliding_tqdm_iterator.desc)
+                    progress(current_overall_progress_temp) # Update fraction, desc from callback
                     yield None, "\n".join(status_log), last_chunk_video_path, f"Sliding window {current_window_display_num}/{total_windows_to_process} processed"
                 
-                # Fallback for any frames missed by sliding window logic (e.g. if step > size or edge cases)
                 num_missed_fallback = 0
                 for idx_fb, fname_fb in enumerate(frame_files):
                     if processed_frame_filenames[idx_fb] is None:
@@ -1475,57 +1392,49 @@ def run_upscale(
                     yield None, "\n".join(status_log), last_chunk_video_path, missed_msg
 
 
-            elif not enable_scene_split: # Standard chunked processing (default if no tiling/sliding window)
+            elif not enable_scene_split: 
                 loop_name = "Chunked Processing"
-                chunk_status_msg = "Normal chunked processing." # Initial status for this mode
+                chunk_status_msg = "Normal chunked processing." 
                 status_log.append(chunk_status_msg)
                 logger.info(chunk_status_msg)
-                yield None, "\n".join(status_log), last_chunk_video_path, chunk_status_msg
+                yield None, "\n".join(status_log), last_chunk_video_path, chunk_status_msg 
 
                 num_chunks = math.ceil(frame_count / max_chunk_len) if max_chunk_len > 0 else (1 if frame_count > 0 else 0)
-                if num_chunks == 0 and frame_count > 0 : num_chunks = 1 # Ensure at least one chunk if there are frames
+                if num_chunks == 0 and frame_count > 0 : num_chunks = 1 
 
-                chunk_tqdm_iterator = progress.tqdm(range(num_chunks), total=num_chunks, desc=f"{loop_name} - Initializing...")
-
-                for i_chunk_idx in chunk_tqdm_iterator:
+                for i_chunk_idx in enumerate(progress.tqdm(range(num_chunks), desc=f"{loop_name} - Initializing...", total=num_chunks)):
+                    i_chunk_idx = i_chunk_idx[0] # enumerate returns (index, value), we just need index from range
                     start_idx = i_chunk_idx * max_chunk_len
                     end_idx = min((i_chunk_idx + 1) * max_chunk_len, frame_count)
                     current_chunk_len = end_idx - start_idx
                     if current_chunk_len == 0: continue
                     
-                    # Boundary check for preloaded frames
                     if end_idx > len(all_lr_frames_bgr_for_preprocess) or start_idx < 0:
                          logger.error(f"Chunk range {start_idx}-{end_idx} is invalid for LR frames list of len {len(all_lr_frames_bgr_for_preprocess)}")
-                         continue # Skip this problematic chunk
+                         continue 
 
                     chunk_lr_frames_bgr = all_lr_frames_bgr_for_preprocess[start_idx:end_idx]
-                    if not chunk_lr_frames_bgr: continue # Should not happen if boundary check is correct
+                    if not chunk_lr_frames_bgr: continue 
 
-                    chunk_lr_video_data = preprocess(chunk_lr_frames_bgr) # (1, T, C, H, W)
+                    chunk_lr_video_data = preprocess(chunk_lr_frames_bgr) 
 
                     chunk_pre_data = {'video_data': chunk_lr_video_data, 'y': final_prompt,
-                                      'target_res': (final_h_val, final_w_val)} # Target SR resolution
+                                      'target_res': (final_h_val, final_w_val)} 
                     chunk_data_cuda = collate_fn(chunk_pre_data, gpu_device)
                     
                     current_chunk_display_num = i_chunk_idx + 1
-                    callback_step_timer = {'last_time': time.time()} # Timer for diffusion steps
-                    def diffusion_callback_for_chunk(step, total_steps):
+                    callback_step_timer_chunk = {'last_time': time.time()} 
+                    def diffusion_callback_for_chunk(step, total_steps_chunk):
+                        nonlocal callback_step_timer_chunk
                         current_time = time.time()
-                        step_duration = current_time - callback_step_timer['last_time']
-                        callback_step_timer['last_time'] = current_time
+                        step_duration = current_time - callback_step_timer_chunk['last_time']
+                        callback_step_timer_chunk['last_time'] = current_time
                         
-                        _current_chunk_loop_time_cb = time.time() - upscaling_loop_start_time # Overall time in this loop
-                        _avg_time_per_chunk_cb = _current_chunk_loop_time_cb / current_chunk_display_num if current_chunk_display_num > 0 else 0
-                        _eta_seconds_chunk_cb = (num_chunks - current_chunk_display_num) * _avg_time_per_chunk_cb if current_chunk_display_num < num_chunks and _avg_time_per_chunk_cb > 0 else 0
-                        _speed_chunk_cb = 1 / _avg_time_per_chunk_cb if _avg_time_per_chunk_cb > 0 else 0
-                        
-                        base_desc_chunk = f"{loop_name}: {current_chunk_display_num}/{num_chunks} chunks | ETA: {format_time(_eta_seconds_chunk_cb)} | Speed: {_speed_chunk_cb:.2f} ch/s"
-                        
-                        tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps})" if step_duration > 0.001 else f"{step}/{total_steps}"
-                        chunk_tqdm_iterator.desc = f"{base_desc_chunk} - Diffusion: {tqdm_step_info}"
-                        
-                        log_step_info = f"{step_duration:.2f} second/it" if step_duration > 0.001 else f"step {step}/{total_steps}"
-                        logger.info(f"    ↳ {loop_name} - Chunk {current_chunk_display_num}/{num_chunks} (frames {start_idx}-{end_idx-1}) - {log_step_info}")
+                        base_desc_chunk = f"{loop_name}: {current_chunk_display_num}/{num_chunks} chunks (frames {start_idx}-{end_idx-1})"
+                        tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps_chunk})" if step_duration > 0.001 else f"{step}/{total_steps_chunk}"
+                        progress.update(desc=f"{base_desc_chunk} - Diffusion: {tqdm_step_info}")
+                        # logger.info(f"    ↳ {base_desc_chunk} - Diffusion: {tqdm_step_info}")
+
 
                     star_model_call_chunk_start_time = time.time()
                     with torch.no_grad():
@@ -1534,8 +1443,7 @@ def run_upscale(
                             guide_scale=cfg_scale, max_chunk_len=current_chunk_len, vae_decoder_chunk_size=min(vae_chunk, current_chunk_len),
                             progress_callback=diffusion_callback_for_chunk
                         )
-                    logger.info(f"{loop_name} - Chunk {current_chunk_display_num}/{num_chunks}: Finished STAR model processing. Duration: {format_time(time.time() - star_model_call_chunk_start_time)}")
-                    chunk_sr_frames_uint8 = tensor2vid(chunk_sr_tensor_bcthw) # List of (H,W,C) uint8 tensors
+                    chunk_sr_frames_uint8 = tensor2vid(chunk_sr_tensor_bcthw) 
 
                     if color_fix_method != 'None':
                         if color_fix_method == 'AdaIN':
@@ -1550,47 +1458,41 @@ def run_upscale(
 
                     if save_chunks and chunks_permanent_save_path:
                         chunk_video_filename = f"chunk_{current_chunk_display_num:04d}.mp4"
-                        # Chunks are saved in .../0001/chunks/ or .../batch_item_xyz/chunks/
                         chunk_video_path = os.path.join(chunks_permanent_save_path, chunk_video_filename)
                         
-                        chunk_temp_dir = os.path.join(temp_dir, f"temp_chunk_{current_chunk_display_num}") # Temp for assembling this chunk's frames
+                        chunk_temp_dir = os.path.join(temp_dir, f"temp_chunk_{current_chunk_display_num}") 
                         os.makedirs(chunk_temp_dir, exist_ok=True)
 
                         for k_frame_in_chunk, frame_name_in_chunk in enumerate(frame_files[start_idx:end_idx]):
-                            src_frame = os.path.join(output_frames_dir, frame_name_in_chunk) # Get processed frame
-                            dst_frame = os.path.join(chunk_temp_dir, f"frame_{k_frame_in_chunk + 1:06d}.png") # Sequentially named for ffmpeg
+                            src_frame = os.path.join(output_frames_dir, frame_name_in_chunk) 
+                            dst_frame = os.path.join(chunk_temp_dir, f"frame_{k_frame_in_chunk + 1:06d}.png") 
                             shutil.copy2(src_frame, dst_frame)
                         
                         util_create_video_from_frames(chunk_temp_dir, chunk_video_path, input_fps_val,
                                                       ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger)
-                        shutil.rmtree(chunk_temp_dir) # Clean up temp frames for this chunk video
+                        shutil.rmtree(chunk_temp_dir) 
 
                         chunk_save_msg = f"Saved chunk {current_chunk_display_num}/{num_chunks} to: {chunk_video_path}"
-                        status_log.append(chunk_save_msg) # Add to main log for user
+                        status_log.append(chunk_save_msg) 
                         logger.info(chunk_save_msg)
 
-                        last_chunk_video_path = chunk_video_path # Update for UI preview
+                        last_chunk_video_path = chunk_video_path 
                         last_chunk_status = f"Chunk {current_chunk_display_num}/{num_chunks} (frames {start_idx+1}-{end_idx})"
-                        # Yield to update UI with new chunk video and status
                         yield None, "\n".join(status_log), last_chunk_video_path, last_chunk_status
                     
-                    if save_metadata: # Save metadata incrementally after each chunk (non-scene-split mode)
+                    if save_metadata: 
                         status_info_for_chunk_meta = {
                             "current_chunk": current_chunk_display_num,
                             "total_chunks": num_chunks,
-                            "overall_process_start_time": overall_process_start_time, # Main process start time
-                            # Add any other relevant info for this chunk
+                            "overall_process_start_time": overall_process_start_time, 
                         }
                         try:
-                            # Metadata for non-scene-split chunks goes into the main_output_dir (e.g. outputs/ or outputs/batch_item_xyz/)
-                            # Filename could be like base_output_filename_no_ext_chunk_000X_meta.txt
-                            # Or update a single metadata file. Here, we use the main one and add chunk info.
                             metadata_handler.save_metadata(
                                 save_flag=True,
-                                output_dir=main_output_dir, # Base output directory
-                                base_filename_no_ext=base_output_filename_no_ext, # Main video's base name
-                                params_dict=params_for_metadata, # Overall params
-                                status_info=status_info_for_chunk_meta, # Chunk-specific status
+                                output_dir=main_output_dir, 
+                                base_filename_no_ext=base_output_filename_no_ext, 
+                                params_dict=params_for_metadata, 
+                                status_info=status_info_for_chunk_meta, 
                                 logger=logger
                             )
                         except Exception as e_meta:
@@ -1600,16 +1502,13 @@ def run_upscale(
                     del chunk_data_cuda, chunk_sr_tensor_bcthw, chunk_sr_frames_uint8
                     if torch.cuda.is_available(): torch.cuda.empty_cache()
                     
-                    # Update overall progress
                     loop_progress_frac = current_chunk_display_num / num_chunks if num_chunks > 0 else 1.0
                     current_overall_progress_temp = upscaling_loop_progress_start + (loop_progress_frac * stage_weights["upscaling_loop"])
-                    progress(current_overall_progress_temp, desc=chunk_tqdm_iterator.desc)
-                    # For standard chunked, yield after each chunk if not saving chunks (otherwise save_chunks handles yield)
-                    if not (save_chunks and chunks_permanent_save_path) : # If not yielded by save_chunks
+                    progress(current_overall_progress_temp) # Update fraction, desc from callback
+                    if not (save_chunks and chunks_permanent_save_path) : 
                          yield None, "\n".join(status_log), last_chunk_video_path, f"Chunk {current_chunk_display_num}/{num_chunks} processed"
 
-            # After all upscaling loops (tiling, sliding window, or chunked) for non-scene-split
-            current_overall_progress = upscaling_loop_progress_start + stage_weights["upscaling_loop"] # Mark upscaling loop as fully complete
+            current_overall_progress = upscaling_loop_progress_start + stage_weights["upscaling_loop"] 
             upscaling_total_duration_msg = f"All frame upscaling operations finished. Total upscaling time: {format_time(time.time() - upscaling_loop_start_time)}"
             status_log.append(upscaling_total_duration_msg)
             logger.info(upscaling_total_duration_msg)
@@ -1617,10 +1516,8 @@ def run_upscale(
             yield None, "\n".join(status_log), last_chunk_video_path, upscaling_total_duration_msg
 
 
-        # --- Post Upscaling ---
-        initial_progress_reassembly = current_overall_progress # Progress before final assembly steps
+        initial_progress_reassembly = current_overall_progress 
 
-        # Copy Processed Frames (if save_frames and not scene_split)
         if save_frames and not enable_scene_split and output_frames_dir and processed_frames_permanent_save_path:
             copy_processed_frames_start_time = time.time()
             num_processed_frames_to_copy = len(os.listdir(output_frames_dir))
@@ -1645,44 +1542,38 @@ def run_upscale(
             current_overall_progress = initial_progress_reassembly + stage_weights["reassembly_copy_processed"]
             progress(current_overall_progress, desc="Processed frames copied.")
             yield None, "\n".join(status_log), last_chunk_video_path, "Processed frames copied."
-        else: # Not saving or scene_split handled it
+        else: 
             current_overall_progress += stage_weights["reassembly_copy_processed"]
 
 
-        # Create silent video from processed frames (if not scene_split, where it's already merged)
         if not enable_scene_split:
-            initial_progress_silent_video = current_overall_progress # Store progress before this step
+            initial_progress_silent_video = current_overall_progress 
             progress(current_overall_progress, desc="Creating silent video...")
-            # silent_upscaled_video_path was declared earlier
             silent_upscaled_video_path = os.path.join(temp_dir, "silent_upscaled_video.mp4")
             
-            util_create_video_from_frames(output_frames_dir, silent_upscaled_video_path, input_fps_val, # Use FPS from initial extraction
+            util_create_video_from_frames(output_frames_dir, silent_upscaled_video_path, input_fps_val, 
                                           ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger)
-            # No separate progress weight for this, part of reassembly_audio_merge effectively
-            # current_overall_progress = initial_progress_silent_video # No change here, part of next stage.
-
+            
             silent_video_msg = "Silent upscaled video created. Merging audio..."
             status_log.append(silent_video_msg)
             logger.info(silent_video_msg)
             yield None, "\n".join(status_log), last_chunk_video_path, silent_video_msg
-        else: # Scene splitting already created silent_upscaled_video_path via merging
+        else: 
             silent_video_msg = "Scene-merged video ready. Merging audio..."
             status_log.append(silent_video_msg)
             logger.info(silent_video_msg)
             yield None, "\n".join(status_log), last_chunk_video_path, silent_video_msg
 
 
-        # Merge Audio
         initial_progress_audio_merge = current_overall_progress
-        # Audio source is the original input video, or the downscaled one if that was used for frames
         audio_source_video = current_input_video_for_frames 
-        final_output_path = output_video_path # Already determined
-        params_for_metadata["final_output_path"] = final_output_path # Ensure it's correct
+        final_output_path = output_video_path 
+        params_for_metadata["final_output_path"] = final_output_path 
 
         if not os.path.exists(audio_source_video):
             logger.warning(f"Audio source video '{audio_source_video}' not found. Output will be video-only.")
             if os.path.exists(silent_upscaled_video_path):
-                shutil.copy2(silent_upscaled_video_path, final_output_path) # Copy silent video to final output
+                shutil.copy2(silent_upscaled_video_path, final_output_path) 
             else:
                 logger.error(f"Silent upscaled video path {silent_upscaled_video_path} not found for copy.")
                 raise gr.Error("Silent video not found for final output.")
@@ -1702,32 +1593,25 @@ def run_upscale(
         final_save_msg = f"Upscaled video saved to: {final_output_path}"
         status_log.append(final_save_msg)
         logger.info(final_save_msg)
-        # Yield final path and status
-        # The final_output_path is the first element yielded.
-        # The log message is the second.
-        # last_chunk_video_path is for preview, can remain the same.
-        # last_chunk_status can be "Processing complete!"
         yield final_output_path, "\n".join(status_log), last_chunk_video_path, "Finalizing..."
 
 
-        # Save Metadata (final)
         if save_metadata:
             initial_progress_metadata = current_overall_progress
             progress(current_overall_progress, desc="Saving metadata...")
             metadata_save_start_time = time.time()
-            processing_time_total = time.time() - overall_process_start_time # Overall time for this run
+            processing_time_total = time.time() - overall_process_start_time 
 
             final_status_info = {
                 "processing_time_total": processing_time_total,
-                # Add other summary info if needed
             }
 
             success, message = metadata_handler.save_metadata(
                 save_flag=True,
-                output_dir=main_output_dir, # Where the final video is (e.g. outputs/ or outputs/batch_item_xyz/)
-                base_filename_no_ext=base_output_filename_no_ext, # Base name of the output video
-                params_dict=params_for_metadata, # All collected parameters
-                status_info=final_status_info, # Final status like total time
+                output_dir=main_output_dir, 
+                base_filename_no_ext=base_output_filename_no_ext, 
+                params_dict=params_for_metadata, 
+                status_info=final_status_info, 
                 logger=logger
             )
 
@@ -1743,63 +1627,56 @@ def run_upscale(
             progress(current_overall_progress, desc="Metadata saved.")
             yield final_output_path, "\n".join(status_log), last_chunk_video_path, meta_saved_msg if success else message
         
-        # Ensure progress reaches 1.0 if not already there
-        current_overall_progress += stage_weights.get("final_cleanup_buffer", 0.0) # Small buffer if any weight is left
-        current_overall_progress = min(current_overall_progress, 1.0) # Cap at 1.0
+        current_overall_progress += stage_weights.get("final_cleanup_buffer", 0.0) 
+        current_overall_progress = min(current_overall_progress, 1.0) 
 
         is_error = any(err_msg in status_log[-1] for err_msg in ["Error:", "Critical Error:"]) if status_log else False
         final_desc = "Finished!"
         if is_error:
             final_desc = status_log[-1] if status_log else "Error occurred"
-            progress(current_overall_progress, desc=final_desc) # Show error in progress
+            progress(current_overall_progress, desc=final_desc) 
         else:
-            progress(1.0, desc=final_desc) # Mark as 100% complete
+            progress(1.0, desc=final_desc) 
 
-        # Final yield with completed video path and full log
         yield final_output_path, "\n".join(status_log), last_chunk_video_path, "Processing complete!"
 
-    except gr.Error as e: # Catch Gradio-specific errors for UI display
+    except gr.Error as e: 
         logger.error(f"A Gradio UI Error occurred: {e}", exc_info=True)
         status_log.append(f"Error: {e}")
         current_overall_progress = min(current_overall_progress + stage_weights.get("final_cleanup_buffer",0.01), 1.0)
-        progress(current_overall_progress, desc=f"Error: {str(e)[:50]}") # Show error in progress bar
-        yield None, "\n".join(status_log), last_chunk_video_path, f"Error: {e}" # Yield error status
+        progress(current_overall_progress, desc=f"Error: {str(e)[:50]}") 
+        yield None, "\n".join(status_log), last_chunk_video_path, f"Error: {e}" 
 
-    except Exception as e: # Catch all other exceptions
+    except Exception as e: 
         logger.error(f"An unexpected error occurred during upscaling: {e}", exc_info=True)
         status_log.append(f"Critical Error: {e}")
         current_overall_progress = min(current_overall_progress + stage_weights.get("final_cleanup_buffer",0.01), 1.0)
         progress(current_overall_progress, desc=f"Critical Error: {str(e)[:50]}")
         yield None, "\n".join(status_log), last_chunk_video_path, f"Critical Error: {e}"
-        raise gr.Error(f"Upscaling failed critically: {e}") # Also raise to stop execution if needed
+        raise gr.Error(f"Upscaling failed critically: {e}") 
     finally:
-        # Cleanup
         if star_model is not None:
             try:
-                if hasattr(star_model, 'to'): star_model.to('cpu') # Move model to CPU before deleting
+                if hasattr(star_model, 'to'): star_model.to('cpu') 
                 del star_model
-            except: pass # Ignore errors during model cleanup
+            except: pass 
 
-        gc.collect() # Force garbage collection
-        if torch.cuda.is_available(): torch.cuda.empty_cache() # Clear CUDA cache
+        gc.collect() 
+        if torch.cuda.is_available(): torch.cuda.empty_cache() 
         logger.info("STAR upscaling process finished and cleaned up.")
 
-        util_cleanup_temp_dir(temp_dir, logger=logger) # Remove temporary files and folder
+        util_cleanup_temp_dir(temp_dir, logger=logger) 
 
         total_process_duration = time.time() - overall_process_start_time
         final_cleanup_msg = f"STAR upscaling process finished and cleaned up. Total processing time: {format_time(total_process_duration)}"
         logger.info(final_cleanup_msg)
-        # status_log.append(final_cleanup_msg) # Optionally add to log, though it might be yielded too late.
-
-        # Check if output video was actually created
+        
         output_video_exists = 'final_output_path' in locals() and final_output_path and os.path.exists(final_output_path)
         if not output_video_exists:
              if status_log and status_log[-1] and not status_log[-1].startswith("Error:") and not status_log[-1].startswith("Critical Error:"):
                 no_output_msg = "Processing finished, but output video was not found or not created."
-                # status_log.append(no_output_msg) # This log might not be seen if it's the absolute last thing
                 logger.warning(no_output_msg)
         
-        # Remove .tmp lock file if it exists
         if 'base_output_filename_no_ext' in locals() and base_output_filename_no_ext:
             tmp_lock_file_to_delete = os.path.join(main_output_dir if 'main_output_dir' in locals() else app_config.DEFAULT_OUTPUT_DIR, f"{base_output_filename_no_ext}.tmp")
             if os.path.exists(tmp_lock_file_to_delete):
@@ -1824,15 +1701,14 @@ def wrapper_split_video_only_for_gradio(
     scene_manual_split_type_radio_val, scene_manual_split_value_num_val,
     progress=gr.Progress(track_tqdm=True)
 ):
-    # This function now directly calls the utility and returns its output
     return util_split_video_only(
         input_video_val, scene_split_mode_radio_val, scene_min_scene_len_num_val, scene_drop_short_check_val, scene_merge_last_check_val,
         scene_frame_skip_num_val, scene_threshold_num_val, scene_min_content_val_num_val, scene_frame_window_num_val,
         scene_copy_streams_check_val, scene_use_mkvmerge_check_val, scene_rate_factor_num_val, scene_preset_dropdown_val, scene_quiet_ffmpeg_check_val,
         scene_manual_split_type_radio_val, scene_manual_split_value_num_val,
-        app_config.DEFAULT_OUTPUT_DIR, # Output directory for split videos
-        logger, # Pass the logger
-        progress=progress # Pass the progress tracker
+        app_config.DEFAULT_OUTPUT_DIR, 
+        logger, 
+        progress=progress 
     )
 
 
@@ -1845,7 +1721,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 input_video = gr.Video(
                     label="Input Video",
                     sources=["upload"],
-                    interactive=True, height=512 # Adjust height as needed
+                    interactive=True, height=512 
                 )
                 with gr.Row():
                     user_prompt = gr.Textbox(
@@ -1861,21 +1737,21 @@ If CogVLM2 is available, you can use the button below to generate a caption auto
                     
                     available_gpus = util_get_available_gpus()
                     gpu_choices = ["Auto"] + available_gpus if available_gpus else ["Auto", "No CUDA GPUs detected"]
-                    default_gpu = available_gpus[0] if available_gpus else "Auto" # Default to first GPU or Auto
+                    default_gpu = available_gpus[0] if available_gpus else "Auto" 
 
                     gpu_selector = gr.Dropdown(
                         label="GPU Selection",
                         choices=gpu_choices,
-                        value=default_gpu, # Set default
+                        value=default_gpu, 
                         info="Select which GPU to use for processing. 'Auto' uses all available GPUs.",
-                        scale=1 # Adjust scale if needed
+                        scale=1 
                     )
 
                 if app_config.UTIL_COG_VLM_AVAILABLE:
                     with gr.Row():
                         auto_caption_btn = gr.Button("Generate Caption with CogVLM2", variant="primary", icon="icons/caption.png")
                         upscale_button = gr.Button("Upscale Video", variant="primary", icon="icons/upscale.png")
-                    caption_status = gr.Textbox(label="Captioning Status", interactive=False, visible=False) # Initially hidden
+                    caption_status = gr.Textbox(label="Captioning Status", interactive=False, visible=False) 
                 else:
                     upscale_button = gr.Button("Upscale Video", variant="primary", icon="icons/upscale.png")
 
@@ -1895,7 +1771,7 @@ The total combined prompt length is limited to 77 tokens."""
                      info="Guides the model *away* from undesired aspects (e.g., bad quality, artifacts, specific styles). This does NOT count towards the 77 token limit for positive guidance."
                  )
 
-            with gr.Accordion("Advanced: Target Resolution", open=True): # Default open state
+            with gr.Accordion("Advanced: Target Resolution", open=True): 
                  enable_target_res_check = gr.Checkbox(
                      label="Enable Max Target Resolution",
                      value=app_config.DEFAULT_ENABLE_TARGET_RES,
@@ -1911,7 +1787,7 @@ The total combined prompt length is limited to 77 tokens."""
                  with gr.Row():
                      target_h_num = gr.Slider(
                          label="Max Target Height (px)",
-                         value=app_config.DEFAULT_TARGET_H, minimum=128, maximum=4096, step=16, # Sensible limits and step
+                         value=app_config.DEFAULT_TARGET_H, minimum=128, maximum=4096, step=16, 
                          info="""Maximum allowed height for the output video. Overrides Upscale Factor if enabled.
 - VRAM Impact: Very High (Lower value = Less VRAM).
 - Quality Impact: Direct (Lower value = Less detail).
@@ -1929,7 +1805,7 @@ The total combined prompt length is limited to 77 tokens."""
             with gr.Accordion("Performance & VRAM Optimization", open=True):
                 max_chunk_len_slider = gr.Slider(
                     label="Max Frames per Batch (VRAM)",
-                    minimum=4, maximum=96, value=app_config.DEFAULT_MAX_CHUNK_LEN, step=4, # Sensible steps
+                    minimum=4, maximum=96, value=app_config.DEFAULT_MAX_CHUNK_LEN, step=4, 
                     info="""IMPORTANT for VRAM. This is the standard way the application manages VRAM. It divides the entire sequence of video frames into sequential, non-overlapping chunks.
 - Mechanism: The STAR model processes one complete chunk (of this many frames) at a time.
 - VRAM Impact: High Reduction (Lower value = Less VRAM).
@@ -1946,7 +1822,7 @@ The total combined prompt length is limited to 77 tokens."""
                 )
 
             if app_config.UTIL_COG_VLM_AVAILABLE:
-                with gr.Accordion("Auto-Captioning Settings (CogVLM2)", open=True): # Default open
+                with gr.Accordion("Auto-Captioning Settings (CogVLM2)", open=True): 
                     cogvlm_quant_choices_map = app_config.get_cogvlm_quant_choices_map(torch.cuda.is_available(), app_config.UTIL_BITSANDBYTES_AVAILABLE)
                     cogvlm_quant_radio_choices_display = list(cogvlm_quant_choices_map.values())
                     default_quant_display_val = app_config.get_default_cogvlm_quant_display(cogvlm_quant_choices_map)
@@ -1957,7 +1833,7 @@ The total combined prompt length is limited to 77 tokens."""
                             choices=cogvlm_quant_radio_choices_display,
                             value=default_quant_display_val,
                             info="Quantization for the CogVLM2 captioning model (uses less VRAM). INT4/8 require CUDA & bitsandbytes.",
-                            interactive=True if len(cogvlm_quant_radio_choices_display) > 1 else False # Disable if only one choice (e.g. CPU only)
+                            interactive=True if len(cogvlm_quant_radio_choices_display) > 1 else False 
                         )
                         cogvlm_unload_radio = gr.Radio(
                             label="CogVLM2 After-Use",
@@ -1970,7 +1846,7 @@ The total combined prompt length is limited to 77 tokens."""
                 gr.Markdown("_(Auto-captioning disabled as CogVLM2 components are not fully available.)_")
 
 
-            with gr.Accordion("FFmpeg Encoding Settings", open=True): # Default open
+            with gr.Accordion("FFmpeg Encoding Settings", open=True): 
                 ffmpeg_use_gpu_check = gr.Checkbox(
                     label="Use NVIDIA GPU for FFmpeg (h264_nvenc)",
                     value=app_config.DEFAULT_FFMPEG_USE_GPU,
@@ -1984,13 +1860,13 @@ The total combined prompt length is limited to 77 tokens."""
                         info="Controls encoding speed vs. compression efficiency. 'ultrafast' is fastest with lowest quality/compression, 'veryslow' is slowest with highest quality/compression. Note: NVENC presets behave differently (e.g. p1-p7 or specific names like 'slow', 'medium', 'fast')."
                     )
                     
-                    ffmpeg_quality_slider = gr.Slider( # Will be updated by ffmpeg_use_gpu_check
-                        label="FFmpeg Quality (CRF for libx264 / CQ for NVENC)", # Initial label
-                        minimum=0, maximum=51, value=app_config.DEFAULT_FFMPEG_QUALITY_CPU, step=1, # Initial value
+                    ffmpeg_quality_slider = gr.Slider( 
+                        label="FFmpeg Quality (CRF for libx264 / CQ for NVENC)", 
+                        minimum=0, maximum=51, value=app_config.DEFAULT_FFMPEG_QUALITY_CPU, step=1, 
                         info="For libx264 (CPU): Constant Rate Factor (CRF). Lower values mean higher quality (0 is lossless, 23 is default). For h264_nvenc (GPU): Constrained Quality (CQ). Lower values generally mean better quality. Typical range for NVENC CQ is 18-28."
                     )
 
-            with gr.Accordion("Advanced: Sliding Window (Long Videos)", open=True): # Default open state
+            with gr.Accordion("Advanced: Sliding Window (Long Videos)", open=True): 
                  enable_sliding_window_check = gr.Checkbox(
                      label="Enable Sliding Window",
                      value=app_config.DEFAULT_ENABLE_SLIDING_WINDOW,
@@ -2003,7 +1879,7 @@ The total combined prompt length is limited to 77 tokens."""
                  with gr.Row():
                      window_size_num = gr.Slider(
                          label="Window Size (frames)",
-                         value=app_config.DEFAULT_WINDOW_SIZE, minimum=2, step=4, # Min 2, step 4 is reasonable
+                         value=app_config.DEFAULT_WINDOW_SIZE, minimum=2, step=4, 
                          info="Number of frames in each temporal window. Acts like 'Max Frames per Batch' but applied as a sliding window. Lower value = less VRAM, less temporal context."
                      )
                      window_step_num = gr.Slider(
@@ -2012,7 +1888,7 @@ The total combined prompt length is limited to 77 tokens."""
                          info="How many frames to advance for the next window. (Window Size - Window Step) = Overlap. Smaller step = more overlap = better consistency but slower. Recommended: Step = Size / 2."
                      )
 
-            with gr.Accordion("Advanced: Tiling (Very High Res / Low VRAM)", open=True): # Default open state
+            with gr.Accordion("Advanced: Tiling (Very High Res / Low VRAM)", open=True): 
                  enable_tiling_check = gr.Checkbox(
                      label="Enable Tiled Upscaling",
                      value=app_config.DEFAULT_ENABLE_TILING,
@@ -2022,41 +1898,41 @@ The total combined prompt length is limited to 77 tokens."""
 - Speed Impact: Extremely Slow."""
                  )
                  with gr.Row():
-                     tile_size_num = gr.Number( # Number input for precise px values
+                     tile_size_num = gr.Number( 
                          label="Tile Size (px, input res)",
-                         value=app_config.DEFAULT_TILE_SIZE, minimum=64, step=32, # Sensible min and step
+                         value=app_config.DEFAULT_TILE_SIZE, minimum=64, step=32, 
                          info="Size of the square patches (in input resolution pixels) to process. Smaller = less VRAM per tile but more tiles = slower."
                      )
                      tile_overlap_num = gr.Number(
                          label="Tile Overlap (px, input res)",
-                         value=app_config.DEFAULT_TILE_OVERLAP, minimum=0, step=16, # Sensible min and step
+                         value=app_config.DEFAULT_TILE_OVERLAP, minimum=0, step=16, 
                          info="How much the tiles overlap (in input resolution pixels). Higher overlap helps reduce seams but increases processing time. Recommend 1/4 to 1/2 of Tile Size."
                      )
 
 
-        with gr.Column(scale=1): # Right column for outputs
-            output_video = gr.Video(label="Upscaled Video", interactive=False) # Main output
-            status_textbox = gr.Textbox(label="Log", interactive=False, lines=8, max_lines=20) # For status messages
+        with gr.Column(scale=1): 
+            output_video = gr.Video(label="Upscaled Video", interactive=False) 
+            status_textbox = gr.Textbox(label="Log", interactive=False, lines=8, max_lines=20) 
 
-            with gr.Accordion("Last Processed Chunk", open=True): # Default open
+            with gr.Accordion("Last Processed Chunk", open=True): 
                 last_chunk_video = gr.Video(
                     label="Last Processed Chunk Preview",
                     interactive=False,
-                    height=300, # Adjust height
-                    visible=True # Always visible, content updates
+                    height=300, 
+                    visible=True 
                 )
                 chunk_status_text = gr.Textbox(
                     label="Chunk Status",
                     interactive=False,
-                    lines=1, # Single line for brief status
-                    value="No chunks processed yet" # Initial value
+                    lines=1, 
+                    value="No chunks processed yet" 
                 )
 
-            with gr.Group(): # Group for core settings
+            with gr.Group(): 
                 gr.Markdown("### Core Upscaling Settings")
                 model_selector = gr.Dropdown(
                     label="STAR Model",
-                    choices=["Light Degradation", "Heavy Degradation"], # Assuming these map to config values
+                    choices=["Light Degradation", "Heavy Degradation"], 
                     value=app_config.DEFAULT_MODEL_CHOICE,
                     info="""Choose the model based on input video quality.
 'Light Degradation': Better for relatively clean inputs (e.g., downloaded web videos).
@@ -2064,7 +1940,7 @@ The total combined prompt length is limited to 77 tokens."""
                 )
                 upscale_factor_slider = gr.Slider(
                     label="Upscale Factor (if Target Res disabled)",
-                    minimum=1.0, maximum=8.0, value=app_config.DEFAULT_UPSCALE_FACTOR, step=0.1, # Fine steps
+                    minimum=1.0, maximum=8.0, value=app_config.DEFAULT_UPSCALE_FACTOR, step=0.1, 
                     info="Simple multiplication factor for output resolution if 'Enable Max Target Resolution' is OFF. E.g., 4.0 means 4x height and 4x width."
                 )
                 cfg_slider = gr.Slider(
@@ -2083,9 +1959,9 @@ The total combined prompt length is limited to 77 tokens."""
                     
                     steps_slider = gr.Slider(
                         label="Diffusion Steps",
-                        minimum=5, maximum=100, value=app_config.DEFAULT_DIFFUSION_STEPS_FAST, step=1, # Default based on 'fast'
+                        minimum=5, maximum=100, value=app_config.DEFAULT_DIFFUSION_STEPS_FAST, step=1, 
                         info="Number of denoising steps. 'Fast' mode uses a fixed ~15 steps. 'Normal' mode uses the value set here.",
-                        interactive=False # Initially non-interactive, controlled by solver_mode_radio
+                        interactive=False 
                     )
                 color_fix_dropdown = gr.Dropdown(
                     label="Color Correction",
@@ -2095,7 +1971,7 @@ The total combined prompt length is limited to 77 tokens."""
 'None': Disables color correction."""
                 )
 
-            with gr.Accordion("Scene Splitting", open=True): # Default open
+            with gr.Accordion("Scene Splitting", open=True): 
                 enable_scene_split_check = gr.Checkbox(
                     label="Enable Scene Splitting",
                     value=app_config.DEFAULT_ENABLE_SCENE_SPLIT,
@@ -2105,7 +1981,7 @@ The total combined prompt length is limited to 77 tokens."""
 - Memory Impact: Reduces peak memory usage by processing smaller segments."""
                 )
                 
-                with gr.Row(): # Group related split mode settings
+                with gr.Row(): 
                     scene_split_mode_radio = gr.Radio(
                         label="Split Mode",
                         choices=['automatic', 'manual'], value=app_config.DEFAULT_SCENE_SPLIT_MODE,
@@ -2113,26 +1989,26 @@ The total combined prompt length is limited to 77 tokens."""
 'manual': Splits video at fixed intervals (duration or frame count)."""
                     )
                 
-                with gr.Group(): # Group for Automatic settings
+                with gr.Group(): 
                     gr.Markdown("**Automatic Scene Detection Settings**")
                     with gr.Row():
                         scene_min_scene_len_num = gr.Number(label="Min Scene Length (seconds)", value=app_config.DEFAULT_SCENE_MIN_SCENE_LEN, minimum=0.1, step=0.1, info="Minimum duration for a scene. Shorter scenes will be merged or dropped.")
-                        scene_threshold_num = gr.Number(label="Detection Threshold", value=app_config.DEFAULT_SCENE_THRESHOLD, minimum=0.1, maximum=10.0, step=0.1, info="Sensitivity of scene detection. Lower values detect more scenes.") # Example range
+                        scene_threshold_num = gr.Number(label="Detection Threshold", value=app_config.DEFAULT_SCENE_THRESHOLD, minimum=0.1, maximum=10.0, step=0.1, info="Sensitivity of scene detection. Lower values detect more scenes.") 
                     with gr.Row():
                         scene_drop_short_check = gr.Checkbox(label="Drop Short Scenes", value=app_config.DEFAULT_SCENE_DROP_SHORT, info="If enabled, scenes shorter than minimum length are dropped instead of merged.")
                         scene_merge_last_check = gr.Checkbox(label="Merge Last Scene", value=app_config.DEFAULT_SCENE_MERGE_LAST, info="If the last scene is too short, merge it with the previous scene.")
                     with gr.Row():
                         scene_frame_skip_num = gr.Number(label="Frame Skip", value=app_config.DEFAULT_SCENE_FRAME_SKIP, minimum=0, step=1, info="Skip frames during detection to speed up processing. 0 = analyze every frame.")
-                        scene_min_content_val_num = gr.Number(label="Min Content Value", value=app_config.DEFAULT_SCENE_MIN_CONTENT_VAL, minimum=0.0, step=1.0, info="Minimum content change required to detect a scene boundary.") # PySceneDetect specific
-                        scene_frame_window_num = gr.Number(label="Frame Window", value=app_config.DEFAULT_SCENE_FRAME_WINDOW, minimum=1, step=1, info="Number of frames to analyze for scene detection.") # PySceneDetect specific
+                        scene_min_content_val_num = gr.Number(label="Min Content Value", value=app_config.DEFAULT_SCENE_MIN_CONTENT_VAL, minimum=0.0, step=1.0, info="Minimum content change required to detect a scene boundary.") 
+                        scene_frame_window_num = gr.Number(label="Frame Window", value=app_config.DEFAULT_SCENE_FRAME_WINDOW, minimum=1, step=1, info="Number of frames to analyze for scene detection.") 
 
-                with gr.Group(): # Group for Manual settings
+                with gr.Group(): 
                     gr.Markdown("**Manual Split Settings**")
                     with gr.Row():
                         scene_manual_split_type_radio = gr.Radio(label="Manual Split Type", choices=['duration', 'frame_count'], value=app_config.DEFAULT_SCENE_MANUAL_SPLIT_TYPE, info="'duration': Split every N seconds.\n'frame_count': Split every N frames.")
                         scene_manual_split_value_num = gr.Number(label="Split Value", value=app_config.DEFAULT_SCENE_MANUAL_SPLIT_VALUE, minimum=1.0, step=1.0, info="Duration in seconds or number of frames for manual splitting.")
 
-                with gr.Group(): # Group for Scene Encoding settings
+                with gr.Group(): 
                     gr.Markdown("**Encoding Settings (for scene segments)**")
                     with gr.Row():
                         scene_copy_streams_check = gr.Checkbox(label="Copy Streams", value=app_config.DEFAULT_SCENE_COPY_STREAMS, info="Copy video/audio streams without re-encoding during scene splitting (faster) but can generate inaccurate splits.")
@@ -2143,48 +2019,43 @@ The total combined prompt length is limited to 77 tokens."""
                     scene_quiet_ffmpeg_check = gr.Checkbox(label="Quiet FFmpeg", value=app_config.DEFAULT_SCENE_QUIET_FFMPEG, info="Suppress ffmpeg output during scene splitting.")
 
 
-            with gr.Accordion("Batch Processing", open=True): # Default open
+            with gr.Accordion("Batch Processing", open=True): 
                 with gr.Row():
                     batch_input_folder = gr.Textbox(label="Input Folder", placeholder="Path to folder containing videos to process...", info="Folder containing video files to process in batch mode.")
                     batch_output_folder = gr.Textbox(label="Output Folder", placeholder="Path to output folder for processed videos...", info="Folder where processed videos will be saved, preserving original filenames.")
             
-            with gr.Accordion("Output Options", open=True): # Default open
+            with gr.Accordion("Output Options", open=True): 
                 save_frames_checkbox = gr.Checkbox(label="Save Input and Processed Frames", value=app_config.DEFAULT_SAVE_FRAMES, info="If checked, saves the extracted input frames and the upscaled output frames into a subfolder named after the output video (e.g., '0001/input_frames' and '0001/processed_frames').")
                 save_metadata_checkbox = gr.Checkbox(label="Save Processing Metadata", value=app_config.DEFAULT_SAVE_METADATA, info="If checked, saves a .txt file (e.g., '0001.txt') in the main output folder, containing all processing parameters and total processing time.")
                 save_chunks_checkbox = gr.Checkbox(label="Save Processed Chunks", value=app_config.DEFAULT_SAVE_CHUNKS, info="If checked, saves each processed chunk as a video file in a 'chunks' subfolder (e.g., '0001/chunks/chunk_0001.mp4'). Uses the same FFmpeg settings as the final video.")
                 open_output_folder_button = gr.Button("Open Output Folder")
 
-            with gr.Row(): # Buttons at the bottom of right column
+            with gr.Row(): 
                 split_only_button = gr.Button("Split Video Only (No Upscaling)", variant="secondary")
-                batch_process_button = gr.Button("Process Batch Folder", variant="primary", visible=True) # Default visible
+                batch_process_button = gr.Button("Process Batch Folder", variant="primary", visible=True) 
 
-    # Event handlers
     def update_steps_display(mode):
         if mode == 'fast':
             return gr.update(value=app_config.DEFAULT_DIFFUSION_STEPS_FAST, interactive=False)
-        else: # 'normal'
+        else: 
             return gr.update(value=app_config.DEFAULT_DIFFUSION_STEPS_NORMAL, interactive=True)
     solver_mode_radio.change(update_steps_display, solver_mode_radio, steps_slider)
 
-    # Interactivity for Target Resolution
     enable_target_res_check.change(
-        lambda x: [gr.update(interactive=x)] * 3, # target_h, target_w, target_res_mode
+        lambda x: [gr.update(interactive=x)] * 3, 
         inputs=enable_target_res_check,
         outputs=[target_h_num, target_w_num, target_res_mode_radio]
     )
-    # Interactivity for Tiling
     enable_tiling_check.change(
-        lambda x: [gr.update(interactive=x)] * 2, # tile_size, tile_overlap
+        lambda x: [gr.update(interactive=x)] * 2, 
         inputs=enable_tiling_check,
         outputs=[tile_size_num, tile_overlap_num]
     )
-    # Interactivity for Sliding Window
     enable_sliding_window_check.change(
-        lambda x: [gr.update(interactive=x)] * 2, # window_size, window_step
+        lambda x: [gr.update(interactive=x)] * 2, 
         inputs=enable_sliding_window_check,
         outputs=[window_size_num, window_step_num]
     )
-    # Interactivity for Scene Splitting
     scene_splitting_outputs = [
         scene_split_mode_radio, scene_min_scene_len_num, scene_threshold_num, scene_drop_short_check, scene_merge_last_check,
         scene_frame_skip_num, scene_min_content_val_num, scene_frame_window_num,
@@ -2215,16 +2086,15 @@ The total combined prompt length is limited to 77 tokens."""
         outputs=[]
     )
 
-    # CogVLM related logic (quant value mapping)
-    cogvlm_display_to_quant_val_map_global = {} # Initialize
+    cogvlm_display_to_quant_val_map_global = {} 
     if app_config.UTIL_COG_VLM_AVAILABLE:
         _temp_map = app_config.get_cogvlm_quant_choices_map(torch.cuda.is_available(), app_config.UTIL_BITSANDBYTES_AVAILABLE)
-        cogvlm_display_to_quant_val_map_global = {v: k for k, v in _temp_map.items()} # display_name -> quant_value
+        cogvlm_display_to_quant_val_map_global = {v: k for k, v in _temp_map.items()} 
 
     def get_quant_value_from_display(display_val):
-        if display_val is None: return 0 # Default if None
-        if isinstance(display_val, int): return display_val # Already a value
-        return cogvlm_display_to_quant_val_map_global.get(display_val, 0) # Default to 0 (no quant) if not found
+        if display_val is None: return 0 
+        if isinstance(display_val, int): return display_val 
+        return cogvlm_display_to_quant_val_map_global.get(display_val, 0) 
 
 
     def upscale_director_logic(
@@ -2241,87 +2111,85 @@ The total combined prompt length is limited to 77 tokens."""
         scene_frame_skip_num_val, scene_threshold_num_val, scene_min_content_val_num_val, scene_frame_window_num_val,
         scene_copy_streams_check_val, scene_use_mkvmerge_check_val, scene_rate_factor_num_val, scene_preset_dropdown_val, scene_quiet_ffmpeg_check_val,
         scene_manual_split_type_radio_val, scene_manual_split_value_num_val,
-        # CogVLM params (might be None if not available)
         cogvlm_quant_radio_val=None, cogvlm_unload_radio_val=None, 
-        do_auto_caption_first_val=False, # From checkbox
+        do_auto_caption_first_val=False, 
         progress=gr.Progress(track_tqdm=True)
     ):
         
-        # --- Store current actual values for UI elements ---
-        current_output_video_data = None
-        current_status_text_data = ""
-        current_user_prompt_text_data = user_prompt_val # Start with user's input
-        current_caption_status_text_data = ""
-        current_caption_status_visible = False
-        current_last_chunk_video_data = None
-        current_chunk_status_text_data = "No chunks processed yet"
+        current_output_video_val = None
+        current_status_text_val = ""
+        current_user_prompt_val = user_prompt_val 
+        current_caption_status_text_val = ""
+        current_caption_status_visible_val = False
+        current_last_chunk_video_val = None
+        current_chunk_status_text_val = "No chunks processed yet"
 
-        log_accumulator = [] # Accumulate log messages before passing to run_upscale's status_log
+        log_accumulator_director = [] 
 
         logger.info(f"In upscale_director_logic. Auto-caption first: {do_auto_caption_first_val}, User prompt: '{user_prompt_val[:50]}...'")
 
         actual_cogvlm_quant_for_captioning = get_quant_value_from_display(cogvlm_quant_radio_val)
 
-        # Determine if full-video auto-captioning should occur before upscaling
         should_auto_caption_entire_video = (do_auto_caption_first_val and 
-                                           not enable_scene_split_check_val and # Only if not doing per-scene
+                                           not enable_scene_split_check_val and 
                                            app_config.UTIL_COG_VLM_AVAILABLE)
 
         if should_auto_caption_entire_video:
             logger.info("Attempting auto-captioning entire video before upscale (scene splitting disabled).")
             progress(0, desc="Starting auto-captioning before upscale...")
             
-            current_status_text_data = "Starting auto-captioning..."
+            current_status_text_val = "Starting auto-captioning..."
             if app_config.UTIL_COG_VLM_AVAILABLE:
-                current_caption_status_text_data = "Starting auto-captioning..."
-                current_caption_status_visible = True
+                current_caption_status_text_val = "Starting auto-captioning..."
+                current_caption_status_visible_val = True
             
-            yield (gr.update(), current_status_text_data, gr.update(value=current_user_prompt_text_data), 
-                   gr.update(value=current_caption_status_text_data, visible=current_caption_status_visible), 
-                   gr.update(), current_chunk_status_text_data)
+            yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val), 
+                   gr.update(value=current_user_prompt_val), 
+                   gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val), 
+                   gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val))
 
             try:
                 caption_text, caption_stat_msg = util_auto_caption(
                     input_video_val, actual_cogvlm_quant_for_captioning, cogvlm_unload_radio_val,
                     app_config.COG_VLM_MODEL_PATH, logger=logger, progress=progress
                 )
-                logger.info(f"util_auto_caption returned. Caption (first 50): '{caption_text[:50]}...'")
-                log_accumulator.append(f"Auto-caption status: {caption_stat_msg}")
+                log_accumulator_director.append(f"Auto-caption status: {caption_stat_msg}")
 
                 if not caption_text.startswith("Error:"):
-                    current_user_prompt_text_data = caption_text # Update prompt with generated caption
-                    log_accumulator.append(f"Using generated caption as prompt: '{caption_text[:50]}...'")
+                    current_user_prompt_val = caption_text 
+                    log_accumulator_director.append(f"Using generated caption as prompt: '{caption_text[:50]}...'")
                 else:
-                    log_accumulator.append("Caption generation failed. Using original prompt.")
+                    log_accumulator_director.append("Caption generation failed. Using original prompt.")
                 
-                current_status_text_data = "\n".join(log_accumulator)
+                current_status_text_val = "\n".join(log_accumulator_director)
                 if app_config.UTIL_COG_VLM_AVAILABLE:
-                    current_caption_status_text_data = caption_stat_msg # Final status from captioning
+                    current_caption_status_text_val = caption_stat_msg 
                 
-                yield (gr.update(), current_status_text_data, gr.update(value=current_user_prompt_text_data), 
-                       gr.update(value=current_caption_status_text_data, visible=current_caption_status_visible), 
-                       gr.update(), current_chunk_status_text_data)
+                yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val), 
+                       gr.update(value=current_user_prompt_val), 
+                       gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val), 
+                       gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val))
 
             except Exception as e_ac:
                 logger.error(f"Exception during auto-caption call or its setup: {e_ac}", exc_info=True)
-                log_accumulator.append(f"Error during auto-caption pre-step: {e_ac}")
-                current_status_text_data = "\n".join(log_accumulator)
+                log_accumulator_director.append(f"Error during auto-caption pre-step: {e_ac}")
+                current_status_text_val = "\n".join(log_accumulator_director)
                 if app_config.UTIL_COG_VLM_AVAILABLE:
-                    current_caption_status_text_data = str(e_ac)
-                yield (gr.update(), current_status_text_data, gr.update(value=current_user_prompt_text_data), # Keep original prompt on error
-                       gr.update(value=current_caption_status_text_data, visible=current_caption_status_visible), 
-                       gr.update(), current_chunk_status_text_data)
-            log_accumulator = [] # Clear after use
+                    current_caption_status_text_val = str(e_ac)
+                yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val), 
+                       gr.update(value=current_user_prompt_val), 
+                       gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val), 
+                       gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val))
+            log_accumulator_director = [] 
 
         elif do_auto_caption_first_val and enable_scene_split_check_val and app_config.UTIL_COG_VLM_AVAILABLE:
             msg = "Scene splitting enabled: Each scene will be auto-captioned individually by the upscaler."
             logger.info(msg)
-            log_accumulator.append(msg) # This will be prepended to the first log from run_upscale
+            log_accumulator_director.append(msg) 
 
 
-        # --- Call the main upscaling generator ---
         upscale_generator = run_upscale(
-            input_video_val, current_user_prompt_text_data, # Use potentially updated prompt
+            input_video_val, current_user_prompt_val, 
             pos_prompt_val, neg_prompt_val, model_selector_val,
             upscale_factor_slider_val, cfg_slider_val, steps_slider_val, solver_mode_radio_val,
             max_chunk_len_slider_val, vae_chunk_slider_val, color_fix_dropdown_val,
@@ -2336,67 +2204,76 @@ The total combined prompt length is limited to 77 tokens."""
             scene_copy_streams_check_val, scene_use_mkvmerge_check_val, scene_rate_factor_num_val, scene_preset_dropdown_val, scene_quiet_ffmpeg_check_val,
             scene_manual_split_type_radio_val, scene_manual_split_value_num_val,
             
-            False, None, None, # is_batch_mode, batch_output_dir, original_filename (not batch here)
+            False, None, None, 
 
-            # Pass per-scene captioning flags to run_upscale
             enable_auto_caption_per_scene=(do_auto_caption_first_val and enable_scene_split_check_val and app_config.UTIL_COG_VLM_AVAILABLE),
-            cogvlm_quant=actual_cogvlm_quant_for_captioning, # Use resolved quant value
+            cogvlm_quant=actual_cogvlm_quant_for_captioning, 
             cogvlm_unload=cogvlm_unload_radio_val if cogvlm_unload_radio_val else 'full',
             progress=progress
         )
 
-        # --- Process yields from run_upscale ---
-        for output_val, status_val, chunk_video_val, chunk_status_val in upscale_generator:
+        for yielded_output_video, yielded_status_log, yielded_chunk_video, yielded_chunk_status in upscale_generator:
             
-            yield_output_video_update = gr.update()
-            yield_status_text_update = gr.update()
-            yield_user_prompt_update = gr.update() # User prompt doesn't change during this loop
-            yield_caption_status_update = gr.update() # Caption status also doesn't change here usually
-            yield_last_chunk_video_update = gr.update()
-            yield_chunk_status_text_update = gr.update()
+            # Determine update for output_video
+            output_video_update = gr.update() # Default to no change
+            if yielded_output_video is not None:
+                current_output_video_val = yielded_output_video
+                output_video_update = gr.update(value=current_output_video_val)
+            elif current_output_video_val is None : # If it was None and still is None
+                output_video_update = gr.update(value=None) # Explicitly keep it None/cleared
+            else: # It had a value, and new yield is None (intermediate step), keep old value.
+                output_video_update = gr.update(value=current_output_video_val)
 
-            if output_val is not None: # New final video
-                current_output_video_data = output_val
-                yield_output_video_update = gr.update(value=current_output_video_data)
-            
-            # Combine accumulated log messages with new status from run_upscale
-            combined_log = ""
-            if log_accumulator:
-                combined_log = "\n".join(log_accumulator) + "\n"
-                log_accumulator = [] # Clear after prepending
-            if status_val:
-                combined_log += status_val
-            
-            current_status_text_data = combined_log.strip()
-            yield_status_text_update = gr.update(value=current_status_text_data)
 
-            if chunk_video_val is not None: # New chunk video
-                current_last_chunk_video_data = chunk_video_val
-                yield_last_chunk_video_update = gr.update(value=current_last_chunk_video_data)
-            
-            if chunk_status_val: # New chunk status text
-                current_chunk_status_text_data = chunk_status_val
-                yield_chunk_status_text_update = gr.update(value=current_chunk_status_text_data)
+            # Update status_text (Log)
+            combined_log_director = ""
+            if log_accumulator_director:
+                combined_log_director = "\n".join(log_accumulator_director) + "\n"
+                log_accumulator_director = [] 
+            if yielded_status_log:
+                combined_log_director += yielded_status_log
+            current_status_text_val = combined_log_director.strip()
+            status_text_update = gr.update(value=current_status_text_val)
 
+            # Update user_prompt (should generally not change here unless first captioning step failed and we revert)
+            user_prompt_update = gr.update(value=current_user_prompt_val)
+
+            # Update caption_status
+            caption_status_update = gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val)
+
+            # Update last_chunk_video
+            chunk_video_update = gr.update() # Default to no change
+            if yielded_chunk_video is not None:
+                current_last_chunk_video_val = yielded_chunk_video
+                chunk_video_update = gr.update(value=current_last_chunk_video_val)
+            elif current_last_chunk_video_val is None: # If it was None and still is
+                chunk_video_update = gr.update(value=None) # Explicitly keep it None/cleared
+            else: # Had a value, new is None, keep old.
+                chunk_video_update = gr.update(value=current_last_chunk_video_val)
+
+
+            # Update chunk_status_text
+            if yielded_chunk_status is not None: # Allow chunk status to be cleared if None
+                current_chunk_status_text_val = yielded_chunk_status
+            chunk_status_text_update = gr.update(value=current_chunk_status_text_val)
+            
             yield (
-                yield_output_video_update, yield_status_text_update, yield_user_prompt_update,
-                yield_caption_status_update, # Visibility of caption_status is managed by its initial state
-                yield_last_chunk_video_update, yield_chunk_status_text_update
+                output_video_update, status_text_update, user_prompt_update,
+                caption_status_update, 
+                chunk_video_update, chunk_status_text_update
             )
 
-        # --- Final yield to ensure UI reflects the absolute end state ---
-        # This ensures that the final values of all components are correctly set.
+        # Final yield to ensure all states are correctly set at the very end.
         yield (
-            gr.update(value=current_output_video_data), 
-            gr.update(value=current_status_text_data), 
-            gr.update(value=current_user_prompt_text_data), # Final prompt value
-            gr.update(value=current_caption_status_text_data, visible=current_caption_status_visible), # Final caption status
-            gr.update(value=current_last_chunk_video_data), 
-            gr.update(value=current_chunk_status_text_data)
+            gr.update(value=current_output_video_val), 
+            gr.update(value=current_status_text_val), 
+            gr.update(value=current_user_prompt_val), 
+            gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val), 
+            gr.update(value=current_last_chunk_video_val), 
+            gr.update(value=current_chunk_status_text_val)
         )
 
 
-    # Define inputs for the upscale_button click
     click_inputs = [
         input_video, user_prompt, pos_prompt, neg_prompt, model_selector,
         upscale_factor_slider, cfg_slider, steps_slider, solver_mode_radio,
@@ -2406,22 +2283,19 @@ The total combined prompt length is limited to 77 tokens."""
         enable_target_res_check, target_h_num, target_w_num, target_res_mode_radio,
         ffmpeg_preset_dropdown, ffmpeg_quality_slider, ffmpeg_use_gpu_check,
         save_frames_checkbox, save_metadata_checkbox, save_chunks_checkbox,
-        # Scene split parameters
         enable_scene_split_check, scene_split_mode_radio, scene_min_scene_len_num, scene_drop_short_check, scene_merge_last_check,
         scene_frame_skip_num, scene_threshold_num, scene_min_content_val_num, scene_frame_window_num,
         scene_copy_streams_check, scene_use_mkvmerge_check, scene_rate_factor_num, scene_preset_dropdown, scene_quiet_ffmpeg_check,
         scene_manual_split_type_radio, scene_manual_split_value_num
     ]
     
-    # Define outputs for the upscale_button click
-    # Order must match the tuple yielded by upscale_director_logic
     click_outputs_list = [output_video, status_textbox, user_prompt] 
     if app_config.UTIL_COG_VLM_AVAILABLE:
         click_outputs_list.append(caption_status)
         click_inputs.extend([cogvlm_quant_radio, cogvlm_unload_radio, auto_caption_then_upscale_check])
-    else: # Add placeholders if CogVLM not available to keep argument count consistent for upscale_director_logic
-        click_outputs_list.append(gr.State(None)) # Placeholder for caption_status output
-        click_inputs.extend([gr.State(None), gr.State(None), gr.State(False)]) # Placeholders for CogVLM inputs
+    else: 
+        click_outputs_list.append(gr.State(None)) 
+        click_inputs.extend([gr.State(None), gr.State(None), gr.State(False)]) 
 
     click_outputs_list.extend([last_chunk_video, chunk_status_text])
 
@@ -2436,8 +2310,8 @@ The total combined prompt length is limited to 77 tokens."""
         auto_caption_btn.click(
             fn=lambda vid, quant_display, unload_strat, progress=gr.Progress(track_tqdm=True): util_auto_caption(vid, get_quant_value_from_display(quant_display), unload_strat, app_config.COG_VLM_MODEL_PATH, logger=logger, progress=progress),
             inputs=[input_video, cogvlm_quant_radio, cogvlm_unload_radio],
-            outputs=[user_prompt, caption_status] # caption_status is Textbox
-        ).then(lambda: gr.update(visible=True), None, caption_status) # Make caption_status visible after click
+            outputs=[user_prompt, caption_status] 
+        ).then(lambda: gr.update(visible=True), None, caption_status) 
 
     split_only_button.click(
         fn=wrapper_split_video_only_for_gradio,
@@ -2447,12 +2321,11 @@ The total combined prompt length is limited to 77 tokens."""
             scene_copy_streams_check, scene_use_mkvmerge_check, scene_rate_factor_num, scene_preset_dropdown, scene_quiet_ffmpeg_check,
             scene_manual_split_type_radio, scene_manual_split_value_num
         ],
-        outputs=[output_video, status_textbox] # Output to main video and log
+        outputs=[output_video, status_textbox] 
     )
 
-    # Inputs for batch processing (similar to single upscale)
     batch_process_inputs = [
-        batch_input_folder, batch_output_folder, # Specific to batch
+        batch_input_folder, batch_output_folder, 
         user_prompt, pos_prompt, neg_prompt, model_selector,
         upscale_factor_slider, cfg_slider, steps_slider, solver_mode_radio,
         max_chunk_len_slider, vae_chunk_slider, color_fix_dropdown,
@@ -2466,50 +2339,43 @@ The total combined prompt length is limited to 77 tokens."""
         scene_copy_streams_check, scene_use_mkvmerge_check, scene_rate_factor_num, scene_preset_dropdown, scene_quiet_ffmpeg_check,
         scene_manual_split_type_radio, scene_manual_split_value_num
     ]
-    # Batch processing does not use the UI's auto_caption_then_upscale_check directly in its signature,
-    # it's handled inside process_batch_videos if needed, or uses a fixed behavior.
-    # For simplicity here, it doesn't take cogvlm or auto_caption_first from UI for its own call.
-
+    
     batch_process_button.click(
         fn=process_batch_videos,
-        inputs=batch_process_inputs, # Pass all relevant settings from the UI
-        outputs=[output_video, status_textbox] # Batch status to main log, first video output to preview
+        inputs=batch_process_inputs, 
+        outputs=[output_video, status_textbox] 
     )
     
-    # GPU selection update
     gpu_selector.change(
-        fn=lambda gpu_id: util_set_gpu_device(gpu_id, logger=logger), # Returns status message
+        fn=lambda gpu_id: util_set_gpu_device(gpu_id, logger=logger), 
         inputs=gpu_selector,
-        outputs=status_textbox # Display GPU change status in the log
+        outputs=status_textbox 
     )
 
 
 if __name__ == "__main__":
-    # Create default output directory if it doesn't exist
     os.makedirs(app_config.DEFAULT_OUTPUT_DIR, exist_ok=True)
     logger.info(f"Gradio App Starting. Default output to: {os.path.abspath(app_config.DEFAULT_OUTPUT_DIR)}")
     logger.info(f"STAR Models expected at: {app_config.LIGHT_DEG_MODEL_PATH}, {app_config.HEAVY_DEG_MODEL_PATH}")
     if app_config.UTIL_COG_VLM_AVAILABLE:
         logger.info(f"CogVLM2 Model expected at: {app_config.COG_VLM_MODEL_PATH}")
 
-    # Initialize GPU device based on availability and UI default
     available_gpus_main = util_get_available_gpus()
     if available_gpus_main:
-        default_gpu_main = available_gpus_main[0] # Use the first available as default
-        util_set_gpu_device(default_gpu_main, logger=logger) # Set it
+        default_gpu_main = available_gpus_main[0] 
+        util_set_gpu_device(default_gpu_main, logger=logger) 
         logger.info(f"Initialized with default GPU: {default_gpu_main}")
     else:
         logger.info("No CUDA GPUs detected, using CPU mode (or as per 'Auto' logic in util_set_gpu_device).")
-        util_set_gpu_device("Auto", logger=logger) # Let set_gpu_device handle 'Auto'
+        util_set_gpu_device("Auto", logger=logger) 
 
-    # Determine allowed paths for file uploads/downloads
     effective_allowed_paths = util_get_available_drives(app_config.DEFAULT_OUTPUT_DIR, base_path, logger=logger)
 
     demo.queue().launch(
-        debug=True, # Enable Gradio debug mode
-        max_threads=100, # Default, can be adjusted
-        inbrowser=True, # Open in browser automatically
-        share=args.share, # From command line arg
-        allowed_paths=effective_allowed_paths, # For security with file handling
-        prevent_thread_lock=True # May help with long-running tasks
+        debug=True, 
+        max_threads=100, 
+        inbrowser=True, 
+        share=args.share, 
+        allowed_paths=effective_allowed_paths, 
+        prevent_thread_lock=True 
     )
