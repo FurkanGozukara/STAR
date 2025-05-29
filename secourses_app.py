@@ -2065,7 +2065,7 @@ The total combined prompt length is limited to 77 tokens."""
                         scene_copy_streams_check =gr .Checkbox (
                         label ="Copy Streams",
                         value =app_config .DEFAULT_SCENE_COPY_STREAMS ,
-                        info ="Copy video/audio streams without re-encoding during scene splitting (faster)."
+                        info ="Copy video/audio streams without re-encoding during scene splitting (faster) but can generate inaccurate splits."
                         )
                         scene_use_mkvmerge_check =gr .Checkbox (
                         label ="Use MKVMerge",

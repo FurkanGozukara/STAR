@@ -128,6 +128,15 @@ def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, prog
 
         if logger:
             logger.info(f"Found {len(scene_list)} scenes to split")
+            # Add logging for each scene's start and end frames/times
+            if logger and scene_list:
+                logger.info("Detected scene list (start_frame, end_frame, start_time, end_time):")
+                for i, (start, end) in enumerate(scene_list):
+                    logger.info(
+                        f"Scene {i+1}: "
+                        f"Frames {start.get_frames()} - {end.get_frames()} | "
+                        f"Time {start.get_timecode()} - {end.get_timecode()}"
+                    )
 
         if progress_callback:
             progress_callback(0.6, f"Splitting video into {len(scene_list)} scenes...")
