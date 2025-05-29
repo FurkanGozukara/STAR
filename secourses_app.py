@@ -913,7 +913,7 @@ def run_upscale(
 
             status_log.append(f"Target resolution mode: {target_res_mode}. Calculated upscale: {upscale_factor_val:.2f}x. Target output: {final_w_val}x{final_h_val}")
             logger.info(f"Target resolution mode: {target_res_mode}. Calculated upscale: {upscale_factor_val:.2f}x. Target output: {final_w_val}x{final_h_val}")
-            yield None, "\n".join(status_log), last_chunk_video_path, last_chunk_status 
+            yield None, "\n".join(status_log), last_chunk_video_path, "Input Downscaling..." 
 
             if needs_downscale:
                 downscale_stage_start_time = time.time()
@@ -2165,10 +2165,15 @@ The total combined prompt length is limited to 77 tokens."""
                 if app_config.UTIL_COG_VLM_AVAILABLE:
                     current_caption_status_text_val = caption_stat_msg 
                 
+                # Show the caption result, then hide the caption status for upscale process
                 yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val), 
                        gr.update(value=current_user_prompt_val), 
                        gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val), 
                        gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val))
+                
+                # Hide caption status for the upscale process
+                if app_config.UTIL_COG_VLM_AVAILABLE:
+                    current_caption_status_visible_val = False
 
             except Exception as e_ac:
                 logger.error(f"Exception during auto-caption call or its setup: {e_ac}", exc_info=True)
@@ -2176,11 +2181,18 @@ The total combined prompt length is limited to 77 tokens."""
                 current_status_text_val = "\n".join(log_accumulator_director)
                 if app_config.UTIL_COG_VLM_AVAILABLE:
                     current_caption_status_text_val = str(e_ac)
-                yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val), 
-                       gr.update(value=current_user_prompt_val), 
-                       gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val), 
-                       gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val))
-            log_accumulator_director = [] 
+                    # Show error, then hide for upscale process
+                    yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val), 
+                           gr.update(value=current_user_prompt_val), 
+                           gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val), 
+                           gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val))
+                    current_caption_status_visible_val = False
+                else:
+                    yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val), 
+                           gr.update(value=current_user_prompt_val), 
+                           gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val), 
+                           gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val))
+            log_accumulator_director = []
 
         elif do_auto_caption_first_val and enable_scene_split_check_val and app_config.UTIL_COG_VLM_AVAILABLE:
             msg = "Scene splitting enabled: Each scene will be auto-captioned individually by the upscaler."
@@ -2303,15 +2315,28 @@ The total combined prompt length is limited to 77 tokens."""
     upscale_button.click(
         fn=upscale_director_logic,
         inputs=click_inputs,
-        outputs=click_outputs_list
+        outputs=click_outputs_list,
+        show_progress_on=[output_video] # <--- MODIFICATION HERE
     )
 
     if app_config.UTIL_COG_VLM_AVAILABLE:
+        def auto_caption_wrapper(vid, quant_display, unload_strat, progress=gr.Progress(track_tqdm=True)):
+            caption_text, caption_stat_msg = util_auto_caption(
+                vid, 
+                get_quant_value_from_display(quant_display), 
+                unload_strat, 
+                app_config.COG_VLM_MODEL_PATH, 
+                logger=logger, 
+                progress=progress
+            )
+            return caption_text, caption_stat_msg
+
         auto_caption_btn.click(
-            fn=lambda vid, quant_display, unload_strat, progress=gr.Progress(track_tqdm=True): util_auto_caption(vid, get_quant_value_from_display(quant_display), unload_strat, app_config.COG_VLM_MODEL_PATH, logger=logger, progress=progress),
+            fn=auto_caption_wrapper,
             inputs=[input_video, cogvlm_quant_radio, cogvlm_unload_radio],
-            outputs=[user_prompt, caption_status] 
-        ).then(lambda: gr.update(visible=True), None, caption_status) 
+            outputs=[user_prompt, caption_status],
+            show_progress_on=[user_prompt]
+        ).then(lambda: gr.update(visible=True), None, caption_status)
 
     split_only_button.click(
         fn=wrapper_split_video_only_for_gradio,
@@ -2321,7 +2346,8 @@ The total combined prompt length is limited to 77 tokens."""
             scene_copy_streams_check, scene_use_mkvmerge_check, scene_rate_factor_num, scene_preset_dropdown, scene_quiet_ffmpeg_check,
             scene_manual_split_type_radio, scene_manual_split_value_num
         ],
-        outputs=[output_video, status_textbox] 
+        outputs=[output_video, status_textbox],
+        show_progress_on=[output_video] # <--- MODIFICATION HERE
     )
 
     batch_process_inputs = [
@@ -2343,7 +2369,8 @@ The total combined prompt length is limited to 77 tokens."""
     batch_process_button.click(
         fn=process_batch_videos,
         inputs=batch_process_inputs, 
-        outputs=[output_video, status_textbox] 
+        outputs=[output_video, status_textbox],
+        show_progress_on=[output_video] # <--- MODIFICATION HERE
     )
     
     gpu_selector.change(
