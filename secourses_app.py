@@ -72,6 +72,14 @@ parser .add_argument ('--share',action ='store_true',help ="Enable Gradio live s
 parser .add_argument ('--outputs_folder',type =str ,default ="outputs",help ="Main folder for output videos and related files")
 args =parser .parse_args ()
 
+def is_resolution_too_small_for_nvenc(width, height, logger=None):
+    """Check if resolution is too small for NVENC (minimum 145x96)."""
+    min_width, min_height = 145, 96
+    too_small = width < min_width or height < min_height
+    if too_small and logger:
+        logger.warning(f"Resolution {width}x{height} is below NVENC minimum ({min_width}x{min_height}), will fallback to CPU encoding")
+    return too_small
+
 def process_batch_videos (
 batch_input_folder_val ,batch_output_folder_val ,
 user_prompt_val ,pos_prompt_val ,neg_prompt_val ,model_selector_val ,
@@ -88,7 +96,6 @@ scene_frame_skip_num_val ,scene_threshold_num_val ,scene_min_content_val_num_val
 scene_copy_streams_check_val ,scene_use_mkvmerge_check_val ,scene_rate_factor_num_val ,scene_preset_dropdown_val ,scene_quiet_ffmpeg_check_val ,
 scene_manual_split_type_radio_val ,scene_manual_split_value_num_val ,
 
-cogvlm_quant_radio_val =None ,cogvlm_unload_radio_val =None ,do_auto_caption_first_val =False ,
 progress =gr .Progress (track_tqdm =True )
 ):
 
@@ -136,9 +143,9 @@ progress =gr .Progress (track_tqdm =True )
 
                 is_batch_mode =True ,batch_output_dir =batch_output_folder_val ,original_filename =video_file ,
 
-                enable_auto_caption_per_scene =do_auto_caption_first_val and enable_scene_split_check_val ,
-                cogvlm_quant =cogvlm_quant_radio_val if cogvlm_quant_radio_val is not None else 0 ,
-                cogvlm_unload =cogvlm_unload_radio_val if cogvlm_unload_radio_val is not None else 'full',
+                enable_auto_caption_per_scene =False ,
+                cogvlm_quant =None ,
+                cogvlm_unload =None ,
                 progress =progress 
                 )
 
@@ -607,7 +614,7 @@ save_metadata =False ,metadata_params_base :dict =None
         scene_output_video =os .path .join (scene_temp_dir ,f"{scene_name}.mp4")
         util_create_video_from_frames (
         scene_output_frames_dir ,scene_output_video ,scene_fps ,
-        "medium",23 ,False ,logger =logger 
+        ffmpeg_preset ,ffmpeg_quality_value ,ffmpeg_use_gpu ,logger =logger 
         )
 
         scene_duration =time .time ()-scene_start_time 
@@ -890,7 +897,7 @@ progress =gr .Progress (track_tqdm =True )
 
             status_log .append (f"Target resolution mode: {target_res_mode }. Calculated upscale: {upscale_factor_val:.2f}x. Target output: {final_w_val}x{final_h_val}")
             logger .info (f"Target resolution mode: {target_res_mode }. Calculated upscale: {upscale_factor_val:.2f}x. Target output: {final_w_val}x{final_h_val}")
-            if needs_downscale :
+            if needs_downscale:
                 downscale_stage_start_time =time .time ()
 
                 downscale_progress_start =current_overall_progress 
@@ -903,12 +910,17 @@ progress =gr .Progress (track_tqdm =True )
                 scale_filter =f"scale='trunc(iw*min({ds_w}/iw,{ds_h}/ih)/2)*2':'trunc(ih*min({ds_w}/iw,{ds_h}/ih)/2)*2'"
 
                 ffmpeg_opts_downscale =""
-                if ffmpeg_use_gpu :
+                # Check if target resolution is too small for NVENC
+                use_cpu_fallback = ffmpeg_use_gpu and is_resolution_too_small_for_nvenc(ds_w, ds_h, logger)
+                
+                if ffmpeg_use_gpu and not use_cpu_fallback:
                     nvenc_preset_down =ffmpeg_preset 
                     if ffmpeg_preset in ["ultrafast","superfast","veryfast","faster","fast"]:nvenc_preset_down ="fast"
                     elif ffmpeg_preset in ["slower","veryslow"]:nvenc_preset_down ="slow"
                     ffmpeg_opts_downscale =f'-c:v h264_nvenc -preset:v {nvenc_preset_down} -cq:v {ffmpeg_quality_value} -pix_fmt yuv420p'
                 else :
+                    if use_cpu_fallback:
+                        logger.info(f"Falling back to CPU encoding for downscaling due to small target resolution: {ds_w}x{ds_h}")
                     ffmpeg_opts_downscale =f'-c:v libx264 -preset {ffmpeg_preset} -crf {ffmpeg_quality_value} -pix_fmt yuv420p'
 
                 cmd =f'ffmpeg -y -i "{input_video_path}" -vf "{scale_filter}" {ffmpeg_opts_downscale} -c:a copy "{downscaled_temp_video}"'
@@ -967,7 +979,8 @@ progress =gr .Progress (track_tqdm =True )
             'quiet_ffmpeg':scene_quiet_ffmpeg ,
             'show_progress':True ,
             'manual_split_type':scene_manual_split_type ,
-            'manual_split_value':scene_manual_split_value 
+            'manual_split_value':scene_manual_split_value ,
+            'use_gpu':ffmpeg_use_gpu 
             }
 
             def scene_progress_callback (progress_val ,desc ):
@@ -2201,8 +2214,14 @@ The total combined prompt length is limited to 77 tokens."""
 
         actual_cogvlm_quant_for_captioning =get_quant_value_from_display (cogvlm_quant_radio_val )if cogvlm_quant_radio_val is not None else 0 
 
-        if do_auto_caption_first_val and app_config .UTIL_COG_VLM_AVAILABLE :
-            logger .info ("Attempting auto-captioning before upscale.")
+        # Only auto-caption the entire video if auto-caption is enabled AND scene splitting is disabled
+        # If scene splitting is enabled, each scene will be captioned individually instead
+        should_auto_caption_entire_video = (do_auto_caption_first_val and 
+                                           not enable_scene_split_check_val and 
+                                           app_config.UTIL_COG_VLM_AVAILABLE)
+
+        if should_auto_caption_entire_video:
+            logger .info ("Attempting auto-captioning entire video before upscale (scene splitting disabled).")
             progress (0 ,desc ="Starting auto-captioning before upscale...")
             yield None ,"Starting auto-captioning...",output_updates_for_prompt_box ,gr .update (visible =True ),None ,"Starting auto-captioning..."
             try :
@@ -2231,6 +2250,9 @@ The total combined prompt length is limited to 77 tokens."""
                 logger .error (f"Exception during auto-caption call or its setup: {e_ac}",exc_info =True )
                 status_updates .append (f"Error during auto-caption pre-step: {e_ac}")
                 yield None ,"\n".join (status_updates ),gr .update (),str (e_ac ),None ,f"Error during auto-caption: {e_ac}"
+        elif do_auto_caption_first_val and enable_scene_split_check_val:
+            logger .info ("Skipping auto-captioning of entire video because scene splitting is enabled. Each scene will be captioned individually.")
+            status_updates .append ("Scene splitting enabled: Each scene will be auto-captioned individually instead of captioning the entire video.")
         else :
             logger .info ("Skipping auto-captioning before upscale. Either CogVLM not available or option not selected.")
 

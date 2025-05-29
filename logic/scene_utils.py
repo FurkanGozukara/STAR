@@ -5,7 +5,7 @@ import shutil
 import numpy as np
 import gradio as gr
 from pathlib import Path
-from .ffmpeg_utils import run_ffmpeg_command
+from .ffmpeg_utils import run_ffmpeg_command, is_resolution_too_small_for_nvenc
 from .file_utils import get_next_filename, cleanup_temp_dir
 from .cogvlm_utils import auto_caption, COG_VLM_AVAILABLE
 
@@ -159,7 +159,32 @@ def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, prog
             if scene_split_params['copy_streams']:
                 ffmpeg_args = "-map 0:v:0 -map 0:a? -map 0:s? -c:v copy -c:a copy -avoid_negative_ts make_zero"
             else:
-                ffmpeg_args = f"-map 0:v:0 -map 0:a? -map 0:s? -c:v libx264 -preset {scene_split_params['preset']} -crf {scene_split_params['rate_factor']} -c:a aac -avoid_negative_ts make_zero"
+                # Check if GPU encoding is requested and available
+                if scene_split_params.get('use_gpu', False):
+                    # Get video resolution to check if it's too small for NVENC
+                    try:
+                        from .file_utils import get_video_resolution
+                        orig_h, orig_w = get_video_resolution(input_video_path, logger)
+                        use_cpu_fallback = is_resolution_too_small_for_nvenc(orig_w, orig_h, logger)
+                    except Exception as e:
+                        if logger:
+                            logger.warning(f"Could not get video resolution for NVENC check: {e}, using CPU fallback")
+                        use_cpu_fallback = True
+                    
+                    if not use_cpu_fallback:
+                        nvenc_preset = scene_split_params['preset']
+                        if scene_split_params['preset'] in ["ultrafast", "superfast", "veryfast", "faster", "fast"]:
+                            nvenc_preset = "fast"
+                        elif scene_split_params['preset'] in ["slower", "veryslow"]:
+                            nvenc_preset = "slow"
+                        
+                        ffmpeg_args = f"-map 0:v:0 -map 0:a? -map 0:s? -c:v h264_nvenc -preset:v {nvenc_preset} -cq:v {scene_split_params['rate_factor']} -pix_fmt yuv420p -c:a aac -avoid_negative_ts make_zero"
+                    else:
+                        if logger:
+                            logger.info(f"Falling back to CPU encoding for scene splitting due to small video resolution: {orig_w}x{orig_h}")
+                        ffmpeg_args = f"-map 0:v:0 -map 0:a? -map 0:s? -c:v libx264 -preset {scene_split_params['preset']} -crf {scene_split_params['rate_factor']} -c:a aac -avoid_negative_ts make_zero"
+                else:
+                    ffmpeg_args = f"-map 0:v:0 -map 0:a? -map 0:s? -c:v libx264 -preset {scene_split_params['preset']} -crf {scene_split_params['rate_factor']} -c:a aac -avoid_negative_ts make_zero"
 
             return_code = split_video_ffmpeg(
                 input_video_path=str(input_video_path),
@@ -207,7 +232,19 @@ def merge_scene_videos(scene_video_paths, output_path, temp_dir, ffmpeg_preset="
                 scene_path_normalized = scene_path.replace('\\', '/')
                 f.write(f"file '{scene_path_normalized}'\n")
 
-        if use_gpu:
+        # Check if we need to fallback to CPU due to small resolution
+        use_cpu_fallback = False
+        if use_gpu and scene_video_paths:
+            try:
+                from .file_utils import get_video_resolution
+                scene_h, scene_w = get_video_resolution(scene_video_paths[0], logger)
+                use_cpu_fallback = is_resolution_too_small_for_nvenc(scene_w, scene_h, logger)
+            except Exception as e:
+                if logger:
+                    logger.warning(f"Could not get scene video resolution for NVENC check: {e}, using CPU fallback")
+                use_cpu_fallback = True
+
+        if use_gpu and not use_cpu_fallback:
             nvenc_preset = ffmpeg_preset
             if ffmpeg_preset in ["ultrafast", "superfast", "veryfast", "faster", "fast"]:
                 nvenc_preset = "fast"
@@ -216,6 +253,8 @@ def merge_scene_videos(scene_video_paths, output_path, temp_dir, ffmpeg_preset="
 
             ffmpeg_opts = f'-c:v h264_nvenc -preset:v {nvenc_preset} -cq:v {ffmpeg_quality} -pix_fmt yuv420p'
         else:
+            if use_cpu_fallback and logger:
+                logger.info(f"Falling back to CPU encoding for scene merging due to small scene resolution: {scene_w}x{scene_h}")
             ffmpeg_opts = f'-c:v libx264 -preset {ffmpeg_preset} -crf {ffmpeg_quality} -pix_fmt yuv420p'
 
         cmd = f'ffmpeg -y -f concat -safe 0 -i "{concat_file}" {ffmpeg_opts} -c:a copy "{output_path}"'
@@ -267,7 +306,8 @@ def split_video_only(
             'quiet_ffmpeg': scene_quiet_ffmpeg_check_val,
             'show_progress': True,
             'manual_split_type': scene_manual_split_type_radio_val,
-            'manual_split_value': scene_manual_split_value_num_val
+            'manual_split_value': scene_manual_split_value_num_val,
+            'use_gpu': False  # Default to False for split-only functionality
         }
 
         def scene_progress_callback(progress_val, desc):
