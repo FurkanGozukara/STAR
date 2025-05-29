@@ -165,7 +165,7 @@ def sample_dpmpp_2m_sde(noise,
     total_steps_in_solver = len(sigmas) - 1
     for i in trange(total_steps_in_solver, disable=not show_progress, desc="Diffusion Steps"):
         current_step = i + 1
-        logger.info(f'Diffusion Step: {current_step}/{total_steps_in_solver}')
+        # logger.info(f'Diffusion Step: {current_step}/{total_steps_in_solver}')
         if progress_callback:
             progress_callback(step=current_step, total_steps=total_steps_in_solver)
 

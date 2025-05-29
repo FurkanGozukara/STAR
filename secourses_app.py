@@ -275,9 +275,27 @@ save_metadata =False ,metadata_params_base :dict =None
                     continue 
 
                 single_lr_frame_tensor_norm =preprocess ([frame_lr_bgr ])
-                spliter =ImageSpliterTh (single_lr_frame_tensor_norm ,int (tile_size ),int (tile_overlap ),sf =upscale_factor )
+                
+                # Calculate num_patches for callback description
+                _temp_spliter_for_count = ImageSpliterTh(single_lr_frame_tensor_norm, int(tile_size), int(tile_overlap), sf=upscale_factor)
+                num_patches_this_frame_for_cb = sum(1 for _ in _temp_spliter_for_count)
+                del _temp_spliter_for_count
+                
+                # Re-initialize spliter for actual iteration
+                spliter = ImageSpliterTh(single_lr_frame_tensor_norm, int(tile_size), int(tile_overlap), sf=upscale_factor)
 
                 for patch_idx ,(patch_lr_tensor_norm ,patch_coords )in enumerate (spliter ):
+                    scene_patch_diffusion_timer = {'last_time': time.time()}
+
+                    def current_scene_patch_diffusion_cb(step, total_steps):
+                        nonlocal scene_patch_diffusion_timer
+                        current_time = time.time()
+                        step_duration = current_time - scene_patch_diffusion_timer['last_time']
+                        scene_patch_diffusion_timer['last_time'] = current_time
+                        
+                        _desc_for_log = f"Scene {scene_index+1} Frame {i+1}/{scene_frame_count}, Patch {patch_idx+1}/{num_patches_this_frame_for_cb}"
+                        logger.info(f"  ↳ {_desc_for_log} - {step_duration:.2f}s/it (Step {step}/{total_steps})")
+
                     patch_lr_video_data =patch_lr_tensor_norm 
 
                     patch_pre_data ={
@@ -292,7 +310,8 @@ save_metadata =False ,metadata_params_base :dict =None
                         patch_sr_tensor_bcthw =star_model .test (
                         patch_data_tensor_cuda ,total_noise_levels ,steps =ui_total_diffusion_steps ,
                         solver_mode =solver_mode ,guide_scale =cfg_scale ,
-                        max_chunk_len =1 ,vae_decoder_chunk_size =1 
+                        max_chunk_len =1 ,vae_decoder_chunk_size =1,
+                        progress_callback=current_scene_patch_diffusion_cb
                         )
 
                     patch_sr_frames_uint8 =tensor2vid (patch_sr_tensor_bcthw )
@@ -348,6 +367,17 @@ save_metadata =False ,metadata_params_base :dict =None
                 if not window_lr_frames_bgr :
                     continue 
 
+                scene_window_diffusion_timer = {'last_time': time.time()}
+
+                def current_scene_window_diffusion_cb(step, total_steps):
+                    nonlocal scene_window_diffusion_timer
+                    current_time = time.time()
+                    step_duration = current_time - scene_window_diffusion_timer['last_time']
+                    scene_window_diffusion_timer['last_time'] = current_time
+
+                    _desc_for_log = f"Scene {scene_index+1} Window {window_iter_idx+1}/{total_windows_to_process} (frames {start_idx}-{end_idx-1})"
+                    logger.info(f"  ↳ {_desc_for_log} - {step_duration:.2f}s/it (Step {step}/{total_steps})")
+
                 window_lr_video_data =preprocess (window_lr_frames_bgr )
 
                 window_pre_data ={
@@ -361,7 +391,8 @@ save_metadata =False ,metadata_params_base :dict =None
                     window_sr_tensor_bcthw =star_model .test (
                     window_data_cuda ,total_noise_levels ,steps =ui_total_diffusion_steps ,
                     solver_mode =solver_mode ,guide_scale =cfg_scale ,
-                    max_chunk_len =current_window_len ,vae_decoder_chunk_size =min (vae_chunk ,current_window_len )
+                    max_chunk_len =current_window_len ,vae_decoder_chunk_size =min (vae_chunk ,current_window_len ),
+                    progress_callback=current_scene_window_diffusion_cb
                     )
 
                 window_sr_frames_uint8 =tensor2vid (window_sr_tensor_bcthw )
@@ -429,6 +460,17 @@ save_metadata =False ,metadata_params_base :dict =None
                 if current_chunk_len ==0 :
                     continue 
 
+                scene_chunk_diffusion_timer = {'last_time': time.time()}
+
+                def current_scene_chunk_diffusion_cb(step, total_steps):
+                    nonlocal scene_chunk_diffusion_timer
+                    current_time = time.time()
+                    step_duration = current_time - scene_chunk_diffusion_timer['last_time']
+                    scene_chunk_diffusion_timer['last_time'] = current_time
+                    
+                    _desc_for_log = f"Scene {scene_index+1} Chunk {chunk_idx+1}/{num_chunks} (frames {start_idx}-{end_idx-1})"
+                    logger.info(f"  ↳ {_desc_for_log} - {step_duration:.2f}s/it (Step {step}/{total_steps})")
+
                 chunk_lr_frames_bgr =all_lr_frames_bgr [start_idx :end_idx ]
                 chunk_lr_video_data =preprocess (chunk_lr_frames_bgr )
 
@@ -443,7 +485,8 @@ save_metadata =False ,metadata_params_base :dict =None
                     chunk_sr_tensor_bcthw =star_model .test (
                     chunk_data_cuda ,total_noise_levels ,steps =ui_total_diffusion_steps ,
                     solver_mode =solver_mode ,guide_scale =cfg_scale ,
-                    max_chunk_len =current_chunk_len ,vae_decoder_chunk_size =min (vae_chunk ,current_chunk_len )
+                    max_chunk_len =current_chunk_len ,vae_decoder_chunk_size =min (vae_chunk ,current_chunk_len ),
+                    progress_callback=current_scene_chunk_diffusion_cb
                     )
 
                 chunk_sr_frames_uint8 =tensor2vid (chunk_sr_tensor_bcthw )
@@ -1157,17 +1200,17 @@ progress =gr .Progress (track_tqdm =True )
                         int (round (patch_lr_tensor_norm .shape [-1 ]*upscale_factor_val )))}
                         patch_data_tensor_cuda =collate_fn (patch_pre_data ,gpu_device )
 
-                        def diffusion_callback_for_patch (step_cb ,total_steps_cb ):
+                        def diffusion_callback_for_patch (step ,total_steps ):
                             current_time =time .time ()
                             step_duration =current_time -callback_step_timer ['last_time']
                             callback_step_timer ['last_time']=current_time 
 
                             current_patch_desc =f"Frame {i+1}/{total_frames_to_tile}, Patch {patch_idx+1}/{num_patches_this_frame}"
 
-                            tqdm_step_info =f"{step_duration:.2f}s/it ({step_cb}/{total_steps_cb})"if step_duration >0.001 else f"{step_cb}/{total_steps_cb}"
+                            tqdm_step_info =f"{step_duration:.2f}s/it ({step}/{total_steps})"if step_duration >0.001 else f"{step}/{total_steps}"
                             patch_tqdm_iterator .desc =f"{current_patch_desc} - Diffusion: {tqdm_step_info}"
 
-                            log_step_info =f"{step_duration:.2f} second / it"if step_duration >0.001 else f"step {step_cb}/{total_steps_cb}"
+                            log_step_info =f"{step_duration:.2f} second / it"if step_duration >0.001 else f"step {step}/{total_steps}"
                             logger .info (f"    ↳ {loop_name} - {current_patch_desc} - {log_step_info} - so see step speed")
 
                         star_model_call_patch_start_time =time .time ()
@@ -1267,7 +1310,7 @@ progress =gr .Progress (track_tqdm =True )
 
                     current_window_display_num =window_iter_idx +1 
 
-                    def diffusion_callback_for_window (step_cb ,total_steps_cb ):
+                    def diffusion_callback_for_window (step ,total_steps ):
                         current_time =time .time ()
                         step_duration =current_time -callback_step_timer ['last_time']
                         callback_step_timer ['last_time']=current_time 
@@ -1279,10 +1322,10 @@ progress =gr .Progress (track_tqdm =True )
 
                         base_desc_win =f"{loop_name}: {current_window_display_num}/{total_windows_to_process} windows (frames {start_idx}-{end_idx-1}) | ETA: {format_time(_eta_seconds_slide_cb)} | Speed: {_speed_slide_cb:.2f} w/s"
 
-                        tqdm_step_info =f"{step_duration:.2f}s/it ({step_cb}/{total_steps_cb})"if step_duration >0.001 else f"{step_cb}/{total_steps_cb}"
+                        tqdm_step_info =f"{step_duration:.2f}s/it ({step}/{total_steps})"if step_duration >0.001 else f"{step}/{total_steps}"
                         sliding_tqdm_iterator .desc =f"{base_desc_win} - Diffusion: {tqdm_step_info}"
 
-                        log_step_info =f"{step_duration:.2f} second / it"if step_duration >0.001 else f"step {step_cb}/{total_steps_cb}"
+                        log_step_info =f"{step_duration:.2f} second / it"if step_duration >0.001 else f"step {step}/{total_steps}"
                         logger .info (f"    ↳ {loop_name} - Window {current_window_display_num}/{total_windows_to_process} (frames {start_idx}-{end_idx-1}) - {log_step_info} - so see step speed")
 
                     star_model_call_window_start_time =time .time ()
@@ -1388,7 +1431,7 @@ progress =gr .Progress (track_tqdm =True )
 
                     current_chunk_display_num =i_chunk_idx +1 
 
-                    def diffusion_callback_for_chunk (step_cb ,total_steps_cb ):
+                    def diffusion_callback_for_chunk (step ,total_steps ):
                         current_time =time .time ()
                         step_duration =current_time -callback_step_timer ['last_time']
                         callback_step_timer ['last_time']=current_time 
@@ -1400,10 +1443,10 @@ progress =gr .Progress (track_tqdm =True )
 
                         base_desc_chunk =f"{loop_name}: {current_chunk_display_num}/{num_chunks} chunks | ETA: {format_time(_eta_seconds_chunk_cb)} | Speed: {_speed_chunk_cb:.2f} ch/s"
 
-                        tqdm_step_info =f"{step_duration:.2f}s/it ({step_cb}/{total_steps_cb})"if step_duration >0.001 else f"{step_cb}/{total_steps_cb}"
+                        tqdm_step_info =f"{step_duration:.2f}s/it ({step}/{total_steps})"if step_duration >0.001 else f"{step}/{total_steps}"
                         chunk_tqdm_iterator .desc =f"{base_desc_chunk} - Diffusion: {tqdm_step_info}"
 
-                        log_step_info =f"{step_duration:.2f} second / it"if step_duration >0.001 else f"step {step_cb}/{total_steps_cb}"
+                        log_step_info =f"{step_duration:.2f} second / it"if step_duration >0.001 else f"step {step}/{total_steps}"
                         logger .info (f"    ↳ {loop_name} - Chunk {current_chunk_display_num}/{num_chunks} (frames {start_idx}-{end_idx-1}) - {log_step_info} - so see step speed")
 
                     star_model_call_chunk_start_time =time .time ()
