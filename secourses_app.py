@@ -381,6 +381,23 @@ The total combined prompt length is limited to 77 tokens."""
                      info ="How much the tiles overlap (in input resolution pixels). Higher overlap helps reduce seams but increases processing time. Recommend 1/4 to 1/2 of Tile Size."
                      )
 
+            with gr.Accordion("Advanced: Seeding (Reproducibility)", open=True):
+                with gr.Row():
+                    seed_num = gr.Number(
+                        label="Seed",
+                        value=app_config.DEFAULT_SEED,
+                        minimum=-1,
+                        maximum=2**32 - 1,
+                        step=1,
+                        info="Seed for random number generation. Used for reproducibility. Set to -1 or check 'Random Seed' for a random seed. Value is ignored if 'Random Seed' is checked.",
+                        interactive=not app_config.DEFAULT_RANDOM_SEED
+                    )
+                    random_seed_check = gr.Checkbox(
+                        label="Random Seed",
+                        value=app_config.DEFAULT_RANDOM_SEED,
+                        info="If checked, a random seed will be generated and used, ignoring the 'Seed' value."
+                    )
+
         with gr .Column (scale =1 ):
             output_video =gr .Video (label ="Upscaled Video",interactive =False ,height =512 )
             status_textbox =gr .Textbox (label ="Log",interactive =False ,lines =8 ,max_lines =15 )
@@ -582,6 +599,7 @@ The total combined prompt length is limited to 77 tokens."""
     scene_manual_split_type_radio_val ,scene_manual_split_value_num_val ,
     cogvlm_quant_radio_val =None ,cogvlm_unload_radio_val =None ,
     do_auto_caption_first_val =False ,
+    seed_num_val =99, random_seed_check_val =False,
     progress =gr .Progress (track_tqdm =True )
     ):
 
@@ -689,6 +707,17 @@ The total combined prompt length is limited to 77 tokens."""
             gr .update (value =current_caption_status_text_val ,visible =current_caption_status_visible_val ),
             gr .update (value =current_last_chunk_video_val ),gr .update (value =current_chunk_status_text_val ))
 
+        # Determine the actual seed to use
+        actual_seed_to_use = seed_num_val
+        if random_seed_check_val:
+            actual_seed_to_use = np.random.randint(0, 2**31) # Corrected upper bound
+            logger.info(f"Random seed checkbox is checked. Using generated seed: {actual_seed_to_use}")
+        elif seed_num_val == -1: # Allow -1 as a way to request random seed if checkbox not used
+            actual_seed_to_use = np.random.randint(0, 2**31) # Corrected upper bound
+            logger.info(f"Seed input is -1. Using generated seed: {actual_seed_to_use}")
+        else:
+            logger.info(f"Using provided seed: {actual_seed_to_use}")
+
         # Call the core_run_upscale function
         upscale_generator = core_run_upscale (
             input_video_path=input_video_val ,user_prompt=current_user_prompt_val,
@@ -726,7 +755,8 @@ The total combined prompt length is limited to 77 tokens."""
             ImageSpliterTh_class=ImageSpliterTh,
             adain_color_fix_func=adain_color_fix,
             wavelet_color_fix_func=wavelet_color_fix,
-            progress =progress
+            progress =progress,
+            current_seed=actual_seed_to_use # Pass the determined seed
         )
 
         for yielded_output_video ,yielded_status_log ,yielded_chunk_video ,yielded_chunk_status in upscale_generator :
@@ -842,6 +872,8 @@ The total combined prompt length is limited to 77 tokens."""
         click_outputs_list .append (gr .State (None )) 
         click_inputs .extend ([gr .State (None ),gr .State (None ),gr .State (False )]) 
 
+    click_inputs.extend([seed_num, random_seed_check])
+
     click_outputs_list .extend ([last_chunk_video ,chunk_status_text ])
 
     upscale_button .click (
@@ -896,12 +928,24 @@ The total combined prompt length is limited to 77 tokens."""
     create_comparison_video_check_val , # Added
 
     enable_scene_split_check_val ,scene_split_mode_radio_val ,scene_min_scene_len_num_val ,scene_drop_short_check_val ,scene_merge_last_check_val ,
-    scene_frame_skip_num_val ,scene_threshold_num_val ,scene_min_content_val_num_val ,scene_frame_window_num_val ,
+    scene_frame_skip_num_val ,scene_threshold_num_val ,scene_min_content_val_num_val ,scene_frame_window_val ,
     scene_copy_streams_check_val ,scene_use_mkvmerge_check_val ,scene_rate_factor_num_val ,scene_preset_dropdown_val ,scene_quiet_ffmpeg_check_val ,
     scene_manual_split_type_radio_val ,scene_manual_split_value_num_val ,
+    seed_num_val=99, random_seed_check_val=False,
     progress =gr .Progress (track_tqdm =True )
     ):
         
+        # Determine the actual seed to use for this batch run (can be overridden per file if needed, but for now, one seed for the batch)
+        actual_seed_for_batch = seed_num_val
+        if random_seed_check_val:
+            actual_seed_for_batch = np.random.randint(0, 2**31)
+            logger.info(f"Batch: Random seed checked. Using generated seed: {actual_seed_for_batch}")
+        elif seed_num_val == -1:
+            actual_seed_for_batch = np.random.randint(0, 2**31)
+            logger.info(f"Batch: Seed input is -1. Using generated seed: {actual_seed_for_batch}")
+        else:
+            logger.info(f"Batch: Using provided seed: {actual_seed_for_batch}")
+
         partial_run_upscale_for_batch = partial(core_run_upscale,
             logger=logger,
             app_config_module=app_config,
@@ -914,7 +958,8 @@ The total combined prompt length is limited to 77 tokens."""
             tensor2vid_func=tensor2vid,
             ImageSpliterTh_class=ImageSpliterTh,
             adain_color_fix_func=adain_color_fix,
-            wavelet_color_fix_func=wavelet_color_fix
+            wavelet_color_fix_func=wavelet_color_fix,
+            current_seed=actual_seed_for_batch # Pass determined seed to partial
         )
 
         return process_batch_videos (
@@ -956,6 +1001,9 @@ The total combined prompt length is limited to 77 tokens."""
     scene_manual_split_type_radio ,scene_manual_split_value_num
     ]
 
+    # Add seed inputs to batch_process_inputs at the end, corresponding to their place in process_batch_videos_wrapper
+    batch_process_inputs.extend([seed_num, random_seed_check])
+
     batch_process_button .click (
     fn =process_batch_videos_wrapper ,
     inputs =batch_process_inputs ,
@@ -967,6 +1015,15 @@ The total combined prompt length is limited to 77 tokens."""
     fn =lambda gpu_id :util_set_gpu_device (gpu_id ,logger =logger ),
     inputs =gpu_selector ,
     outputs =status_textbox 
+    )
+
+    def update_seed_num_interactive(is_random_seed_checked):
+        return gr.update(interactive=not is_random_seed_checked)
+
+    random_seed_check.change(
+        fn=update_seed_num_interactive,
+        inputs=random_seed_check,
+        outputs=seed_num
     )
 
 if __name__ =="__main__":

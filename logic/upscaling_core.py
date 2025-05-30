@@ -74,7 +74,8 @@ def run_upscale (
     adain_color_fix_func=None,
     wavelet_color_fix_func=None,
 
-    progress =gr .Progress (track_tqdm =True )
+    progress =gr .Progress (track_tqdm =True ),
+    current_seed =99 # Added current_seed parameter with a default
 ):
     if not input_video_path or not os .path .exists (input_video_path ):
         raise gr .Error ("Please select a valid input video file.")
@@ -82,7 +83,8 @@ def run_upscale (
     last_chunk_video_path =None
     last_chunk_status ="No chunks processed yet"
 
-    setup_seed_func (99 )
+    logger.info(f"Using seed for this run: {current_seed}")
+    setup_seed_func (current_seed) # Use the passed seed
     overall_process_start_time =time .time ()
     logger .info ("Overall upscaling process started.")
 
@@ -103,6 +105,7 @@ def run_upscale (
     "scene_min_scene_len":scene_min_scene_len ,"scene_threshold":scene_threshold ,
     "scene_manual_split_type":scene_manual_split_type ,"scene_manual_split_value":scene_manual_split_value ,
     "is_batch_mode":is_batch_mode ,"batch_output_dir":batch_output_dir ,
+    "used_seed": current_seed, # Add seed to metadata
 
     "final_output_path":None ,"orig_w":None ,"orig_h":None ,
     "input_fps":None ,"upscale_factor":None ,"final_w":None ,"final_h":None ,
