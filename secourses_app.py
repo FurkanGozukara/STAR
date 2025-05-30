@@ -1330,15 +1330,20 @@ def run_upscale(
                         step_duration = current_time - callback_step_timer_chunk['last_time']
                         callback_step_timer_chunk['last_time'] = current_time
                         
-                        base_desc_chunk = f"{loop_name}: {current_chunk_display_num}/{num_chunks} chunks (frames {start_idx}-{end_idx-1})"
-                        tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps})" if step_duration > 0.001 else f"{step}/{total_steps}"
+                        # base_desc_chunk = f"{loop_name}: {current_chunk_display_num}/{num_chunks} chunks (frames {start_idx}-{end_idx-1})" # Original, for reference
+                        tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps})" if step_duration > 0.001 else f"({step}/{total_steps})"
 
                         # Calculate overall progress fraction
                         diffusion_progress_in_chunk = step / total_steps if total_steps > 0 else 1.0
                         chunks_processed_fraction = (i_chunk_idx + diffusion_progress_in_chunk) / num_chunks if num_chunks > 0 else 1.0
                         current_loop_stage_progress = upscaling_loop_progress_start + (chunks_processed_fraction * stage_weights["upscaling_loop"])
 
-                        progress(current_loop_stage_progress, desc=f"{base_desc_chunk} - Diffusion: {tqdm_step_info}")
+                        desc_lines = [
+                            f"{loop_name}",
+                            f"Current Batch: {current_chunk_display_num}/{num_chunks} (Frames: {start_idx} to {end_idx-1})",
+                            f"Diffusion Progress: {tqdm_step_info}"
+                        ]
+                        progress(current_loop_stage_progress, desc="\\n".join(desc_lines))
 
 
                     star_model_call_chunk_start_time = time.time()
