@@ -8,7 +8,7 @@ from torch import distributed as dist
 init_loggers = {}
 
 formatter = logging.Formatter(
-    '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    fmt='%(asctime)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S')
 
 
 def get_logger(log_file: Optional[str] = None,
