@@ -1128,7 +1128,13 @@ def run_upscale(
                             current_patch_desc = f"Frame {i+1}/{total_frames_to_tile}, Patch {patch_idx+1}/{num_patches_this_frame}"
                             tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps})" if step_duration > 0.001 else f"{step}/{total_steps}"
                             
-                            progress.update(desc=f"{current_patch_desc} - Diffusion: {tqdm_step_info}")
+                            # Calculate overall progress fraction
+                            diffusion_progress_in_patch = step / total_steps if total_steps > 0 else 1.0
+                            patches_processed_in_frame_fraction = (patch_idx + diffusion_progress_in_patch) / num_patches_this_frame if num_patches_this_frame > 0 else 1.0
+                            frames_processed_fraction = (i + patches_processed_in_frame_fraction) / total_frames_to_tile if total_frames_to_tile > 0 else 1.0
+                            current_loop_stage_progress = upscaling_loop_progress_start + (frames_processed_fraction * stage_weights["upscaling_loop"])
+                            
+                            progress(current_loop_stage_progress, desc=f"{current_patch_desc} - Diffusion: {tqdm_step_info}")
 
 
                         star_model_call_patch_start_time = time.time()
@@ -1213,7 +1219,13 @@ def run_upscale(
                         
                         base_desc_win = f"{loop_name}: {current_window_display_num}/{total_windows_to_process} windows (frames {start_idx}-{end_idx-1})"
                         tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps})" if step_duration > 0.001 else f"{step}/{total_steps}"
-                        progress.update(desc=f"{base_desc_win} - Diffusion: {tqdm_step_info}")
+                        
+                        # Calculate overall progress fraction
+                        diffusion_progress_in_window = step / total_steps if total_steps > 0 else 1.0
+                        windows_processed_fraction = (window_iter_idx + diffusion_progress_in_window) / total_windows_to_process if total_windows_to_process > 0 else 1.0
+                        current_loop_stage_progress = upscaling_loop_progress_start + (windows_processed_fraction * stage_weights["upscaling_loop"])
+
+                        progress(current_loop_stage_progress, desc=f"{base_desc_win} - Diffusion: {tqdm_step_info}")
 
 
                     star_model_call_window_start_time = time.time()
@@ -1320,7 +1332,13 @@ def run_upscale(
                         
                         base_desc_chunk = f"{loop_name}: {current_chunk_display_num}/{num_chunks} chunks (frames {start_idx}-{end_idx-1})"
                         tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps})" if step_duration > 0.001 else f"{step}/{total_steps}"
-                        progress.update(desc=f"{base_desc_chunk} - Diffusion: {tqdm_step_info}")
+
+                        # Calculate overall progress fraction
+                        diffusion_progress_in_chunk = step / total_steps if total_steps > 0 else 1.0
+                        chunks_processed_fraction = (i_chunk_idx + diffusion_progress_in_chunk) / num_chunks if num_chunks > 0 else 1.0
+                        current_loop_stage_progress = upscaling_loop_progress_start + (chunks_processed_fraction * stage_weights["upscaling_loop"])
+
+                        progress(current_loop_stage_progress, desc=f"{base_desc_chunk} - Diffusion: {tqdm_step_info}")
 
 
                     star_model_call_chunk_start_time = time.time()
