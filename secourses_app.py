@@ -1053,7 +1053,7 @@ def run_upscale(
 
             silent_upscaled_video_path = os.path.join(temp_dir, "silent_upscaled_video.mp4")
             util_merge_scene_videos(processed_scene_videos, silent_upscaled_video_path, temp_dir,
-                                    ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger, target_fps=input_fps_val)
+                                    ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger)
 
             current_overall_progress = scene_merge_progress_start + stage_weights["scene_merge"]
             progress(current_overall_progress, desc="Scene merging complete")
@@ -1799,14 +1799,14 @@ The total combined prompt length is limited to 77 tokens."""
 
 
         with gr.Column(scale=1): 
-            output_video = gr.Video(label="Upscaled Video", interactive=False) 
-            status_textbox = gr.Textbox(label="Log", interactive=False, lines=8, max_lines=20) 
+            output_video = gr.Video(label="Upscaled Video", interactive=False, height=512 ) 
+            status_textbox = gr.Textbox(label="Log", interactive=False, lines=8, max_lines=100) 
 
             with gr.Accordion("Last Processed Chunk", open=True): 
                 last_chunk_video = gr.Video(
                     label="Last Processed Chunk Preview",
                     interactive=False,
-                    height=300, 
+                    height=512, 
                     visible=True 
                 )
                 chunk_status_text = gr.Textbox(
