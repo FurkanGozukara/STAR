@@ -1119,14 +1119,14 @@ def run_upscale(
                         patch_data_tensor_cuda = collate_fn(patch_pre_data, gpu_device)
                         
                         callback_step_timer_patch = {'last_time': time.time()} 
-                        def diffusion_callback_for_patch(step, total_steps_patch):
+                        def diffusion_callback_for_patch(step, total_steps):
                             nonlocal callback_step_timer_patch
                             current_time = time.time()
                             step_duration = current_time - callback_step_timer_patch['last_time']
                             callback_step_timer_patch['last_time'] = current_time
                             
                             current_patch_desc = f"Frame {i+1}/{total_frames_to_tile}, Patch {patch_idx+1}/{num_patches_this_frame}"
-                            tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps_patch})" if step_duration > 0.001 else f"{step}/{total_steps_patch}"
+                            tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps})" if step_duration > 0.001 else f"{step}/{total_steps}"
                             
                             progress.update(desc=f"{current_patch_desc} - Diffusion: {tqdm_step_info}")
 
@@ -1205,14 +1205,14 @@ def run_upscale(
 
                     current_window_display_num = window_iter_idx + 1
                     callback_step_timer_window = {'last_time': time.time()}
-                    def diffusion_callback_for_window(step, total_steps_window):
+                    def diffusion_callback_for_window(step, total_steps):
                         nonlocal callback_step_timer_window
                         current_time = time.time()
                         step_duration = current_time - callback_step_timer_window['last_time']
                         callback_step_timer_window['last_time'] = current_time
                         
                         base_desc_win = f"{loop_name}: {current_window_display_num}/{total_windows_to_process} windows (frames {start_idx}-{end_idx-1})"
-                        tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps_window})" if step_duration > 0.001 else f"{step}/{total_steps_window}"
+                        tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps})" if step_duration > 0.001 else f"{step}/{total_steps}"
                         progress.update(desc=f"{base_desc_win} - Diffusion: {tqdm_step_info}")
 
 
@@ -1312,14 +1312,14 @@ def run_upscale(
                     
                     current_chunk_display_num = i_chunk_idx + 1
                     callback_step_timer_chunk = {'last_time': time.time()} 
-                    def diffusion_callback_for_chunk(step, total_steps_chunk):
+                    def diffusion_callback_for_chunk(step, total_steps):
                         nonlocal callback_step_timer_chunk
                         current_time = time.time()
                         step_duration = current_time - callback_step_timer_chunk['last_time']
                         callback_step_timer_chunk['last_time'] = current_time
                         
                         base_desc_chunk = f"{loop_name}: {current_chunk_display_num}/{num_chunks} chunks (frames {start_idx}-{end_idx-1})"
-                        tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps_chunk})" if step_duration > 0.001 else f"{step}/{total_steps_chunk}"
+                        tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps})" if step_duration > 0.001 else f"{step}/{total_steps}"
                         progress.update(desc=f"{base_desc_chunk} - Diffusion: {tqdm_step_info}")
 
 
@@ -1800,7 +1800,7 @@ The total combined prompt length is limited to 77 tokens."""
 
         with gr.Column(scale=1): 
             output_video = gr.Video(label="Upscaled Video", interactive=False, height=512 ) 
-            status_textbox = gr.Textbox(label="Log", interactive=False, lines=8, max_lines=100) 
+            status_textbox = gr.Textbox(label="Log", interactive=False, lines=8, max_lines=15) 
 
             with gr.Accordion("Last Processed Chunk", open=True): 
                 last_chunk_video = gr.Video(
