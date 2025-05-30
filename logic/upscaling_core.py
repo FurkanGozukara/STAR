@@ -193,7 +193,7 @@ def run_upscale (
     os .makedirs (input_frames_dir ,exist_ok =True )
     os .makedirs (output_frames_dir ,exist_ok =True )
 
-    star_model =None
+    # star_model =None # Model is no longer loaded here globally
     current_input_video_for_frames =input_video_path
     downscaled_temp_video =None
     status_log =["Process started..."]
@@ -310,7 +310,6 @@ def run_upscale (
             yield None ,"\n".join (status_log ),last_chunk_video_path ,last_chunk_status,None
 
         scene_video_paths =[]
-        # scenes_temp_dir =None # Not strictly needed here if only used within scene_split_params
         if enable_scene_split :
             scene_split_progress_start =current_overall_progress
             progress (current_overall_progress ,desc ="Splitting video into scenes...")
@@ -341,7 +340,6 @@ def run_upscale (
                 scene_progress_callback ,
                 logger =logger
                 )
-                # scenes_temp_dir =os .path .join (temp_dir ,"scenes") # Path to where scenes are stored
 
                 scene_split_msg =f"Video split into {len(scene_video_paths)} scenes"
                 status_log .append (scene_split_msg )
@@ -360,20 +358,15 @@ def run_upscale (
             if stage_weights["scene_split"] > 0.0:
                 current_overall_progress +=stage_weights ["scene_split"]
 
-        model_load_progress_start =current_overall_progress
-        progress (current_overall_progress ,desc ="Loading STAR model...")
-        star_model_load_start_time =time .time ()
-        model_cfg =EasyDict_class () 
-        model_cfg .model_path =model_file_path
-
-        model_device =torch .device (util_get_gpu_device (logger =logger ))if torch .cuda .is_available ()else torch .device ('cpu')
-        star_model =VideoToVideo_sr_class (model_cfg ,device =model_device ) 
-        model_load_msg =f"STAR model loaded on device {model_device}. Time: {format_time(time.time() - star_model_load_start_time)}"
-        status_log .append (model_load_msg )
-        logger .info (model_load_msg )
-        current_overall_progress =model_load_progress_start +stage_weights ["model_load"]
-        progress (current_overall_progress ,desc ="STAR model loaded.")
-        yield None ,"\n".join (status_log ),last_chunk_video_path ,"STAR model loaded.",None
+        # STAR Model loading is removed from here and handled per-scene or per-run.
+        # Ensure model_load stage progress is still accounted for if it was active.
+        if stage_weights["model_load"] > 0.0:
+            model_load_progress_start = current_overall_progress
+            status_log.append("STAR model loading will occur as needed (per scene or for direct upscale).")
+            logger.info("STAR model loading deferred to per-scene or direct upscale processing.")
+            current_overall_progress = model_load_progress_start + stage_weights["model_load"]
+            progress(current_overall_progress, desc="STAR model loading deferred.")
+            yield None, "\n".join(status_log), last_chunk_video_path, "STAR model loading deferred.", None
 
         input_fps_val =30.0 # Default, will be updated
         if not enable_scene_split :
@@ -468,7 +461,7 @@ def run_upscale (
                     scene_prompt_override =first_scene_caption if scene_idx ==0 and first_scene_caption else final_prompt
 
                     scene_processor_generator = process_single_scene (
-                        scene_video_path=scene_video_path_item, scene_index=scene_idx, total_scenes=total_scenes, temp_dir=temp_dir, star_model=star_model,
+                        scene_video_path=scene_video_path_item, scene_index=scene_idx, total_scenes=total_scenes, temp_dir=temp_dir, # star_model (instance) removed
                         final_prompt=scene_prompt_override, upscale_factor=upscale_factor_val, final_h=final_h_val, final_w=final_w_val, ui_total_diffusion_steps=ui_total_diffusion_steps,
                         solver_mode=solver_mode, cfg_scale=cfg_scale, max_chunk_len=max_chunk_len, vae_chunk=vae_chunk, color_fix_method=color_fix_method,
                         enable_tiling=enable_tiling, tile_size=tile_size, tile_overlap=tile_overlap, enable_sliding_window=enable_sliding_window, window_size=window_size, window_step=window_step,
@@ -478,14 +471,19 @@ def run_upscale (
                         cogvlm_unload=cogvlm_unload,
                         progress=progress,
                         save_chunks=save_chunks,
-                        chunks_permanent_save_path=frames_output_subfolder,
+                        chunks_permanent_save_path=frames_output_subfolder, # This was scene_output_dir, should be specific path for chunks
                         ffmpeg_preset=ffmpeg_preset, ffmpeg_quality_value=ffmpeg_quality_value, ffmpeg_use_gpu=ffmpeg_use_gpu,
                         save_metadata=save_metadata, metadata_params_base=scene_metadata_base_params,
-                        util_extract_frames=util_extract_frames, util_auto_caption=util_auto_caption, util_get_gpu_device=util_get_gpu_device,
-                        util_create_video_from_frames=util_create_video_from_frames, app_config=app_config_module, logger=logger,
+                        util_extract_frames=util_extract_frames, util_auto_caption=util_auto_caption, 
+                        util_create_video_from_frames=util_create_video_from_frames, 
+                        logger=logger,
                         metadata_handler=metadata_handler_module, format_time=format_time, preprocess=preprocess_func,
                         ImageSpliterTh=ImageSpliterTh_class, collate_fn=collate_fn_func, tensor2vid=tensor2vid_func,
-                        adain_color_fix=adain_color_fix_func, wavelet_color_fix=wavelet_color_fix_func
+                        adain_color_fix=adain_color_fix_func, wavelet_color_fix=wavelet_color_fix_func,
+                        VideoToVideo_sr_class=VideoToVideo_sr_class, # Pass the class
+                        EasyDict_class=EasyDict_class, # Pass the class
+                        app_config_module_param=app_config_module, # Pass the module for paths etc.
+                        util_get_gpu_device_param=util_get_gpu_device # Pass the function for device selection
                     )
                     processed_scene_video_path_final =None
                     for yield_type ,*data in scene_processor_generator :
@@ -513,7 +511,11 @@ def run_upscale (
                             logger .error (f"Error from scene_processor_generator: {error_message}")
                             status_log .append (f"Error processing scene {scene_idx + 1}: {error_message}")
                             yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Scene {scene_idx + 1} processing failed: {error_message}",None
-                            raise gr .Error (f"Scene {scene_idx + 1} processing failed: {error_message}")
+                            if not is_batch_mode: # Only raise error if not in batch, to allow batch to continue
+                                raise gr.Error(f"Scene {scene_idx + 1} processing failed: {error_message}")
+                            else:
+                                logger.error(f"BATCH MODE: Scene {scene_idx + 1} processing failed: {error_message}. Skipping this scene for merging.")
+                                # Continue to next scene in batch context
                     if processed_scene_video_path_final :
                          processed_scene_videos .append (processed_scene_video_path_final )
                     else :
@@ -523,7 +525,11 @@ def run_upscale (
                     logger .error (f"Error processing scene {scene_idx + 1} in run_upscale: {e}",exc_info =True )
                     status_log .append (f"Error processing scene {scene_idx + 1}: {e}")
                     yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Scene {scene_idx + 1} processing failed: {e}",None
-                    raise gr .Error (f"Scene {scene_idx + 1} processing failed: {e}")
+                    if not is_batch_mode: # Only raise error if not in batch, to allow batch to continue
+                        raise gr.Error(f"Scene {scene_idx + 1} processing failed: {e}")
+                    else:
+                        logger.error(f"BATCH MODE: Scene {scene_idx + 1} processing failed: {e}. Skipping this scene for merging.")
+                        # Continue to next scene in batch context
 
             current_overall_progress =upscaling_loop_progress_start +stage_weights ["upscaling_loop"]
             scene_merge_progress_start =current_overall_progress
@@ -541,274 +547,146 @@ def run_upscale (
             status_log .append (scene_merge_msg )
             logger .info (scene_merge_msg )
             yield None ,"\n".join (status_log ),last_chunk_video_path ,scene_merge_msg,None
-        else : # Not enable_scene_split
-            if 'frame_count'not in locals ()or 'input_fps_val'not in locals ()or 'frame_files'not in locals ():
-                logger .warning ("Re-extracting frames as they were not found before non-scene-split upscaling loop.")
-                frame_count ,input_fps_val ,frame_files =util_extract_frames (current_input_video_for_frames ,input_frames_dir ,logger =logger )
-                params_for_metadata ["input_fps"]=input_fps_val
+        else : # No scene splitting (direct upscale)
+            # This is the start of the block that was mis-indented.
+            # It should be an 'else' to the 'if enable_scene_split:'
+            # However, the logic flow is: if scene_split, do the loop. 
+            # If NOT scene_split, do the direct upscaling. So it's 'if enable_scene_split:' then 'else:'.
+            # The 'and scene_video_paths' is for AFTER splitting.
 
-            all_lr_frames_bgr_for_preprocess =[]
-            for frame_filename in frame_files :
-                frame_lr_bgr =cv2 .imread (os .path .join (input_frames_dir ,frame_filename ))
-                if frame_lr_bgr is None :
-                    logger .error (f"Could not read frame {frame_filename} from {input_frames_dir}. Skipping.")
-                    placeholder_h =params_for_metadata ["orig_h"]if params_for_metadata ["orig_h"]else 256
-                    placeholder_w =params_for_metadata ["orig_w"]if params_for_metadata ["orig_w"]else 256
-                    all_lr_frames_bgr_for_preprocess .append (np .zeros ((placeholder_h ,placeholder_w ,3 ),dtype =np .uint8 ))
+            # The mis-indented 'else' started around here in the previous diff. 
+            # The following is the NON-SCENE-SPLIT path.
+            upscaling_loop_progress_start_no_scene_split = current_overall_progress
+            status_log.append(f"Starting direct upscaling of {frame_count} frames...")
+            logger.info(f"Starting direct upscaling of {frame_count} frames, without scene splitting.")
+            yield None, "\n".join(status_log), last_chunk_video_path, "Starting direct upscaling...", None
+
+            # MODEL LOADING FOR NON-SCENE-SPLIT MODE
+            logger.info("Non-scene-split: Initializing STAR model.")
+            model_load_start_time_ns = time.time()
+            model_cfg_ns = EasyDict_class()
+            model_cfg_ns.model_path = model_file_path # model_file_path determined earlier
+            model_device_ns = torch.device(util_get_gpu_device(logger=logger)) if torch.cuda.is_available() else torch.device('cpu')
+            star_model_ns = VideoToVideo_sr_class(model_cfg_ns, device=model_device_ns)
+            logger.info(f"Non-scene-split: STAR model loaded on {model_device_ns}. Load time: {format_time(time.time() - model_load_start_time_ns)}")
+
+            all_lr_frames_bgr = []
+            # Ensure frame_files is defined if not enable_scene_split path was taken before
+            if 'frame_files' not in locals() or not frame_files:
+                 # This implies frame extraction for non-scene-split happened before this block if logic is correct
+                 # For safety, one might re-list or ensure it's passed correctly.
+                 # Assuming frame_files IS available from the earlier frame extraction for non-scene-split mode.
+                 pass # It should have been populated by lines ~390-400
+
+            for frame_filename_ns in frame_files: # Use frame_files from extraction stage
+                frame_lr_bgr_ns = cv2.imread(os.path.join(input_frames_dir, frame_filename_ns))
+                if frame_lr_bgr_ns is None:
+                    logger.error(f"Could not read frame {frame_filename_ns} for direct upscaling")
                     continue
-                all_lr_frames_bgr_for_preprocess .append (frame_lr_bgr )
-            if len (all_lr_frames_bgr_for_preprocess )!=frame_count :
-                 logger .warning (f"Mismatch in frame count and loaded LR frames for colorfix: {len(all_lr_frames_bgr_for_preprocess)} vs {frame_count}")
+                all_lr_frames_bgr.append(frame_lr_bgr_ns)
 
-            if enable_tiling : # This implies not enable_scene_split
-                loop_name ="Tiling Process"
-                tiling_status_msg =f"Tiling enabled: Tile Size={tile_size}, Overlap={tile_overlap}. Processing {len(frame_files)} frames."
-                status_log .append (tiling_status_msg )
-                logger .info (tiling_status_msg )
-                yield None ,"\n".join (status_log ),last_chunk_video_path ,tiling_status_msg,None
-                total_frames_to_tile =len (frame_files )
-                for i ,frame_filename in enumerate (progress .tqdm (frame_files ,desc =f"{loop_name} - Initializing...",total =total_frames_to_tile )):
-                    frame_lr_bgr =cv2 .imread (os .path .join (input_frames_dir ,frame_filename ))
-                    if frame_lr_bgr is None :
-                        logger .warning (f"Skipping frame {frame_filename} due to read error during tiling.")
-                        placeholder_path =os .path .join (input_frames_dir ,frame_filename )
-                        if os .path .exists (placeholder_path ): shutil .copy2 (placeholder_path ,os .path .join (output_frames_dir ,frame_filename ))
-                        continue
-                    single_lr_frame_tensor_norm =preprocess_func ([frame_lr_bgr ])
-                    spliter =ImageSpliterTh_class (single_lr_frame_tensor_norm ,int (tile_size ),int (tile_overlap ),sf =upscale_factor_val )
-                    num_patches_this_frame =getattr (spliter ,'num_patches',sum (1 for _ in ImageSpliterTh_class (single_lr_frame_tensor_norm ,int (tile_size ),int (tile_overlap ),sf =upscale_factor_val )))
-                    spliter =ImageSpliterTh_class (single_lr_frame_tensor_norm ,int (tile_size ),int (tile_overlap ),sf =upscale_factor_val )
-                    for patch_idx ,(patch_lr_tensor_norm ,patch_coords )in enumerate (spliter ):
-                        patch_lr_video_data =patch_lr_tensor_norm
-                        patch_pre_data ={'video_data':patch_lr_video_data ,'y':final_prompt ,
-                        'target_res':(int (round (patch_lr_tensor_norm .shape [-2 ]*upscale_factor_val )), int (round (patch_lr_tensor_norm .shape [-1 ]*upscale_factor_val )))}
-                        patch_data_tensor_cuda =collate_fn_func (patch_pre_data ,gpu_device )
-                        callback_step_timer_patch ={'last_time':time .time ()}
-                        def diffusion_callback_for_patch (step ,total_steps ):
-                            nonlocal callback_step_timer_patch
-                            current_time =time .time ()
-                            step_duration =current_time -callback_step_timer_patch ['last_time']
-                            callback_step_timer_patch ['last_time']=current_time
-                            current_patch_desc =f"Frame {i+1}/{total_frames_to_tile}, Patch {patch_idx+1}/{num_patches_this_frame}"
-                            tqdm_step_info =f"{step_duration:.2f}s/it ({step}/{total_steps})"if step_duration >0.001 else f"({step}/{total_steps})"
-                            eta_seconds =step_duration *(total_steps -step )if step_duration >0 and total_steps >0 else 0
-                            eta_formatted =format_time (eta_seconds )
-                            logger .info (f"{current_patch_desc} - Diffusion: {tqdm_step_info}, ETA: {eta_formatted}")
-                            diffusion_progress_in_patch =step /total_steps if total_steps >0 else 1.0
-                            patches_processed_in_frame_fraction =(patch_idx +diffusion_progress_in_patch )/num_patches_this_frame if num_patches_this_frame >0 else 1.0
-                            frames_processed_fraction =(i +patches_processed_in_frame_fraction )/total_frames_to_tile if total_frames_to_tile >0 else 1.0
-                            current_loop_stage_progress =upscaling_loop_progress_start +(frames_processed_fraction *stage_weights ["upscaling_loop"])
-                            progress (current_loop_stage_progress ,desc =f"{current_patch_desc} - Diffusion: {tqdm_step_info}")
-                        with torch .no_grad ():
-                            patch_sr_tensor_bcthw =star_model .test (
-                            patch_data_tensor_cuda ,total_noise_levels ,steps =ui_total_diffusion_steps ,solver_mode =solver_mode ,
-                            guide_scale =cfg_scale ,max_chunk_len =1 ,vae_decoder_chunk_size =1 , progress_callback =diffusion_callback_for_patch )
-                        patch_sr_frames_uint8 =tensor2vid_func (patch_sr_tensor_bcthw )
-                        if color_fix_method !='None':
-                            if color_fix_method =='AdaIN': patch_sr_frames_uint8 =adain_color_fix_func (patch_sr_frames_uint8 ,patch_lr_video_data )
-                            elif color_fix_method =='Wavelet': patch_sr_frames_uint8 =wavelet_color_fix_func (patch_sr_frames_uint8 ,patch_lr_video_data )
-                        single_patch_frame_hwc =patch_sr_frames_uint8 [0 ]
-                        result_patch_chw_01 =single_patch_frame_hwc .permute (2 ,0 ,1 ).float ()/255.0
-                        spliter .update_gaussian (result_patch_chw_01 .unsqueeze (0 ),patch_coords )
-                        del patch_data_tensor_cuda ,patch_sr_tensor_bcthw ,patch_sr_frames_uint8
-                        if torch .cuda .is_available ():torch .cuda .empty_cache ()
-                    final_frame_tensor_chw =spliter .gather ()
-                    final_frame_np_hwc_uint8 =(final_frame_tensor_chw .squeeze (0 ).permute (1 ,2 ,0 ).clamp (0 ,1 ).cpu ().numpy ()*255 ).astype (np .uint8 )
-                    final_frame_bgr =cv2 .cvtColor (final_frame_np_hwc_uint8 ,cv2 .COLOR_RGB2BGR )
-                    cv2 .imwrite (os .path .join (output_frames_dir ,frame_filename ),final_frame_bgr )
-                    loop_progress_frac =(i +1 )/total_frames_to_tile if total_frames_to_tile >0 else 1.0
-                    current_overall_progress_temp =upscaling_loop_progress_start +(loop_progress_frac *stage_weights ["upscaling_loop"])
-                    progress (current_overall_progress_temp )
-                    yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Tiling frame {i+1}/{total_frames_to_tile} processed",None
-            elif enable_sliding_window : # This implies not enable_scene_split
-                loop_name ="Sliding Window Process"
-                sliding_status_msg =f"Sliding Window: Size={window_size}, Step={window_step}. Processing {frame_count} frames."
-                status_log .append (sliding_status_msg )
-                logger .info (sliding_status_msg )
-                yield None ,"\n".join (status_log ),last_chunk_video_path ,sliding_status_msg,None
-                processed_frame_filenames =[None ]*frame_count
-                effective_window_size =int (window_size )
-                effective_window_step =int (window_step )
-                window_indices_to_process =list (range (0 ,frame_count ,effective_window_step ))
-                total_windows_to_process =len (window_indices_to_process )
-                for window_iter_idx ,i_start_idx in enumerate (progress .tqdm (window_indices_to_process ,desc =f"{loop_name} - Initializing...",total =total_windows_to_process )):
-                    start_idx =i_start_idx
-                    end_idx =min (i_start_idx +effective_window_size ,frame_count )
-                    current_window_len =end_idx -start_idx
-                    if current_window_len ==0 :continue
-                    is_last_window_iteration =(window_iter_idx ==total_windows_to_process -1 )
-                    if is_last_window_iteration and current_window_len <effective_window_size and frame_count >=effective_window_size :
-                        start_idx =max (0 ,frame_count -effective_window_size )
-                        end_idx =frame_count
-                        current_window_len =end_idx -start_idx
-                    window_lr_frames_bgr =all_lr_frames_bgr_for_preprocess [start_idx :end_idx ]
-                    if not window_lr_frames_bgr :continue
-                    window_lr_video_data =preprocess_func (window_lr_frames_bgr )
-                    window_pre_data ={'video_data':window_lr_video_data ,'y':final_prompt ,'target_res':(final_h_val ,final_w_val )}
-                    window_data_cuda =collate_fn_func (window_pre_data ,gpu_device )
-                    current_window_display_num =window_iter_idx +1
-                    callback_step_timer_window ={'last_time':time .time ()}
-                    def diffusion_callback_for_window (step ,total_steps ):
-                        nonlocal callback_step_timer_window
-                        current_time =time .time ()
-                        step_duration =current_time -callback_step_timer_window ['last_time']
-                        callback_step_timer_window ['last_time']=current_time
-                        base_desc_win =f"{loop_name}: {current_window_display_num}/{total_windows_to_process} windows (frames {start_idx}-{end_idx-1})"
-                        tqdm_step_info =f"{step_duration:.2f}s/it ({step}/{total_steps})"if step_duration >0.001 else f"{step}/{total_steps}"
-                        eta_seconds =step_duration *(total_steps -step )if step_duration >0 and total_steps >0 else 0
-                        eta_formatted =format_time (eta_seconds )
-                        logger .info (f"{base_desc_win} - Diffusion: {tqdm_step_info}, ETA: {eta_formatted}")
-                        diffusion_progress_in_window =step /total_steps if total_steps >0 else 1.0
-                        windows_processed_fraction =(window_iter_idx +diffusion_progress_in_window )/total_windows_to_process if total_windows_to_process >0 else 1.0
-                        current_loop_stage_progress =upscaling_loop_progress_start +(windows_processed_fraction *stage_weights ["upscaling_loop"])
-                        progress (current_loop_stage_progress ,desc =f"{base_desc_win} - Diffusion: {tqdm_step_info}")
-                    with torch .no_grad ():
-                        window_sr_tensor_bcthw =star_model .test (
-                        window_data_cuda ,total_noise_levels ,steps =ui_total_diffusion_steps ,solver_mode =solver_mode ,
-                        guide_scale =cfg_scale ,max_chunk_len =current_window_len ,vae_decoder_chunk_size =min (vae_chunk ,current_window_len ),
-                        progress_callback =diffusion_callback_for_window )
-                    window_sr_frames_uint8 =tensor2vid_func (window_sr_tensor_bcthw )
-                    if color_fix_method !='None':
-                        if color_fix_method =='AdaIN': window_sr_frames_uint8 =adain_color_fix_func (window_sr_frames_uint8 ,window_lr_video_data )
-                        elif color_fix_method =='Wavelet': window_sr_frames_uint8 =wavelet_color_fix_func (window_sr_frames_uint8 ,window_lr_video_data )
-                    save_from_start_offset_local =0
-                    save_to_end_offset_local =current_window_len
-                    if total_windows_to_process >1 :
-                        overlap_amount =effective_window_size -effective_window_step
-                        if overlap_amount >0 :
-                            if window_iter_idx ==0 : save_to_end_offset_local =effective_window_size -(overlap_amount //2 )
-                            elif is_last_window_iteration : save_from_start_offset_local =(overlap_amount //2 )
-                            else :
-                                save_from_start_offset_local =(overlap_amount //2 )
-                                save_to_end_offset_local =effective_window_size -(overlap_amount -save_from_start_offset_local )
-                        save_from_start_offset_local =max (0 ,min (save_from_start_offset_local ,current_window_len -1 if current_window_len >0 else 0 ))
-                        save_to_end_offset_local =max (save_from_start_offset_local ,min (save_to_end_offset_local ,current_window_len ))
-                    for k_local in range (save_from_start_offset_local ,save_to_end_offset_local ):
-                        k_global =start_idx +k_local
-                        if 0 <=k_global <frame_count and processed_frame_filenames [k_global ]is None :
-                            frame_np_hwc_uint8 =window_sr_frames_uint8 [k_local ].cpu ().numpy ()
-                            frame_bgr =cv2 .cvtColor (frame_np_hwc_uint8 ,cv2 .COLOR_RGB2BGR )
-                            out_f_path =os .path .join (output_frames_dir ,frame_files [k_global ])
-                            cv2 .imwrite (out_f_path ,frame_bgr )
-                            processed_frame_filenames [k_global ]=frame_files [k_global ]
-                    del window_data_cuda ,window_sr_tensor_bcthw ,window_sr_frames_uint8
-                    if torch .cuda .is_available ():torch .cuda .empty_cache ()
-                    loop_progress_frac =current_window_display_num /total_windows_to_process if total_windows_to_process >0 else 1.0
-                    current_overall_progress_temp =upscaling_loop_progress_start +(loop_progress_frac *stage_weights ["upscaling_loop"])
-                    progress (current_overall_progress_temp )
-                    yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Sliding window {current_window_display_num}/{total_windows_to_process} processed",None
-                num_missed_fallback =0
-                for idx_fb ,fname_fb in enumerate (frame_files ):
-                    if processed_frame_filenames [idx_fb ]is None :
-                        num_missed_fallback +=1
-                        logger .warning (f"Frame {fname_fb} (index {idx_fb}) was not processed by sliding window, copying LR frame.")
-                        lr_frame_path =os .path .join (input_frames_dir ,fname_fb )
-                        if os .path .exists (lr_frame_path ): shutil .copy2 (lr_frame_path ,os .path .join (output_frames_dir ,fname_fb ))
-                        else : logger .error (f"LR frame {lr_frame_path} not found for fallback copy.")
-                if num_missed_fallback >0 :
-                    missed_msg =f"{loop_name} - Copied {num_missed_fallback} LR frames as fallback for unprocessed frames."
-                    status_log .append (missed_msg )
-                    logger .info (missed_msg )
-                    yield None ,"\n".join (status_log ),last_chunk_video_path ,missed_msg,None
-            else: # Standard chunked processing (not scene_split, not tiling, not sliding_window)
-                loop_name ="Chunked Processing"
-                chunk_status_msg ="Normal chunked processing."
-                status_log .append (chunk_status_msg )
-                logger .info (chunk_status_msg )
-                yield None ,"\n".join (status_log ),last_chunk_video_path ,chunk_status_msg,None
-                num_chunks =math .ceil (frame_count /max_chunk_len )if max_chunk_len >0 else (1 if frame_count >0 else 0 )
-                if num_chunks ==0 and frame_count >0 :num_chunks =1
-                for i_chunk_idx_tuple in enumerate (progress .tqdm (range (num_chunks ),desc =f"{loop_name} - Initializing...",total =num_chunks )):
-                    i_chunk_idx = i_chunk_idx_tuple[0]
-                    start_idx =i_chunk_idx *max_chunk_len
-                    end_idx =min ((i_chunk_idx +1 )*max_chunk_len ,frame_count )
-                    current_chunk_len =end_idx -start_idx
-                    if current_chunk_len ==0 :continue
-                    if end_idx >len (all_lr_frames_bgr_for_preprocess )or start_idx <0 :
-                         logger .error (f"Chunk range {start_idx}-{end_idx} is invalid for LR frames list of len {len(all_lr_frames_bgr_for_preprocess)}")
-                         continue
-                    chunk_lr_frames_bgr =all_lr_frames_bgr_for_preprocess [start_idx :end_idx ]
-                    if not chunk_lr_frames_bgr :continue
-                    chunk_lr_video_data =preprocess_func (chunk_lr_frames_bgr )
-                    chunk_pre_data ={'video_data':chunk_lr_video_data ,'y':final_prompt ,'target_res':(final_h_val ,final_w_val )}
-                    chunk_data_cuda =collate_fn_func (chunk_pre_data ,gpu_device )
-                    current_chunk_display_num =i_chunk_idx +1
-                    callback_step_timer_chunk ={'last_time':time .time ()}
-                    def diffusion_callback_for_chunk (step ,total_steps ):
-                        nonlocal callback_step_timer_chunk
-                        current_time =time .time ()
-                        step_duration =current_time -callback_step_timer_chunk ['last_time']
-                        callback_step_timer_chunk ['last_time']=current_time
-                        tqdm_step_info =f"{step_duration:.2f}s/it ({step}/{total_steps})"if step_duration >0.001 else f"({step}/{total_steps})"
-                        eta_seconds =step_duration *(total_steps -step )if step_duration >0 and total_steps >0 else 0
-                        eta_formatted =format_time (eta_seconds )
-                        logger .info (f"{loop_name}: Chunk {current_chunk_display_num}/{num_chunks} (Frames {start_idx}-{end_idx-1}) - Diffusion: {tqdm_step_info}, ETA: {eta_formatted}")
-                        diffusion_progress_in_chunk =step /total_steps if total_steps >0 else 1.0
-                        chunks_processed_fraction =(i_chunk_idx +diffusion_progress_in_chunk )/num_chunks if num_chunks >0 else 1.0
-                        current_loop_stage_progress =upscaling_loop_progress_start +(chunks_processed_fraction *stage_weights ["upscaling_loop"])
-                        desc_lines =[ f"{loop_name}", f"Current Batch: {current_chunk_display_num}/{num_chunks} (Frames: {start_idx} to {end_idx-1})", f"Diffusion Progress: {tqdm_step_info}" ]
-                        progress (current_loop_stage_progress ,desc ="\n".join (desc_lines )) 
-                    with torch .no_grad ():
-                        chunk_sr_tensor_bcthw =star_model .test (
-                        chunk_data_cuda ,total_noise_levels ,steps =ui_total_diffusion_steps ,solver_mode =solver_mode ,
-                        guide_scale =cfg_scale ,max_chunk_len =current_chunk_len ,vae_decoder_chunk_size =min (vae_chunk ,current_chunk_len ),
-                        progress_callback =diffusion_callback_for_chunk )
-                    chunk_sr_frames_uint8 =tensor2vid_func (chunk_sr_tensor_bcthw )
-                    if color_fix_method !='None':
-                        if color_fix_method =='AdaIN': chunk_sr_frames_uint8 =adain_color_fix_func (chunk_sr_frames_uint8 ,chunk_lr_video_data )
-                        elif color_fix_method =='Wavelet': chunk_sr_frames_uint8 =wavelet_color_fix_func (chunk_sr_frames_uint8 ,chunk_lr_video_data )
-                    for k ,frame_name in enumerate (frame_files [start_idx :end_idx ]):
-                        frame_np_hwc_uint8 =chunk_sr_frames_uint8 [k ].cpu ().numpy ()
-                        frame_bgr =cv2 .cvtColor (frame_np_hwc_uint8 ,cv2 .COLOR_RGB2BGR )
-                        cv2 .imwrite (os .path .join (output_frames_dir ,frame_name ),frame_bgr )
-                    if save_chunks and chunks_permanent_save_path :
-                        chunk_video_filename =f"chunk_{current_chunk_display_num:04d}.mp4"
-                        chunk_video_path =os .path .join (chunks_permanent_save_path ,chunk_video_filename )
-                        chunk_temp_dir =os .path .join (temp_dir ,f"temp_chunk_{current_chunk_display_num}")
-                        os .makedirs (chunk_temp_dir ,exist_ok =True )
-                        for k_frame_in_chunk ,frame_name_in_chunk in enumerate (frame_files [start_idx :end_idx ]):
-                            src_frame =os .path .join (output_frames_dir ,frame_name_in_chunk )
-                            dst_frame =os .path .join (chunk_temp_dir ,f"frame_{k_frame_in_chunk + 1:06d}.png")
-                            shutil .copy2 (src_frame ,dst_frame )
-                        util_create_video_from_frames (chunk_temp_dir ,chunk_video_path ,input_fps_val ,
-                        ffmpeg_preset ,ffmpeg_quality_value ,ffmpeg_use_gpu ,logger =logger )
-                        shutil .rmtree (chunk_temp_dir )
-                        chunk_save_msg =f"Saved chunk {current_chunk_display_num}/{num_chunks} to: {chunk_video_path}"
-                        status_log .append (chunk_save_msg )
-                        logger .info (chunk_save_msg )
-                        last_chunk_video_path =chunk_video_path
-                        last_chunk_status =f"Chunk {current_chunk_display_num}/{num_chunks} (frames {start_idx+1}-{end_idx})"
-                        yield None ,"\n".join (status_log ),last_chunk_video_path ,last_chunk_status,None
-                    if save_metadata :
-                        status_info_for_chunk_meta ={"current_chunk":current_chunk_display_num ,"total_chunks":num_chunks ,"overall_process_start_time":overall_process_start_time}
-                        try :
-                            metadata_handler_module .save_metadata (save_flag =True , output_dir =main_output_dir , base_filename_no_ext =base_output_filename_no_ext ,
-                                params_dict =params_for_metadata , status_info =status_info_for_chunk_meta , logger =logger )
-                        except Exception as e_meta : logger .warning (f"Failed to save/update metadata after chunk {current_chunk_display_num}: {e_meta}")
-                    del chunk_data_cuda ,chunk_sr_tensor_bcthw ,chunk_sr_frames_uint8
-                    if torch .cuda .is_available ():torch .cuda .empty_cache ()
-                    loop_progress_frac =current_chunk_display_num /num_chunks if num_chunks >0 else 1.0
-                    current_overall_progress_temp =upscaling_loop_progress_start +(loop_progress_frac *stage_weights ["upscaling_loop"])
-                    progress (current_overall_progress_temp )
-                    if not (save_chunks and chunks_permanent_save_path ): 
-                         current_chunk_status_text =f"Chunk {current_chunk_display_num}/{num_chunks} processed"
-                         yield None ,"\n".join (status_log ),last_chunk_video_path ,current_chunk_status_text,None
+            if not all_lr_frames_bgr:
+                raise gr.Error("No valid frames found for direct upscaling.")
             
-            # Common for all non-scene-split paths after loop
-            current_overall_progress =upscaling_loop_progress_start +stage_weights ["upscaling_loop"]
-            upscaling_total_duration_msg =f"All frame upscaling operations finished. Total upscaling time: {format_time(time.time() - upscaling_loop_start_time)}"
-            status_log .append (upscaling_total_duration_msg )
-            logger .info (upscaling_total_duration_msg )
-            progress (current_overall_progress ,desc ="Upscaling complete.")
-            yield None ,"\n".join (status_log ),last_chunk_video_path ,upscaling_total_duration_msg,None
+            num_chunks_direct = math.ceil(frame_count / max_chunk_len) if max_chunk_len > 0 else 1
+            for chunk_idx_direct in range(num_chunks_direct):
+                start_idx_direct = chunk_idx_direct * max_chunk_len
+                end_idx_direct = min((chunk_idx_direct + 1) * max_chunk_len, frame_count)
+                current_chunk_len_direct = end_idx_direct - start_idx_direct
+                if current_chunk_len_direct == 0:
+                    continue
+
+                chunk_diffusion_timer_direct = {'last_time': time.time()}
+                def diffusion_callback_for_chunk_direct(step, total_steps_chunk):
+                    nonlocal chunk_diffusion_timer_direct
+                    current_time_chunk = time.time()
+                    step_duration_chunk = current_time_chunk - chunk_diffusion_timer_direct['last_time']
+                    chunk_diffusion_timer_direct['last_time'] = current_time_chunk
+                    desc_for_log_direct = f"Direct Upscale Chunk {chunk_idx_direct + 1}/{num_chunks_direct} (frames {start_idx_direct}-{end_idx_direct - 1})"
+                    eta_seconds_chunk = step_duration_chunk * (total_steps_chunk - step) if step_duration_chunk > 0 and total_steps_chunk > 0 else 0
+                    eta_formatted_chunk = format_time(eta_seconds_chunk)
+                    logger.info(f"{desc_for_log_direct} - Diffusion: Step {step}/{total_steps_chunk}, Duration: {step_duration_chunk:.2f}s, ETA: {eta_formatted_chunk}")
+                    
+                    progress_val_rel_direct = (chunk_idx_direct + (step / total_steps_chunk if total_steps_chunk > 0 else 1)) / num_chunks_direct
+                    current_overall_progress_temp = upscaling_loop_progress_start_no_scene_split + (progress_val_rel_direct * stage_weights["upscaling_loop"])
+                    progress(current_overall_progress_temp, desc=f"{desc_for_log_direct} (Diff: {step}/{total_steps_chunk})")
+
+                chunk_lr_frames_bgr_direct = all_lr_frames_bgr[start_idx_direct:end_idx_direct]
+                chunk_lr_video_data_direct = preprocess_func(chunk_lr_frames_bgr_direct)
+                chunk_pre_data_direct = {
+                    'video_data': chunk_lr_video_data_direct, 
+                    'y': final_prompt, 
+                    'target_res': (final_h_val, final_w_val)
+                }
+                chunk_data_cuda_direct = collate_fn_func(chunk_pre_data_direct, model_device_ns)
+
+                with torch.no_grad():
+                    chunk_sr_tensor_bcthw_direct = star_model_ns.test(
+                        chunk_data_cuda_direct, total_noise_levels, steps=ui_total_diffusion_steps,
+                        solver_mode=solver_mode, guide_scale=cfg_scale,
+                        max_chunk_len=current_chunk_len_direct, 
+                        vae_decoder_chunk_size=min(vae_chunk, current_chunk_len_direct),
+                        progress_callback=diffusion_callback_for_chunk_direct
+                    )
+                chunk_sr_frames_uint8_direct = tensor2vid_func(chunk_sr_tensor_bcthw_direct)
+
+                if color_fix_method != 'None':
+                    if color_fix_method == 'AdaIN':
+                        chunk_sr_frames_uint8_direct = adain_color_fix_func(chunk_sr_frames_uint8_direct, chunk_lr_video_data_direct)
+                    elif color_fix_method == 'Wavelet':
+                        chunk_sr_frames_uint8_direct = wavelet_color_fix_func(chunk_sr_frames_uint8_direct, chunk_lr_video_data_direct)
+
+                # Ensure frame_files is available for naming output files
+                for k_direct, frame_name_direct in enumerate(frame_files[start_idx_direct:end_idx_direct]):
+                    frame_np_hwc_uint8_direct = chunk_sr_frames_uint8_direct[k_direct].cpu().numpy()
+                    frame_bgr_direct = cv2.cvtColor(frame_np_hwc_uint8_direct, cv2.COLOR_RGB2BGR)
+                    cv2.imwrite(os.path.join(output_frames_dir, frame_name_direct), frame_bgr_direct)
+
+                if save_chunks and chunks_permanent_save_path:
+                    current_direct_chunks_save_path = chunks_permanent_save_path
+                    os.makedirs(current_direct_chunks_save_path, exist_ok=True)
+                    chunk_video_filename_direct = f"chunk_{chunk_idx_direct + 1:04d}.mp4"
+                    chunk_video_path_direct = os.path.join(current_direct_chunks_save_path, chunk_video_filename_direct)
+                    chunk_temp_assembly_dir_direct = os.path.join(temp_dir, f"temp_direct_chunk_{chunk_idx_direct+1}")
+                    os.makedirs(chunk_temp_assembly_dir_direct, exist_ok=True)
+                    frames_for_this_video_chunk_direct = []
+                    for k_chunk_frame_direct, frame_name_in_chunk_direct in enumerate(frame_files[start_idx_direct:end_idx_direct]):
+                        src_direct = os.path.join(output_frames_dir, frame_name_in_chunk_direct)
+                        dst_direct = os.path.join(chunk_temp_assembly_dir_direct, f"frame_{k_chunk_frame_direct+1:06d}.png")
+                        if os.path.exists(src_direct):
+                            shutil.copy2(src_direct, dst_direct)
+                            frames_for_this_video_chunk_direct.append(dst_direct)
+                        else:
+                            logger.warning(f"Src frame {src_direct} not found for direct upscale chunk video.")
+                    if frames_for_this_video_chunk_direct:
+                        util_create_video_from_frames(
+                            chunk_temp_assembly_dir_direct, chunk_video_path_direct, input_fps_val,
+                            ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger)
+                        last_chunk_video_path = chunk_video_path_direct
+                        last_chunk_status = f"Direct Upscale Chunk {chunk_idx_direct + 1}/{num_chunks_direct} (frames {start_idx_direct+1}-{end_idx_direct})"
+                        logger.info(f"Saved direct upscale chunk {chunk_idx_direct+1}/{num_chunks_direct} to: {chunk_video_path_direct}")
+                        temp_status_log_direct = status_log + [f"Processed: {last_chunk_status}"]
+                        yield None, "\n".join(temp_status_log_direct), last_chunk_video_path, last_chunk_status, None
+                    else:
+                        logger.warning(f"No frames for direct upscale chunk {chunk_idx_direct+1}/{num_chunks_direct}, video not created.")
+                    shutil.rmtree(chunk_temp_assembly_dir_direct)
+                
+                del chunk_data_cuda_direct, chunk_sr_tensor_bcthw_direct, chunk_sr_frames_uint8_direct, chunk_lr_video_data_direct
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
             
-            # Scene merge stage for non-scene-split case (effectively a skip)
-            if stage_weights["scene_merge"] > 0.0:
-                current_overall_progress += stage_weights["scene_merge"]
-                progress(current_overall_progress, desc="Skipping scene merge...") # Or just pass
+            if star_model_ns is not None:
+                logger.info("Non-scene-split: Deleting STAR model instance from memory after all direct chunks.")
+                del star_model_ns
+                star_model_ns = None # Explicitly set to None
+            if torch.cuda.is_available():
+                logger.info("Non-scene-split: Clearing CUDA cache after all direct chunks.")
+                torch.cuda.empty_cache()
+            gc.collect() # Added explicit gc.collect after non-scene-split model processing
 
-
-        initial_progress_reassembly =current_overall_progress
+            current_overall_progress = upscaling_loop_progress_start_no_scene_split + stage_weights["upscaling_loop"]
+            progress(current_overall_progress, desc="Direct upscaling complete.")
+            logger.info(f"Direct upscaling of all chunks finished. Time: {format_time(time.time() - upscaling_loop_start_time)}")
 
         if save_frames and not enable_scene_split and output_frames_dir and processed_frames_permanent_save_path :
             copy_processed_frames_start_time =time .time ()
@@ -824,12 +702,12 @@ def run_upscale (
                 frames_copied_count +=1
                 if frames_copied_count %100 ==0 or frames_copied_count ==num_processed_frames_to_copy :
                     loop_prog_frac =frames_copied_count /num_processed_frames_to_copy if num_processed_frames_to_copy >0 else 1.0
-                    temp_overall_progress =initial_progress_reassembly +(loop_prog_frac *stage_weights ["reassembly_copy_processed"])
+                    temp_overall_progress =upscaling_loop_progress_start_no_scene_split +(loop_prog_frac *stage_weights ["reassembly_copy_processed"])
                     progress (temp_overall_progress ,desc =f"Copying processed frames: {frames_copied_count}/{num_processed_frames_to_copy}")
             copied_proc_msg =f"Processed frames copied. Time: {format_time(time.time() - copy_processed_frames_start_time)}"
             status_log .append (copied_proc_msg )
             logger .info (copied_proc_msg )
-            current_overall_progress =initial_progress_reassembly +stage_weights ["reassembly_copy_processed"]
+            current_overall_progress =upscaling_loop_progress_start_no_scene_split +stage_weights ["reassembly_copy_processed"]
             progress (current_overall_progress ,desc ="Processed frames copied.")
             yield None ,"\n".join (status_log ),last_chunk_video_path ,"Processed frames copied.",None
         else : # Not saving processed frames or scene split enabled
@@ -978,40 +856,48 @@ def run_upscale (
         # Re-raise to stop Gradio execution gracefully, or let the finally block handle cleanup
         # For Gradio, it's often better to let it complete the yield cycle.
     finally :
-        if star_model is not None :
-            try :
-                if hasattr (star_model ,'to'):star_model .to ('cpu')
-                del star_model
-            except Exception as e_del_model:
-                 logger.warning(f"Exception during star_model cleanup: {e_del_model}")
+        # Global cleanup for temp_dir
+        if temp_dir and os.path.exists(temp_dir):
+            logger.info(f"Cleaning up temporary directory: {temp_dir}")
+            try:
+                util_cleanup_temp_dir(temp_dir, logger=logger)
+            except Exception as e_clean:
+                logger.error(f"Error cleaning up temp_dir {temp_dir}: {e_clean}", exc_info=True)
 
-        gc .collect ()
-        if torch .cuda .is_available ():torch .cuda .empty_cache ()
-        
-        util_cleanup_temp_dir (temp_dir ,logger =logger )
+    total_processing_time = time.time() - overall_process_start_time
+    params_for_metadata["total_processing_time"] = total_processing_time
+    logger.info(f"STAR upscaling process finished and cleaned up. Total processing time: {format_time(total_processing_time)}")
 
-        total_process_duration =time .time ()-overall_process_start_time
-        final_cleanup_msg =f"STAR upscaling process finished and cleaned up. Total processing time: {format_time(total_process_duration)}"
-        logger .info (final_cleanup_msg )
+    if save_metadata and main_output_dir and base_output_filename_no_ext:
+        status_info_for_final_meta = {"processing_time_total": total_processing_time}
+        success, message = metadata_handler_module.save_metadata(
+            save_flag=True, output_dir=main_output_dir, base_filename_no_ext=base_output_filename_no_ext,
+            params_dict=params_for_metadata, status_info=status_info_for_final_meta, logger=logger
+        )
+        if success:
+            final_meta_msg = f"Final metadata saved: {message.split(': ')[-1]}. Time to save: {format_time(time.time() - metadata_save_start_time)}"
+            status_log.append(final_meta_msg)
+            logger.info(final_meta_msg)
+        else:
+            status_log.append(f"Error saving final metadata: {message}")
+            logger.error(message)
+        current_overall_progress = initial_progress_metadata + stage_weights["metadata"]
+        progress(current_overall_progress, desc="Metadata saved.")
+        yield final_output_path, "\n".join(status_log), last_chunk_video_path, final_meta_msg if success else message, None
+    else: # Metadata saving disabled
+        if stage_weights["metadata"] > 0.0:
+            current_overall_progress += stage_weights["metadata"]
 
-        final_output_video_path_check = locals().get('final_output_path', None)
-        output_video_exists = final_output_video_path_check and os.path.exists(final_output_video_path_check)
 
-        if not output_video_exists :
-             if status_log and status_log [-1 ]and not status_log [-1 ].startswith ("Error:")and not status_log [-1 ].startswith ("Critical Error:"):
-                no_output_msg ="Processing finished, but output video was not found or not created."
-                logger .warning (no_output_msg )
-                # Do not append to status_log here as it might be returned by the generator caller
+    # Ensure progress reaches 1.0 if all stages completed without exact weight summation
+    current_overall_progress = max(current_overall_progress, 0.99) # Leave a tiny bit for final desc
+    
+    is_error =any (err_msg in (status_log [-1] if status_log else "") for err_msg in ["Error:","Critical Error:"])
+    final_desc ="Finished!"
+    if is_error :
+        final_desc =status_log [-1 ]if status_log else "Error occurred"
+        progress (current_overall_progress ,desc =final_desc )
+    else :
+        progress (1.0 ,desc =final_desc )
 
-        # Clean up .tmp lock file
-        local_base_output_filename_no_ext = locals().get('base_output_filename_no_ext', None)
-        local_main_output_dir = locals().get('main_output_dir', app_config_module.DEFAULT_OUTPUT_DIR if app_config_module else None)
-
-        if local_base_output_filename_no_ext and local_main_output_dir:
-            tmp_lock_file_to_delete =os .path .join (local_main_output_dir, f"{local_base_output_filename_no_ext}.tmp")
-            if os .path .exists (tmp_lock_file_to_delete ):
-                try :
-                    os .remove (tmp_lock_file_to_delete )
-                    logger .info (f"Successfully deleted lock file: {tmp_lock_file_to_delete}")
-                except Exception as e_lock_del :
-                    logger .error (f"Failed to delete lock file {tmp_lock_file_to_delete}: {e_lock_del}")
+    yield final_output_path ,"\n".join (status_log ),last_chunk_video_path ,"Processing complete!",None

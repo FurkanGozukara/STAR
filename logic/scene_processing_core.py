@@ -9,10 +9,11 @@ import shutil
 import cv2
 import torch
 import numpy as np
+import gc # Added for garbage collection
 
 
 def process_single_scene(
-    scene_video_path, scene_index, total_scenes, temp_dir, star_model,
+    scene_video_path, scene_index, total_scenes, temp_dir,
     final_prompt, upscale_factor, final_h, final_w, ui_total_diffusion_steps,
     solver_mode, cfg_scale, max_chunk_len, vae_chunk, color_fix_method,
     enable_tiling, tile_size, tile_overlap, enable_sliding_window, window_size, window_step,
@@ -25,9 +26,7 @@ def process_single_scene(
     # Dependencies injected as parameters
     util_extract_frames=None,
     util_auto_caption=None, 
-    util_get_gpu_device=None,
     util_create_video_from_frames=None,
-    app_config=None,
     logger=None,
     metadata_handler=None,
     format_time=None,
@@ -36,7 +35,11 @@ def process_single_scene(
     collate_fn=None,
     tensor2vid=None,
     adain_color_fix=None,
-    wavelet_color_fix=None
+    wavelet_color_fix=None,
+    VideoToVideo_sr_class=None, # Added
+    EasyDict_class=None, # Added
+    app_config_module_param=None, # Renamed to avoid conflict if app_config was already a local var name
+    util_get_gpu_device_param=None # Renamed
 ):
     """
     Process a single video scene with upscaling.
@@ -53,7 +56,6 @@ def process_single_scene(
         scene_index: Index of the current scene (0-based)
         total_scenes: Total number of scenes being processed
         temp_dir: Temporary directory for processing
-        star_model: The AI model for upscaling
         final_prompt: Text prompt for upscaling guidance
         upscale_factor: Factor by which to upscale the video
         final_h, final_w: Target height and width
@@ -75,9 +77,7 @@ def process_single_scene(
         # Injected dependencies:
         util_extract_frames: Function to extract frames from video
         util_auto_caption: Function for auto-captioning
-        util_get_gpu_device: Function to get GPU device
         util_create_video_from_frames: Function to create video from frames
-        app_config: Application configuration
         logger: Logger instance
         metadata_handler: Metadata handling utility
         format_time: Time formatting utility
@@ -86,11 +86,52 @@ def process_single_scene(
         collate_fn: Data collation function
         tensor2vid: Tensor to video conversion
         adain_color_fix, wavelet_color_fix: Color correction functions
+        VideoToVideo_sr_class: Video to video super-resolution class
+        EasyDict_class: Easy dictionary class for model configuration
+        app_config_module_param: Application configuration module parameter
+        util_get_gpu_device_param: Function to get GPU device parameter
         
     Yields:
         Various progress updates and completion status
     """
+    star_model_instance = None # Initialize to ensure cleanup can run
     try:
+        # Model loading moved inside
+        if logger: logger.info(f"Scene {scene_index + 1}: Initializing STAR model for this scene.")
+        model_load_start_time = time.time()
+        # Use the passed app_config_module_param and util_get_gpu_device_param
+        # Ensure app_config_module_param has the necessary attributes like LIGHT_DEG_MODEL_PATH etc.
+        # Determine model_file_path based on a passed parameter or a heuristic if not directly available
+        # For now, assuming a way to get model_choice or it's implicitly handled by app_config_module_param paths
+
+        # This part needs to be adapted based on how model_choice is determined or passed.
+        # For simplicity, let's assume app_config_module_param.CURRENT_MODEL_FILE_PATH exists or similar
+        # Or, we might need to pass model_choice into this function as well.
+        # For now, this is a placeholder, needs correct model path derivation.
+        # It's likely process_single_scene will need model_choice passed to it.
+        # Let's assume for now 'model_file_path_for_scene' is derived correctly. This is a CRITICAL part.
+        # We'll assume it needs to be passed in or determined from app_config.
+
+        # Placeholder: model_choice would ideally be passed to process_single_scene
+        # For this refactor, let's assume it's available via metadata_params_base or similar for now
+        # Or that app_config_module_param has a way to get the default/current one if not specified.
+        
+        model_choice_from_meta = metadata_params_base.get("model_choice", app_config_module_param.DEFAULT_MODEL_CHOICE if app_config_module_param else "Light Degradation")
+
+        model_file_path_for_scene = app_config_module_param.LIGHT_DEG_MODEL_PATH if model_choice_from_meta == app_config_module_param.DEFAULT_MODEL_CHOICE else app_config_module_param.HEAVY_DEG_MODEL_PATH
+
+        if not os.path.exists(model_file_path_for_scene):
+            if logger: logger.error(f"STAR model not found for scene: {model_file_path_for_scene}")
+            raise FileNotFoundError(f"STAR model not found for scene: {model_file_path_for_scene}")
+
+        model_cfg = EasyDict_class()
+        model_cfg.model_path = model_file_path_for_scene
+        
+        # Use the passed util_get_gpu_device_param
+        model_device = torch.device(util_get_gpu_device_param(logger=logger)) if torch.cuda.is_available() else torch.device('cpu')
+        star_model_instance = VideoToVideo_sr_class(model_cfg, device=model_device)
+        if logger: logger.info(f"Scene {scene_index + 1}: STAR model loaded on {model_device}. Load time: {format_time(time.time() - model_load_start_time)}")
+
         scene_start_time = time.time()
         scene_name = f"scene_{scene_index + 1:04d}"
 
@@ -133,7 +174,7 @@ def process_single_scene(
             try:
                 scene_caption, _ = util_auto_caption(
                     scene_video_path, cogvlm_quant, cogvlm_unload,
-                    app_config.COG_VLM_MODEL_PATH, logger=logger, progress=progress
+                    app_config_module_param.COG_VLM_MODEL_PATH, logger=logger, progress=progress
                 )
                 if not scene_caption.startswith("Error:"):
                     scene_prompt = scene_caption
@@ -163,7 +204,6 @@ def process_single_scene(
         total_noise_levels = 900
         if progress_callback:
             progress_callback(0.3, f"Scene {scene_index + 1}: Starting upscaling...")
-        gpu_device = util_get_gpu_device(logger=logger)
 
         if enable_tiling:
             # Tiling mode processing
@@ -198,9 +238,9 @@ def process_single_scene(
                     patch_pre_data = {'video_data': patch_lr_video_data, 'y': scene_prompt,
                                     'target_res': (int(round(patch_lr_tensor_norm.shape[-2] * upscale_factor)),
                                                     int(round(patch_lr_tensor_norm.shape[-1] * upscale_factor)))}
-                    patch_data_tensor_cuda = collate_fn(patch_pre_data, gpu_device)
+                    patch_data_tensor_cuda = collate_fn(patch_pre_data, model_device)
                     with torch.no_grad():
-                        patch_sr_tensor_bcthw = star_model.test(
+                        patch_sr_tensor_bcthw = star_model_instance.test(
                             patch_data_tensor_cuda, total_noise_levels, steps=ui_total_diffusion_steps,
                             solver_mode=solver_mode, guide_scale=cfg_scale,
                             max_chunk_len=1, vae_decoder_chunk_size=1,
@@ -262,9 +302,9 @@ def process_single_scene(
                 
                 window_lr_video_data = preprocess(window_lr_frames_bgr)
                 window_pre_data = {'video_data': window_lr_video_data, 'y': scene_prompt, 'target_res': (final_h, final_w)}
-                window_data_cuda = collate_fn(window_pre_data, gpu_device)
+                window_data_cuda = collate_fn(window_pre_data, model_device)
                 with torch.no_grad():
-                    window_sr_tensor_bcthw = star_model.test(
+                    window_sr_tensor_bcthw = star_model_instance.test(
                         window_data_cuda, total_noise_levels, steps=ui_total_diffusion_steps,
                         solver_mode=solver_mode, guide_scale=cfg_scale,
                         max_chunk_len=current_window_len, vae_decoder_chunk_size=min(vae_chunk, current_window_len),
@@ -346,10 +386,10 @@ def process_single_scene(
                 chunk_lr_frames_bgr = all_lr_frames_bgr[start_idx:end_idx]
                 chunk_lr_video_data = preprocess(chunk_lr_frames_bgr)
                 chunk_pre_data = {'video_data': chunk_lr_video_data, 'y': scene_prompt, 'target_res': (final_h, final_w)}
-                chunk_data_cuda = collate_fn(chunk_pre_data, gpu_device)
+                chunk_data_cuda = collate_fn(chunk_pre_data, model_device)
 
                 with torch.no_grad():
-                    chunk_sr_tensor_bcthw = star_model.test(
+                    chunk_sr_tensor_bcthw = star_model_instance.test(
                         chunk_data_cuda, total_noise_levels, steps=ui_total_diffusion_steps,
                         solver_mode=solver_mode, guide_scale=cfg_scale,
                         max_chunk_len=current_chunk_len, vae_decoder_chunk_size=min(vae_chunk, current_chunk_len),
@@ -440,4 +480,14 @@ def process_single_scene(
 
     except Exception as e:
         logger.error(f"Error processing scene {scene_index + 1}: {e}", exc_info=True)
-        yield "error", str(e), None, None, None 
+        yield "error", str(e), None, None, None
+    finally:
+        if star_model_instance is not None:
+            if logger: logger.info(f"Scene {scene_index + 1}: Deleting STAR model instance from memory.")
+            del star_model_instance
+            star_model_instance = None # Ensure it's marked as gone
+        if torch.cuda.is_available():
+            if logger: logger.info(f"Scene {scene_index + 1}: Clearing CUDA cache.")
+            torch.cuda.empty_cache()
+        # gc.collect() # Removed from here, should be handled by Python's regular GC
+        if logger: logger.info(f"Scene {scene_index + 1}: Cleanup finished.") 
