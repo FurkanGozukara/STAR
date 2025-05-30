@@ -205,7 +205,7 @@ def run_upscale (
         progress (current_overall_progress ,desc ="Initializing...")
         status_log .append ("Initializing upscaling process...")
         logger .info ("Initializing upscaling process...")
-        yield None ,"\n".join (status_log ),last_chunk_video_path ,last_chunk_status
+        yield None ,"\n".join (status_log ),last_chunk_video_path ,last_chunk_status,None
 
         final_prompt =(user_prompt .strip ()+". "+positive_prompt .strip ()).strip ()
 
@@ -239,7 +239,7 @@ def run_upscale (
 
             status_log .append (f"Target resolution mode: {target_res_mode}. Calculated upscale: {upscale_factor_val:.2f}x. Target output: {final_w_val}x{final_h_val}")
             logger .info (f"Target resolution mode: {target_res_mode}. Calculated upscale: {upscale_factor_val:.2f}x. Target output: {final_w_val}x{final_h_val}")
-            yield None ,"\n".join (status_log ),last_chunk_video_path ,"Calculating resolution..." # Changed status
+            yield None ,"\n".join (status_log ),last_chunk_video_path ,"Calculating resolution...",None
 
             if not needs_downscale and stage_weights["downscale"] > 0.0: # If no downscaling needed, but weight was assigned
                 stage_weights["downscale"] = 0.0 # Zero it out
@@ -257,7 +257,7 @@ def run_upscale (
                 downscale_status_msg =f"Downscaling input to {ds_w}x{ds_h} before upscaling."
                 status_log .append (downscale_status_msg )
                 logger .info (downscale_status_msg )
-                yield None ,"\n".join (status_log ),last_chunk_video_path ,"Input Downscaling..."
+                yield None ,"\n".join (status_log ),last_chunk_video_path ,"Input Downscaling...",None
 
                 downscaled_temp_video =os .path .join (temp_dir ,"downscaled_input.mp4")
                 scale_filter =f"scale='trunc(iw*min({ds_w}/iw,{ds_h}/ih)/2)*2':'trunc(ih*min({ds_w}/iw,{ds_h}/ih)/2)*2'"
@@ -288,7 +288,7 @@ def run_upscale (
                 logger .info (downscale_duration_msg )
                 current_overall_progress =downscale_progress_start +stage_weights ["downscale"]
                 progress (current_overall_progress ,desc ="Downscaling complete.")
-                yield None ,"\n".join (status_log ),last_chunk_video_path ,"Downscaling complete."
+                yield None ,"\n".join (status_log ),last_chunk_video_path ,"Downscaling complete.",None
             else : # No downscaling needed, but target res was enabled
                  current_overall_progress +=stage_weights ["downscale"] # Add the (potentially zero) weight
 
@@ -307,7 +307,7 @@ def run_upscale (
             direct_upscale_msg =f"Direct upscale: {upscale_factor_val:.2f}x. Target output: {final_w_val}x{final_h_val}"
             status_log .append (direct_upscale_msg )
             logger .info (direct_upscale_msg )
-            yield None ,"\n".join (status_log ),last_chunk_video_path ,last_chunk_status
+            yield None ,"\n".join (status_log ),last_chunk_video_path ,last_chunk_status,None
 
         scene_video_paths =[]
         # scenes_temp_dir =None # Not strictly needed here if only used within scene_split_params
@@ -315,7 +315,7 @@ def run_upscale (
             scene_split_progress_start =current_overall_progress
             progress (current_overall_progress ,desc ="Splitting video into scenes...")
             status_log .append ("Splitting video into scenes...")
-            yield None ,"\n".join (status_log ),last_chunk_video_path ,"Scene Splitting..."
+            yield None ,"\n".join (status_log ),last_chunk_video_path ,"Scene Splitting...",None
 
             scene_split_params ={
             'split_mode':scene_split_mode ,
@@ -349,12 +349,12 @@ def run_upscale (
 
                 current_overall_progress =scene_split_progress_start +stage_weights ["scene_split"]
                 progress (current_overall_progress ,desc =f"Scene splitting complete: {len(scene_video_paths)} scenes")
-                yield None ,"\n".join (status_log ),last_chunk_video_path ,scene_split_msg
+                yield None ,"\n".join (status_log ),last_chunk_video_path ,scene_split_msg,None
 
             except Exception as e :
                 logger .error (f"Scene splitting failed: {e}", exc_info=True)
                 status_log .append (f"Scene splitting failed: {e}")
-                yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Scene splitting failed: {e}"
+                yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Scene splitting failed: {e}",None
                 raise gr .Error (f"Scene splitting failed: {e}")
         else : # Scene split disabled, add its weight if it was > 0
             if stage_weights["scene_split"] > 0.0:
@@ -373,7 +373,7 @@ def run_upscale (
         logger .info (model_load_msg )
         current_overall_progress =model_load_progress_start +stage_weights ["model_load"]
         progress (current_overall_progress ,desc ="STAR model loaded.")
-        yield None ,"\n".join (status_log ),last_chunk_video_path ,"STAR model loaded."
+        yield None ,"\n".join (status_log ),last_chunk_video_path ,"STAR model loaded.",None
 
         input_fps_val =30.0 # Default, will be updated
         if not enable_scene_split :
@@ -388,7 +388,7 @@ def run_upscale (
             logger .info (frame_extract_msg )
             current_overall_progress =frame_extract_progress_start +stage_weights ["extract_frames"]
             progress (current_overall_progress ,desc =f"Extracted {frame_count} frames.")
-            yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Extracted {frame_count} frames."
+            yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Extracted {frame_count} frames.",None
         else : # Scene split enabled, skip main frame extraction stage here
              if stage_weights["extract_frames"] > 0.0:
                 current_overall_progress +=stage_weights ["extract_frames"]
@@ -402,7 +402,7 @@ def run_upscale (
             status_log .append (copy_input_msg )
             logger .info (copy_input_msg )
             progress (current_overall_progress ,desc ="Copying input frames...")
-            yield None ,"\n".join (status_log ),last_chunk_video_path ,"Copying input frames..."
+            yield None ,"\n".join (status_log ),last_chunk_video_path ,"Copying input frames.",None
 
             frames_copied_count =0
             for frame_file_idx ,frame_file_name in enumerate (os .listdir (input_frames_dir )):
@@ -419,7 +419,7 @@ def run_upscale (
 
             current_overall_progress =copy_input_frames_progress_start +stage_weights ["copy_input_frames"]
             progress (current_overall_progress ,desc ="Input frames copied.")
-            yield None ,"\n".join (status_log ),last_chunk_video_path ,"Input frames copied."
+            yield None ,"\n".join (status_log ),last_chunk_video_path ,"Input frames copied.",None
         else : # Not saving frames or scene split enabled
              if stage_weights["copy_input_frames"] > 0.0: # Ensure progress is added if stage was active
                 current_overall_progress +=stage_weights ["copy_input_frames"]
@@ -451,7 +451,7 @@ def run_upscale (
                         caption_update_msg =f"First scene caption generated [FIRST_SCENE_CAPTION:{first_scene_caption}]"
                         status_log .append (caption_update_msg )
                         logger .info (f"Yielding first scene caption for immediate prompt update")
-                        yield None ,"\n".join (status_log ),last_chunk_video_path ,last_chunk_status
+                        yield None ,"\n".join (status_log ),last_chunk_video_path ,last_chunk_status,None
                     else :
                         logger .warning ("First scene auto-captioning failed, using original prompt")
                 except Exception as e :
@@ -494,7 +494,7 @@ def run_upscale (
                             last_chunk_video_path =chunk_vid_path
                             last_chunk_status =chunk_stat_str
                             temp_status_log =status_log +[f"Processed: {chunk_stat_str}"]
-                            yield None ,"\n".join (temp_status_log ),last_chunk_video_path ,last_chunk_status
+                            yield None ,"\n".join (temp_status_log ),last_chunk_video_path ,last_chunk_status,None
                         elif yield_type =="scene_complete":
                             processed_scene_video_path_final ,scene_frame_count_ret ,scene_fps_ret ,scene_caption =data
                             if scene_idx ==0 :
@@ -507,12 +507,12 @@ def run_upscale (
                                 logger .info (f"Scene 1 complete with caption for main prompt update")
                             status_log .append (scene_complete_msg )
                             logger .info (scene_complete_msg )
-                            yield None ,"\n".join (status_log ),last_chunk_video_path ,last_chunk_status
+                            yield None ,"\n".join (status_log ),last_chunk_video_path ,last_chunk_status,None
                         elif yield_type =="error":
                             error_message =data [0 ]
                             logger .error (f"Error from scene_processor_generator: {error_message}")
                             status_log .append (f"Error processing scene {scene_idx + 1}: {error_message}")
-                            yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Scene {scene_idx + 1} processing failed: {error_message}"
+                            yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Scene {scene_idx + 1} processing failed: {error_message}",None
                             raise gr .Error (f"Scene {scene_idx + 1} processing failed: {error_message}")
                     if processed_scene_video_path_final :
                          processed_scene_videos .append (processed_scene_video_path_final )
@@ -522,14 +522,14 @@ def run_upscale (
                 except Exception as e :
                     logger .error (f"Error processing scene {scene_idx + 1} in run_upscale: {e}",exc_info =True )
                     status_log .append (f"Error processing scene {scene_idx + 1}: {e}")
-                    yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Scene {scene_idx + 1} processing failed: {e}"
+                    yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Scene {scene_idx + 1} processing failed: {e}",None
                     raise gr .Error (f"Scene {scene_idx + 1} processing failed: {e}")
 
             current_overall_progress =upscaling_loop_progress_start +stage_weights ["upscaling_loop"]
             scene_merge_progress_start =current_overall_progress
             progress (current_overall_progress ,desc ="Merging processed scenes...")
             status_log .append ("Merging processed scenes...")
-            yield None ,"\n".join (status_log ),last_chunk_video_path ,"Merging Scenes..."
+            yield None ,"\n".join (status_log ),last_chunk_video_path ,"Merging Scenes...",None
 
             silent_upscaled_video_path =os .path .join (temp_dir ,"silent_upscaled_video.mp4")
             util_merge_scene_videos (processed_scene_videos ,silent_upscaled_video_path ,temp_dir ,
@@ -540,7 +540,7 @@ def run_upscale (
             scene_merge_msg =f"Successfully merged {len(processed_scene_videos)} processed scenes"
             status_log .append (scene_merge_msg )
             logger .info (scene_merge_msg )
-            yield None ,"\n".join (status_log ),last_chunk_video_path ,scene_merge_msg
+            yield None ,"\n".join (status_log ),last_chunk_video_path ,scene_merge_msg,None
         else : # Not enable_scene_split
             if 'frame_count'not in locals ()or 'input_fps_val'not in locals ()or 'frame_files'not in locals ():
                 logger .warning ("Re-extracting frames as they were not found before non-scene-split upscaling loop.")
@@ -565,7 +565,7 @@ def run_upscale (
                 tiling_status_msg =f"Tiling enabled: Tile Size={tile_size}, Overlap={tile_overlap}. Processing {len(frame_files)} frames."
                 status_log .append (tiling_status_msg )
                 logger .info (tiling_status_msg )
-                yield None ,"\n".join (status_log ),last_chunk_video_path ,tiling_status_msg
+                yield None ,"\n".join (status_log ),last_chunk_video_path ,tiling_status_msg,None
                 total_frames_to_tile =len (frame_files )
                 for i ,frame_filename in enumerate (progress .tqdm (frame_files ,desc =f"{loop_name} - Initializing...",total =total_frames_to_tile )):
                     frame_lr_bgr =cv2 .imread (os .path .join (input_frames_dir ,frame_filename ))
@@ -619,13 +619,13 @@ def run_upscale (
                     loop_progress_frac =(i +1 )/total_frames_to_tile if total_frames_to_tile >0 else 1.0
                     current_overall_progress_temp =upscaling_loop_progress_start +(loop_progress_frac *stage_weights ["upscaling_loop"])
                     progress (current_overall_progress_temp )
-                    yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Tiling frame {i+1}/{total_frames_to_tile} processed"
+                    yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Tiling frame {i+1}/{total_frames_to_tile} processed",None
             elif enable_sliding_window : # This implies not enable_scene_split
                 loop_name ="Sliding Window Process"
                 sliding_status_msg =f"Sliding Window: Size={window_size}, Step={window_step}. Processing {frame_count} frames."
                 status_log .append (sliding_status_msg )
                 logger .info (sliding_status_msg )
-                yield None ,"\n".join (status_log ),last_chunk_video_path ,sliding_status_msg
+                yield None ,"\n".join (status_log ),last_chunk_video_path ,sliding_status_msg,None
                 processed_frame_filenames =[None ]*frame_count
                 effective_window_size =int (window_size )
                 effective_window_step =int (window_step )
@@ -696,7 +696,7 @@ def run_upscale (
                     loop_progress_frac =current_window_display_num /total_windows_to_process if total_windows_to_process >0 else 1.0
                     current_overall_progress_temp =upscaling_loop_progress_start +(loop_progress_frac *stage_weights ["upscaling_loop"])
                     progress (current_overall_progress_temp )
-                    yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Sliding window {current_window_display_num}/{total_windows_to_process} processed"
+                    yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Sliding window {current_window_display_num}/{total_windows_to_process} processed",None
                 num_missed_fallback =0
                 for idx_fb ,fname_fb in enumerate (frame_files ):
                     if processed_frame_filenames [idx_fb ]is None :
@@ -709,13 +709,13 @@ def run_upscale (
                     missed_msg =f"{loop_name} - Copied {num_missed_fallback} LR frames as fallback for unprocessed frames."
                     status_log .append (missed_msg )
                     logger .info (missed_msg )
-                    yield None ,"\n".join (status_log ),last_chunk_video_path ,missed_msg
+                    yield None ,"\n".join (status_log ),last_chunk_video_path ,missed_msg,None
             else: # Standard chunked processing (not scene_split, not tiling, not sliding_window)
                 loop_name ="Chunked Processing"
                 chunk_status_msg ="Normal chunked processing."
                 status_log .append (chunk_status_msg )
                 logger .info (chunk_status_msg )
-                yield None ,"\n".join (status_log ),last_chunk_video_path ,chunk_status_msg
+                yield None ,"\n".join (status_log ),last_chunk_video_path ,chunk_status_msg,None
                 num_chunks =math .ceil (frame_count /max_chunk_len )if max_chunk_len >0 else (1 if frame_count >0 else 0 )
                 if num_chunks ==0 and frame_count >0 :num_chunks =1
                 for i_chunk_idx_tuple in enumerate (progress .tqdm (range (num_chunks ),desc =f"{loop_name} - Initializing...",total =num_chunks )):
@@ -778,7 +778,7 @@ def run_upscale (
                         logger .info (chunk_save_msg )
                         last_chunk_video_path =chunk_video_path
                         last_chunk_status =f"Chunk {current_chunk_display_num}/{num_chunks} (frames {start_idx+1}-{end_idx})"
-                        yield None ,"\n".join (status_log ),last_chunk_video_path ,last_chunk_status
+                        yield None ,"\n".join (status_log ),last_chunk_video_path ,last_chunk_status,None
                     if save_metadata :
                         status_info_for_chunk_meta ={"current_chunk":current_chunk_display_num ,"total_chunks":num_chunks ,"overall_process_start_time":overall_process_start_time}
                         try :
@@ -792,7 +792,7 @@ def run_upscale (
                     progress (current_overall_progress_temp )
                     if not (save_chunks and chunks_permanent_save_path ): 
                          current_chunk_status_text =f"Chunk {current_chunk_display_num}/{num_chunks} processed"
-                         yield None ,"\n".join (status_log ),last_chunk_video_path ,current_chunk_status_text
+                         yield None ,"\n".join (status_log ),last_chunk_video_path ,current_chunk_status_text,None
             
             # Common for all non-scene-split paths after loop
             current_overall_progress =upscaling_loop_progress_start +stage_weights ["upscaling_loop"]
@@ -800,7 +800,7 @@ def run_upscale (
             status_log .append (upscaling_total_duration_msg )
             logger .info (upscaling_total_duration_msg )
             progress (current_overall_progress ,desc ="Upscaling complete.")
-            yield None ,"\n".join (status_log ),last_chunk_video_path ,upscaling_total_duration_msg
+            yield None ,"\n".join (status_log ),last_chunk_video_path ,upscaling_total_duration_msg,None
             
             # Scene merge stage for non-scene-split case (effectively a skip)
             if stage_weights["scene_merge"] > 0.0:
@@ -817,7 +817,7 @@ def run_upscale (
             status_log .append (copy_proc_msg )
             logger .info (copy_proc_msg )
             progress (current_overall_progress ,desc ="Copying processed frames...")
-            yield None ,"\n".join (status_log ),last_chunk_video_path ,"Copying processed frames..."
+            yield None ,"\n".join (status_log ),last_chunk_video_path ,"Copying processed frames.",None
             frames_copied_count =0
             for frame_file_idx ,frame_file_name in enumerate (os .listdir (output_frames_dir )):
                 shutil .copy2 (os .path .join (output_frames_dir ,frame_file_name ),os .path .join (processed_frames_permanent_save_path ,frame_file_name ))
@@ -831,7 +831,7 @@ def run_upscale (
             logger .info (copied_proc_msg )
             current_overall_progress =initial_progress_reassembly +stage_weights ["reassembly_copy_processed"]
             progress (current_overall_progress ,desc ="Processed frames copied.")
-            yield None ,"\n".join (status_log ),last_chunk_video_path ,"Processed frames copied."
+            yield None ,"\n".join (status_log ),last_chunk_video_path ,"Processed frames copied.",None
         else : # Not saving processed frames or scene split enabled
             if stage_weights["reassembly_copy_processed"] > 0.0:
                  current_overall_progress +=stage_weights ["reassembly_copy_processed"]
@@ -844,12 +844,12 @@ def run_upscale (
             silent_video_msg ="Silent upscaled video created. Merging audio..."
             status_log .append (silent_video_msg )
             logger .info (silent_video_msg )
-            yield None ,"\n".join (status_log ),last_chunk_video_path ,silent_video_msg
+            yield None ,"\n".join (status_log ),last_chunk_video_path ,silent_video_msg,None
         else: # Video already merged from scenes (is silent_upscaled_video_path)
             silent_video_msg ="Scene-merged video ready. Merging audio..."
             status_log .append (silent_video_msg )
             logger .info (silent_video_msg )
-            yield None ,"\n".join (status_log ),last_chunk_video_path ,silent_video_msg
+            yield None ,"\n".join (status_log ),last_chunk_video_path ,silent_video_msg,None
 
 
         initial_progress_audio_merge =current_overall_progress
@@ -880,7 +880,7 @@ def run_upscale (
         final_save_msg =f"Upscaled video saved to: {final_output_path}"
         status_log .append (final_save_msg )
         logger .info (final_save_msg )
-        yield final_output_path ,"\n".join (status_log ),last_chunk_video_path ,"Finalizing..."
+        yield final_output_path ,"\n".join (status_log ),last_chunk_video_path ,"Finalizing...",None
 
         if create_comparison_video_enabled and final_output_path and os.path.exists(final_output_path):
             comparison_video_progress_start = current_overall_progress
@@ -891,7 +891,7 @@ def run_upscale (
             progress(current_overall_progress, desc="Creating comparison video...")
             comparison_status_msg = "Creating comparison video..."
             status_log.append(comparison_status_msg)
-            yield final_output_path, "\n".join(status_log), last_chunk_video_path, comparison_status_msg
+            yield final_output_path, "\n".join(status_log), last_chunk_video_path, comparison_status_msg,None
             
             try:
                 comparison_success = create_comparison_video(
@@ -907,18 +907,20 @@ def run_upscale (
                     comparison_done_msg = f"Comparison video created: {comparison_output_path}. Time: {format_time(time.time() - comparison_video_start_time)}"
                     status_log.append(comparison_done_msg)
                     logger.info(comparison_done_msg)
+                    yield final_output_path, "\n".join(status_log), last_chunk_video_path, "Comparison video complete.", comparison_output_path
                 else:
                     comparison_error_msg = f"Comparison video creation failed. Time: {format_time(time.time() - comparison_video_start_time)}"
                     status_log.append(comparison_error_msg)
                     logger.warning(comparison_error_msg)
+                    yield final_output_path, "\n".join(status_log), last_chunk_video_path, "Comparison video failed.", None
             except Exception as e_comparison:
                 comparison_error_msg = f"Error creating comparison video: {e_comparison}. Time: {format_time(time.time() - comparison_video_start_time)}"
                 status_log.append(comparison_error_msg)
                 logger.error(comparison_error_msg, exc_info=True)
+                yield final_output_path, "\n".join(status_log), last_chunk_video_path, "Comparison video error.", None
             
             current_overall_progress = comparison_video_progress_start + stage_weights.get("comparison_video", 0.0) # Use actual weight
             progress(current_overall_progress, desc="Comparison video processing complete.")
-            yield final_output_path, "\n".join(status_log), last_chunk_video_path, "Comparison video complete."
         else: # Comparison video disabled or final_output_path not ready
             if stage_weights["comparison_video"] > 0.0:
                  current_overall_progress +=stage_weights ["comparison_video"]
@@ -942,7 +944,7 @@ def run_upscale (
                 logger .error (message )
             current_overall_progress =initial_progress_metadata +stage_weights ["metadata"]
             progress (current_overall_progress ,desc ="Metadata saved.")
-            yield final_output_path ,"\n".join (status_log ),last_chunk_video_path ,meta_saved_msg if success else message
+            yield final_output_path ,"\n".join (status_log ),last_chunk_video_path ,meta_saved_msg if success else message,None
         else: # Metadata saving disabled
             if stage_weights["metadata"] > 0.0:
                 current_overall_progress += stage_weights["metadata"]
@@ -959,20 +961,20 @@ def run_upscale (
         else :
             progress (1.0 ,desc =final_desc )
 
-        yield final_output_path ,"\n".join (status_log ),last_chunk_video_path ,"Processing complete!"
+        yield final_output_path ,"\n".join (status_log ),last_chunk_video_path ,"Processing complete!",None
 
     except gr .Error as e :
         logger .error (f"A Gradio UI Error occurred: {e}",exc_info =True )
         status_log .append (f"Error: {e}")
         current_overall_progress =min (current_overall_progress +0.01 ,1.0 ) # Small increment for error
         progress (current_overall_progress ,desc =f"Error: {str(e)[:50]}")
-        yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Error: {e}"
+        yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Error: {e}",None
     except Exception as e :
         logger .error (f"An unexpected error occurred during upscaling: {e}",exc_info =True )
         status_log .append (f"Critical Error: {e}")
         current_overall_progress =min (current_overall_progress +0.01 ,1.0 ) # Small increment for error
         progress (current_overall_progress ,desc =f"Critical Error: {str(e)[:50]}")
-        yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Critical Error: {e}"
+        yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Critical Error: {e}",None
         # Re-raise to stop Gradio execution gracefully, or let the finally block handle cleanup
         # For Gradio, it's often better to let it complete the yield cycle.
     finally :

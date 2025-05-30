@@ -613,6 +613,7 @@ The total combined prompt length is limited to 77 tokens."""
         current_caption_status_visible_val =False
         current_last_chunk_video_val =None
         current_chunk_status_text_val ="No chunks processed yet"
+        current_comparison_video_val =None  # Track comparison video
 
         auto_caption_completed_successfully =False
 
@@ -638,7 +639,8 @@ The total combined prompt length is limited to 77 tokens."""
             yield (gr .update (value =current_output_video_val ),gr .update (value =current_status_text_val ),
             gr .update (value =current_user_prompt_val ),
             gr .update (value =current_caption_status_text_val ,visible =current_caption_status_visible_val ),
-            gr .update (value =current_last_chunk_video_val ),gr .update (value =current_chunk_status_text_val ))
+            gr .update (value =current_last_chunk_video_val ),gr .update (value =current_chunk_status_text_val ),
+            gr .update (value =current_comparison_video_val ))
 
             try :
                 caption_text ,caption_stat_msg =util_auto_caption (
@@ -664,7 +666,8 @@ The total combined prompt length is limited to 77 tokens."""
                 yield (gr .update (value =current_output_video_val ),gr .update (value =current_status_text_val ),
                 gr .update (value =current_user_prompt_val ),
                 gr .update (value =current_caption_status_text_val ,visible =current_caption_status_visible_val ),
-                gr .update (value =current_last_chunk_video_val ),gr .update (value =current_chunk_status_text_val ))
+                gr .update (value =current_last_chunk_video_val ),gr .update (value =current_chunk_status_text_val ),
+                gr .update (value =current_comparison_video_val ))
                 logger .info ("Auto-caption yield completed.")
 
                 if app_config .UTIL_COG_VLM_AVAILABLE : # Hide status after showing it
@@ -679,13 +682,15 @@ The total combined prompt length is limited to 77 tokens."""
                     yield (gr .update (value =current_output_video_val ),gr .update (value =current_status_text_val ),
                     gr .update (value =current_user_prompt_val ),
                     gr .update (value =current_caption_status_text_val ,visible =current_caption_status_visible_val ),
-                    gr .update (value =current_last_chunk_video_val ),gr .update (value =current_chunk_status_text_val ))
+                    gr .update (value =current_last_chunk_video_val ),gr .update (value =current_chunk_status_text_val ),
+                    gr .update (value =current_comparison_video_val ))
                     current_caption_status_visible_val =False # Hide status after showing it
                 else : # Should not happen if UTIL_COG_VLM_AVAILABLE check passed earlier
                     yield (gr .update (value =current_output_video_val ),gr .update (value =current_status_text_val ),
                     gr .update (value =current_user_prompt_val ),
                     gr .update (value =current_caption_status_text_val ,visible =current_caption_status_visible_val ), # Already False
-                    gr .update (value =current_last_chunk_video_val ),gr .update (value =current_chunk_status_text_val ))
+                    gr .update (value =current_last_chunk_video_val ),gr .update (value =current_chunk_status_text_val ),
+                    gr .update (value =current_comparison_video_val ))
             log_accumulator_director =[] # Clear after captioning attempt
 
         elif do_auto_caption_first_val and enable_scene_split_check_val and app_config .UTIL_COG_VLM_AVAILABLE :
@@ -697,7 +702,8 @@ The total combined prompt length is limited to 77 tokens."""
             yield (gr .update (value =current_output_video_val ),gr .update (value =current_status_text_val ),
             gr .update (value =current_user_prompt_val ),
             gr .update (value =current_caption_status_text_val ,visible =current_caption_status_visible_val ),
-            gr .update (value =current_last_chunk_video_val ),gr .update (value =current_chunk_status_text_val ))
+            gr .update (value =current_last_chunk_video_val ),gr .update (value =current_chunk_status_text_val ),
+            gr .update (value =current_comparison_video_val ))
 
         elif do_auto_caption_first_val and not app_config .UTIL_COG_VLM_AVAILABLE :
             msg ="Auto-captioning requested but CogVLM2 is not available. Using original prompt."
@@ -708,7 +714,8 @@ The total combined prompt length is limited to 77 tokens."""
             yield (gr .update (value =current_output_video_val ),gr .update (value =current_status_text_val ),
             gr .update (value =current_user_prompt_val ),
             gr .update (value =current_caption_status_text_val ,visible =current_caption_status_visible_val ),
-            gr .update (value =current_last_chunk_video_val ),gr .update (value =current_chunk_status_text_val ))
+            gr .update (value =current_last_chunk_video_val ),gr .update (value =current_chunk_status_text_val ),
+            gr .update (value =current_comparison_video_val ))
 
         # Determine the actual seed to use
         actual_seed_to_use = seed_num_val
@@ -762,7 +769,7 @@ The total combined prompt length is limited to 77 tokens."""
             current_seed=actual_seed_to_use # Pass the determined seed
         )
 
-        for yielded_output_video ,yielded_status_log ,yielded_chunk_video ,yielded_chunk_status in upscale_generator :
+        for yielded_output_video ,yielded_status_log ,yielded_chunk_video ,yielded_chunk_status ,yielded_comparison_video in upscale_generator :
 
             output_video_update =gr .update ()
             if yielded_output_video is not None :
@@ -834,10 +841,21 @@ The total combined prompt length is limited to 77 tokens."""
                 current_chunk_status_text_val =yielded_chunk_status
             chunk_status_text_update =gr .update (value =current_chunk_status_text_val )
 
+            # Handle comparison video updates
+            comparison_video_update =gr .update ()
+            if yielded_comparison_video is not None :
+                current_comparison_video_val =yielded_comparison_video
+                comparison_video_update =gr .update (value =current_comparison_video_val )
+            elif current_comparison_video_val is None: 
+                comparison_video_update = gr.update(value=None)
+            else: 
+                comparison_video_update = gr.update(value=current_comparison_video_val)
+
             yield (
             output_video_update ,status_text_update ,user_prompt_update ,
             caption_status_update ,
-            chunk_video_update ,chunk_status_text_update
+            chunk_video_update ,chunk_status_text_update ,
+            comparison_video_update
             )
 
         logger .info (f"Final yield: current_user_prompt_val = '{current_user_prompt_val[:100]}...', auto_caption_completed = {auto_caption_completed_successfully}")
@@ -847,7 +865,8 @@ The total combined prompt length is limited to 77 tokens."""
         gr .update (value =current_user_prompt_val ),
         gr .update (value =current_caption_status_text_val ,visible =current_caption_status_visible_val ),
         gr .update (value =current_last_chunk_video_val ),
-        gr .update (value =current_chunk_status_text_val )
+        gr .update (value =current_chunk_status_text_val ),
+        gr .update (value =current_comparison_video_val )
         )
 
 
@@ -878,6 +897,9 @@ The total combined prompt length is limited to 77 tokens."""
     click_inputs.extend([seed_num, random_seed_check])
 
     click_outputs_list .extend ([last_chunk_video ,chunk_status_text ])
+
+    # Add comparison_video to outputs 
+    click_outputs_list.append(comparison_video)
 
     upscale_button .click (
     fn =upscale_director_logic ,
