@@ -3,6 +3,7 @@ import os.path as osp
 from math import ceil
 import random
 from typing import Any, Dict
+import time
 
 import torch
 import torch.cuda.amp as amp
@@ -16,6 +17,28 @@ from video_to_video.utils.logger import get_logger
 from video_to_video.modules.autoencoder_kl_temporal_decoder_feature_resetting import AutoencoderKLTemporalDecoderFeatureResetting
 
 from diffusers import AutoencoderKLTemporalDecoder
+
+# Attempt to import format_time from a common_utils location
+# This assumes secourses_app.py and logic/ are in the Python path,
+# which should be the case if running from the app's root.
+try:
+    from logic.common_utils import format_time
+except ImportError:
+    # Fallback if logic.common_utils is not directly importable
+    # This might happen if video_to_video_model.py is run in a context
+    # where 'logic' isn't in sys.path correctly.
+    # For a robust solution, ensure sys.path is configured or use relative imports if structure allows.
+    def format_time(seconds):
+        # Basic fallback implementation
+        m, s = divmod(seconds, 60)
+        h, m = divmod(m, 60)
+        if h > 0:
+            return f"{int(h)}h {int(m)}m {s:.2f}s"
+        elif m > 0:
+            return f"{int(m)}m {s:.2f}s"
+        else:
+            return f"{s:.2f}s"
+    print("Warning: Could not import format_time from logic.common_utils. Using fallback implementation.")
 
 logger = get_logger()
 
@@ -110,6 +133,7 @@ class VideoToVideo_sr():
             chunk_inds = make_chunks(frames_num, interp_f_num=0, max_chunk_len=max_chunk_len) if frames_num > max_chunk_len else None
 
             solver = 'dpmpp_2m_sde' # 'heun' | 'dpmpp_2m_sde' 
+            sampling_start_time = time.time()
             gen_vid = self.diffusion.sample_sr(
                 noise=noised_lr,
                 model=self.generator,
@@ -126,11 +150,13 @@ class VideoToVideo_sr():
                 chunk_inds=chunk_inds,
                 progress_callback=progress_callback)
             torch.cuda.empty_cache()
+            sampling_duration = time.time() - sampling_start_time
+            logger.info(f'sampling, finished in {format_time(sampling_duration)} total.')
 
-            logger.info(f'sampling, finished.')
+            vae_decode_start_time = time.time()
             vid_tensor_gen = self.vae_decode_chunk(gen_vid, chunk_size=vae_decoder_chunk_size)
-
-            logger.info(f'temporal vae decoding, finished.')
+            vae_decode_duration = time.time() - vae_decode_start_time
+            logger.info(f'temporal vae decoding, finished in {format_time(vae_decode_duration)} total.')
 
         w1, w2, h1, h2 = padding
         vid_tensor_gen = vid_tensor_gen[:,:,h1:h+h1,w1:w+w1]
@@ -255,6 +281,7 @@ class Vid2VidFr(VideoToVideo_sr):
                                      max_chunk_len=max_chunk_len) if frames_num > max_chunk_len else None
 
             solver = 'dpmpp_2m_sde'  # 'heun' | 'dpmpp_2m_sde'
+            sampling_start_time_fr = time.time()
             gen_vid = self.diffusion.sample_sr(
                 noise=noised_lr,
                 model=self.generator,
@@ -270,16 +297,18 @@ class Vid2VidFr(VideoToVideo_sr):
                 discretization='trailing',
                 chunk_inds=chunk_inds, )
             torch.cuda.empty_cache()
+            sampling_duration_fr = time.time() - sampling_start_time_fr
+            logger.info(f'sampling, finished in {format_time(sampling_duration_fr)} total.')
 
-            logger.info(f'sampling, finished.')
+            vae_decode_fr_start_time = time.time()
             vid_tensor_gen, feature_map_prev, z_prev = self.vae_decode_fr(z=gen_vid,
                                                                           z_prev=z_prev,
                                                                           feature_map_prev=feature_map_prev,
                                                                           is_first_batch=is_first_batch,
                                                                           out_win_step=out_win_step,
                                                                           out_win_overlap=out_win_overlap)
-
-            logger.info(f'temporal vae decoding with feature resetting, finished.')
+            vae_decode_fr_duration = time.time() - vae_decode_fr_start_time
+            logger.info(f'temporal vae decoding with feature resetting, finished in {format_time(vae_decode_fr_duration)} total.')
 
         w1, w2, h1, h2 = padding
         vid_tensor_gen = vid_tensor_gen[:, :, h1:h + h1, w1:w + w1]
