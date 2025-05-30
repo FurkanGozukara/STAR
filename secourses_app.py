@@ -397,6 +397,9 @@ The total combined prompt length is limited to 77 tokens."""
                         value=app_config.DEFAULT_RANDOM_SEED,
                         info="If checked, a random seed will be generated and used, ignoring the 'Seed' value."
                     )
+            with gr.Accordion("Comparison Video To See Difference", open=True):
+                with gr.Row():
+                    comparison_video =gr .Video (label ="Comparison Video",interactive =False ,height =512 )
 
         with gr .Column (scale =1 ):
             output_video =gr .Video (label ="Upscaled Video",interactive =False ,height =512 )
