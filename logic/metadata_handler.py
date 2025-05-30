@@ -48,6 +48,7 @@ def _prepare_metadata_dict(params_dict: dict, status_info: dict = None) -> dict:
         "calculated_upscale_factor": f"{params_dict.get('upscale_factor'):.2f}" if params_dict.get("upscale_factor") is not None else "N/A",
         "final_output_resolution_wh": (params_dict.get("final_w"), params_dict.get("final_h")) if params_dict.get("final_w") is not None and params_dict.get("final_h") is not None else "N/A",
         "scene_prompt_used_for_chunk": params_dict.get("scene_prompt_used_for_chunk", "N/A"),
+        "current_seed": params_dict.get("current_seed", "N/A"),
     }
 
     if status_info:

@@ -105,7 +105,7 @@ def run_upscale (
     "scene_min_scene_len":scene_min_scene_len ,"scene_threshold":scene_threshold ,
     "scene_manual_split_type":scene_manual_split_type ,"scene_manual_split_value":scene_manual_split_value ,
     "is_batch_mode":is_batch_mode ,"batch_output_dir":batch_output_dir ,
-    "used_seed": current_seed, # Add seed to metadata
+    "current_seed": current_seed, # Added current_seed
 
     "final_output_path":None ,"orig_w":None ,"orig_h":None ,
     "input_fps":None ,"upscale_factor":None ,"final_w":None ,"final_h":None ,
@@ -891,7 +891,6 @@ def run_upscale (
             progress(current_overall_progress, desc="Creating comparison video...")
             comparison_status_msg = "Creating comparison video..."
             status_log.append(comparison_status_msg)
-            logger.info(comparison_status_msg)
             yield final_output_path, "\n".join(status_log), last_chunk_video_path, comparison_status_msg
             
             try:
