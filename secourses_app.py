@@ -194,6 +194,9 @@ def process_single_scene(
     save_metadata=False, metadata_params_base: dict = None
 ):
 
+    _last_saved_chunk_path_in_scene = None
+    _last_saved_chunk_status_in_scene = None
+
     try:
         scene_start_time = time.time()
         scene_name = f"scene_{scene_index + 1:04d}"
@@ -250,7 +253,6 @@ def process_single_scene(
                     generated_scene_caption = scene_caption  # Store the generated caption
                     logger.info(f"Scene {scene_index + 1} auto-caption: {scene_caption[:100]}...")
                     
-                    # If this is the first scene, immediately signal for prompt update
                     if scene_index == 0:
                         logger.info(f"FIRST_SCENE_CAPTION_IMMEDIATE_UPDATE: {scene_caption}")
                 else:
@@ -305,8 +307,7 @@ def process_single_scene(
                         scene_patch_diffusion_timer['last_time'] = current_time
                         
                         _desc_for_log = f"Scene {scene_index+1} Frame {i+1}/{scene_frame_count}, Patch {patch_idx+1}/{num_patches_this_frame_for_cb}"
-                        # logger.info(f"  ↳ {_desc_for_log} - {step_duration:.2f}s/it (Step {step}/{total_steps})") # Reduced verbosity
-                        if progress_callback: # Use the main progress_callback if available to update UI
+                        if progress_callback: 
                            progress_callback( (0.3 + ( (i + ( (patch_idx+1)/num_patches_this_frame_for_cb if num_patches_this_frame_for_cb > 0 else 1) ) /scene_frame_count)*0.5), f"{_desc_for_log} (Diff: {step}/{total_steps})")
 
 
@@ -350,9 +351,6 @@ def process_single_scene(
                 final_frame_bgr = cv2.cvtColor(final_frame_np_hwc_uint8, cv2.COLOR_RGB2BGR)
                 cv2.imwrite(os.path.join(scene_output_frames_dir, frame_filename), final_frame_bgr)
 
-                # if progress_callback: # Main frame progress updated by patch callback
-                #     frame_progress = 0.3 + (i / scene_frame_count) * 0.5
-                #     progress_callback(frame_progress, f"Scene {scene_index + 1}: Processing frame {i + 1}/{scene_frame_count}")
 
         elif enable_sliding_window:
 
@@ -390,7 +388,6 @@ def process_single_scene(
                     scene_window_diffusion_timer['last_time'] = current_time
 
                     _desc_for_log = f"Scene {scene_index+1} Window {window_iter_idx+1}/{total_windows_to_process} (frames {start_idx}-{end_idx-1})"
-                    # logger.info(f"  ↳ {_desc_for_log} - {step_duration:.2f}s/it (Step {step}/{total_steps})")
                     if progress_callback:
                         progress_callback( (0.3 + ( (window_iter_idx + (step/total_steps if total_steps > 0 else 1)) /total_windows_to_process)*0.5), f"{_desc_for_log} (Diff: {step}/{total_steps})")
 
@@ -446,10 +443,6 @@ def process_single_scene(
 
                 del window_data_cuda, window_sr_tensor_bcthw, window_sr_frames_uint8
                 if torch.cuda.is_available(): torch.cuda.empty_cache()
-
-                # if progress_callback: # Updated by diffusion callback
-                #     window_progress = 0.3 + (window_iter_idx / total_windows_to_process) * 0.5
-                #     progress_callback(window_progress, f"Scene {scene_index + 1}: Processing window {window_iter_idx + 1}/{total_windows_to_process}")
             
             num_missed_fallback = 0
             for idx_fb, fname_fb in enumerate(scene_frame_files):
@@ -487,7 +480,6 @@ def process_single_scene(
                     scene_chunk_diffusion_timer['last_time'] = current_time
                     
                     _desc_for_log = f"Scene {scene_index+1} Chunk {chunk_idx+1}/{num_chunks} (frames {start_idx}-{end_idx-1})"
-                    # logger.info(f"  ↳ {_desc_for_log} - {step_duration:.2f}s/it (Step {step}/{total_steps})")
                     if progress_callback:
                          progress_callback( (0.3 + ( (chunk_idx + (step/total_steps if total_steps > 0 else 1)) /num_chunks)*0.5), f"{_desc_for_log} (Diff: {step}/{total_steps})")
 
@@ -553,7 +545,9 @@ def process_single_scene(
                             ffmpeg_use_gpu,
                             logger=logger
                         )
-                        logger.info(f"Saved scene chunk {chunk_idx+1}/{num_chunks} for scene {scene_name} to: {chunk_video_path}")
+                        _last_saved_chunk_path_in_scene = chunk_video_path
+                        _last_saved_chunk_status_in_scene = f"Scene {scene_index + 1} Chunk {chunk_idx + 1}/{num_chunks} (frames {start_idx+1}-{end_idx})"
+                        logger.info(f"Saved scene chunk {chunk_idx+1}/{num_chunks} for scene {scene_name} to: {chunk_video_path}. Marked as last for scene.")
                     else:
                         logger.warning(f"No frames copied for scene chunk {chunk_idx+1}/{num_chunks} (Scene: {scene_name}), video not created.")
 
@@ -602,9 +596,6 @@ def process_single_scene(
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
 
-                # if progress_callback: # Updated by diffusion callback
-                #     chunk_progress = 0.3 + (chunk_idx / num_chunks) * 0.5
-                #     progress_callback(chunk_progress, f"Scene {scene_index + 1}: Processing chunk {chunk_idx + 1}/{num_chunks}")
 
         if save_frames and scene_output_frames_permanent:
             if progress_callback:
@@ -669,7 +660,7 @@ def process_single_scene(
                 logger.warning(f"Failed to save scene {scene_index+1} metadata: {message}")
 
 
-        return scene_output_video, scene_frame_count, scene_fps, generated_scene_caption
+        return scene_output_video, scene_frame_count, scene_fps, generated_scene_caption, _last_saved_chunk_path_in_scene, _last_saved_chunk_status_in_scene
 
     except Exception as e:
         logger.error(f"Error processing scene {scene_index + 1}: {e}")
@@ -758,14 +749,14 @@ def run_upscale(
     enable_auto_caption_per_scene=False, 
     cogvlm_quant=0, 
     cogvlm_unload='full', 
-    progress=gr.Progress(track_tqdm=True) # This progress object is for the main bar
+    progress=gr.Progress(track_tqdm=True) 
 ):
     if not input_video_path or not os.path.exists(input_video_path):
         raise gr.Error("Please select a valid input video file.")
 
     last_chunk_video_path = None 
     last_chunk_status = "No chunks processed yet" 
-    first_scene_caption_for_prompt_update = None  # Track first scene caption for main prompt update
+    first_scene_caption_for_prompt_update = None 
 
     setup_seed(666) 
     overall_process_start_time = time.time()
@@ -1100,7 +1091,7 @@ def run_upscale(
 
 
         upscaling_loop_progress_start = current_overall_progress
-        progress(current_overall_progress, desc="Preparing for upscaling...") # General message before loop
+        progress(current_overall_progress, desc="Preparing for upscaling...") 
         total_noise_levels = 900 
 
         upscaling_loop_start_time = time.time() 
@@ -1113,9 +1104,8 @@ def run_upscale(
         if enable_scene_split and scene_video_paths:
             processed_scene_videos = [] 
             total_scenes = len(scene_video_paths)
-            first_scene_caption = None  # Track the first scene's caption to update the main prompt
+            first_scene_caption = None  
             
-            # If auto-captioning is enabled, caption the first scene immediately to update the main prompt
             if enable_auto_caption_per_scene and total_scenes > 0:
                 logger.info("Auto-captioning first scene to update main prompt before processing...")
                 progress(current_overall_progress, desc="Generating caption for first scene...")
@@ -1129,11 +1119,10 @@ def run_upscale(
                         first_scene_caption = first_scene_caption_result
                         logger.info(f"First scene caption generated for main prompt: '{first_scene_caption[:100]}...'")
                         
-                        # Immediately yield the caption for prompt update
                         caption_update_msg = f"First scene caption generated [FIRST_SCENE_CAPTION:{first_scene_caption}]"
                         status_log.append(caption_update_msg)
                         logger.info(f"Yielding first scene caption for immediate prompt update")
-                        yield None, "\n".join(status_log), last_chunk_video_path, caption_update_msg
+                        yield None, "\n".join(status_log), last_chunk_video_path, last_chunk_status # Use existing last_chunk_status
                     else:
                         logger.warning("First scene auto-captioning failed, using original prompt")
                 except Exception as e:
@@ -1147,11 +1136,10 @@ def run_upscale(
                     progress(current_scene_overall_progress, desc=desc_scene) 
 
                 try:
-                    # For the first scene, use the pre-generated caption if available
-                    scene_enable_auto_caption = enable_auto_caption_per_scene and scene_idx > 0  # Only auto-caption scenes after the first
+                    scene_enable_auto_caption = enable_auto_caption_per_scene and scene_idx > 0  
                     scene_prompt_override = first_scene_caption if scene_idx == 0 and first_scene_caption else final_prompt
                     
-                    processed_scene_video, scene_frame_count_ret, scene_fps_ret, scene_caption = process_single_scene(
+                    processed_scene_video, scene_frame_count_ret, scene_fps_ret, scene_caption, _last_chunk_path_from_scene, _last_chunk_status_from_scene = process_single_scene(
                         scene_video_path, scene_idx, total_scenes, temp_dir, star_model,
                         scene_prompt_override, upscale_factor_val, final_h_val, final_w_val, ui_total_diffusion_steps,
                         solver_mode, cfg_scale, max_chunk_len, vae_chunk, color_fix_method,
@@ -1162,27 +1150,34 @@ def run_upscale(
                         enable_auto_caption_per_scene=scene_enable_auto_caption, 
                         cogvlm_quant=actual_cogvlm_quant_val, 
                         cogvlm_unload=cogvlm_unload, 
-                        progress=progress, # Pass the main progress object for any direct use (e.g. CogVLM)
+                        progress=progress, 
                         save_chunks=save_chunks, 
                         chunks_permanent_save_path=frames_output_subfolder, 
                         ffmpeg_preset=ffmpeg_preset, ffmpeg_quality_value=ffmpeg_quality_value, ffmpeg_use_gpu=ffmpeg_use_gpu,
                         save_metadata=save_metadata, metadata_params_base=scene_metadata_base_params
                     )
                     processed_scene_videos.append(processed_scene_video)
+                    
+                    # Update chunk info if returned from process_single_scene
+                    if _last_chunk_path_from_scene:
+                        last_chunk_video_path = _last_chunk_path_from_scene
+                    if _last_chunk_status_from_scene:
+                        last_chunk_status = _last_chunk_status_from_scene
+                    
                     if scene_idx == 0: 
                         input_fps_val = scene_fps_ret 
-                        # For the first scene, we already have the caption
                         if first_scene_caption:
                             logger.info(f"Using pre-generated caption for first scene: '{first_scene_caption[:100]}...'")
                     
                     scene_complete_msg = f"Scene {scene_idx + 1}/{total_scenes} processing complete"
-                    # If this is the first scene and we have a caption, include it in the message for prompt update
                     if scene_idx == 0 and scene_caption and enable_auto_caption_per_scene:
                         scene_complete_msg += f" [FIRST_SCENE_CAPTION:{scene_caption}]"
                         logger.info(f"Scene 1 complete with caption for main prompt update")
                     status_log.append(scene_complete_msg)
                     logger.info(scene_complete_msg)
-                    yield None, "\n".join(status_log), last_chunk_video_path, scene_complete_msg
+                    
+                    # Yield immediately after a scene is processed to update chunk info
+                    yield None, "\n".join(status_log), last_chunk_video_path, last_chunk_status
 
                 except Exception as e:
                     logger.error(f"Error processing scene {scene_idx + 1}: {e}")
@@ -1235,12 +1230,9 @@ def run_upscale(
                 tiling_status_msg = f"Tiling enabled: Tile Size={tile_size}, Overlap={tile_overlap}. Processing {len(frame_files)} frames."
                 status_log.append(tiling_status_msg)
                 logger.info(tiling_status_msg)
-                yield None, "\n".join(status_log), last_chunk_video_path, tiling_status_msg # This is for chunk_status_text
-
-                total_frames_to_tile = len(frame_files)
+                yield None, "\n".join(status_log), last_chunk_video_path, tiling_status_msg 
                 
-                # Use main progress object directly, no separate tqdm iterator variable needed here for run_upscale
-                # The diffusion callbacks will update the description of the main 'progress' object.
+                total_frames_to_tile = len(frame_files)
                 
                 for i, frame_filename in enumerate(progress.tqdm(frame_files, desc=f"{loop_name} - Initializing...", total=total_frames_to_tile)):
                     frame_proc_start_time = time.time()
@@ -1255,10 +1247,10 @@ def run_upscale(
                     single_lr_frame_tensor_norm = preprocess([frame_lr_bgr]) 
                     spliter = ImageSpliterTh(single_lr_frame_tensor_norm, int(tile_size), int(tile_overlap), sf=upscale_factor_val)
                     
-                    num_patches_this_frame = getattr(spliter, 'num_patches', sum(1 for _ in ImageSpliterTh(single_lr_frame_tensor_norm, int(tile_size), int(tile_overlap), sf=upscale_factor_val))) # Efficiently get count if possible
-                    spliter = ImageSpliterTh(single_lr_frame_tensor_norm, int(tile_size), int(tile_overlap), sf=upscale_factor_val) # Re-init
+                    num_patches_this_frame = getattr(spliter, 'num_patches', sum(1 for _ in ImageSpliterTh(single_lr_frame_tensor_norm, int(tile_size), int(tile_overlap), sf=upscale_factor_val))) 
+                    spliter = ImageSpliterTh(single_lr_frame_tensor_norm, int(tile_size), int(tile_overlap), sf=upscale_factor_val) 
 
-                    for patch_idx, (patch_lr_tensor_norm, patch_coords) in enumerate(spliter): # No new tqdm here
+                    for patch_idx, (patch_lr_tensor_norm, patch_coords) in enumerate(spliter): 
                         patch_proc_start_time_local = time.time()
                         patch_lr_video_data = patch_lr_tensor_norm 
 
@@ -1277,9 +1269,7 @@ def run_upscale(
                             current_patch_desc = f"Frame {i+1}/{total_frames_to_tile}, Patch {patch_idx+1}/{num_patches_this_frame}"
                             tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps_patch})" if step_duration > 0.001 else f"{step}/{total_steps_patch}"
                             
-                            # Update the main progress bar's description
                             progress.update(desc=f"{current_patch_desc} - Diffusion: {tqdm_step_info}")
-                            # logger.info(f"    ↳ {loop_name} - {current_patch_desc} - Diffusion: {tqdm_step_info}")
 
 
                         star_model_call_patch_start_time = time.time()
@@ -1311,13 +1301,10 @@ def run_upscale(
                     final_frame_bgr = cv2.cvtColor(final_frame_np_hwc_uint8, cv2.COLOR_RGB2BGR)
                     cv2.imwrite(os.path.join(output_frames_dir, frame_filename), final_frame_bgr) 
 
-                    # Update overall progress fractionally within the tiling loop's weight
                     loop_progress_frac = (i + 1) / total_frames_to_tile if total_frames_to_tile > 0 else 1.0
                     current_overall_progress_temp = upscaling_loop_progress_start + (loop_progress_frac * stage_weights["upscaling_loop"])
-                    # Description for main progress bar is handled by progress.tqdm and diffusion_callback
-                    progress(current_overall_progress_temp) # Update just the fraction
+                    progress(current_overall_progress_temp) 
                     
-                    # Yield status for the chunk_status_text in UI
                     yield None, "\n".join(status_log), last_chunk_video_path, f"Tiling frame {i+1}/{total_frames_to_tile} processed"
 
 
@@ -1368,7 +1355,6 @@ def run_upscale(
                         base_desc_win = f"{loop_name}: {current_window_display_num}/{total_windows_to_process} windows (frames {start_idx}-{end_idx-1})"
                         tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps_window})" if step_duration > 0.001 else f"{step}/{total_steps_window}"
                         progress.update(desc=f"{base_desc_win} - Diffusion: {tqdm_step_info}")
-                        # logger.info(f"    ↳ {base_desc_win} - Diffusion: {tqdm_step_info}")
 
 
                     star_model_call_window_start_time = time.time()
@@ -1415,7 +1401,7 @@ def run_upscale(
 
                     loop_progress_frac = current_window_display_num / total_windows_to_process if total_windows_to_process > 0 else 1.0
                     current_overall_progress_temp = upscaling_loop_progress_start + (loop_progress_frac * stage_weights["upscaling_loop"])
-                    progress(current_overall_progress_temp) # Update fraction, desc from callback
+                    progress(current_overall_progress_temp) 
                     yield None, "\n".join(status_log), last_chunk_video_path, f"Sliding window {current_window_display_num}/{total_windows_to_process} processed"
                 
                 num_missed_fallback = 0
@@ -1446,7 +1432,7 @@ def run_upscale(
                 if num_chunks == 0 and frame_count > 0 : num_chunks = 1 
 
                 for i_chunk_idx in enumerate(progress.tqdm(range(num_chunks), desc=f"{loop_name} - Initializing...", total=num_chunks)):
-                    i_chunk_idx = i_chunk_idx[0] # enumerate returns (index, value), we just need index from range
+                    i_chunk_idx = i_chunk_idx[0] 
                     start_idx = i_chunk_idx * max_chunk_len
                     end_idx = min((i_chunk_idx + 1) * max_chunk_len, frame_count)
                     current_chunk_len = end_idx - start_idx
@@ -1476,7 +1462,6 @@ def run_upscale(
                         base_desc_chunk = f"{loop_name}: {current_chunk_display_num}/{num_chunks} chunks (frames {start_idx}-{end_idx-1})"
                         tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps_chunk})" if step_duration > 0.001 else f"{step}/{total_steps_chunk}"
                         progress.update(desc=f"{base_desc_chunk} - Diffusion: {tqdm_step_info}")
-                        # logger.info(f"    ↳ {base_desc_chunk} - Diffusion: {tqdm_step_info}")
 
 
                     star_model_call_chunk_start_time = time.time()
@@ -1547,9 +1532,10 @@ def run_upscale(
                     
                     loop_progress_frac = current_chunk_display_num / num_chunks if num_chunks > 0 else 1.0
                     current_overall_progress_temp = upscaling_loop_progress_start + (loop_progress_frac * stage_weights["upscaling_loop"])
-                    progress(current_overall_progress_temp) # Update fraction, desc from callback
+                    progress(current_overall_progress_temp) 
                     if not (save_chunks and chunks_permanent_save_path) : 
-                         yield None, "\n".join(status_log), last_chunk_video_path, f"Chunk {current_chunk_display_num}/{num_chunks} processed"
+                         current_chunk_status_text = f"Chunk {current_chunk_display_num}/{num_chunks} processed"
+                         yield None, "\n".join(status_log), last_chunk_video_path, current_chunk_status_text
 
             current_overall_progress = upscaling_loop_progress_start + stage_weights["upscaling_loop"] 
             upscaling_total_duration_msg = f"All frame upscaling operations finished. Total upscaling time: {format_time(time.time() - upscaling_loop_start_time)}"
@@ -2167,7 +2153,6 @@ The total combined prompt length is limited to 77 tokens."""
         current_last_chunk_video_val = None
         current_chunk_status_text_val = "No chunks processed yet"
         
-        # Flag to track if auto-caption was successful and prompt should be preserved
         auto_caption_completed_successfully = False
 
         log_accumulator_director = [] 
@@ -2214,7 +2199,6 @@ The total combined prompt length is limited to 77 tokens."""
                 if app_config.UTIL_COG_VLM_AVAILABLE:
                     current_caption_status_text_val = caption_stat_msg 
                 
-                # Show the caption result, then hide the caption status for upscale process
                 logger.info(f"About to yield auto-caption result. current_user_prompt_val: '{current_user_prompt_val[:100]}...'")
                 yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val), 
                        gr.update(value=current_user_prompt_val), 
@@ -2222,7 +2206,6 @@ The total combined prompt length is limited to 77 tokens."""
                        gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val))
                 logger.info("Auto-caption yield completed.")
                 
-                # Hide caption status for the upscale process
                 if app_config.UTIL_COG_VLM_AVAILABLE:
                     current_caption_status_visible_val = False
 
@@ -2232,7 +2215,6 @@ The total combined prompt length is limited to 77 tokens."""
                 current_status_text_val = "\n".join(log_accumulator_director)
                 if app_config.UTIL_COG_VLM_AVAILABLE:
                     current_caption_status_text_val = str(e_ac)
-                    # Show error, then hide for upscale process
                     yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val), 
                            gr.update(value=current_user_prompt_val), 
                            gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val), 
@@ -2251,7 +2233,6 @@ The total combined prompt length is limited to 77 tokens."""
             log_accumulator_director.append(msg)
             current_status_text_val = "\n".join(log_accumulator_director)
             
-            # Yield to show the message about per-scene captioning
             yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val), 
                    gr.update(value=current_user_prompt_val), 
                    gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val), 
@@ -2263,7 +2244,6 @@ The total combined prompt length is limited to 77 tokens."""
             log_accumulator_director.append(msg)
             current_status_text_val = "\n".join(log_accumulator_director)
             
-            # Yield to show the warning message
             yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val), 
                    gr.update(value=current_user_prompt_val), 
                    gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val), 
@@ -2296,18 +2276,16 @@ The total combined prompt length is limited to 77 tokens."""
 
         for yielded_output_video, yielded_status_log, yielded_chunk_video, yielded_chunk_status in upscale_generator:
             
-            # Determine update for output_video
-            output_video_update = gr.update() # Default to no change
+            output_video_update = gr.update() 
             if yielded_output_video is not None:
                 current_output_video_val = yielded_output_video
                 output_video_update = gr.update(value=current_output_video_val)
-            elif current_output_video_val is None : # If it was None and still is None
-                output_video_update = gr.update(value=None) # Explicitly keep it None/cleared
-            else: # It had a value, and new yield is None (intermediate step), keep old value.
+            elif current_output_video_val is None : 
+                output_video_update = gr.update(value=None) 
+            else: 
                 output_video_update = gr.update(value=current_output_video_val)
 
 
-            # Update status_text (Log)
             combined_log_director = ""
             if log_accumulator_director:
                 combined_log_director = "\n".join(log_accumulator_director) + "\n"
@@ -2317,13 +2295,11 @@ The total combined prompt length is limited to 77 tokens."""
             current_status_text_val = combined_log_director.strip()
             status_text_update = gr.update(value=current_status_text_val)
 
-            # Check if this is the first scene completion with auto-caption
             if yielded_status_log and "[FIRST_SCENE_CAPTION:" in yielded_status_log and not auto_caption_completed_successfully:
-                # Extract the caption from the status message
                 try:
                     caption_start = yielded_status_log.find("[FIRST_SCENE_CAPTION:") + len("[FIRST_SCENE_CAPTION:")
                     caption_end = yielded_status_log.find("]", caption_start)
-                    if caption_start > 20 and caption_end > caption_start:  # Basic validation
+                    if caption_start > 20 and caption_end > caption_start:  
                         extracted_caption = yielded_status_log[caption_start:caption_end]
                         current_user_prompt_val = extracted_caption
                         auto_caption_completed_successfully = True
@@ -2334,13 +2310,11 @@ The total combined prompt length is limited to 77 tokens."""
                 except Exception as e:
                     logger.error(f"Error extracting first scene caption: {e}")
             
-            # Also check for immediate first scene caption update signal
             elif yielded_status_log and "FIRST_SCENE_CAPTION_IMMEDIATE_UPDATE:" in yielded_status_log and not auto_caption_completed_successfully:
-                # Extract the caption from the immediate update signal
                 try:
                     caption_start = yielded_status_log.find("FIRST_SCENE_CAPTION_IMMEDIATE_UPDATE:") + len("FIRST_SCENE_CAPTION_IMMEDIATE_UPDATE:")
                     extracted_caption = yielded_status_log[caption_start:].strip()
-                    if extracted_caption:  # Basic validation
+                    if extracted_caption:  
                         current_user_prompt_val = extracted_caption
                         auto_caption_completed_successfully = True
                         logger.info(f"Updated main prompt from immediate first scene caption: '{extracted_caption[:100]}...'")
@@ -2350,28 +2324,21 @@ The total combined prompt length is limited to 77 tokens."""
                 except Exception as e:
                     logger.error(f"Error extracting immediate first scene caption: {e}")
 
-            # Always ensure the user prompt reflects the current value (important for auto-caption updates)
-            # Log the current prompt value for debugging
-            if auto_caption_completed_successfully:
-                logger.info(f"Upscale generator yield (auto-caption completed): current_user_prompt_val = '{current_user_prompt_val[:100]}...'")
             user_prompt_update = gr.update(value=current_user_prompt_val)
 
-            # Update caption_status
             caption_status_update = gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val)
 
-            # Update last_chunk_video
-            chunk_video_update = gr.update() # Default to no change
+            chunk_video_update = gr.update() 
             if yielded_chunk_video is not None:
                 current_last_chunk_video_val = yielded_chunk_video
                 chunk_video_update = gr.update(value=current_last_chunk_video_val)
-            elif current_last_chunk_video_val is None: # If it was None and still is
-                chunk_video_update = gr.update(value=None) # Explicitly keep it None/cleared
-            else: # Had a value, new is None, keep old.
+            elif current_last_chunk_video_val is None: 
+                chunk_video_update = gr.update(value=None) 
+            else: 
                 chunk_video_update = gr.update(value=current_last_chunk_video_val)
 
 
-            # Update chunk_status_text
-            if yielded_chunk_status is not None: # Allow chunk status to be cleared if None
+            if yielded_chunk_status is not None: 
                 current_chunk_status_text_val = yielded_chunk_status
             chunk_status_text_update = gr.update(value=current_chunk_status_text_val)
             
@@ -2381,7 +2348,6 @@ The total combined prompt length is limited to 77 tokens."""
                 chunk_video_update, chunk_status_text_update
             )
 
-        # Final yield to ensure all states are correctly set at the very end.
         logger.info(f"Final yield: current_user_prompt_val = '{current_user_prompt_val[:100]}...', auto_caption_completed = {auto_caption_completed_successfully}")
         yield (
             gr.update(value=current_output_video_val), 
@@ -2423,7 +2389,7 @@ The total combined prompt length is limited to 77 tokens."""
         fn=upscale_director_logic,
         inputs=click_inputs,
         outputs=click_outputs_list,
-        show_progress_on=[output_video] # <--- MODIFICATION HERE
+        show_progress_on=[output_video] 
     )
 
     if app_config.UTIL_COG_VLM_AVAILABLE:
@@ -2454,7 +2420,7 @@ The total combined prompt length is limited to 77 tokens."""
             scene_manual_split_type_radio, scene_manual_split_value_num
         ],
         outputs=[output_video, status_textbox],
-        show_progress_on=[output_video] # <--- MODIFICATION HERE
+        show_progress_on=[output_video] 
     )
 
     batch_process_inputs = [
@@ -2477,7 +2443,7 @@ The total combined prompt length is limited to 77 tokens."""
         fn=process_batch_videos,
         inputs=batch_process_inputs, 
         outputs=[output_video, status_textbox],
-        show_progress_on=[output_video] # <--- MODIFICATION HERE
+        show_progress_on=[output_video] 
     )
     
     gpu_selector.change(
