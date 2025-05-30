@@ -575,7 +575,7 @@ The total combined prompt length is limited to 77 tokens."""
     enable_target_res_check_val ,target_h_num_val ,target_w_num_val ,target_res_mode_radio_val ,
     ffmpeg_preset_dropdown_val ,ffmpeg_quality_slider_val ,ffmpeg_use_gpu_check_val ,
     save_frames_checkbox_val ,save_metadata_checkbox_val ,save_chunks_checkbox_val ,
-    create_comparison_video_check_val ,
+    create_comparison_video_check_val , # Added
     enable_scene_split_check_val ,scene_split_mode_radio_val ,scene_min_scene_len_num_val ,scene_drop_short_check_val ,scene_merge_last_check_val ,
     scene_frame_skip_num_val ,scene_threshold_num_val ,scene_min_content_val_num_val ,scene_frame_window_num_val ,
     scene_copy_streams_check_val ,scene_use_mkvmerge_check_val ,scene_rate_factor_num_val ,scene_preset_dropdown_val ,scene_quiet_ffmpeg_check_val ,
@@ -706,15 +706,14 @@ The total combined prompt length is limited to 77 tokens."""
             scene_copy_streams=scene_copy_streams_check_val ,scene_use_mkvmerge=scene_use_mkvmerge_check_val ,scene_rate_factor=scene_rate_factor_num_val ,scene_preset=scene_preset_dropdown_val ,scene_quiet_ffmpeg=scene_quiet_ffmpeg_check_val ,
             scene_manual_split_type=scene_manual_split_type_radio_val ,scene_manual_split_value=scene_manual_split_value_num_val ,
 
-            create_comparison_video_enabled=create_comparison_video_check_val ,
+            create_comparison_video_enabled=create_comparison_video_check_val , # Passed here
 
-            is_batch_mode=False ,batch_output_dir=None ,original_filename=None , # These are for direct calls, batch mode handles this differently
+            is_batch_mode=False ,batch_output_dir=None ,original_filename=None , 
 
             enable_auto_caption_per_scene=(do_auto_caption_first_val and enable_scene_split_check_val and app_config .UTIL_COG_VLM_AVAILABLE ),
-            cogvlm_quant=actual_cogvlm_quant_for_captioning , # Pass the integer value
+            cogvlm_quant=actual_cogvlm_quant_for_captioning , 
             cogvlm_unload=cogvlm_unload_radio_val if cogvlm_unload_radio_val else 'full',
 
-            # Pass injected dependencies
             logger=logger,
             app_config_module=app_config,
             metadata_handler_module=metadata_handler,
@@ -736,38 +735,37 @@ The total combined prompt length is limited to 77 tokens."""
             if yielded_output_video is not None :
                 current_output_video_val =yielded_output_video
                 output_video_update =gr .update (value =current_output_video_val )
-            elif current_output_video_val is None : # Ensure if it was None, it stays None unless updated
+            elif current_output_video_val is None : 
                 output_video_update =gr .update (value =None )
-            else: # Keep previous value if current yield is None but we had a value
+            else: 
                 output_video_update =gr .update (value =current_output_video_val)
 
 
             combined_log_director =""
-            if log_accumulator_director : # Prepend any logs from director logic (e.g., captioning)
+            if log_accumulator_director : 
                 combined_log_director ="\n".join (log_accumulator_director )+"\n"
-                log_accumulator_director =[] # Clear after prepending
+                log_accumulator_director =[] 
             if yielded_status_log :
                 combined_log_director +=yielded_status_log
             current_status_text_val =combined_log_director .strip ()
             status_text_update =gr .update (value =current_status_text_val )
 
-            # Check for first scene caption to update the main prompt
             if yielded_status_log and "[FIRST_SCENE_CAPTION:"in yielded_status_log and not auto_caption_completed_successfully :
                 try :
                     caption_start =yielded_status_log .find ("[FIRST_SCENE_CAPTION:")+len ("[FIRST_SCENE_CAPTION:")
                     caption_end =yielded_status_log .find ("]",caption_start )
-                    if caption_start > len("[FIRST_SCENE_CAPTION:") and caption_end >caption_start : # Basic check
+                    if caption_start > len("[FIRST_SCENE_CAPTION:") and caption_end >caption_start : 
                         extracted_caption =yielded_status_log [caption_start :caption_end ]
                         current_user_prompt_val =extracted_caption
-                        auto_caption_completed_successfully =True # Mark as completed so we don't do it again
+                        auto_caption_completed_successfully =True 
                         logger .info (f"Updated main prompt from first scene caption: '{extracted_caption[:100]}...'")
-                        # Append to current status log for visibility
+                        
                         log_accumulator_director .append (f"Main prompt updated with first scene caption: '{extracted_caption[:50]}...'")
                         current_status_text_val =(combined_log_director +"\n"+"\n".join (log_accumulator_director )).strip ()
                         status_text_update =gr .update (value =current_status_text_val )
                 except Exception as e :
                     logger .error (f"Error extracting first scene caption: {e}")
-            # This specific immediate update was from original code, might be redundant if "[FIRST_SCENE_CAPTION:" handles it.
+            
             elif yielded_status_log and "FIRST_SCENE_CAPTION_IMMEDIATE_UPDATE:"in yielded_status_log and not auto_caption_completed_successfully :
                 try :
                     caption_start =yielded_status_log .find ("FIRST_SCENE_CAPTION_IMMEDIATE_UPDATE:")+len ("FIRST_SCENE_CAPTION_IMMEDIATE_UPDATE:")
@@ -793,9 +791,9 @@ The total combined prompt length is limited to 77 tokens."""
             if yielded_chunk_video is not None :
                 current_last_chunk_video_val =yielded_chunk_video
                 chunk_video_update =gr .update (value =current_last_chunk_video_val )
-            elif current_last_chunk_video_val is None: # If it was None, keep it None unless updated
+            elif current_last_chunk_video_val is None: 
                 chunk_video_update = gr.update(value=None)
-            else: # Keep previous value if current yield is None
+            else: 
                 chunk_video_update = gr.update(value=current_last_chunk_video_val)
 
 
@@ -809,7 +807,6 @@ The total combined prompt length is limited to 77 tokens."""
             chunk_video_update ,chunk_status_text_update
             )
 
-        # Final yield after generator is exhausted
         logger .info (f"Final yield: current_user_prompt_val = '{current_user_prompt_val[:100]}...', auto_caption_completed = {auto_caption_completed_successfully}")
         yield (
         gr .update (value =current_output_video_val ),
@@ -830,7 +827,7 @@ The total combined prompt length is limited to 77 tokens."""
     enable_target_res_check ,target_h_num ,target_w_num ,target_res_mode_radio ,
     ffmpeg_preset_dropdown ,ffmpeg_quality_slider ,ffmpeg_use_gpu_check ,
     save_frames_checkbox ,save_metadata_checkbox ,save_chunks_checkbox ,
-    create_comparison_video_check ,
+    create_comparison_video_check , # Added
     enable_scene_split_check ,scene_split_mode_radio ,scene_min_scene_len_num ,scene_drop_short_check ,scene_merge_last_check ,
     scene_frame_skip_num ,scene_threshold_num ,scene_min_content_val_num ,scene_frame_window_num ,
     scene_copy_streams_check ,scene_use_mkvmerge_check ,scene_rate_factor_num ,scene_preset_dropdown ,scene_quiet_ffmpeg_check ,
@@ -842,8 +839,8 @@ The total combined prompt length is limited to 77 tokens."""
         click_outputs_list .append (caption_status )
         click_inputs .extend ([cogvlm_quant_radio ,cogvlm_unload_radio ,auto_caption_then_upscale_check ])
     else :
-        click_outputs_list .append (gr .State (None )) # Placeholder for caption_status
-        click_inputs .extend ([gr .State (None ),gr .State (None ),gr .State (False )]) # Placeholders for cogvlm inputs
+        click_outputs_list .append (gr .State (None )) 
+        click_inputs .extend ([gr .State (None ),gr .State (None ),gr .State (False )]) 
 
     click_outputs_list .extend ([last_chunk_video ,chunk_status_text ])
 
@@ -851,14 +848,14 @@ The total combined prompt length is limited to 77 tokens."""
     fn =upscale_director_logic ,
     inputs =click_inputs ,
     outputs =click_outputs_list ,
-    show_progress_on =[output_video ] # This might need to be a list of components for progress tracking
+    show_progress_on =[output_video ] 
     )
 
     if app_config .UTIL_COG_VLM_AVAILABLE :
         def auto_caption_wrapper (vid ,quant_display ,unload_strat ,progress =gr .Progress (track_tqdm =True )):
             caption_text ,caption_stat_msg =util_auto_caption (
             vid ,
-            get_quant_value_from_display (quant_display ), # Ensure this returns int
+            get_quant_value_from_display (quant_display ), 
             unload_strat ,
             app_config .COG_VLM_MODEL_PATH ,
             logger =logger ,
@@ -870,7 +867,7 @@ The total combined prompt length is limited to 77 tokens."""
         fn =auto_caption_wrapper ,
         inputs =[input_video ,cogvlm_quant_radio ,cogvlm_unload_radio ],
         outputs =[user_prompt ,caption_status ],
-        show_progress_on =[user_prompt ] # Show progress on user_prompt update
+        show_progress_on =[user_prompt ] 
         ).then (lambda :gr .update (visible =True ),None ,caption_status )
 
 
@@ -896,21 +893,15 @@ The total combined prompt length is limited to 77 tokens."""
     enable_target_res_check_val ,target_h_num_val ,target_w_num_val ,target_res_mode_radio_val ,
     ffmpeg_preset_dropdown_val ,ffmpeg_quality_slider_val ,ffmpeg_use_gpu_check_val ,
     save_frames_checkbox_val ,save_metadata_checkbox_val ,save_chunks_checkbox_val ,
-    create_comparison_video_check_val ,
+    create_comparison_video_check_val , # Added
 
     enable_scene_split_check_val ,scene_split_mode_radio_val ,scene_min_scene_len_num_val ,scene_drop_short_check_val ,scene_merge_last_check_val ,
     scene_frame_skip_num_val ,scene_threshold_num_val ,scene_min_content_val_num_val ,scene_frame_window_num_val ,
     scene_copy_streams_check_val ,scene_use_mkvmerge_check_val ,scene_rate_factor_num_val ,scene_preset_dropdown_val ,scene_quiet_ffmpeg_check_val ,
     scene_manual_split_type_radio_val ,scene_manual_split_value_num_val ,
-    # cogvlm_quant_radio_val, cogvlm_unload_radio_val, # These are not directly used by batch but by core_run_upscale
     progress =gr .Progress (track_tqdm =True )
     ):
-        # Prepare a partial function for core_run_upscale with fixed dependencies
-        # cogvlm_quant needs to be resolved here if it's from UI for batch
-        # However, batch mode currently doesn't have UI for cogvlm per-video, so it's False or uses fixed defaults
-        # For simplicity, batch mode currently has enable_auto_caption_per_scene=False in process_batch_videos
-        # If that changes, cogvlm_quant_radio_val would be needed here.
-
+        
         partial_run_upscale_for_batch = partial(core_run_upscale,
             logger=logger,
             app_config_module=app_config,
@@ -924,7 +915,6 @@ The total combined prompt length is limited to 77 tokens."""
             ImageSpliterTh_class=ImageSpliterTh,
             adain_color_fix_func=adain_color_fix,
             wavelet_color_fix_func=wavelet_color_fix
-            # cogvlm_quant and cogvlm_unload will be set by process_batch_videos if it enables auto-caption
         )
 
         return process_batch_videos (
@@ -937,15 +927,15 @@ The total combined prompt length is limited to 77 tokens."""
         enable_target_res_check_val ,target_h_num_val ,target_w_num_val ,target_res_mode_radio_val ,
         ffmpeg_preset_dropdown_val ,ffmpeg_quality_slider_val ,ffmpeg_use_gpu_check_val ,
         save_frames_checkbox_val ,save_metadata_checkbox_val ,save_chunks_checkbox_val ,
-        create_comparison_video_check_val ,
+        create_comparison_video_check_val , # Passed to process_batch_videos
 
         enable_scene_split_check_val ,scene_split_mode_radio_val ,scene_min_scene_len_num_val ,scene_drop_short_check_val ,scene_merge_last_check_val ,
         scene_frame_skip_num_val ,scene_threshold_num_val ,scene_min_content_val_num_val ,scene_frame_window_num_val ,
         scene_copy_streams_check_val ,scene_use_mkvmerge_check_val ,scene_rate_factor_num_val ,scene_preset_dropdown_val ,scene_quiet_ffmpeg_check_val ,
         scene_manual_split_type_radio_val ,scene_manual_split_value_num_val ,
 
-        run_upscale_func=partial_run_upscale_for_batch , # Pass the prepared partial function
-        logger=logger , # logger is still useful for process_batch_videos itself
+        run_upscale_func=partial_run_upscale_for_batch , 
+        logger=logger , 
         progress=progress
         )
 
@@ -959,13 +949,11 @@ The total combined prompt length is limited to 77 tokens."""
     enable_target_res_check ,target_h_num ,target_w_num ,target_res_mode_radio ,
     ffmpeg_preset_dropdown ,ffmpeg_quality_slider ,ffmpeg_use_gpu_check ,
     save_frames_checkbox ,save_metadata_checkbox ,save_chunks_checkbox ,
-    create_comparison_video_check ,
+    create_comparison_video_check , # Added
     enable_scene_split_check ,scene_split_mode_radio ,scene_min_scene_len_num ,scene_drop_short_check ,scene_merge_last_check ,
     scene_frame_skip_num ,scene_threshold_num ,scene_min_content_val_num ,scene_frame_window_num ,
     scene_copy_streams_check ,scene_use_mkvmerge_check ,scene_rate_factor_num ,scene_preset_dropdown ,scene_quiet_ffmpeg_check ,
     scene_manual_split_type_radio ,scene_manual_split_value_num
-    # cogvlm_quant_radio, cogvlm_unload_radio are not directly passed here;
-    # process_batch_videos sets them if it enables auto-caption for each video.
     ]
 
     batch_process_button .click (
@@ -978,7 +966,7 @@ The total combined prompt length is limited to 77 tokens."""
     gpu_selector .change (
     fn =lambda gpu_id :util_set_gpu_device (gpu_id ,logger =logger ),
     inputs =gpu_selector ,
-    outputs =status_textbox # Or a dedicated GPU status textbox
+    outputs =status_textbox 
     )
 
 if __name__ =="__main__":
@@ -991,8 +979,7 @@ if __name__ =="__main__":
     available_gpus_main =util_get_available_gpus ()
     if available_gpus_main :
         default_gpu_main_val =available_gpus_main [0 ]
-        # Initial GPU set might be better handled by a startup function or after demo.launch if it causes issues
-        # For now, this is how it was.
+        
         util_set_gpu_device (default_gpu_main_val ,logger =logger )
         logger .info (f"Attempted to initialize with default GPU: {default_gpu_main_val}")
     else :
@@ -1004,9 +991,9 @@ if __name__ =="__main__":
 
     demo .queue ().launch (
     debug =True ,
-    max_threads =100 , # Default Gradio max_threads is 40
+    max_threads =100 , 
     inbrowser =True ,
     share =args .share ,
-    allowed_paths =effective_allowed_paths , # Pass the dynamic list
-    prevent_thread_lock =True # Good for long-running tasks
+    allowed_paths =effective_allowed_paths , 
+    prevent_thread_lock =True 
     )
