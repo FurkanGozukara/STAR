@@ -292,6 +292,11 @@ def process_single_scene( # This function is now a GENERATOR
                         step_duration = current_time - scene_patch_diffusion_timer['last_time']
                         scene_patch_diffusion_timer['last_time'] = current_time
                         _desc_for_log = f"Scene {scene_index+1} Frame {i+1}/{scene_frame_count}, Patch {patch_idx+1}/{num_patches_this_frame_for_cb}"
+                        
+                        eta_seconds = step_duration * (total_steps - step) if step_duration > 0 and total_steps > 0 else 0
+                        eta_formatted = format_time(eta_seconds)
+                        logger.info(f"{_desc_for_log} - Diffusion: Step {step}/{total_steps}, Duration: {step_duration:.2f}s, ETA: {eta_formatted}")
+                        
                         if progress_callback:
                            progress_callback( (0.3 + ( (i + ( (patch_idx+1)/num_patches_this_frame_for_cb if num_patches_this_frame_for_cb > 0 else 1) ) /scene_frame_count)*0.5), f"{_desc_for_log} (Diff: {step}/{total_steps})")
                     
@@ -349,6 +354,11 @@ def process_single_scene( # This function is now a GENERATOR
                     step_duration = current_time - scene_window_diffusion_timer['last_time']
                     scene_window_diffusion_timer['last_time'] = current_time
                     _desc_for_log = f"Scene {scene_index+1} Window {window_iter_idx+1}/{total_windows_to_process} (frames {start_idx}-{end_idx-1})"
+                    
+                    eta_seconds = step_duration * (total_steps - step) if step_duration > 0 and total_steps > 0 else 0
+                    eta_formatted = format_time(eta_seconds)
+                    logger.info(f"{_desc_for_log} - Diffusion: Step {step}/{total_steps}, Duration: {step_duration:.2f}s, ETA: {eta_formatted}")
+                    
                     if progress_callback:
                         progress_callback( (0.3 + ( (window_iter_idx + (step/total_steps if total_steps > 0 else 1)) /total_windows_to_process)*0.5), f"{_desc_for_log} (Diff: {step}/{total_steps})")
                 window_lr_video_data = preprocess(window_lr_frames_bgr)
@@ -411,6 +421,12 @@ def process_single_scene( # This function is now a GENERATOR
                     step_duration = current_time - scene_chunk_diffusion_timer['last_time']
                     scene_chunk_diffusion_timer['last_time'] = current_time
                     _desc_for_log = f"Scene {scene_index+1} Chunk {chunk_idx+1}/{num_chunks} (frames {start_idx}-{end_idx-1})"
+                    
+                    eta_seconds = step_duration * (total_steps - step) if step_duration > 0 and total_steps > 0 else 0
+                    eta_formatted = format_time(eta_seconds)
+                    
+                    logger.info(f"{_desc_for_log} - Diffusion: Step {step}/{total_steps}, Duration: {step_duration:.2f}s, ETA: {eta_formatted}")
+                    
                     if progress_callback:
                          progress_callback( (0.3 + ( (chunk_idx + (step/total_steps if total_steps > 0 else 1)) /num_chunks)*0.5), f"{_desc_for_log} (Diff: {step}/{total_steps})")
 
@@ -1126,7 +1142,11 @@ def run_upscale(
                             callback_step_timer_patch['last_time'] = current_time
                             
                             current_patch_desc = f"Frame {i+1}/{total_frames_to_tile}, Patch {patch_idx+1}/{num_patches_this_frame}"
-                            tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps})" if step_duration > 0.001 else f"{step}/{total_steps}"
+                            tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps})" if step_duration > 0.001 else f"({step}/{total_steps})"
+                            
+                            eta_seconds = step_duration * (total_steps - step) if step_duration > 0 and total_steps > 0 else 0
+                            eta_formatted = format_time(eta_seconds)
+                            logger.info(f"{current_patch_desc} - Diffusion: {tqdm_step_info}, ETA: {eta_formatted}")
                             
                             # Calculate overall progress fraction
                             diffusion_progress_in_patch = step / total_steps if total_steps > 0 else 1.0
@@ -1219,6 +1239,10 @@ def run_upscale(
                         
                         base_desc_win = f"{loop_name}: {current_window_display_num}/{total_windows_to_process} windows (frames {start_idx}-{end_idx-1})"
                         tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps})" if step_duration > 0.001 else f"{step}/{total_steps}"
+                        
+                        eta_seconds = step_duration * (total_steps - step) if step_duration > 0 and total_steps > 0 else 0
+                        eta_formatted = format_time(eta_seconds)
+                        logger.info(f"{base_desc_win} - Diffusion: {tqdm_step_info}, ETA: {eta_formatted}")
                         
                         # Calculate overall progress fraction
                         diffusion_progress_in_window = step / total_steps if total_steps > 0 else 1.0
@@ -1332,6 +1356,10 @@ def run_upscale(
                         
                         # base_desc_chunk = f"{loop_name}: {current_chunk_display_num}/{num_chunks} chunks (frames {start_idx}-{end_idx-1})" # Original, for reference
                         tqdm_step_info = f"{step_duration:.2f}s/it ({step}/{total_steps})" if step_duration > 0.001 else f"({step}/{total_steps})"
+
+                        eta_seconds = step_duration * (total_steps - step) if step_duration > 0 and total_steps > 0 else 0
+                        eta_formatted = format_time(eta_seconds)
+                        logger.info(f"{loop_name}: Chunk {current_chunk_display_num}/{num_chunks} (Frames {start_idx}-{end_idx-1}) - Diffusion: {tqdm_step_info}, ETA: {eta_formatted}")
 
                         # Calculate overall progress fraction
                         diffusion_progress_in_chunk = step / total_steps if total_steps > 0 else 1.0
