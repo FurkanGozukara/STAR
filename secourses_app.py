@@ -220,6 +220,15 @@ If CogVLM2 is available, you can use the button below to generate a caption auto
                 else :
                     upscale_button =gr .Button ("Upscale Video",variant ="primary",icon ="icons/upscale.png")
 
+                # Comparison Video Option
+                create_comparison_video_check =gr .Checkbox (
+                label ="Generate Comparison Video",
+                value =app_config .DEFAULT_CREATE_COMPARISON_VIDEO ,
+                info ="""Create a side-by-side or top-bottom comparison video showing original vs upscaled quality.
+The layout is automatically chosen based on aspect ratio to stay within 1920x1080 bounds when possible.
+This helps visualize the quality improvement from upscaling."""
+                )
+
             with gr .Accordion ("Prompt Settings",open =True ):
                  pos_prompt =gr .Textbox (
                  label ="Default Positive Prompt (Appended)",
@@ -566,7 +575,7 @@ The total combined prompt length is limited to 77 tokens."""
     enable_target_res_check_val ,target_h_num_val ,target_w_num_val ,target_res_mode_radio_val ,
     ffmpeg_preset_dropdown_val ,ffmpeg_quality_slider_val ,ffmpeg_use_gpu_check_val ,
     save_frames_checkbox_val ,save_metadata_checkbox_val ,save_chunks_checkbox_val ,
-
+    create_comparison_video_check_val ,
     enable_scene_split_check_val ,scene_split_mode_radio_val ,scene_min_scene_len_num_val ,scene_drop_short_check_val ,scene_merge_last_check_val ,
     scene_frame_skip_num_val ,scene_threshold_num_val ,scene_min_content_val_num_val ,scene_frame_window_num_val ,
     scene_copy_streams_check_val ,scene_use_mkvmerge_check_val ,scene_rate_factor_num_val ,scene_preset_dropdown_val ,scene_quiet_ffmpeg_check_val ,
@@ -697,6 +706,8 @@ The total combined prompt length is limited to 77 tokens."""
             scene_copy_streams=scene_copy_streams_check_val ,scene_use_mkvmerge=scene_use_mkvmerge_check_val ,scene_rate_factor=scene_rate_factor_num_val ,scene_preset=scene_preset_dropdown_val ,scene_quiet_ffmpeg=scene_quiet_ffmpeg_check_val ,
             scene_manual_split_type=scene_manual_split_type_radio_val ,scene_manual_split_value=scene_manual_split_value_num_val ,
 
+            create_comparison_video_enabled=create_comparison_video_check_val ,
+
             is_batch_mode=False ,batch_output_dir=None ,original_filename=None , # These are for direct calls, batch mode handles this differently
 
             enable_auto_caption_per_scene=(do_auto_caption_first_val and enable_scene_split_check_val and app_config .UTIL_COG_VLM_AVAILABLE ),
@@ -819,6 +830,7 @@ The total combined prompt length is limited to 77 tokens."""
     enable_target_res_check ,target_h_num ,target_w_num ,target_res_mode_radio ,
     ffmpeg_preset_dropdown ,ffmpeg_quality_slider ,ffmpeg_use_gpu_check ,
     save_frames_checkbox ,save_metadata_checkbox ,save_chunks_checkbox ,
+    create_comparison_video_check ,
     enable_scene_split_check ,scene_split_mode_radio ,scene_min_scene_len_num ,scene_drop_short_check ,scene_merge_last_check ,
     scene_frame_skip_num ,scene_threshold_num ,scene_min_content_val_num ,scene_frame_window_num ,
     scene_copy_streams_check ,scene_use_mkvmerge_check ,scene_rate_factor_num ,scene_preset_dropdown ,scene_quiet_ffmpeg_check ,
@@ -884,6 +896,7 @@ The total combined prompt length is limited to 77 tokens."""
     enable_target_res_check_val ,target_h_num_val ,target_w_num_val ,target_res_mode_radio_val ,
     ffmpeg_preset_dropdown_val ,ffmpeg_quality_slider_val ,ffmpeg_use_gpu_check_val ,
     save_frames_checkbox_val ,save_metadata_checkbox_val ,save_chunks_checkbox_val ,
+    create_comparison_video_check_val ,
 
     enable_scene_split_check_val ,scene_split_mode_radio_val ,scene_min_scene_len_num_val ,scene_drop_short_check_val ,scene_merge_last_check_val ,
     scene_frame_skip_num_val ,scene_threshold_num_val ,scene_min_content_val_num_val ,scene_frame_window_num_val ,
@@ -924,6 +937,7 @@ The total combined prompt length is limited to 77 tokens."""
         enable_target_res_check_val ,target_h_num_val ,target_w_num_val ,target_res_mode_radio_val ,
         ffmpeg_preset_dropdown_val ,ffmpeg_quality_slider_val ,ffmpeg_use_gpu_check_val ,
         save_frames_checkbox_val ,save_metadata_checkbox_val ,save_chunks_checkbox_val ,
+        create_comparison_video_check_val ,
 
         enable_scene_split_check_val ,scene_split_mode_radio_val ,scene_min_scene_len_num_val ,scene_drop_short_check_val ,scene_merge_last_check_val ,
         scene_frame_skip_num_val ,scene_threshold_num_val ,scene_min_content_val_num_val ,scene_frame_window_num_val ,
@@ -945,6 +959,7 @@ The total combined prompt length is limited to 77 tokens."""
     enable_target_res_check ,target_h_num ,target_w_num ,target_res_mode_radio ,
     ffmpeg_preset_dropdown ,ffmpeg_quality_slider ,ffmpeg_use_gpu_check ,
     save_frames_checkbox ,save_metadata_checkbox ,save_chunks_checkbox ,
+    create_comparison_video_check ,
     enable_scene_split_check ,scene_split_mode_radio ,scene_min_scene_len_num ,scene_drop_short_check ,scene_merge_last_check ,
     scene_frame_skip_num ,scene_threshold_num ,scene_min_content_val_num ,scene_frame_window_num ,
     scene_copy_streams_check ,scene_use_mkvmerge_check ,scene_rate_factor_num ,scene_preset_dropdown ,scene_quiet_ffmpeg_check ,

@@ -18,6 +18,7 @@ def process_batch_videos(
     enable_target_res_check_val, target_h_num_val, target_w_num_val, target_res_mode_radio_val,
     ffmpeg_preset_dropdown_val, ffmpeg_quality_slider_val, ffmpeg_use_gpu_check_val,
     save_frames_checkbox_val, save_metadata_checkbox_val, save_chunks_checkbox_val,
+    create_comparison_video_check_val,
 
     enable_scene_split_check_val, scene_split_mode_radio_val, scene_min_scene_len_num_val, scene_drop_short_check_val, scene_merge_last_check_val,
     scene_frame_skip_num_val, scene_threshold_num_val, scene_min_content_val_num_val, scene_frame_window_num_val,
@@ -88,6 +89,8 @@ def process_batch_videos(
                     scene_frame_skip_num_val, scene_threshold_num_val, scene_min_content_val_num_val, scene_frame_window_num_val,
                     scene_copy_streams_check_val, scene_use_mkvmerge_check_val, scene_rate_factor_num_val, scene_preset_dropdown_val, scene_quiet_ffmpeg_check_val,
                     scene_manual_split_type_radio_val, scene_manual_split_value_num_val,
+
+                    create_comparison_video_enabled=create_comparison_video_check_val,
 
                     is_batch_mode=True, batch_output_dir=batch_output_folder_val, original_filename=video_file,
 

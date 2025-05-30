@@ -93,6 +93,9 @@ DEFAULT_SAVE_FRAMES = True
 DEFAULT_SAVE_METADATA = True
 DEFAULT_SAVE_CHUNKS = True
 
+# Comparison Video
+DEFAULT_CREATE_COMPARISON_VIDEO = True
+
 # --- Initialization functions ---
 def initialize_paths_and_prompts(base_path_from_app, outputs_folder_from_args, star_cfg_from_app):
     global APP_BASE_PATH, DEFAULT_OUTPUT_DIR, COG_VLM_MODEL_PATH, LIGHT_DEG_MODEL_PATH, HEAVY_DEG_MODEL_PATH
@@ -148,6 +151,7 @@ __all__ = [
     'DEFAULT_COGVLM_QUANT_DISPLAY_FP16', 'DEFAULT_COGVLM_QUANT_DISPLAY_INT4', 'DEFAULT_COGVLM_UNLOAD_AFTER_USE',
     'DEFAULT_AUTO_CAPTION_THEN_UPSCALE',
     'DEFAULT_SAVE_FRAMES', 'DEFAULT_SAVE_METADATA', 'DEFAULT_SAVE_CHUNKS',
+    'DEFAULT_CREATE_COMPARISON_VIDEO',
     # Functions
     'initialize_paths_and_prompts', 'get_cogvlm_quant_choices_map', 'get_default_cogvlm_quant_display'
 ] 

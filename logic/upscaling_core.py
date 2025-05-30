@@ -34,6 +34,7 @@ from .upscaling_utils import calculate_upscale_params as util_calculate_upscale_
 from .gpu_utils import get_gpu_device as util_get_gpu_device
 from .nvenc_utils import is_resolution_too_small_for_nvenc
 from .scene_processing_core import process_single_scene
+from .comparison_video import create_comparison_video, get_comparison_output_path
 
 
 def run_upscale (
@@ -50,6 +51,8 @@ def run_upscale (
     scene_frame_skip ,scene_threshold ,scene_min_content_val ,scene_frame_window ,
     scene_copy_streams ,scene_use_mkvmerge ,scene_rate_factor ,scene_preset ,scene_quiet_ffmpeg ,
     scene_manual_split_type ,scene_manual_split_value ,
+
+    create_comparison_video_enabled ,
 
     is_batch_mode =False ,batch_output_dir =None ,original_filename =None ,
 
@@ -985,6 +988,44 @@ def run_upscale (
         status_log .append (final_save_msg )
         logger .info (final_save_msg )
         yield final_output_path ,"\n".join (status_log ),last_chunk_video_path ,"Finalizing..."
+
+        # Create comparison video if enabled
+        if create_comparison_video_enabled:
+            comparison_video_start_time = time.time()
+            comparison_output_path = get_comparison_output_path(final_output_path)
+            
+            progress(current_overall_progress, desc="Creating comparison video...")
+            comparison_status_msg = "Creating comparison video..."
+            status_log.append(comparison_status_msg)
+            logger.info(comparison_status_msg)
+            yield final_output_path, "\n".join(status_log), last_chunk_video_path, comparison_status_msg
+            
+            try:
+                comparison_success = create_comparison_video(
+                    original_video_path=input_video_path,
+                    upscaled_video_path=final_output_path,
+                    output_path=comparison_output_path,
+                    ffmpeg_preset=ffmpeg_preset,
+                    ffmpeg_quality=ffmpeg_quality_value,
+                    ffmpeg_use_gpu=ffmpeg_use_gpu,
+                    logger=logger
+                )
+                
+                if comparison_success:
+                    comparison_done_msg = f"Comparison video created: {comparison_output_path}. Time: {format_time(time.time() - comparison_video_start_time)}"
+                    status_log.append(comparison_done_msg)
+                    logger.info(comparison_done_msg)
+                else:
+                    comparison_error_msg = f"Comparison video creation failed. Time: {format_time(time.time() - comparison_video_start_time)}"
+                    status_log.append(comparison_error_msg)
+                    logger.warning(comparison_error_msg)
+                    
+            except Exception as e_comparison:
+                comparison_error_msg = f"Error creating comparison video: {e_comparison}. Time: {format_time(time.time() - comparison_video_start_time)}"
+                status_log.append(comparison_error_msg)
+                logger.error(comparison_error_msg)
+            
+            yield final_output_path, "\n".join(status_log), last_chunk_video_path, "Comparison video complete."
 
         if save_metadata :
             initial_progress_metadata =current_overall_progress
