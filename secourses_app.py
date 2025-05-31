@@ -1,4 +1,3 @@
-
 import gradio as gr
 import os
 import platform
@@ -167,7 +166,7 @@ progress =gr .Progress (track_tqdm =True )
     )
 
 with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
-    gr .Markdown ("# Ultimate SECourses STAR Video Upscaler V10")
+    gr .Markdown ("# Ultimate SECourses STAR Video Upscaler V48")
 
     with gr.Tabs():
         with gr.Tab("Main"):
@@ -226,31 +225,7 @@ The total combined prompt length is limited to 77 tokens."""
                             info="Guides the model *away* from undesired aspects (e.g., bad quality, artifacts, specific styles). This does NOT count towards the 77 token limit for positive guidance."
                         )
 
-                    if app_config.UTIL_COG_VLM_AVAILABLE:
-                        with gr.Accordion("Auto-Captioning Settings (CogVLM2)", open=True):
-                            cogvlm_quant_choices_map = app_config.get_cogvlm_quant_choices_map(torch.cuda.is_available(), app_config.UTIL_BITSANDBYTES_AVAILABLE)
-                            cogvlm_quant_radio_choices_display = list(cogvlm_quant_choices_map.values())
-                            default_quant_display_val = app_config.get_default_cogvlm_quant_display(cogvlm_quant_choices_map)
 
-                            with gr.Row():
-                                cogvlm_quant_radio = gr.Radio(
-                                    label="CogVLM2 Quantization",
-                                    choices=cogvlm_quant_radio_choices_display,
-                                    value=default_quant_display_val,
-                                    info="Quantization for the CogVLM2 captioning model (uses less VRAM). INT4/8 require CUDA & bitsandbytes.",
-                                    interactive=True if len(cogvlm_quant_radio_choices_display) > 1 else False
-                                )
-                                cogvlm_unload_radio = gr.Radio(
-                                    label="CogVLM2 After-Use",
-                                    choices=['full', 'cpu'], value=app_config.DEFAULT_COGVLM_UNLOAD_AFTER_USE,
-                                    info="""Memory management after captioning.
-'full': Unload model completely from VRAM/RAM (frees most memory).
-'cpu': Move model to RAM (faster next time, uses RAM, not for quantized models)."""
-                                )
-                    else:
-                        gr.Markdown("_(Auto-captioning disabled as CogVLM2 components are not fully available.)_")
-                    
-                    split_only_button = gr.Button("Split Video Only (No Upscaling)", variant="secondary")
 
 
                 with gr.Column(scale=1):
@@ -305,6 +280,7 @@ The total combined prompt length is limited to 77 tokens."""
 - Speed Impact: Faster (Lower value = Faster)."""
                             )
                 with gr.Column(scale=1):
+                    split_only_button = gr.Button("Split Video Only (No Upscaling)", variant="secondary")
                     with gr.Accordion("Scene Splitting", open=True):
                         enable_scene_split_check = gr.Checkbox(
                             label="Enable Scene Splitting",
@@ -349,164 +325,195 @@ The total combined prompt length is limited to 77 tokens."""
                             scene_quiet_ffmpeg_check = gr.Checkbox(label="Quiet FFmpeg", value=app_config.DEFAULT_SCENE_QUIET_FFMPEG, info="Suppress ffmpeg output during scene splitting.")
         
         with gr.Tab("Core Settings"):
-            with gr.Group():
-                gr.Markdown("### Core Upscaling Settings")
-                model_selector = gr.Dropdown(
-                    label="STAR Model",
-                    choices=["Light Degradation", "Heavy Degradation"],
-                    value=app_config.DEFAULT_MODEL_CHOICE,
-                    info="""Choose the model based on input video quality.
+            with gr.Row():
+                with gr.Column(scale=1):
+                    with gr.Group():
+                        gr.Markdown("### Core Upscaling Settings")
+                        model_selector = gr.Dropdown(
+                            label="STAR Model",
+                            choices=["Light Degradation", "Heavy Degradation"],
+                            value=app_config.DEFAULT_MODEL_CHOICE,
+                            info="""Choose the model based on input video quality.
 'Light Degradation': Better for relatively clean inputs (e.g., downloaded web videos).
 'Heavy Degradation': Better for inputs with significant compression artifacts, noise, or blur."""
-                )
-                upscale_factor_slider = gr.Slider(
-                    label="Upscale Factor (if Target Res disabled)",
-                    minimum=1.0, maximum=8.0, value=app_config.DEFAULT_UPSCALE_FACTOR, step=0.1,
-                    info="Simple multiplication factor for output resolution if 'Enable Max Target Resolution' is OFF. E.g., 4.0 means 4x height and 4x width."
-                )
-                cfg_slider = gr.Slider(
-                    label="Guidance Scale (CFG)",
-                    minimum=1.0, maximum=15.0, value=app_config.DEFAULT_CFG_SCALE, step=0.5,
-                    info="Controls how strongly the model follows your combined text prompt. Higher values mean stricter adherence, lower values allow more creativity. Typical values: 5.0-10.0."
-                )
-                with gr.Row():
-                    solver_mode_radio = gr.Radio(
-                        label="Solver Mode",
-                        choices=['fast', 'normal'], value=app_config.DEFAULT_SOLVER_MODE,
-                        info="""Diffusion solver type.
+                        )
+                        upscale_factor_slider = gr.Slider(
+                            label="Upscale Factor (if Target Res disabled)",
+                            minimum=1.0, maximum=8.0, value=app_config.DEFAULT_UPSCALE_FACTOR, step=0.1,
+                            info="Simple multiplication factor for output resolution if 'Enable Max Target Resolution' is OFF. E.g., 4.0 means 4x height and 4x width."
+                        )
+                        cfg_slider = gr.Slider(
+                            label="Guidance Scale (CFG)",
+                            minimum=1.0, maximum=15.0, value=app_config.DEFAULT_CFG_SCALE, step=0.5,
+                            info="Controls how strongly the model follows your combined text prompt. Higher values mean stricter adherence, lower values allow more creativity. Typical values: 5.0-10.0."
+                        )
+                        with gr.Row():
+                            solver_mode_radio = gr.Radio(
+                                label="Solver Mode",
+                                choices=['fast', 'normal'], value=app_config.DEFAULT_SOLVER_MODE,
+                                info="""Diffusion solver type.
 'fast': Fewer steps (default ~15), much faster, good quality usually.
 'normal': More steps (default ~50), slower, potentially slightly better detail/coherence."""
-                    )
-                    steps_slider = gr.Slider(
-                        label="Diffusion Steps",
-                        minimum=5, maximum=100, value=app_config.DEFAULT_DIFFUSION_STEPS_FAST, step=1,
-                        info="Number of denoising steps. 'Fast' mode uses a fixed ~15 steps. 'Normal' mode uses the value set here.",
-                        interactive=False
-                    )
-                color_fix_dropdown = gr.Dropdown(
-                    label="Color Correction",
-                    choices=['AdaIN', 'Wavelet', 'None'], value=app_config.DEFAULT_COLOR_FIX_METHOD,
-                    info="""Attempts to match the color tone of the output to the input video. Helps prevent color shifts.
+                            )
+                            steps_slider = gr.Slider(
+                                label="Diffusion Steps",
+                                minimum=5, maximum=100, value=app_config.DEFAULT_DIFFUSION_STEPS_FAST, step=1,
+                                info="Number of denoising steps. 'Fast' mode uses a fixed ~15 steps. 'Normal' mode uses the value set here.",
+                                interactive=False
+                            )
+                        color_fix_dropdown = gr.Dropdown(
+                            label="Color Correction",
+                            choices=['AdaIN', 'Wavelet', 'None'], value=app_config.DEFAULT_COLOR_FIX_METHOD,
+                            info="""Attempts to match the color tone of the output to the input video. Helps prevent color shifts.
 'AdaIN' / 'Wavelet': Different algorithms for color matching. AdaIN is often a good default.
 'None': Disables color correction."""
-                )
-            
-            with gr.Accordion("Performance & VRAM Optimization", open=True):
-                max_chunk_len_slider = gr.Slider(
-                    label="Max Frames per Chunk (VRAM)",
-                    minimum=4, maximum=96, value=app_config.DEFAULT_MAX_CHUNK_LEN, step=4,
-                    info="""IMPORTANT for VRAM. This is the standard way the application manages VRAM. It divides the entire sequence of video frames into sequential, non-overlapping chunks.
+                        )
+                with gr.Column(scale=1):
+                    if app_config.UTIL_COG_VLM_AVAILABLE:
+                        with gr.Accordion("Auto-Captioning Settings (CogVLM2)", open=True):
+                            cogvlm_quant_choices_map = app_config.get_cogvlm_quant_choices_map(torch.cuda.is_available(), app_config.UTIL_BITSANDBYTES_AVAILABLE)
+                            cogvlm_quant_radio_choices_display = list(cogvlm_quant_choices_map.values())
+                            default_quant_display_val = app_config.get_default_cogvlm_quant_display(cogvlm_quant_choices_map)
+
+                            with gr.Row():
+                                cogvlm_quant_radio = gr.Radio(
+                                    label="CogVLM2 Quantization",
+                                    choices=cogvlm_quant_radio_choices_display,
+                                    value=default_quant_display_val,
+                                    info="Quantization for the CogVLM2 captioning model (uses less VRAM). INT4/8 require CUDA & bitsandbytes.",
+                                    interactive=True if len(cogvlm_quant_radio_choices_display) > 1 else False
+                                )
+                                cogvlm_unload_radio = gr.Radio(
+                                    label="CogVLM2 After-Use",
+                                    choices=['full', 'cpu'], value=app_config.DEFAULT_COGVLM_UNLOAD_AFTER_USE,
+                                    info="""Memory management after captioning.
+'full': Unload model completely from VRAM/RAM (frees most memory).
+'cpu': Move model to RAM (faster next time, uses RAM, not for quantized models)."""
+                                )
+                    else:
+                        gr.Markdown("_(Auto-captioning disabled as CogVLM2 components are not fully available.)_")
+                    
+                    with gr.Accordion("Performance & VRAM Optimization", open=True):
+                        max_chunk_len_slider = gr.Slider(
+                            label="Max Frames per Chunk (VRAM)",
+                            minimum=4, maximum=96, value=app_config.DEFAULT_MAX_CHUNK_LEN, step=4,
+                            info="""IMPORTANT for VRAM. This is the standard way the application manages VRAM. It divides the entire sequence of video frames into sequential, non-overlapping chunks.
 - Mechanism: The STAR model processes one complete chunk (of this many frames) at a time.
 - VRAM Impact: High Reduction (Lower value = Less VRAM).
 - Bigger Chunk + Bigger VRAM = Faster Processing and Better Quality 
 - Quality Impact: Can reduce Temporal Consistency (flicker/motion issues) between chunks if too low, as the model doesn't have context across chunk boundaries. Keep as high as VRAM allows.
 - Speed Impact: Slower (Lower value = Slower, as more chunks are processed)."""
-                )
-                vae_chunk_slider = gr.Slider(
-                    label="VAE Decode Chunk (VRAM)",
-                    minimum=1, maximum=16, value=app_config.DEFAULT_VAE_CHUNK, step=1,
-                    info="""Controls max latent frames decoded back to pixels by VAE simultaneously.
+                        )
+                        vae_chunk_slider = gr.Slider(
+                            label="VAE Decode Chunk (VRAM)",
+                            minimum=1, maximum=16, value=app_config.DEFAULT_VAE_CHUNK, step=1,
+                            info="""Controls max latent frames decoded back to pixels by VAE simultaneously.
 - VRAM Impact: High Reduction (Lower value = Less VRAM during decode stage).
 - Quality Impact: Minimal / Negligible. Safe to lower.
 - Speed Impact: Slower (Lower value = Slower decoding)."""
-                )
+                        )
 
-            with gr.Accordion("Sliding Window - Overlapped Processing Thus Better Quality but Slower", open=True):
-                enable_sliding_window_check = gr.Checkbox(
-                    label="Enable Sliding Window",
-                    value=app_config.DEFAULT_ENABLE_SLIDING_WINDOW,
-                    info="""Processes the video in overlapping temporal chunks (windows). Use if you aim maximum quality and have better consistency between chunks.
+            with gr.Row():
+                with gr.Column(scale=1):
+                    with gr.Accordion("Sliding Window - Overlapped Processing Thus Better Quality but Slower", open=True):
+                        enable_sliding_window_check = gr.Checkbox(
+                            label="Enable Sliding Window",
+                            value=app_config.DEFAULT_ENABLE_SLIDING_WINDOW,
+                            info="""Processes the video in overlapping temporal chunks (windows). Use if you aim maximum quality and have better consistency between chunks.
 - Mechanism: Takes a 'Window Size' of frames, processes it, saves results from the central part, then slides the window forward by 'Window Step', processing overlapping frames.
 - Quality Impact: Can improve quality of processing if you use higher Windows and overlapped frame count
 - VRAM Impact : To lower VRAM you can set like Window Size 8 and Window Step Size 4
 - Speed Impact: Slower (due to processing overlapping frames multiple times). When enabled, 'Window Size' dictates chunk size instead of 'Max Frames per Chunk'."""
-                )
-                with gr.Row():
-                    window_size_num = gr.Slider(
-                        label="Window Size (frames)",
-                        value=app_config.DEFAULT_WINDOW_SIZE, minimum=2, maximum=256, step=4,
-                        info="Number of frames in each temporal window. Acts like 'Max Frames per Chunk' but applied as a sliding window. Lower value = less VRAM, less temporal context."
-                    )
-                    window_step_num = gr.Slider(
-                        label="Window Step (frames)",
-                        value=app_config.DEFAULT_WINDOW_STEP, minimum=1, maximum=128, step=1,
-                        info="How many frames to advance for the next window. (Window Size - Window Step) = Overlap. Smaller step = more overlap = better consistency but slower. Recommended: Step = Size / 2."
-                    )
+                        )
+                        with gr.Row():
+                            window_size_num = gr.Slider(
+                                label="Window Size (frames)",
+                                value=app_config.DEFAULT_WINDOW_SIZE, minimum=2, maximum=256, step=4,
+                                info="Number of frames in each temporal window. Acts like 'Max Frames per Chunk' but applied as a sliding window. Lower value = less VRAM, less temporal context."
+                            )
+                            window_step_num = gr.Slider(
+                                label="Window Step (frames)",
+                                value=app_config.DEFAULT_WINDOW_STEP, minimum=1, maximum=128, step=1,
+                                info="How many frames to advance for the next window. (Window Size - Window Step) = Overlap. Smaller step = more overlap = better consistency but slower. Recommended: Step = Size / 2."
+                            )
 
-            with gr.Accordion("Advanced: Tiling (Very High Res / Low VRAM)", open=True):
-                enable_tiling_check = gr.Checkbox(
-                    label="Enable Tiled Upscaling",
-                    value=app_config.DEFAULT_ENABLE_TILING,
-                    info="""Processes each frame in small spatial patches (tiles). Use ONLY if necessary for extreme resolutions or very low VRAM.
+                with gr.Column(scale=1):
+                    with gr.Accordion("Advanced: Tiling (Very High Res / Low VRAM)", open=True):
+                        enable_tiling_check = gr.Checkbox(
+                            label="Enable Tiled Upscaling",
+                            value=app_config.DEFAULT_ENABLE_TILING,
+                            info="""Processes each frame in small spatial patches (tiles). Use ONLY if necessary for extreme resolutions or very low VRAM.
 - VRAM Impact: Very High Reduction.
 - Quality Impact: High risk of tile seams/artifacts. Can harm global coherence and severely reduce temporal consistency.
 - Speed Impact: Extremely Slow."""
-                )
-                with gr.Row():
-                    tile_size_num = gr.Number(
-                        label="Tile Size (px, input res)",
-                        value=app_config.DEFAULT_TILE_SIZE, minimum=64, step=32,
-                        info="Size of the square patches (in input resolution pixels) to process. Smaller = less VRAM per tile but more tiles = slower."
-                    )
-                    tile_overlap_num = gr.Number(
-                        label="Tile Overlap (px, input res)",
-                        value=app_config.DEFAULT_TILE_OVERLAP, minimum=0, step=16,
-                        info="How much the tiles overlap (in input resolution pixels). Higher overlap helps reduce seams but increases processing time. Recommend 1/4 to 1/2 of Tile Size."
-                    )
+                        )
+                        with gr.Row():
+                            tile_size_num = gr.Number(
+                                label="Tile Size (px, input res)",
+                                value=app_config.DEFAULT_TILE_SIZE, minimum=64, step=32,
+                                info="Size of the square patches (in input resolution pixels) to process. Smaller = less VRAM per tile but more tiles = slower."
+                            )
+                            tile_overlap_num = gr.Number(
+                                label="Tile Overlap (px, input res)",
+                                value=app_config.DEFAULT_TILE_OVERLAP, minimum=0, step=16,
+                                info="How much the tiles overlap (in input resolution pixels). Higher overlap helps reduce seams but increases processing time. Recommend 1/4 to 1/2 of Tile Size."
+                            )
 
         with gr.Tab("Output & Comparison"):
-            with gr.Accordion("FFmpeg Encoding Settings", open=True):
-                ffmpeg_use_gpu_check = gr.Checkbox(
-                    label="Use NVIDIA GPU for FFmpeg (h264_nvenc)",
-                    value=app_config.DEFAULT_FFMPEG_USE_GPU,
-                    info="If checked, uses NVIDIA's NVENC for FFmpeg video encoding (downscaling and final video creation). Requires NVIDIA GPU and correctly configured FFmpeg with NVENC support."
-                )
-                with gr.Row():
-                    ffmpeg_preset_dropdown = gr.Dropdown(
-                        label="FFmpeg Preset",
-                        choices=['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow'],
-                        value=app_config.DEFAULT_FFMPEG_PRESET,
-                        info="Controls encoding speed vs. compression efficiency. 'ultrafast' is fastest with lowest quality/compression, 'veryslow' is slowest with highest quality/compression. Note: NVENC presets behave differently (e.g. p1-p7 or specific names like 'slow', 'medium', 'fast')."
-                    )
-                    ffmpeg_quality_slider = gr.Slider(
-                        label="FFmpeg Quality (CRF for libx264 / CQ for NVENC)",
-                        minimum=0, maximum=51, value=app_config.DEFAULT_FFMPEG_QUALITY_CPU, step=1,
-                        info="For libx264 (CPU): Constant Rate Factor (CRF). Lower values mean higher quality (0 is lossless, 23 is default). For h264_nvenc (GPU): Constrained Quality (CQ). Lower values generally mean better quality. Typical range for NVENC CQ is 18-28."
-                    )
-            
-            with gr.Accordion("Output Options", open=True):
-                create_comparison_video_check = gr.Checkbox(
-                    label="Generate Comparison Video",
-                    value=app_config.DEFAULT_CREATE_COMPARISON_VIDEO,
-                    info="""Create a side-by-side or top-bottom comparison video showing original vs upscaled quality.
+            with gr.Row():
+                with gr.Column(scale=1):
+                    with gr.Accordion("FFmpeg Encoding Settings", open=True):
+                        ffmpeg_use_gpu_check = gr.Checkbox(
+                            label="Use NVIDIA GPU for FFmpeg (h264_nvenc)",
+                            value=app_config.DEFAULT_FFMPEG_USE_GPU,
+                            info="If checked, uses NVIDIA's NVENC for FFmpeg video encoding (downscaling and final video creation). Requires NVIDIA GPU and correctly configured FFmpeg with NVENC support."
+                        )
+                        with gr.Row():
+                            ffmpeg_preset_dropdown = gr.Dropdown(
+                                label="FFmpeg Preset",
+                                choices=['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow'],
+                                value=app_config.DEFAULT_FFMPEG_PRESET,
+                                info="Controls encoding speed vs. compression efficiency. 'ultrafast' is fastest with lowest quality/compression, 'veryslow' is slowest with highest quality/compression. Note: NVENC presets behave differently (e.g. p1-p7 or specific names like 'slow', 'medium', 'fast')."
+                            )
+                            ffmpeg_quality_slider = gr.Slider(
+                                label="FFmpeg Quality (CRF for libx264 / CQ for NVENC)",
+                                minimum=0, maximum=51, value=app_config.DEFAULT_FFMPEG_QUALITY_CPU, step=1,
+                                info="For libx264 (CPU): Constant Rate Factor (CRF). Lower values mean higher quality (0 is lossless, 23 is default). For h264_nvenc (GPU): Constrained Quality (CQ). Lower values generally mean better quality. Typical range for NVENC CQ is 18-28."
+                            )
+                
+                with gr.Column(scale=1):
+                    with gr.Accordion("Output Options", open=True):
+                        create_comparison_video_check = gr.Checkbox(
+                            label="Generate Comparison Video",
+                            value=app_config.DEFAULT_CREATE_COMPARISON_VIDEO,
+                            info="""Create a side-by-side or top-bottom comparison video showing original vs upscaled quality.
 The layout is automatically chosen based on aspect ratio to stay within 1920x1080 bounds when possible.
 This helps visualize the quality improvement from upscaling."""
-                )
-                save_frames_checkbox = gr.Checkbox(label="Save Input and Processed Frames", value=app_config.DEFAULT_SAVE_FRAMES, info="If checked, saves the extracted input frames and the upscaled output frames into a subfolder named after the output video (e.g., '0001/input_frames' and '0001/processed_frames').")
-                save_metadata_checkbox = gr.Checkbox(label="Save Processing Metadata", value=app_config.DEFAULT_SAVE_METADATA, info="If checked, saves a .txt file (e.g., '0001.txt') in the main output folder, containing all processing parameters and total processing time.")
-                save_chunks_checkbox = gr.Checkbox(label="Save Processed Chunks", value=app_config.DEFAULT_SAVE_CHUNKS, info="If checked, saves each processed chunk as a video file in a 'chunks' subfolder (e.g., '0001/chunks/chunk_0001.mp4'). Uses the same FFmpeg settings as the final video.")
-                open_output_folder_button = gr.Button("Open Output Folder")
+                        )
+                        save_frames_checkbox = gr.Checkbox(label="Save Input and Processed Frames", value=app_config.DEFAULT_SAVE_FRAMES, info="If checked, saves the extracted input frames and the upscaled output frames into a subfolder named after the output video (e.g., '0001/input_frames' and '0001/processed_frames').")
+                        save_metadata_checkbox = gr.Checkbox(label="Save Processing Metadata", value=app_config.DEFAULT_SAVE_METADATA, info="If checked, saves a .txt file (e.g., '0001.txt') in the main output folder, containing all processing parameters and total processing time.")
+                        save_chunks_checkbox = gr.Checkbox(label="Save Processed Chunks", value=app_config.DEFAULT_SAVE_CHUNKS, info="If checked, saves each processed chunk as a video file in a 'chunks' subfolder (e.g., '0001/chunks/chunk_0001.mp4'). Uses the same FFmpeg settings as the final video.")
+                        open_output_folder_button = gr.Button("Open Output Folder")
+
+                    with gr.Accordion("Advanced: Seeding (Reproducibility)", open=True):
+                        with gr.Row():
+                            seed_num = gr.Number(
+                                label="Seed",
+                                value=app_config.DEFAULT_SEED,
+                                minimum=-1,
+                                maximum=2 ** 32 - 1,
+                                step=1,
+                                info="Seed for random number generation. Used for reproducibility. Set to -1 or check 'Random Seed' for a random seed. Value is ignored if 'Random Seed' is checked.",
+                                interactive=not app_config.DEFAULT_RANDOM_SEED
+                            )
+                            random_seed_check = gr.Checkbox(
+                                label="Random Seed",
+                                value=app_config.DEFAULT_RANDOM_SEED,
+                                info="If checked, a random seed will be generated and used, ignoring the 'Seed' value."
+                            )
 
             with gr.Accordion("Comparison Video To See Difference", open=True):
-                with gr.Row(): # Original had comparison_video in a row, kept for consistency if needed
-                    comparison_video = gr.Video(label="Comparison Video", interactive=False, height=512)
-
-            with gr.Accordion("Advanced: Seeding (Reproducibility)", open=True):
-                with gr.Row():
-                    seed_num = gr.Number(
-                        label="Seed",
-                        value=app_config.DEFAULT_SEED,
-                        minimum=-1,
-                        maximum=2 ** 32 - 1,
-                        step=1,
-                        info="Seed for random number generation. Used for reproducibility. Set to -1 or check 'Random Seed' for a random seed. Value is ignored if 'Random Seed' is checked.",
-                        interactive=not app_config.DEFAULT_RANDOM_SEED
-                    )
-                    random_seed_check = gr.Checkbox(
-                        label="Random Seed",
-                        value=app_config.DEFAULT_RANDOM_SEED,
-                        info="If checked, a random seed will be generated and used, ignoring the 'Seed' value."
-                    )
+                comparison_video = gr.Video(label="Comparison Video", interactive=False, height=512)
 
         with gr.Tab("Batch Processing"):
             with gr.Accordion("Batch Processing", open=True):
