@@ -35,6 +35,7 @@ from .gpu_utils import get_gpu_device as util_get_gpu_device
 from .nvenc_utils import is_resolution_too_small_for_nvenc
 from .scene_processing_core import process_single_scene
 from .comparison_video import create_comparison_video, get_comparison_output_path
+from .rife_interpolation import apply_rife_to_chunks, apply_rife_to_scenes
 
 
 def run_upscale (
@@ -53,6 +54,11 @@ def run_upscale (
     scene_manual_split_type ,scene_manual_split_value ,
 
     create_comparison_video_enabled ,
+
+    # RIFE interpolation parameters
+    enable_rife_interpolation =False ,rife_multiplier =2 ,rife_fp16 =True ,rife_uhd =False ,rife_scale =1.0 ,
+    rife_skip_static =False ,rife_enable_fps_limit =False ,rife_max_fps_limit =60 ,
+    rife_apply_to_chunks =True ,rife_apply_to_scenes =True ,rife_keep_original =True ,rife_overwrite_original =False ,
 
     is_batch_mode =False ,batch_output_dir =None ,original_filename =None ,
 
@@ -106,6 +112,13 @@ def run_upscale (
     "scene_manual_split_type":scene_manual_split_type ,"scene_manual_split_value":scene_manual_split_value ,
     "is_batch_mode":is_batch_mode ,"batch_output_dir":batch_output_dir ,
     "current_seed": current_seed, # Added current_seed
+    
+    # RIFE interpolation metadata
+    "rife_enabled":enable_rife_interpolation ,"rife_multiplier":rife_multiplier ,"rife_fp16":rife_fp16 ,
+    "rife_uhd":rife_uhd ,"rife_scale":rife_scale ,"rife_skip_static":rife_skip_static ,
+    "rife_fps_limit_enabled":rife_enable_fps_limit ,"rife_fps_limit":rife_max_fps_limit ,
+    "rife_apply_to_chunks":rife_apply_to_chunks ,"rife_apply_to_scenes":rife_apply_to_scenes ,
+    "rife_keep_original":rife_keep_original ,"rife_overwrite_original":rife_overwrite_original ,
 
     "final_output_path":None ,"orig_w":None ,"orig_h":None ,
     "input_fps":None ,"upscale_factor":None ,"final_w":None ,"final_h":None ,
@@ -474,6 +487,14 @@ def run_upscale (
                         chunks_permanent_save_path=frames_output_subfolder, # This was scene_output_dir, should be specific path for chunks
                         ffmpeg_preset=ffmpeg_preset, ffmpeg_quality_value=ffmpeg_quality_value, ffmpeg_use_gpu=ffmpeg_use_gpu,
                         save_metadata=save_metadata, metadata_params_base=scene_metadata_base_params,
+                        
+                        # RIFE interpolation parameters for scenes and chunks
+                        enable_rife_interpolation=enable_rife_interpolation, rife_multiplier=rife_multiplier, rife_fp16=rife_fp16, 
+                        rife_uhd=rife_uhd, rife_scale=rife_scale, rife_skip_static=rife_skip_static, 
+                        rife_enable_fps_limit=rife_enable_fps_limit, rife_max_fps_limit=rife_max_fps_limit,
+                        rife_apply_to_scenes=rife_apply_to_scenes, rife_apply_to_chunks=rife_apply_to_chunks, 
+                        rife_keep_original=rife_keep_original, current_seed=current_seed,
+                        
                         util_extract_frames=util_extract_frames, util_auto_caption=util_auto_caption, 
                         util_create_video_from_frames=util_create_video_from_frames, 
                         logger=logger,
@@ -662,9 +683,53 @@ def run_upscale (
                         util_create_video_from_frames(
                             chunk_temp_assembly_dir_direct, chunk_video_path_direct, input_fps_val,
                             ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger)
-                        last_chunk_video_path = chunk_video_path_direct
+                        
+                        # Apply RIFE interpolation to direct upscale chunk if enabled
+                        final_chunk_video_path_direct = chunk_video_path_direct  # Default to original chunk
+                        if enable_rife_interpolation and rife_apply_to_chunks and os.path.exists(chunk_video_path_direct):
+                            try:
+                                # Import RIFE function locally to avoid circular imports
+                                from .rife_interpolation import increase_fps_single
+                                
+                                # Generate RIFE chunk output path
+                                chunk_video_dir_direct = os.path.dirname(chunk_video_path_direct)
+                                chunk_video_name_direct = os.path.splitext(os.path.basename(chunk_video_path_direct))[0]
+                                rife_chunk_video_path_direct = os.path.join(chunk_video_dir_direct, f"{chunk_video_name_direct}_{rife_multiplier}x_FPS.mp4")
+                                
+                                # Apply RIFE interpolation to chunk
+                                rife_result_direct, rife_message_direct = increase_fps_single(
+                                    video_path=chunk_video_path_direct,
+                                    output_path=rife_chunk_video_path_direct,
+                                    multiplier=rife_multiplier,
+                                    fp16=rife_fp16,
+                                    uhd=rife_uhd,
+                                    scale=rife_scale,
+                                    skip_static=rife_skip_static,
+                                    enable_fps_limit=rife_enable_fps_limit,
+                                    max_fps_limit=rife_max_fps_limit,
+                                    ffmpeg_preset=ffmpeg_preset,
+                                    ffmpeg_quality_value=ffmpeg_quality_value,
+                                    ffmpeg_use_gpu=ffmpeg_use_gpu,
+                                    overwrite_original=False,  # Don't overwrite chunks, keep both
+                                    keep_original=rife_keep_original,
+                                    output_dir=chunk_video_dir_direct,
+                                    seed=current_seed,
+                                    logger=logger,
+                                    progress=None  # Don't pass progress to avoid conflicts
+                                )
+                                
+                                if rife_result_direct:
+                                    final_chunk_video_path_direct = rife_result_direct  # Use RIFE version as final chunk
+                                    logger.info(f"Direct Upscale Chunk {chunk_idx_direct+1}: RIFE interpolation completed")
+                                else:
+                                    logger.warning(f"Direct Upscale Chunk {chunk_idx_direct+1}: RIFE interpolation failed: {rife_message_direct}")
+                                    
+                            except Exception as e_chunk_rife_direct:
+                                logger.error(f"Direct Upscale Chunk {chunk_idx_direct+1}: Error during RIFE interpolation: {e_chunk_rife_direct}")
+                        
+                        last_chunk_video_path = final_chunk_video_path_direct
                         last_chunk_status = f"Direct Upscale Chunk {chunk_idx_direct + 1}/{num_chunks_direct} (frames {start_idx_direct+1}-{end_idx_direct})"
-                        logger.info(f"Saved direct upscale chunk {chunk_idx_direct+1}/{num_chunks_direct} to: {chunk_video_path_direct}")
+                        logger.info(f"Saved direct upscale chunk {chunk_idx_direct+1}/{num_chunks_direct} to: {final_chunk_video_path_direct}")
                         temp_status_log_direct = status_log + [f"Processed: {last_chunk_status}"]
                         yield None, "\n".join(temp_status_log_direct), last_chunk_video_path, last_chunk_status, None
                     else:
@@ -760,6 +825,99 @@ def run_upscale (
         logger .info (final_save_msg )
         yield final_output_path ,"\n".join (status_log ),last_chunk_video_path ,"Finalizing...",None
 
+        # RIFE interpolation processing (if enabled)
+        rife_output_path = None
+        final_return_path = final_output_path  # Default to original output path
+        if enable_rife_interpolation and final_output_path and os.path.exists(final_output_path):
+            rife_start_time = time.time()
+            progress(current_overall_progress, desc="Applying RIFE interpolation...")
+            rife_status_msg = f"Applying RIFE {rife_multiplier}x interpolation to final video..."
+            status_log.append(rife_status_msg)
+            logger.info(rife_status_msg)
+            yield final_output_path, "\n".join(status_log), last_chunk_video_path, rife_status_msg, None
+            
+            try:
+                # Import RIFE function and file utilities locally to avoid circular imports
+                from .rife_interpolation import increase_fps_single
+                from .file_utils import cleanup_rife_temp_files, cleanup_backup_files
+                
+                # Generate RIFE output path
+                final_output_dir = os.path.dirname(final_output_path)
+                final_output_name = os.path.splitext(os.path.basename(final_output_path))[0]
+                rife_output_path = os.path.join(final_output_dir, f"{final_output_name}_{rife_multiplier}x_FPS.mp4")
+                
+                # Pre-processing cleanup and validation
+                cleanup_success, cleanup_msg = cleanup_rife_temp_files(final_output_dir, logger)
+                if logger:
+                    logger.info(f"Pre-RIFE cleanup: {cleanup_msg}")
+                
+                # Apply RIFE interpolation
+                rife_result, rife_message = increase_fps_single(
+                    video_path=final_output_path,
+                    output_path=rife_output_path,
+                    multiplier=rife_multiplier,
+                    fp16=rife_fp16,
+                    uhd=rife_uhd,
+                    scale=rife_scale,
+                    skip_static=rife_skip_static,
+                    enable_fps_limit=rife_enable_fps_limit,
+                    max_fps_limit=rife_max_fps_limit,
+                    ffmpeg_preset=ffmpeg_preset,
+                    ffmpeg_quality_value=ffmpeg_quality_value,
+                    ffmpeg_use_gpu=ffmpeg_use_gpu,
+                    overwrite_original=rife_overwrite_original,
+                    keep_original=rife_keep_original,
+                    output_dir=final_output_dir,
+                    seed=current_seed,
+                    logger=logger,
+                    progress=None  # Don't pass progress to avoid conflicts
+                )
+                
+                if rife_result:
+                    rife_processing_time = time.time() - rife_start_time
+                    rife_success_msg = f"RIFE interpolation completed: {rife_message}. Time: {format_time(rife_processing_time)}"
+                    status_log.append(rife_success_msg)
+                    logger.info(rife_success_msg)
+                    
+                    # Update metadata with RIFE information
+                    params_for_metadata["rife_processing_time"] = rife_processing_time
+                    params_for_metadata["rife_output_path"] = rife_result
+                    
+                    # Following user rules: When RIFE enabled, return RIFE versions to gradio interface
+                    rife_output_path = rife_result
+                    final_return_path = rife_result  # Update final return path to RIFE version
+                    
+                    # If overwrite original is enabled, also update the file system
+                    if rife_overwrite_original:
+                        final_output_path = rife_result
+                        params_for_metadata["final_output_path"] = final_output_path
+                        yield final_return_path, "\n".join(status_log), last_chunk_video_path, "RIFE interpolation complete (original overwritten).", None
+                    else:
+                        # Keep original file but return RIFE version to interface (following user rules)
+                        params_for_metadata["rife_output_path"] = rife_result
+                        yield final_return_path, "\n".join(status_log), last_chunk_video_path, "RIFE interpolation complete.", None
+                else:
+                    rife_error_msg = f"RIFE interpolation failed: {rife_message}. Time: {format_time(time.time() - rife_start_time)}"
+                    status_log.append(rife_error_msg)
+                    logger.warning(rife_error_msg)
+                    yield final_return_path, "\n".join(status_log), last_chunk_video_path, "RIFE interpolation failed.", None
+                    
+            except Exception as e_rife:
+                rife_error_msg = f"Error during RIFE interpolation: {e_rife}. Time: {format_time(time.time() - rife_start_time)}"
+                status_log.append(rife_error_msg)
+                logger.error(rife_error_msg, exc_info=True)
+                
+                # Cleanup any partial RIFE files on error
+                try:
+                    cleanup_success, cleanup_msg = cleanup_rife_temp_files(final_output_dir, logger)
+                    if logger:
+                        logger.info(f"Post-error RIFE cleanup: {cleanup_msg}")
+                except Exception as cleanup_error:
+                    if logger:
+                        logger.warning(f"Could not cleanup RIFE temp files after error: {cleanup_error}")
+                
+                yield final_return_path, "\n".join(status_log), last_chunk_video_path, "RIFE interpolation error.", None
+
         if create_comparison_video_enabled and final_output_path and os.path.exists(final_output_path):
             comparison_video_progress_start = current_overall_progress
             comparison_video_start_time = time.time()
@@ -769,12 +927,16 @@ def run_upscale (
             progress(current_overall_progress, desc="Creating comparison video...")
             comparison_status_msg = "Creating comparison video..."
             status_log.append(comparison_status_msg)
-            yield final_output_path, "\n".join(status_log), last_chunk_video_path, comparison_status_msg,None
+            yield final_return_path, "\n".join(status_log), last_chunk_video_path, comparison_status_msg,None
             
             try:
+                # Determine which version to use as the upscaled video in comparison
+                # Use RIFE-interpolated version as primary reference when available (following user rules)
+                upscaled_video_for_comparison = rife_output_path if rife_output_path and os.path.exists(rife_output_path) else final_output_path
+                
                 comparison_success = create_comparison_video(
-                    original_video_path=original_video_for_comparison,
-                    upscaled_video_path=final_output_path,
+                    original_video_path=original_video_for_comparison,  # Original input video
+                    upscaled_video_path=upscaled_video_for_comparison,  # Final upscaled (potentially RIFE) video
                     output_path=comparison_output_path,
                     ffmpeg_preset=ffmpeg_preset,
                     ffmpeg_quality=ffmpeg_quality_value,
@@ -785,17 +947,17 @@ def run_upscale (
                     comparison_done_msg = f"Comparison video created: {comparison_output_path}. Time: {format_time(time.time() - comparison_video_start_time)}"
                     status_log.append(comparison_done_msg)
                     logger.info(comparison_done_msg)
-                    yield final_output_path, "\n".join(status_log), last_chunk_video_path, "Comparison video complete.", comparison_output_path
+                    yield final_return_path, "\n".join(status_log), last_chunk_video_path, "Comparison video complete.", comparison_output_path
                 else:
                     comparison_error_msg = f"Comparison video creation failed. Time: {format_time(time.time() - comparison_video_start_time)}"
                     status_log.append(comparison_error_msg)
                     logger.warning(comparison_error_msg)
-                    yield final_output_path, "\n".join(status_log), last_chunk_video_path, "Comparison video failed.", None
+                    yield final_return_path, "\n".join(status_log), last_chunk_video_path, "Comparison video failed.", None
             except Exception as e_comparison:
                 comparison_error_msg = f"Error creating comparison video: {e_comparison}. Time: {format_time(time.time() - comparison_video_start_time)}"
                 status_log.append(comparison_error_msg)
                 logger.error(comparison_error_msg, exc_info=True)
-                yield final_output_path, "\n".join(status_log), last_chunk_video_path, "Comparison video error.", None
+                yield final_return_path, "\n".join(status_log), last_chunk_video_path, "Comparison video error.", None
             
             current_overall_progress = comparison_video_progress_start + stage_weights.get("comparison_video", 0.0) # Use actual weight
             progress(current_overall_progress, desc="Comparison video processing complete.")
@@ -822,7 +984,7 @@ def run_upscale (
                 logger .error (message )
             current_overall_progress =initial_progress_metadata +stage_weights ["metadata"]
             progress (current_overall_progress ,desc ="Metadata saved.")
-            yield final_output_path ,"\n".join (status_log ),last_chunk_video_path ,meta_saved_msg if success else message,None
+            yield final_return_path ,"\n".join (status_log ),last_chunk_video_path ,meta_saved_msg if success else message,None
         else: # Metadata saving disabled
             if stage_weights["metadata"] > 0.0:
                 current_overall_progress += stage_weights["metadata"]
@@ -839,7 +1001,7 @@ def run_upscale (
         else :
             progress (1.0 ,desc =final_desc )
 
-        yield final_output_path ,"\n".join (status_log ),last_chunk_video_path ,"Processing complete!",None
+        yield final_return_path ,"\n".join (status_log ),last_chunk_video_path ,"Processing complete!",None
 
     except gr .Error as e :
         logger .error (f"A Gradio UI Error occurred: {e}",exc_info =True )
@@ -863,6 +1025,27 @@ def run_upscale (
                 util_cleanup_temp_dir(temp_dir, logger=logger)
             except Exception as e_clean:
                 logger.error(f"Error cleaning up temp_dir {temp_dir}: {e_clean}", exc_info=True)
+        
+        # Cleanup old backup files and temp RIFE files
+        try:
+            from .file_utils import cleanup_backup_files, cleanup_rife_temp_files
+            
+            # Clean up old backup files (older than 24 hours)
+            if main_output_dir and os.path.exists(main_output_dir):
+                backup_cleanup_success, backup_cleanup_msg = cleanup_backup_files(
+                    main_output_dir, backup_pattern=".backup", max_age_hours=24, logger=logger
+                )
+                if logger:
+                    logger.info(f"Backup cleanup: {backup_cleanup_msg}")
+                
+                # Clean up any remaining RIFE temp files
+                rife_cleanup_success, rife_cleanup_msg = cleanup_rife_temp_files(main_output_dir, logger)
+                if logger:
+                    logger.info(f"Final RIFE cleanup: {rife_cleanup_msg}")
+                    
+        except Exception as e_cleanup:
+            if logger:
+                logger.warning(f"Error during final cleanup: {e_cleanup}")
 
     total_processing_time = time.time() - overall_process_start_time
     params_for_metadata["total_processing_time"] = total_processing_time

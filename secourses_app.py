@@ -224,6 +224,7 @@ The total combined prompt length is limited to 77 tokens."""
                             lines=2,
                             info="Guides the model *away* from undesired aspects (e.g., bad quality, artifacts, specific styles). This does NOT count towards the 77 token limit for positive guidance."
                         )
+                    open_output_folder_button = gr.Button("Open Outputs Folder", icon="icons/folder.png",variant="primary")
 
 
 
@@ -280,7 +281,7 @@ The total combined prompt length is limited to 77 tokens."""
 - Speed Impact: Faster (Lower value = Faster)."""
                             )
                 with gr.Column(scale=1):
-                    split_only_button = gr.Button("Split Video Only (No Upscaling)", variant="secondary")
+                    split_only_button = gr.Button("Split Video Only (No Upscaling)", icon="icons/split.png",variant="primary")
                     with gr.Accordion("Scene Splitting", open=True):
                         enable_scene_split_check = gr.Checkbox(
                             label="Enable Scene Splitting",
@@ -493,7 +494,7 @@ This helps visualize the quality improvement from upscaling."""
                         save_frames_checkbox = gr.Checkbox(label="Save Input and Processed Frames", value=app_config.DEFAULT_SAVE_FRAMES, info="If checked, saves the extracted input frames and the upscaled output frames into a subfolder named after the output video (e.g., '0001/input_frames' and '0001/processed_frames').")
                         save_metadata_checkbox = gr.Checkbox(label="Save Processing Metadata", value=app_config.DEFAULT_SAVE_METADATA, info="If checked, saves a .txt file (e.g., '0001.txt') in the main output folder, containing all processing parameters and total processing time.")
                         save_chunks_checkbox = gr.Checkbox(label="Save Processed Chunks", value=app_config.DEFAULT_SAVE_CHUNKS, info="If checked, saves each processed chunk as a video file in a 'chunks' subfolder (e.g., '0001/chunks/chunk_0001.mp4'). Uses the same FFmpeg settings as the final video.")
-                        open_output_folder_button = gr.Button("Open Output Folder")
+                        
 
                     with gr.Accordion("Advanced: Seeding (Reproducibility)", open=True):
                         with gr.Row():
@@ -521,7 +522,94 @@ This helps visualize the quality improvement from upscaling."""
                     batch_input_folder = gr.Textbox(label="Input Folder", placeholder="Path to folder containing videos to process...", info="Folder containing video files to process in batch mode.")
                     batch_output_folder = gr.Textbox(label="Output Folder", placeholder="Path to output folder for processed videos...", info="Folder where processed videos will be saved, preserving original filenames.")
             with gr.Row():
-                batch_process_button = gr.Button("Process Batch Folder", variant="primary", visible=True)
+                batch_process_button = gr.Button("Process Batch Folder", variant="primary", visible=True,icon="icons/split.png")
+
+        with gr.Tab("FPS Increase"):
+            with gr.Row():
+                with gr.Column(scale=1):
+                    with gr.Accordion("RIFE Interpolation Settings", open=True):
+                        gr.Markdown("### Frame Interpolation (RIFE)")
+                        gr.Markdown("**RIFE (Real-time Intermediate Flow Estimation)** uses AI to intelligently generate intermediate frames between existing frames, increasing video smoothness and frame rate.")
+                        
+                        enable_rife_interpolation = gr.Checkbox(
+                            label="Enable RIFE Interpolation", 
+                            value=app_config.DEFAULT_RIFE_ENABLE_INTERPOLATION,
+                            info="Enable AI-powered frame interpolation to increase video FPS. When enabled, RIFE will be applied to the final upscaled video and can optionally be applied to intermediate chunks and scenes."
+                        )
+                        
+                        with gr.Row():
+                            rife_multiplier = gr.Radio(
+                                label="FPS Multiplier", 
+                                choices=[2, 4], 
+                                value=app_config.DEFAULT_RIFE_MULTIPLIER,
+                                info="Choose how much to increase the frame rate. 2x doubles FPS (e.g., 24→48), 4x quadruples FPS (e.g., 24→96)."
+                            )
+                            
+                        with gr.Row():
+                            rife_fp16 = gr.Checkbox(
+                                label="Use FP16 Precision", 
+                                value=app_config.DEFAULT_RIFE_FP16,
+                                info="Use half-precision floating point for faster processing and lower VRAM usage. Recommended for most users."
+                            )
+                            rife_uhd = gr.Checkbox(
+                                label="UHD Mode", 
+                                value=app_config.DEFAULT_RIFE_UHD,
+                                info="Enable UHD mode for 4K+ videos. May improve quality for very high resolution content but requires more VRAM."
+                            )
+                        
+                        rife_scale = gr.Slider(
+                            label="Scale Factor", 
+                            minimum=0.25, maximum=2.0, value=app_config.DEFAULT_RIFE_SCALE, step=0.25,
+                            info="Scale factor for RIFE processing. 1.0 = original size. Lower values use less VRAM but may reduce quality. Higher values may improve quality but use more VRAM."
+                        )
+                        
+                        rife_skip_static = gr.Checkbox(
+                            label="Skip Static Frames", 
+                            value=app_config.DEFAULT_RIFE_SKIP_STATIC,
+                            info="Automatically detect and skip interpolating static (non-moving) frames to save processing time and avoid unnecessary interpolation."
+                        )
+
+                with gr.Column(scale=1):
+                    with gr.Accordion("FPS Limiting & Output Control", open=True):
+                        rife_enable_fps_limit = gr.Checkbox(
+                            label="Enable FPS Limiting", 
+                            value=app_config.DEFAULT_RIFE_ENABLE_FPS_LIMIT,
+                            info="Limit the output FPS to specific common values instead of unlimited interpolation. Useful for compatibility with displays and media players."
+                        )
+                        
+                        rife_max_fps_limit = gr.Radio(
+                            label="Max FPS Limit", 
+                            choices=[30, 60, 120, 144, 240], 
+                            value=app_config.DEFAULT_RIFE_MAX_FPS_LIMIT,
+                            info="Maximum FPS when limiting is enabled. Choose based on your target display or use case (e.g., 60 FPS for most displays, 120+ for gaming monitors)."
+                        )
+                        
+                        with gr.Row():
+                            rife_keep_original = gr.Checkbox(
+                                label="Keep Original Files", 
+                                value=app_config.DEFAULT_RIFE_KEEP_ORIGINAL,
+                                info="Keep the original (non-interpolated) video files alongside the RIFE-processed versions. Recommended to compare results."
+                            )
+                            rife_overwrite_original = gr.Checkbox(
+                                label="Overwrite Original", 
+                                value=app_config.DEFAULT_RIFE_OVERWRITE_ORIGINAL,
+                                info="Replace the original upscaled video with the RIFE version as the primary output. When disabled, both versions are available."
+                            )
+                    
+                    with gr.Accordion("Intermediate Processing", open=True):
+                        gr.Markdown("**Apply RIFE to intermediate videos (recommended)**")
+                        rife_apply_to_chunks = gr.Checkbox(
+                            label="Apply to Chunks", 
+                            value=app_config.DEFAULT_RIFE_APPLY_TO_CHUNKS,
+                            info="Apply RIFE interpolation to individual video chunks during processing. Enabled by default for smoother intermediate results."
+                        )
+                        rife_apply_to_scenes = gr.Checkbox(
+                            label="Apply to Scenes", 
+                            value=app_config.DEFAULT_RIFE_APPLY_TO_SCENES,
+                            info="Apply RIFE interpolation to individual scene videos when scene splitting is enabled. Enabled by default for consistent results."
+                        )
+                        
+                        gr.Markdown("**Note:** When RIFE is enabled, the system will return RIFE-interpolated versions to the interface instead of originals, ensuring you get the smoothest possible results throughout the processing pipeline.")
 
 
     # Event Handlers (Unchanged logic, only component definitions moved)
@@ -601,6 +689,10 @@ This helps visualize the quality improvement from upscaling."""
     scene_frame_skip_num_val ,scene_threshold_num_val ,scene_min_content_val_num_val ,scene_frame_window_num_val ,
     scene_copy_streams_check_val ,scene_use_mkvmerge_check_val ,scene_rate_factor_num_val ,scene_preset_dropdown_val ,scene_quiet_ffmpeg_check_val ,
     scene_manual_split_type_radio_val ,scene_manual_split_value_num_val ,
+    # RIFE interpolation parameters
+    enable_rife_interpolation_val=False, rife_multiplier_val=2, rife_fp16_val=True, rife_uhd_val=False, rife_scale_val=1.0,
+    rife_skip_static_val=False, rife_enable_fps_limit_val=False, rife_max_fps_limit_val=60,
+    rife_apply_to_chunks_val=True, rife_apply_to_scenes_val=True, rife_keep_original_val=True, rife_overwrite_original_val=False,
     cogvlm_quant_radio_val =None ,cogvlm_unload_radio_val =None ,
     do_auto_caption_first_val =False ,
     seed_num_val =99 ,random_seed_check_val =False ,
@@ -746,6 +838,11 @@ This helps visualize the quality improvement from upscaling."""
 
         create_comparison_video_enabled =create_comparison_video_check_val ,
 
+        # RIFE interpolation parameters
+        enable_rife_interpolation =enable_rife_interpolation_val ,rife_multiplier =rife_multiplier_val ,rife_fp16 =rife_fp16_val ,rife_uhd =rife_uhd_val ,rife_scale =rife_scale_val ,
+        rife_skip_static =rife_skip_static_val ,rife_enable_fps_limit =rife_enable_fps_limit_val ,rife_max_fps_limit =rife_max_fps_limit_val ,
+        rife_apply_to_chunks =rife_apply_to_chunks_val ,rife_apply_to_scenes =rife_apply_to_scenes_val ,rife_keep_original =rife_keep_original_val ,rife_overwrite_original =rife_overwrite_original_val ,
+
         is_batch_mode =False ,batch_output_dir =None ,original_filename =None ,
 
         enable_auto_caption_per_scene =(do_auto_caption_first_val and enable_scene_split_check_val and app_config .UTIL_COG_VLM_AVAILABLE ),
@@ -875,7 +972,11 @@ This helps visualize the quality improvement from upscaling."""
     enable_scene_split_check ,scene_split_mode_radio ,scene_min_scene_len_num ,scene_drop_short_check ,scene_merge_last_check ,
     scene_frame_skip_num ,scene_threshold_num ,scene_min_content_val_num ,scene_frame_window_num ,
     scene_copy_streams_check ,scene_use_mkvmerge_check ,scene_rate_factor_num ,scene_preset_dropdown ,scene_quiet_ffmpeg_check ,
-    scene_manual_split_type_radio ,scene_manual_split_value_num
+    scene_manual_split_type_radio ,scene_manual_split_value_num ,
+    # RIFE interpolation UI controls
+    enable_rife_interpolation ,rife_multiplier ,rife_fp16 ,rife_uhd ,rife_scale ,
+    rife_skip_static ,rife_enable_fps_limit ,rife_max_fps_limit ,
+    rife_apply_to_chunks ,rife_apply_to_scenes ,rife_keep_original ,rife_overwrite_original
     ]
 
     click_outputs_list =[output_video ,status_textbox ,user_prompt ]
@@ -946,6 +1047,10 @@ This helps visualize the quality improvement from upscaling."""
     scene_frame_skip_num_val ,scene_threshold_num_val ,scene_min_content_val_num_val ,scene_frame_window_val ,
     scene_copy_streams_check_val ,scene_use_mkvmerge_check_val ,scene_rate_factor_num_val ,scene_preset_dropdown_val ,scene_quiet_ffmpeg_check_val ,
     scene_manual_split_type_radio_val ,scene_manual_split_value_num_val ,
+    # RIFE interpolation parameters for batch
+    enable_rife_interpolation_val=False, rife_multiplier_val=2, rife_fp16_val=True, rife_uhd_val=False, rife_scale_val=1.0,
+    rife_skip_static_val=False, rife_enable_fps_limit_val=False, rife_max_fps_limit_val=60,
+    rife_apply_to_chunks_val=True, rife_apply_to_scenes_val=True, rife_keep_original_val=True, rife_overwrite_original_val=False,
     seed_num_val =99 ,random_seed_check_val =False ,
     progress =gr .Progress (track_tqdm =True )
     ):
@@ -993,6 +1098,11 @@ This helps visualize the quality improvement from upscaling."""
         scene_copy_streams_check_val ,scene_use_mkvmerge_check_val ,scene_rate_factor_num_val ,scene_preset_dropdown_val ,scene_quiet_ffmpeg_check_val ,
         scene_manual_split_type_radio_val ,scene_manual_split_value_num_val ,
 
+        # RIFE interpolation parameters for batch processing
+        enable_rife_interpolation_val, rife_multiplier_val, rife_fp16_val, rife_uhd_val, rife_scale_val,
+        rife_skip_static_val, rife_enable_fps_limit_val, rife_max_fps_limit_val,
+        rife_apply_to_chunks_val, rife_apply_to_scenes_val, rife_keep_original_val, rife_overwrite_original_val,
+
         run_upscale_func =partial_run_upscale_for_batch ,
         logger =logger ,
         progress =progress
@@ -1012,7 +1122,11 @@ This helps visualize the quality improvement from upscaling."""
     enable_scene_split_check ,scene_split_mode_radio ,scene_min_scene_len_num ,scene_drop_short_check ,scene_merge_last_check ,
     scene_frame_skip_num ,scene_threshold_num ,scene_min_content_val_num ,scene_frame_window_num ,
     scene_copy_streams_check ,scene_use_mkvmerge_check ,scene_rate_factor_num ,scene_preset_dropdown ,scene_quiet_ffmpeg_check ,
-    scene_manual_split_type_radio ,scene_manual_split_value_num
+    scene_manual_split_type_radio ,scene_manual_split_value_num ,
+    # RIFE interpolation UI controls for batch processing
+    enable_rife_interpolation ,rife_multiplier ,rife_fp16 ,rife_uhd ,rife_scale ,
+    rife_skip_static ,rife_enable_fps_limit ,rife_max_fps_limit ,
+    rife_apply_to_chunks ,rife_apply_to_scenes ,rife_keep_original ,rife_overwrite_original
     ]
 
     batch_process_inputs .extend ([seed_num ,random_seed_check ])
@@ -1037,6 +1151,29 @@ This helps visualize the quality improvement from upscaling."""
     fn =update_seed_num_interactive ,
     inputs =random_seed_check ,
     outputs =seed_num
+    )
+
+    # RIFE UI event handlers
+    def update_rife_fps_limit_interactive(enable_fps_limit):
+        return gr.update(interactive=enable_fps_limit)
+    
+    def update_rife_controls_interactive(enable_rife):
+        return [gr.update(interactive=enable_rife)] * 10  # Update all RIFE-related controls
+    
+    rife_enable_fps_limit.change(
+        fn=update_rife_fps_limit_interactive,
+        inputs=rife_enable_fps_limit,
+        outputs=rife_max_fps_limit
+    )
+    
+    enable_rife_interpolation.change(
+        fn=update_rife_controls_interactive,
+        inputs=enable_rife_interpolation,
+        outputs=[
+            rife_multiplier, rife_fp16, rife_uhd, rife_scale, rife_skip_static,
+            rife_enable_fps_limit, rife_max_fps_limit, rife_apply_to_chunks, 
+            rife_apply_to_scenes, rife_keep_original
+        ]
     )
 
 if __name__ =="__main__":

@@ -23,6 +23,11 @@ def process_single_scene(
     progress=None, save_chunks=False, chunks_permanent_save_path=None, ffmpeg_preset="medium", ffmpeg_quality_value=23, ffmpeg_use_gpu=False,
     save_metadata=False, metadata_params_base: dict = None,
     
+    # RIFE interpolation parameters for scenes and chunks
+    enable_rife_interpolation=False, rife_multiplier=2, rife_fp16=True, rife_uhd=False, rife_scale=1.0,
+    rife_skip_static=False, rife_enable_fps_limit=False, rife_max_fps_limit=60,
+    rife_apply_to_scenes=True, rife_apply_to_chunks=True, rife_keep_original=True, current_seed=99,
+    
     # Dependencies injected as parameters
     util_extract_frames=None,
     util_auto_caption=None, 
@@ -42,13 +47,14 @@ def process_single_scene(
     util_get_gpu_device_param=None # Renamed
 ):
     """
-    Process a single video scene with upscaling.
+    Process a single video scene with upscaling and optional RIFE interpolation.
     
     This function handles the complete processing of one scene including:
     - Frame extraction
     - Auto-captioning (if enabled)
     - Upscaling with various methods (tiling, sliding window, or chunked)
     - Video reconstruction
+    - RIFE interpolation (if enabled)
     - Metadata saving
     
     Args:
@@ -72,6 +78,21 @@ def process_single_scene(
         save_frames: Whether to save extracted frames
         scene_output_dir: Directory for scene outputs
         progress_callback: Callback for progress updates
+        
+        # RIFE interpolation parameters:
+        enable_rife_interpolation: Whether to apply RIFE interpolation to scene and chunks
+        rife_multiplier: FPS multiplier (2 or 4)
+        rife_fp16: Use FP16 precision for RIFE
+        rife_uhd: UHD mode for RIFE
+        rife_scale: Scale factor for RIFE
+        rife_skip_static: Skip static frames in RIFE
+        rife_enable_fps_limit: Enable FPS limiting
+        rife_max_fps_limit: Maximum FPS when limiting enabled
+        rife_apply_to_scenes: Whether to apply RIFE to scene videos
+        rife_apply_to_chunks: Whether to apply RIFE to chunk videos
+        rife_keep_original: Keep original scene and chunk video files
+        current_seed: Random seed for consistent results
+        
         (... other parameters for various features ...)
         
         # Injected dependencies:
@@ -93,6 +114,9 @@ def process_single_scene(
         
     Yields:
         Various progress updates and completion status
+        Final yield: ("scene_complete", final_scene_video, scene_frame_count, scene_fps, generated_scene_caption)
+        Where final_scene_video is the RIFE-interpolated version if RIFE is enabled and successful,
+        otherwise the original upscaled scene video.
     """
     star_model_instance = None # Initialize to ensure cleanup can run
     try:
@@ -427,9 +451,53 @@ def process_single_scene(
                         util_create_video_from_frames(
                             chunk_temp_assembly_dir, chunk_video_path, scene_fps,
                             ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger)
+                        
+                        # Apply RIFE interpolation to chunk if enabled
+                        final_chunk_video_path = chunk_video_path  # Default to original chunk
+                        if enable_rife_interpolation and rife_apply_to_chunks and os.path.exists(chunk_video_path):
+                            try:
+                                # Import RIFE function locally to avoid circular imports
+                                from .rife_interpolation import increase_fps_single
+                                
+                                # Generate RIFE chunk output path
+                                chunk_video_dir = os.path.dirname(chunk_video_path)
+                                chunk_video_name = os.path.splitext(os.path.basename(chunk_video_path))[0]
+                                rife_chunk_video_path = os.path.join(chunk_video_dir, f"{chunk_video_name}_{rife_multiplier}x_FPS.mp4")
+                                
+                                # Apply RIFE interpolation to chunk
+                                rife_result, rife_message = increase_fps_single(
+                                    video_path=chunk_video_path,
+                                    output_path=rife_chunk_video_path,
+                                    multiplier=rife_multiplier,
+                                    fp16=rife_fp16,
+                                    uhd=rife_uhd,
+                                    scale=rife_scale,
+                                    skip_static=rife_skip_static,
+                                    enable_fps_limit=rife_enable_fps_limit,
+                                    max_fps_limit=rife_max_fps_limit,
+                                    ffmpeg_preset=ffmpeg_preset,
+                                    ffmpeg_quality_value=ffmpeg_quality_value,
+                                    ffmpeg_use_gpu=ffmpeg_use_gpu,
+                                    overwrite_original=False,  # Don't overwrite chunks, keep both
+                                    keep_original=rife_keep_original,
+                                    output_dir=chunk_video_dir,
+                                    seed=current_seed,
+                                    logger=logger,
+                                    progress=None  # Don't pass progress to avoid conflicts
+                                )
+                                
+                                if rife_result:
+                                    final_chunk_video_path = rife_result  # Use RIFE version as final chunk
+                                    logger.info(f"Scene {scene_index + 1} Chunk {chunk_idx+1}: RIFE interpolation completed")
+                                else:
+                                    logger.warning(f"Scene {scene_index + 1} Chunk {chunk_idx+1}: RIFE interpolation failed: {rife_message}")
+                                    
+                            except Exception as e_chunk_rife:
+                                logger.error(f"Scene {scene_index + 1} Chunk {chunk_idx+1}: Error during RIFE interpolation: {e_chunk_rife}")
+                        
                         chunk_status_str = f"Scene {scene_index + 1} Chunk {chunk_idx + 1}/{num_chunks} (frames {start_idx+1}-{end_idx})"
-                        logger.info(f"Saved scene chunk {chunk_idx+1}/{num_chunks} to: {chunk_video_path}")
-                        yield "chunk_update", chunk_video_path, chunk_status_str
+                        logger.info(f"Saved scene chunk {chunk_idx+1}/{num_chunks} to: {final_chunk_video_path}")
+                        yield "chunk_update", final_chunk_video_path, chunk_status_str
                     else:
                         logger.warning(f"No frames for scene chunk {chunk_idx+1}/{num_chunks}, video not created.")
                     shutil.rmtree(chunk_temp_assembly_dir)
@@ -437,11 +505,38 @@ def process_single_scene(
                     if save_metadata and metadata_params_base:
                         meta_chunk_dir = os.path.join(scene_output_dir, "scenes", scene_name, "chunk_progress_metadata") if scene_output_dir and scene_name else os.path.join(temp_dir, scene_name or f"s_unknown_temp_{chunk_idx+1}", "chunk_progress_metadata")
                         os.makedirs(meta_chunk_dir, exist_ok=True)
-                        status_info_meta = {"current_chunk": chunk_idx + 1, "total_chunks": num_chunks, "overall_process_start_time": scene_start_time}
-                        params_meta = metadata_params_base.copy()
-                        params_meta['input_fps'] = scene_fps
-                        params_meta['scene_prompt_used_for_chunk'] = scene_prompt if 'scene_prompt' in locals() and scene_prompt and scene_prompt != final_prompt else final_prompt
-                        metadata_handler.save_metadata(True, meta_chunk_dir, f"{scene_name}_chunk_{chunk_idx+1:04d}_progress", params_meta, status_info_meta, logger)
+                        
+                        # Include RIFE chunk information in status
+                        chunk_status_info = {
+                            "current_chunk": chunk_idx + 1, 
+                            "total_chunks": num_chunks, 
+                            "overall_process_start_time": scene_start_time,
+                            "chunk_video_path": final_chunk_video_path,
+                            "original_chunk_video_path": chunk_video_path,
+                            "rife_applied_to_chunk": enable_rife_interpolation and rife_apply_to_chunks,
+                            "rife_multiplier_used_for_chunk": rife_multiplier if enable_rife_interpolation and rife_apply_to_chunks else None
+                        }
+                        
+                        # Add comprehensive RIFE metadata to chunk-specific metadata
+                        chunk_params_meta = metadata_params_base.copy()
+                        chunk_params_meta['input_fps'] = scene_fps
+                        chunk_params_meta['scene_prompt_used_for_chunk'] = scene_prompt if 'scene_prompt' in locals() and scene_prompt and scene_prompt != final_prompt else final_prompt
+                        
+                        if enable_rife_interpolation and rife_apply_to_chunks:
+                            chunk_params_meta.update({
+                                'rife_chunk_applied': True,
+                                'rife_chunk_multiplier': rife_multiplier,
+                                'rife_chunk_fp16': rife_fp16,
+                                'rife_chunk_uhd': rife_uhd,
+                                'rife_chunk_scale': rife_scale,
+                                'rife_chunk_skip_static': rife_skip_static,
+                                'rife_chunk_enable_fps_limit': rife_enable_fps_limit,
+                                'rife_chunk_max_fps_limit': rife_max_fps_limit,
+                                'rife_chunk_keep_original': rife_keep_original,
+                                'rife_chunk_seed': current_seed
+                            })
+                        
+                        metadata_handler.save_metadata(True, meta_chunk_dir, f"{scene_name}_chunk_{chunk_idx+1:04d}_progress", chunk_params_meta, chunk_status_info, logger)
 
                 del chunk_data_cuda, chunk_sr_tensor_bcthw, chunk_sr_frames_uint8
                 if torch.cuda.is_available():
@@ -459,6 +554,68 @@ def process_single_scene(
         util_create_video_from_frames(
             scene_output_frames_dir, scene_output_video, scene_fps,
             ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger)
+        
+        # Apply RIFE interpolation to scene if enabled
+        final_scene_video = scene_output_video  # Default to original scene video
+        if enable_rife_interpolation and rife_apply_to_scenes and os.path.exists(scene_output_video):
+            rife_scene_start_time = time.time()
+            if progress_callback:
+                progress_callback(0.92, f"Scene {scene_index + 1}: Applying RIFE {rife_multiplier}x interpolation...")
+            
+            try:
+                # Import RIFE function locally to avoid circular imports
+                from .rife_interpolation import increase_fps_single
+                
+                # Generate RIFE scene output path
+                scene_output_dir_path = os.path.dirname(scene_output_video)
+                scene_name_base = os.path.splitext(os.path.basename(scene_output_video))[0]
+                rife_scene_output = os.path.join(scene_output_dir_path, f"{scene_name_base}_{rife_multiplier}x_FPS.mp4")
+                
+                # Apply RIFE interpolation to scene
+                rife_result, rife_message = increase_fps_single(
+                    video_path=scene_output_video,
+                    output_path=rife_scene_output,
+                    multiplier=rife_multiplier,
+                    fp16=rife_fp16,
+                    uhd=rife_uhd,
+                    scale=rife_scale,
+                    skip_static=rife_skip_static,
+                    enable_fps_limit=rife_enable_fps_limit,
+                    max_fps_limit=rife_max_fps_limit,
+                    ffmpeg_preset=ffmpeg_preset,
+                    ffmpeg_quality_value=ffmpeg_quality_value,
+                    ffmpeg_use_gpu=ffmpeg_use_gpu,
+                    overwrite_original=False,  # Don't overwrite for scenes, keep both
+                    keep_original=rife_keep_original,
+                    output_dir=scene_output_dir_path,
+                    seed=current_seed,
+                    logger=logger,
+                    progress=None  # Don't pass progress to avoid conflicts
+                )
+                
+                if rife_result:
+                    rife_processing_time = time.time() - rife_scene_start_time
+                    final_scene_video = rife_result  # Use RIFE version as final scene video
+                    logger.info(f"Scene {scene_index + 1}: RIFE interpolation completed in {format_time(rife_processing_time)}")
+                    
+                    # Update scene FPS for RIFE version
+                    from .rife_interpolation import get_video_fps
+                    rife_scene_fps = get_video_fps(rife_result, logger)
+                    scene_fps = rife_scene_fps  # Update scene FPS to RIFE FPS for return
+                    
+                    if progress_callback:
+                        progress_callback(0.95, f"Scene {scene_index + 1}: RIFE interpolation complete")
+                else:
+                    logger.warning(f"Scene {scene_index + 1}: RIFE interpolation failed: {rife_message}")
+                    if progress_callback:
+                        progress_callback(0.95, f"Scene {scene_index + 1}: RIFE interpolation failed, using original")
+                    
+            except Exception as e_rife:
+                rife_processing_time = time.time() - rife_scene_start_time
+                logger.error(f"Scene {scene_index + 1}: Error during RIFE interpolation: {e_rife}. Time: {format_time(rife_processing_time)}")
+                if progress_callback:
+                    progress_callback(0.95, f"Scene {scene_index + 1}: RIFE error, using original")
+        
         scene_duration = time.time() - scene_start_time
         if progress_callback:
             progress_callback(1.0, f"Scene {scene_index + 1}: Complete ({format_time(scene_duration)})")
@@ -470,13 +627,41 @@ def process_single_scene(
 
             scene_meta_dir = os.path.join(scene_output_dir, "scenes", scene_name)
             os.makedirs(scene_meta_dir, exist_ok=True)
-            scene_data_meta = {"scene_index": scene_index + 1, "scene_name": scene_name, "scene_prompt": scene_prompt,
-                              "scene_frame_count": scene_frame_count, "scene_fps": scene_fps,
-                              "scene_processing_time": scene_duration, "scene_video_path": scene_output_video}
+            
+            # Include RIFE information in scene metadata
+            scene_data_meta = {
+                "scene_index": scene_index + 1, 
+                "scene_name": scene_name, 
+                "scene_prompt": scene_prompt,
+                "scene_frame_count": scene_frame_count, 
+                "scene_fps": scene_fps,
+                "scene_processing_time": scene_duration, 
+                "scene_video_path": final_scene_video,  # Use final_scene_video (could be RIFE)
+                "original_scene_video_path": scene_output_video,  # Always include original path
+                "rife_applied": enable_rife_interpolation and rife_apply_to_scenes,
+                "rife_multiplier_used": rife_multiplier if enable_rife_interpolation and rife_apply_to_scenes else None
+            }
+            
+            # Add comprehensive RIFE metadata to scene-specific metadata
+            scene_metadata_with_rife = metadata_params_base.copy()
+            if enable_rife_interpolation and rife_apply_to_scenes:
+                scene_metadata_with_rife.update({
+                    'rife_scene_applied': True,
+                    'rife_scene_multiplier': rife_multiplier,
+                    'rife_scene_fp16': rife_fp16,
+                    'rife_scene_uhd': rife_uhd,
+                    'rife_scene_scale': rife_scale,
+                    'rife_scene_skip_static': rife_skip_static,
+                    'rife_scene_enable_fps_limit': rife_enable_fps_limit,
+                    'rife_scene_max_fps_limit': rife_max_fps_limit,
+                    'rife_scene_keep_original': rife_keep_original,
+                    'rife_scene_seed': current_seed
+                })
+            
             final_status_info_meta = {"scene_specific_data": scene_data_meta, "processing_time_total": scene_duration}
-            metadata_handler.save_metadata(True, scene_meta_dir, f"{scene_name}_metadata", metadata_params_base, final_status_info_meta, logger)
+            metadata_handler.save_metadata(True, scene_meta_dir, f"{scene_name}_metadata", scene_metadata_with_rife, final_status_info_meta, logger)
 
-        yield "scene_complete", scene_output_video, scene_frame_count, scene_fps, generated_scene_caption
+        yield "scene_complete", final_scene_video, scene_frame_count, scene_fps, generated_scene_caption
 
     except Exception as e:
         logger.error(f"Error processing scene {scene_index + 1}: {e}", exc_info=True)

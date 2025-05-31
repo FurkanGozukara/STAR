@@ -25,6 +25,11 @@ def process_batch_videos(
     scene_copy_streams_check_val, scene_use_mkvmerge_check_val, scene_rate_factor_num_val, scene_preset_dropdown_val, scene_quiet_ffmpeg_check_val,
     scene_manual_split_type_radio_val, scene_manual_split_value_num_val,
 
+    # RIFE interpolation parameters for batch processing
+    enable_rife_interpolation_val, rife_multiplier_val, rife_fp16_val, rife_uhd_val, rife_scale_val,
+    rife_skip_static_val, rife_enable_fps_limit_val, rife_max_fps_limit_val,
+    rife_apply_to_chunks_val, rife_apply_to_scenes_val, rife_keep_original_val, rife_overwrite_original_val,
+
     run_upscale_func,  # Pass the run_upscale function as a parameter
     logger,           # Pass the logger as a parameter
     progress=gr.Progress(track_tqdm=True)
@@ -124,6 +129,20 @@ def process_batch_videos(
                     scene_manual_split_value=scene_manual_split_value_num_val,
 
                     create_comparison_video_enabled=create_comparison_video_check_val, # Passed here
+
+                    # RIFE interpolation parameters for batch processing
+                    enable_rife_interpolation=enable_rife_interpolation_val,
+                    rife_multiplier=rife_multiplier_val, 
+                    rife_fp16=rife_fp16_val, 
+                    rife_uhd=rife_uhd_val, 
+                    rife_scale=rife_scale_val,
+                    rife_skip_static=rife_skip_static_val, 
+                    rife_enable_fps_limit=rife_enable_fps_limit_val, 
+                    rife_max_fps_limit=rife_max_fps_limit_val,
+                    rife_apply_to_chunks=rife_apply_to_chunks_val, 
+                    rife_apply_to_scenes=rife_apply_to_scenes_val, 
+                    rife_keep_original=rife_keep_original_val, 
+                    rife_overwrite_original=rife_overwrite_original_val,
 
                     is_batch_mode=True, 
                     batch_output_dir=batch_output_folder_val, 

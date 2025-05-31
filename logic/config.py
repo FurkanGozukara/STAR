@@ -20,6 +20,7 @@ DEFAULT_OUTPUT_DIR = "outputs" # This is a fallback/initial default
 COG_VLM_MODEL_PATH = None
 LIGHT_DEG_MODEL_PATH = None
 HEAVY_DEG_MODEL_PATH = None
+RIFE_MODEL_PATH = None
 
 # --- Prompt constants (to be initialized by secourses_app.py from star_cfg) ---
 DEFAULT_POS_PROMPT = "Default Positive Prompt Placeholder"
@@ -100,9 +101,25 @@ DEFAULT_CREATE_COMPARISON_VIDEO = True
 DEFAULT_SEED = 99
 DEFAULT_RANDOM_SEED = False
 
+# RIFE Interpolation Settings
+DEFAULT_RIFE_ENABLE_INTERPOLATION = False
+DEFAULT_RIFE_MULTIPLIER = 2
+DEFAULT_RIFE_FP16 = True
+DEFAULT_RIFE_UHD = False
+DEFAULT_RIFE_SCALE = 1.0
+DEFAULT_RIFE_SKIP_STATIC = False
+DEFAULT_RIFE_ENABLE_FPS_LIMIT = False
+DEFAULT_RIFE_MAX_FPS_LIMIT = 60
+DEFAULT_RIFE_APPLY_TO_CHUNKS = True
+DEFAULT_RIFE_APPLY_TO_SCENES = True
+DEFAULT_RIFE_KEEP_ORIGINAL = True
+DEFAULT_RIFE_OVERWRITE_ORIGINAL = False
+DEFAULT_RIFE_SKIP_EXISTING = True
+DEFAULT_RIFE_INCLUDE_SUBFOLDERS = True
+
 # --- Initialization functions ---
 def initialize_paths_and_prompts(base_path_from_app, outputs_folder_from_args, star_cfg_from_app):
-    global APP_BASE_PATH, DEFAULT_OUTPUT_DIR, COG_VLM_MODEL_PATH, LIGHT_DEG_MODEL_PATH, HEAVY_DEG_MODEL_PATH
+    global APP_BASE_PATH, DEFAULT_OUTPUT_DIR, COG_VLM_MODEL_PATH, LIGHT_DEG_MODEL_PATH, HEAVY_DEG_MODEL_PATH, RIFE_MODEL_PATH
     global DEFAULT_POS_PROMPT, DEFAULT_NEG_PROMPT
 
     APP_BASE_PATH = base_path_from_app
@@ -110,6 +127,7 @@ def initialize_paths_and_prompts(base_path_from_app, outputs_folder_from_args, s
     COG_VLM_MODEL_PATH = os.path.join(APP_BASE_PATH, 'models', 'cogvlm2-video-llama3-chat')
     LIGHT_DEG_MODEL_PATH = os.path.join(APP_BASE_PATH, 'pretrained_weight', 'light_deg.pt')
     HEAVY_DEG_MODEL_PATH = os.path.join(APP_BASE_PATH, 'pretrained_weight', 'heavy_deg.pt')
+    RIFE_MODEL_PATH = os.path.join(APP_BASE_PATH, '..', 'Practical-RIFE', 'train_log')
 
     if star_cfg_from_app:
         DEFAULT_POS_PROMPT = star_cfg_from_app.positive_prompt
@@ -135,7 +153,7 @@ def get_default_cogvlm_quant_display(cogvlm_quant_choices_map):
 
 __all__ = [
     # Initialized values
-    'APP_BASE_PATH', 'DEFAULT_OUTPUT_DIR', 'COG_VLM_MODEL_PATH', 'LIGHT_DEG_MODEL_PATH', 'HEAVY_DEG_MODEL_PATH',
+    'APP_BASE_PATH', 'DEFAULT_OUTPUT_DIR', 'COG_VLM_MODEL_PATH', 'LIGHT_DEG_MODEL_PATH', 'HEAVY_DEG_MODEL_PATH', 'RIFE_MODEL_PATH',
     'DEFAULT_POS_PROMPT', 'DEFAULT_NEG_PROMPT',
     # Direct imports/values
     'UTIL_COG_VLM_AVAILABLE', 'UTIL_BITSANDBYTES_AVAILABLE',
@@ -158,6 +176,10 @@ __all__ = [
     'DEFAULT_CREATE_COMPARISON_VIDEO',
     # Seed defaults
     'DEFAULT_SEED', 'DEFAULT_RANDOM_SEED',
+    # RIFE defaults
+    'DEFAULT_RIFE_ENABLE_INTERPOLATION', 'DEFAULT_RIFE_MULTIPLIER', 'DEFAULT_RIFE_FP16', 'DEFAULT_RIFE_UHD', 'DEFAULT_RIFE_SCALE', 'DEFAULT_RIFE_SKIP_STATIC',
+    'DEFAULT_RIFE_ENABLE_FPS_LIMIT', 'DEFAULT_RIFE_MAX_FPS_LIMIT', 'DEFAULT_RIFE_APPLY_TO_CHUNKS', 'DEFAULT_RIFE_APPLY_TO_SCENES',
+    'DEFAULT_RIFE_KEEP_ORIGINAL', 'DEFAULT_RIFE_OVERWRITE_ORIGINAL', 'DEFAULT_RIFE_SKIP_EXISTING', 'DEFAULT_RIFE_INCLUDE_SUBFOLDERS',
     # Functions
     'initialize_paths_and_prompts', 'get_cogvlm_quant_choices_map', 'get_default_cogvlm_quant_display'
 ] 

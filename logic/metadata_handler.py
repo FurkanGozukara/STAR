@@ -49,6 +49,25 @@ def _prepare_metadata_dict(params_dict: dict, status_info: dict = None) -> dict:
         "final_output_resolution_wh": (params_dict.get("final_w"), params_dict.get("final_h")) if params_dict.get("final_w") is not None and params_dict.get("final_h") is not None else "N/A",
         "scene_prompt_used_for_chunk": params_dict.get("scene_prompt_used_for_chunk", "N/A"),
         "current_seed": params_dict.get("current_seed", "N/A"),
+        # RIFE interpolation metadata
+        "rife_enabled": params_dict.get("rife_enabled", False),
+        "rife_multiplier_if_enabled": params_dict.get("rife_multiplier", "N/A") if params_dict.get("rife_enabled") else "N/A",
+        "rife_actual_multiplier_if_enabled": params_dict.get("rife_actual_multiplier", "N/A") if params_dict.get("rife_enabled") else "N/A",
+        "rife_fp16_if_enabled": params_dict.get("rife_fp16", "N/A") if params_dict.get("rife_enabled") else "N/A",
+        "rife_uhd_if_enabled": params_dict.get("rife_uhd", "N/A") if params_dict.get("rife_enabled") else "N/A",
+        "rife_scale_if_enabled": params_dict.get("rife_scale", "N/A") if params_dict.get("rife_enabled") else "N/A",
+        "rife_skip_static_if_enabled": params_dict.get("rife_skip_static", "N/A") if params_dict.get("rife_enabled") else "N/A",
+        "rife_original_fps_if_enabled": f"{params_dict.get('rife_original_fps'):.2f}" if params_dict.get("rife_enabled") and params_dict.get('rife_original_fps') is not None else "N/A",
+        "rife_target_fps_if_enabled": f"{params_dict.get('rife_target_fps'):.2f}" if params_dict.get("rife_enabled") and params_dict.get('rife_target_fps') is not None else "N/A",
+        "rife_final_fps_if_enabled": f"{params_dict.get('rife_final_fps'):.2f}" if params_dict.get("rife_enabled") and params_dict.get('rife_final_fps') is not None else "N/A",
+        "rife_fps_limit_enabled_if_rife_enabled": params_dict.get("rife_fps_limit_enabled", "N/A") if params_dict.get("rife_enabled") else "N/A",
+        "rife_fps_limit_value_if_limit_enabled": params_dict.get("rife_fps_limit", "N/A") if params_dict.get("rife_enabled") and params_dict.get("rife_fps_limit_enabled") else "N/A",
+        "rife_apply_to_chunks_if_enabled": params_dict.get("rife_apply_to_chunks", "N/A") if params_dict.get("rife_enabled") else "N/A",
+        "rife_apply_to_scenes_if_enabled": params_dict.get("rife_apply_to_scenes", "N/A") if params_dict.get("rife_enabled") else "N/A",
+        "rife_keep_original_if_enabled": params_dict.get("rife_keep_original", "N/A") if params_dict.get("rife_enabled") else "N/A",
+        "rife_overwrite_original_if_enabled": params_dict.get("rife_overwrite_original", "N/A") if params_dict.get("rife_enabled") else "N/A",
+        "rife_processing_time_seconds_if_enabled": f"{params_dict.get('rife_processing_time'):.2f}" if params_dict.get("rife_enabled") and params_dict.get('rife_processing_time') is not None else "N/A",
+        "rife_output_video_path_if_enabled": os.path.abspath(params_dict.get("rife_output_path", "")) if params_dict.get("rife_enabled") and params_dict.get("rife_output_path") else "N/A",
     }
 
     if status_info:
@@ -111,6 +130,83 @@ def _save_metadata_to_file_internal(metadata_params: dict, filepath: str, logger
         error_msg = f"Error saving metadata to {filepath}: {e}"
         if logger:
             logger.error(error_msg)
+        return False, error_msg
+
+
+def save_rife_metadata(
+    output_video_path: str,
+    input_video_path: str,
+    rife_params: dict,
+    processing_time: float,
+    seed: int = 99,
+    logger: logging.Logger = None
+) -> tuple[bool, str]:
+    """
+    Helper function to save RIFE-specific metadata.
+    
+    Args:
+        output_video_path: Path to the output RIFE video
+        input_video_path: Path to the input video
+        rife_params: Dictionary containing RIFE processing parameters
+        processing_time: Processing time in seconds
+        seed: Seed value used for processing
+        logger: Logger instance
+        
+    Returns:
+        A tuple (success_boolean, message_string).
+    """
+    try:
+        # Prepare metadata file path
+        output_dir = os.path.dirname(output_video_path)
+        base_filename = os.path.splitext(os.path.basename(output_video_path))[0]
+        
+        # Create params_dict in the expected format
+        params_dict = {
+            "input_video_path": input_video_path,
+            "final_output_path": output_video_path,
+            "current_seed": seed,
+            "rife_enabled": True,
+            "rife_multiplier": rife_params.get("multiplier", 2),
+            "rife_actual_multiplier": rife_params.get("actual_multiplier", rife_params.get("multiplier", 2)),
+            "rife_fp16": rife_params.get("fp16", True),
+            "rife_uhd": rife_params.get("uhd", False),
+            "rife_scale": rife_params.get("scale", 1.0),
+            "rife_skip_static": rife_params.get("skip_static", False),
+            "rife_original_fps": rife_params.get("original_fps"),
+            "rife_target_fps": rife_params.get("target_fps"),
+            "rife_final_fps": rife_params.get("final_fps"),
+            "rife_fps_limit_enabled": rife_params.get("fps_limit_enabled", False),
+            "rife_fps_limit": rife_params.get("fps_limit"),
+            "rife_apply_to_chunks": rife_params.get("apply_to_chunks", False),
+            "rife_apply_to_scenes": rife_params.get("apply_to_scenes", False),
+            "rife_keep_original": rife_params.get("keep_original", True),
+            "rife_overwrite_original": rife_params.get("overwrite_original", False),
+            "rife_processing_time": processing_time,
+            "rife_output_path": output_video_path,
+            "ffmpeg_preset": rife_params.get("ffmpeg_preset", "N/A"),
+            "ffmpeg_quality_value": rife_params.get("ffmpeg_quality_value", "N/A"),
+            "ffmpeg_use_gpu": rife_params.get("ffmpeg_use_gpu", False),
+        }
+        
+        # Create status_info with processing time
+        status_info = {
+            "processing_time_total": processing_time
+        }
+        
+        # Use the main save_metadata function
+        return save_metadata(
+            save_flag=True,
+            output_dir=output_dir,
+            base_filename_no_ext=base_filename,
+            params_dict=params_dict,
+            status_info=status_info,
+            logger=logger
+        )
+        
+    except Exception as e:
+        error_msg = f"Error in save_rife_metadata: {e}"
+        if logger:
+            logger.error(error_msg, exc_info=True)
         return False, error_msg
 
 def save_metadata(

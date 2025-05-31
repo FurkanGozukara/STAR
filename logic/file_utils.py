@@ -168,4 +168,264 @@ def get_available_drives(default_output_dir, base_path, logger=None):
     unique_paths = sorted(list(set(os.path.abspath(p) for p in existing_paths if os.path.isdir(p))))
     if logger:
         logger.info(f"Effective Gradio allowed_paths: {unique_paths}")
-    return unique_paths 
+    return unique_paths
+
+# RIFE-specific file management utilities
+
+def get_disk_space_info(path, logger=None):
+    """Get disk space information for a given path."""
+    try:
+        if platform.system() == "Windows":
+            free_bytes = shutil.disk_usage(path).free
+        else:
+            stat = os.statvfs(path)
+            free_bytes = stat.f_bavail * stat.f_frsize
+        
+        # Convert to GB
+        free_gb = free_bytes / (1024 ** 3)
+        return free_gb
+    except Exception as e:
+        if logger:
+            logger.warning(f"Could not get disk space for {path}: {e}")
+        return None
+
+def estimate_rife_output_size(input_video_path, multiplier=2, logger=None):
+    """Estimate the size of RIFE output based on input video."""
+    try:
+        input_size = os.path.getsize(input_video_path)
+        # RIFE typically increases file size by 1.5-2.5x the multiplier due to increased frames
+        # This is a conservative estimate
+        estimated_size = input_size * multiplier * 2.0
+        return estimated_size
+    except Exception as e:
+        if logger:
+            logger.warning(f"Could not estimate RIFE output size for {input_video_path}: {e}")
+        return None
+
+def check_disk_space_for_rife(input_video_path, output_path, multiplier=2, logger=None):
+    """Check if there's sufficient disk space for RIFE processing."""
+    try:
+        estimated_size = estimate_rife_output_size(input_video_path, multiplier, logger)
+        if estimated_size is None:
+            return True, "Could not estimate space requirements"
+        
+        output_dir = os.path.dirname(output_path)
+        free_space = get_disk_space_info(output_dir, logger)
+        if free_space is None:
+            return True, "Could not check available disk space"
+        
+        required_gb = estimated_size / (1024 ** 3)
+        
+        if free_space < required_gb:
+            message = f"Insufficient disk space. Required: {required_gb:.2f}GB, Available: {free_space:.2f}GB"
+            return False, message
+        else:
+            message = f"Disk space check passed. Required: {required_gb:.2f}GB, Available: {free_space:.2f}GB"
+            return True, message
+    except Exception as e:
+        if logger:
+            logger.warning(f"Error checking disk space: {e}")
+        return True, f"Could not verify disk space: {e}"
+
+def validate_video_file(video_path, check_playable=True, logger=None):
+    """Validate that a video file exists and is readable."""
+    try:
+        # Check if file exists
+        if not os.path.exists(video_path):
+            return False, f"Video file does not exist: {video_path}"
+        
+        # Check if file has content
+        file_size = os.path.getsize(video_path)
+        if file_size == 0:
+            return False, f"Video file is empty: {video_path}"
+        
+        # Check if file is readable with OpenCV
+        if check_playable:
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                cap.release()
+                return False, f"Video file cannot be opened: {video_path}"
+            
+            # Try to read first frame
+            ret, frame = cap.read()
+            cap.release()
+            
+            if not ret or frame is None:
+                return False, f"Video file cannot be read (no frames): {video_path}"
+        
+        if logger:
+            logger.info(f"Video validation passed: {video_path} ({file_size / (1024*1024):.2f}MB)")
+        
+        return True, f"Video validation successful ({file_size / (1024*1024):.2f}MB)"
+    
+    except Exception as e:
+        error_msg = f"Error validating video file {video_path}: {e}"
+        if logger:
+            logger.error(error_msg)
+        return False, error_msg
+
+def create_backup_file(file_path, backup_suffix=".backup", logger=None):
+    """Create a backup copy of a file."""
+    try:
+        backup_path = f"{file_path}{backup_suffix}"
+        
+        # If backup already exists, create numbered backup
+        counter = 1
+        while os.path.exists(backup_path):
+            backup_path = f"{file_path}{backup_suffix}.{counter}"
+            counter += 1
+        
+        shutil.copy2(file_path, backup_path)
+        
+        if logger:
+            logger.info(f"Created backup: {backup_path}")
+        
+        return True, backup_path
+    
+    except Exception as e:
+        error_msg = f"Failed to create backup of {file_path}: {e}"
+        if logger:
+            logger.error(error_msg)
+        return False, error_msg
+
+def restore_from_backup(original_path, backup_path, logger=None):
+    """Restore a file from its backup."""
+    try:
+        if not os.path.exists(backup_path):
+            return False, f"Backup file does not exist: {backup_path}"
+        
+        # Remove original if it exists
+        if os.path.exists(original_path):
+            os.remove(original_path)
+        
+        # Restore from backup
+        shutil.copy2(backup_path, original_path)
+        
+        if logger:
+            logger.info(f"Restored {original_path} from backup {backup_path}")
+        
+        return True, f"Successfully restored from backup"
+    
+    except Exception as e:
+        error_msg = f"Failed to restore {original_path} from backup {backup_path}: {e}"
+        if logger:
+            logger.error(error_msg)
+        return False, error_msg
+
+def cleanup_backup_files(directory, backup_pattern=".backup", max_age_hours=24, logger=None):
+    """Clean up old backup files in a directory."""
+    try:
+        import time
+        
+        current_time = time.time()
+        max_age_seconds = max_age_hours * 3600
+        
+        cleaned_files = []
+        
+        for root, dirs, files in os.walk(directory):
+            for file in files:
+                if backup_pattern in file:
+                    file_path = os.path.join(root, file)
+                    try:
+                        file_age = current_time - os.path.getmtime(file_path)
+                        if file_age > max_age_seconds:
+                            os.remove(file_path)
+                            cleaned_files.append(file_path)
+                            if logger:
+                                logger.info(f"Cleaned up old backup: {file_path}")
+                    except Exception as e:
+                        if logger:
+                            logger.warning(f"Could not clean backup file {file_path}: {e}")
+        
+        return True, f"Cleaned up {len(cleaned_files)} backup files"
+    
+    except Exception as e:
+        error_msg = f"Error during backup cleanup: {e}"
+        if logger:
+            logger.error(error_msg)
+        return False, error_msg
+
+def safe_file_replace(source_path, target_path, create_backup=True, logger=None):
+    """Safely replace a file with another, with optional backup."""
+    try:
+        backup_path = None
+        
+        # Validate source file
+        valid, msg = validate_video_file(source_path, check_playable=True, logger=logger)
+        if not valid:
+            return False, f"Source file validation failed: {msg}", None
+        
+        # Create backup of target if it exists and backup is requested
+        if create_backup and os.path.exists(target_path):
+            backup_success, backup_result = create_backup_file(target_path, logger=logger)
+            if backup_success:
+                backup_path = backup_result
+            else:
+                if logger:
+                    logger.warning(f"Could not create backup: {backup_result}")
+        
+        # Remove target if it exists
+        if os.path.exists(target_path):
+            os.remove(target_path)
+        
+        # Move source to target
+        shutil.move(source_path, target_path)
+        
+        # Validate the moved file
+        valid, msg = validate_video_file(target_path, check_playable=True, logger=logger)
+        if not valid:
+            # Restore from backup if validation fails
+            if backup_path and os.path.exists(backup_path):
+                if logger:
+                    logger.warning(f"Replaced file failed validation, restoring backup: {msg}")
+                restore_success, restore_msg = restore_from_backup(target_path, backup_path, logger)
+                if not restore_success:
+                    return False, f"File replacement failed and backup restore failed: {restore_msg}", backup_path
+                return False, f"File replacement failed validation, restored from backup: {msg}", backup_path
+            else:
+                return False, f"File replacement failed validation and no backup available: {msg}", None
+        
+        if logger:
+            logger.info(f"Successfully replaced {target_path} with {source_path}")
+        
+        return True, "File replacement successful", backup_path
+    
+    except Exception as e:
+        error_msg = f"Error during file replacement: {e}"
+        if logger:
+            logger.error(error_msg)
+        return False, error_msg, backup_path
+
+def cleanup_rife_temp_files(directory, logger=None):
+    """Clean up temporary RIFE processing files."""
+    try:
+        temp_patterns = [
+            "*.tmp",
+            "*.temp", 
+            "*_temp.mp4",
+            "*_processing.mp4",
+            "rife_*.mp4"
+        ]
+        
+        cleaned_files = []
+        
+        for pattern in temp_patterns:
+            import glob
+            temp_files = glob.glob(os.path.join(directory, pattern))
+            for temp_file in temp_files:
+                try:
+                    os.remove(temp_file)
+                    cleaned_files.append(temp_file)
+                    if logger:
+                        logger.info(f"Cleaned up temp file: {temp_file}")
+                except Exception as e:
+                    if logger:
+                        logger.warning(f"Could not clean temp file {temp_file}: {e}")
+        
+        return True, f"Cleaned up {len(cleaned_files)} temporary files"
+    
+    except Exception as e:
+        error_msg = f"Error during temp file cleanup: {e}"
+        if logger:
+            logger.error(error_msg)
+        return False, error_msg 
