@@ -140,8 +140,9 @@ def increase_fps_single(video_path, output_path=None, multiplier=2, fp16=True, u
     # Apply FPS limiting if enabled
     final_fps = limit_fps_if_needed(target_fps, max_fps_limit, enable_fps_limit, logger)
     
-    # Determine actual multiplier based on final FPS
-    actual_multiplier = final_fps / original_fps if original_fps > 0 else multiplier
+    # Always use the original multiplier for RIFE processing to generate intermediate frames
+    # FPS limiting will be applied during the final ffmpeg re-encoding step
+    actual_multiplier = multiplier
     
     # Set up RIFE model directory using configured path
     if config.RIFE_MODEL_PATH and os.path.exists(config.RIFE_MODEL_PATH):
@@ -178,6 +179,10 @@ def increase_fps_single(video_path, output_path=None, multiplier=2, fp16=True, u
         f'--model "{model_dir}"',
         f'--multi {int(actual_multiplier)}'
     ]
+    
+    # When FPS limiting is enabled, pass the limited FPS to RIFE for proper ffmpeg setup
+    if enable_fps_limit and final_fps != target_fps:
+        rife_cmd.append(f"--fps {final_fps:.3f}")
     
     if fp16:
         rife_cmd.append("--fp16")

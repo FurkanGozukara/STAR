@@ -579,9 +579,9 @@ This helps visualize the quality improvement from upscaling."""
                         
                         rife_max_fps_limit = gr.Radio(
                             label="Max FPS Limit", 
-                            choices=[30, 60, 120, 144, 240], 
+                            choices=[23.976, 24, 25, 29.970, 30, 47.952, 48, 50, 59.940, 60, 75, 90, 100, 119.880, 120, 144, 165, 180, 240, 360], 
                             value=app_config.DEFAULT_RIFE_MAX_FPS_LIMIT,
-                            info="Maximum FPS when limiting is enabled. Choose based on your target display or use case (e.g., 60 FPS for most displays, 120+ for gaming monitors)."
+                            info="Maximum FPS when limiting is enabled. NTSC rates: 23.976/29.970/59.940 (film/TV), Standard: 24/25/30/50/60, Gaming: 120/144/240+. Choose based on your target format and display."
                         )
                         
                         with gr.Row():
