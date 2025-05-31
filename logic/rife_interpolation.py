@@ -16,6 +16,7 @@ from .file_utils import (
     cleanup_rife_temp_files, create_backup_file, restore_from_backup
 )
 from .metadata_handler import save_rife_metadata
+from . import config
 
 
 def get_video_fps(video_path, logger=None):
@@ -142,14 +143,36 @@ def increase_fps_single(video_path, output_path=None, multiplier=2, fp16=True, u
     # Determine actual multiplier based on final FPS
     actual_multiplier = final_fps / original_fps if original_fps > 0 else multiplier
     
-    # Set up RIFE model directory
-    model_dir = os.path.abspath(os.path.join("Practical-RIFE", "train_log"))
+    # Set up RIFE model directory using configured path
+    if config.RIFE_MODEL_PATH and os.path.exists(config.RIFE_MODEL_PATH):
+        model_dir = config.RIFE_MODEL_PATH
+    else:
+        # Fallback to relative path if config not available or path doesn't exist
+        model_dir = os.path.abspath(os.path.join("..", "Practical-RIFE", "train_log"))
+        if not os.path.exists(model_dir):
+            # Try current directory structure (for backwards compatibility)
+            model_dir = os.path.abspath(os.path.join("Practical-RIFE", "train_log"))
+    
     if not os.path.exists(model_dir):
         raise gr.Error(f"RIFE model directory not found: {model_dir}")
     
+    # Set up RIFE script path
+    if config.RIFE_MODEL_PATH:
+        # Use the configured path to determine script location
+        rife_base_dir = os.path.dirname(config.RIFE_MODEL_PATH)
+        rife_script_path = os.path.join(rife_base_dir, "inference_video.py")
+    else:
+        # Fallback paths
+        rife_script_path = os.path.abspath(os.path.join("..", "Practical-RIFE", "inference_video.py"))
+        if not os.path.exists(rife_script_path):
+            rife_script_path = os.path.abspath(os.path.join("Practical-RIFE", "inference_video.py"))
+    
+    if not os.path.exists(rife_script_path):
+        raise gr.Error(f"RIFE script not found: {rife_script_path}")
+    
     # Build RIFE command
     rife_cmd = [
-        f'"{sys.executable}" "Practical-RIFE/inference_video.py"',
+        f'"{sys.executable}" "{rife_script_path}"',
         f'--video "{video_path}"',
         f'--output "{output_path}"',
         f'--model "{model_dir}"',
