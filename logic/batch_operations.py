@@ -25,6 +25,9 @@ def process_batch_videos(
     scene_copy_streams_check_val, scene_use_mkvmerge_check_val, scene_rate_factor_num_val, scene_preset_dropdown_val, scene_quiet_ffmpeg_check_val,
     scene_manual_split_type_radio_val, scene_manual_split_value_num_val,
 
+    # FPS decrease parameters for batch processing
+    enable_fps_decrease_val, target_fps_val, fps_interpolation_method_val,
+    
     # RIFE interpolation parameters for batch processing
     enable_rife_interpolation_val, rife_multiplier_val, rife_fp16_val, rife_uhd_val, rife_scale_val,
     rife_skip_static_val, rife_enable_fps_limit_val, rife_max_fps_limit_val,
@@ -129,6 +132,11 @@ def process_batch_videos(
                     scene_manual_split_value=scene_manual_split_value_num_val,
 
                     create_comparison_video_enabled=create_comparison_video_check_val, # Passed here
+
+                    # FPS decrease parameters for batch processing
+                    enable_fps_decrease=enable_fps_decrease_val,
+                    target_fps=target_fps_val,
+                    fps_interpolation_method=fps_interpolation_method_val,
 
                     # RIFE interpolation parameters for batch processing
                     enable_rife_interpolation=enable_rife_interpolation_val,

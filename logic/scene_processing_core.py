@@ -23,6 +23,9 @@ def process_single_scene(
     progress=None, save_chunks=False, chunks_permanent_save_path=None, ffmpeg_preset="medium", ffmpeg_quality_value=23, ffmpeg_use_gpu=False,
     save_metadata=False, metadata_params_base: dict = None,
     
+    # FPS decrease parameters for scenes
+    enable_fps_decrease=False, target_fps=24.0, fps_interpolation_method="drop",
+    
     # RIFE interpolation parameters for scenes and chunks
     enable_rife_interpolation=False, rife_multiplier=2, rife_fp16=True, rife_uhd=False, rife_scale=1.0,
     rife_skip_static=False, rife_enable_fps_limit=False, rife_max_fps_limit=60,

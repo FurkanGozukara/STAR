@@ -569,7 +569,51 @@ This helps visualize the quality improvement from upscaling."""
                             info="Automatically detect and skip interpolating static (non-moving) frames to save processing time and avoid unnecessary interpolation."
                         )
 
+                    with gr.Accordion("Intermediate Processing", open=True):
+                        gr.Markdown("**Apply RIFE to intermediate videos (recommended)**")
+                        rife_apply_to_chunks = gr.Checkbox(
+                            label="Apply to Chunks", 
+                            value=app_config.DEFAULT_RIFE_APPLY_TO_CHUNKS,
+                            info="Apply RIFE interpolation to individual video chunks during processing. Enabled by default for smoother intermediate results."
+                        )
+                        rife_apply_to_scenes = gr.Checkbox(
+                            label="Apply to Scenes", 
+                            value=app_config.DEFAULT_RIFE_APPLY_TO_SCENES,
+                            info="Apply RIFE interpolation to individual scene videos when scene splitting is enabled. Enabled by default for consistent results."
+                        )
+                        
+                        gr.Markdown("**Note:** When RIFE is enabled, the system will return RIFE-interpolated versions to the interface instead of originals, ensuring you get the smoothest possible results throughout the processing pipeline.")
+
                 with gr.Column(scale=1):
+                    with gr.Accordion("FPS Decrease", open=True):
+                        gr.Markdown("### Pre-Processing FPS Reduction")
+                        gr.Markdown("**Reduce FPS before upscaling** to speed up processing and reduce VRAM usage. You can then use RIFE interpolation to restore smooth motion afterward.")
+                        
+                        enable_fps_decrease = gr.Checkbox(
+                            label="Enable FPS Decrease", 
+                            value=app_config.DEFAULT_ENABLE_FPS_DECREASE,
+                            info="Reduce video FPS before upscaling to speed up processing. Fewer frames = faster upscaling and lower VRAM usage."
+                        )
+                        
+                        with gr.Row():
+                            target_fps = gr.Dropdown(
+                                label="Target FPS", 
+                                choices=[8.0, 10.0, 12.0, 15.0, 18.0, 20.0, 23.976, 24.0, 25.0, 29.970, 30.0], 
+                                value=app_config.DEFAULT_TARGET_FPS,
+                                info="Target FPS for the reduced video. Lower FPS = faster upscaling. Common choices: 12-15 FPS for fast processing, 24 FPS for cinema standard."
+                            )
+                            
+                        fps_interpolation_method = gr.Radio(
+                            label="Frame Reduction Method", 
+                            choices=["drop", "blend"], 
+                            value=app_config.DEFAULT_FPS_INTERPOLATION_METHOD,
+                            info="Drop: Faster, simply removes frames. Blend: Smoother, blends frames together (slower but may preserve motion better)."
+                        )
+                        
+                        gr.Markdown("**💡 Workflow Tip:** Use FPS decrease (e.g., to 12-15 FPS) for faster upscaling, then enable RIFE 2x-4x to restore smooth 24-60 FPS output!")
+
+
+                    
                     with gr.Accordion("FPS Limiting & Output Control", open=True):
                         rife_enable_fps_limit = gr.Checkbox(
                             label="Enable FPS Limiting", 
@@ -596,20 +640,7 @@ This helps visualize the quality improvement from upscaling."""
                                 info="Replace the original upscaled video with the RIFE version as the primary output. When disabled, both versions are available."
                             )
                     
-                    with gr.Accordion("Intermediate Processing", open=True):
-                        gr.Markdown("**Apply RIFE to intermediate videos (recommended)**")
-                        rife_apply_to_chunks = gr.Checkbox(
-                            label="Apply to Chunks", 
-                            value=app_config.DEFAULT_RIFE_APPLY_TO_CHUNKS,
-                            info="Apply RIFE interpolation to individual video chunks during processing. Enabled by default for smoother intermediate results."
-                        )
-                        rife_apply_to_scenes = gr.Checkbox(
-                            label="Apply to Scenes", 
-                            value=app_config.DEFAULT_RIFE_APPLY_TO_SCENES,
-                            info="Apply RIFE interpolation to individual scene videos when scene splitting is enabled. Enabled by default for consistent results."
-                        )
-                        
-                        gr.Markdown("**Note:** When RIFE is enabled, the system will return RIFE-interpolated versions to the interface instead of originals, ensuring you get the smoothest possible results throughout the processing pipeline.")
+
 
 
     # Event Handlers (Unchanged logic, only component definitions moved)
@@ -689,6 +720,8 @@ This helps visualize the quality improvement from upscaling."""
     scene_frame_skip_num_val ,scene_threshold_num_val ,scene_min_content_val_num_val ,scene_frame_window_num_val ,
     scene_copy_streams_check_val ,scene_use_mkvmerge_check_val ,scene_rate_factor_num_val ,scene_preset_dropdown_val ,scene_quiet_ffmpeg_check_val ,
     scene_manual_split_type_radio_val ,scene_manual_split_value_num_val ,
+    # FPS decrease parameters
+    enable_fps_decrease_val=False, target_fps_val=24.0, fps_interpolation_method_val="drop",
     # RIFE interpolation parameters
     enable_rife_interpolation_val=False, rife_multiplier_val=2, rife_fp16_val=True, rife_uhd_val=False, rife_scale_val=1.0,
     rife_skip_static_val=False, rife_enable_fps_limit_val=False, rife_max_fps_limit_val=60,
@@ -838,6 +871,9 @@ This helps visualize the quality improvement from upscaling."""
 
         create_comparison_video_enabled =create_comparison_video_check_val ,
 
+        # FPS decrease parameters
+        enable_fps_decrease =enable_fps_decrease_val ,target_fps =target_fps_val ,fps_interpolation_method =fps_interpolation_method_val ,
+
         # RIFE interpolation parameters
         enable_rife_interpolation =enable_rife_interpolation_val ,rife_multiplier =rife_multiplier_val ,rife_fp16 =rife_fp16_val ,rife_uhd =rife_uhd_val ,rife_scale =rife_scale_val ,
         rife_skip_static =rife_skip_static_val ,rife_enable_fps_limit =rife_enable_fps_limit_val ,rife_max_fps_limit =rife_max_fps_limit_val ,
@@ -973,6 +1009,8 @@ This helps visualize the quality improvement from upscaling."""
     scene_frame_skip_num ,scene_threshold_num ,scene_min_content_val_num ,scene_frame_window_num ,
     scene_copy_streams_check ,scene_use_mkvmerge_check ,scene_rate_factor_num ,scene_preset_dropdown ,scene_quiet_ffmpeg_check ,
     scene_manual_split_type_radio ,scene_manual_split_value_num ,
+    # FPS decrease UI controls
+    enable_fps_decrease ,target_fps ,fps_interpolation_method ,
     # RIFE interpolation UI controls
     enable_rife_interpolation ,rife_multiplier ,rife_fp16 ,rife_uhd ,rife_scale ,
     rife_skip_static ,rife_enable_fps_limit ,rife_max_fps_limit ,
@@ -1047,6 +1085,8 @@ This helps visualize the quality improvement from upscaling."""
     scene_frame_skip_num_val ,scene_threshold_num_val ,scene_min_content_val_num_val ,scene_frame_window_val ,
     scene_copy_streams_check_val ,scene_use_mkvmerge_check_val ,scene_rate_factor_num_val ,scene_preset_dropdown_val ,scene_quiet_ffmpeg_check_val ,
     scene_manual_split_type_radio_val ,scene_manual_split_value_num_val ,
+    # FPS decrease parameters for batch
+    enable_fps_decrease_val=False, target_fps_val=24.0, fps_interpolation_method_val="drop",
     # RIFE interpolation parameters for batch
     enable_rife_interpolation_val=False, rife_multiplier_val=2, rife_fp16_val=True, rife_uhd_val=False, rife_scale_val=1.0,
     rife_skip_static_val=False, rife_enable_fps_limit_val=False, rife_max_fps_limit_val=60,
@@ -1123,6 +1163,8 @@ This helps visualize the quality improvement from upscaling."""
     scene_frame_skip_num ,scene_threshold_num ,scene_min_content_val_num ,scene_frame_window_num ,
     scene_copy_streams_check ,scene_use_mkvmerge_check ,scene_rate_factor_num ,scene_preset_dropdown ,scene_quiet_ffmpeg_check ,
     scene_manual_split_type_radio ,scene_manual_split_value_num ,
+    # FPS decrease UI controls for batch processing
+    enable_fps_decrease ,target_fps ,fps_interpolation_method ,
     # RIFE interpolation UI controls for batch processing
     enable_rife_interpolation ,rife_multiplier ,rife_fp16 ,rife_uhd ,rife_scale ,
     rife_skip_static ,rife_enable_fps_limit ,rife_max_fps_limit ,
@@ -1174,6 +1216,16 @@ This helps visualize the quality improvement from upscaling."""
             rife_enable_fps_limit, rife_max_fps_limit, rife_apply_to_chunks, 
             rife_apply_to_scenes, rife_keep_original
         ]
+    )
+
+    # FPS Decrease UI event handlers
+    def update_fps_decrease_controls_interactive(enable_fps_decrease):
+        return [gr.update(interactive=enable_fps_decrease)] * 2
+    
+    enable_fps_decrease.change(
+        fn=update_fps_decrease_controls_interactive,
+        inputs=enable_fps_decrease,
+        outputs=[target_fps, fps_interpolation_method]
     )
 
 if __name__ =="__main__":

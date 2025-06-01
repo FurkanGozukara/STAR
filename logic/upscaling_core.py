@@ -18,7 +18,8 @@ from .common_utils import format_time
 from .ffmpeg_utils import (
     run_ffmpeg_command as util_run_ffmpeg_command,
     extract_frames as util_extract_frames,
-    create_video_from_frames as util_create_video_from_frames
+    create_video_from_frames as util_create_video_from_frames,
+    decrease_fps as util_decrease_fps
 )
 from .file_utils import (
     get_batch_filename as util_get_batch_filename,
@@ -54,6 +55,9 @@ def run_upscale (
     scene_manual_split_type ,scene_manual_split_value ,
 
     create_comparison_video_enabled ,
+
+    # FPS decrease parameters
+    enable_fps_decrease =False ,target_fps =24.0 ,fps_interpolation_method ="drop",
 
     # RIFE interpolation parameters
     enable_rife_interpolation =False ,rife_multiplier =2 ,rife_fp16 =True ,rife_uhd =False ,rife_scale =1.0 ,
@@ -112,6 +116,10 @@ def run_upscale (
     "scene_manual_split_type":scene_manual_split_type ,"scene_manual_split_value":scene_manual_split_value ,
     "is_batch_mode":is_batch_mode ,"batch_output_dir":batch_output_dir ,
     "current_seed": current_seed, # Added current_seed
+    
+    # FPS decrease metadata
+    "fps_decrease_enabled":enable_fps_decrease ,"fps_decrease_target":target_fps ,
+    "fps_decrease_method":fps_interpolation_method ,
     
     # RIFE interpolation metadata
     "rife_enabled":enable_rife_interpolation ,"rife_multiplier":rife_multiplier ,"rife_fp16":rife_fp16 ,
@@ -322,6 +330,68 @@ def run_upscale (
             logger .info (direct_upscale_msg )
             yield None ,"\n".join (status_log ),last_chunk_video_path ,last_chunk_status,None
 
+        # FPS Decrease Processing (if enabled)
+        fps_decreased_video_path = None
+        if enable_fps_decrease:
+            fps_decrease_start_time = time.time()
+            progress(current_overall_progress, desc="Applying FPS decrease...")
+            fps_decrease_status_msg = f"Decreasing FPS to {target_fps} using {fps_interpolation_method} method..."
+            status_log.append(fps_decrease_status_msg)
+            logger.info(fps_decrease_status_msg)
+            yield None, "\n".join(status_log), last_chunk_video_path, fps_decrease_status_msg, None
+            
+            try:
+                # Generate FPS decreased video path
+                fps_decreased_video_path = os.path.join(temp_dir, "fps_decreased_input.mp4")
+                
+                # Apply FPS decrease
+                fps_success, fps_output_fps, fps_message = util_decrease_fps(
+                    input_video_path=current_input_video_for_frames,
+                    output_video_path=fps_decreased_video_path,
+                    target_fps=target_fps,
+                    interpolation_method=fps_interpolation_method,
+                    ffmpeg_preset=ffmpeg_preset,
+                    ffmpeg_quality_value=ffmpeg_quality_value,
+                    ffmpeg_use_gpu=ffmpeg_use_gpu,
+                    logger=logger
+                )
+                
+                if fps_success:
+                    # Update the input video path for all subsequent processing
+                    current_input_video_for_frames = fps_decreased_video_path
+                    # Update metadata
+                    params_for_metadata["fps_decrease_applied"] = True
+                    params_for_metadata["original_fps"] = params_for_metadata.get("input_fps", "unknown")
+                    params_for_metadata["input_fps"] = fps_output_fps
+                    
+                    fps_duration = time.time() - fps_decrease_start_time
+                    fps_success_msg = f"FPS decrease completed in {format_time(fps_duration)}. {fps_message}"
+                    status_log.append(fps_success_msg)
+                    logger.info(fps_success_msg)
+                    progress(current_overall_progress, desc=f"FPS decreased to {fps_output_fps:.2f}")
+                    yield None, "\n".join(status_log), last_chunk_video_path, f"FPS decreased to {fps_output_fps:.2f}", None
+                else:
+                    # FPS decrease failed, continue with original video
+                    fps_duration = time.time() - fps_decrease_start_time
+                    fps_error_msg = f"FPS decrease failed after {format_time(fps_duration)}: {fps_message}. Continuing with original video."
+                    status_log.append(fps_error_msg)
+                    logger.warning(fps_error_msg)
+                    params_for_metadata["fps_decrease_applied"] = False
+                    params_for_metadata["fps_decrease_error"] = fps_message
+                    yield None, "\n".join(status_log), last_chunk_video_path, "FPS decrease failed, using original", None
+                    
+            except Exception as e_fps:
+                fps_duration = time.time() - fps_decrease_start_time
+                fps_exception_msg = f"Exception during FPS decrease after {format_time(fps_duration)}: {str(e_fps)}. Continuing with original video."
+                status_log.append(fps_exception_msg)
+                logger.error(fps_exception_msg, exc_info=True)
+                params_for_metadata["fps_decrease_applied"] = False
+                params_for_metadata["fps_decrease_error"] = str(e_fps)
+                yield None, "\n".join(status_log), last_chunk_video_path, "FPS decrease error, using original", None
+        else:
+            # FPS decrease disabled
+            params_for_metadata["fps_decrease_applied"] = False
+
         scene_video_paths =[]
         if enable_scene_split :
             scene_split_progress_start =current_overall_progress
@@ -487,6 +557,9 @@ def run_upscale (
                         chunks_permanent_save_path=frames_output_subfolder, # This was scene_output_dir, should be specific path for chunks
                         ffmpeg_preset=ffmpeg_preset, ffmpeg_quality_value=ffmpeg_quality_value, ffmpeg_use_gpu=ffmpeg_use_gpu,
                         save_metadata=save_metadata, metadata_params_base=scene_metadata_base_params,
+                        
+                        # FPS decrease parameters for scenes
+                        enable_fps_decrease=enable_fps_decrease, target_fps=target_fps, fps_interpolation_method=fps_interpolation_method,
                         
                         # RIFE interpolation parameters for scenes and chunks
                         enable_rife_interpolation=enable_rife_interpolation, rife_multiplier=rife_multiplier, rife_fp16=rife_fp16, 
