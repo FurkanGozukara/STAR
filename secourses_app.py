@@ -80,6 +80,10 @@ process_batch_videos
 
 from logic .upscaling_core import run_upscale as core_run_upscale
 
+from logic .manual_comparison import (
+generate_manual_comparison_video as util_generate_manual_comparison_video
+)
+
 SELECTED_GPU_ID =0
 
 parser =ArgumentParser (description ="Ultimate SECourses STAR Video Upscaler")
@@ -516,6 +520,41 @@ This helps visualize the quality improvement from upscaling."""
                                 value=app_config.DEFAULT_RANDOM_SEED,
                                 info="If checked, a random seed will be generated and used, ignoring the 'Seed' value."
                             )
+
+                with gr.Column(scale=1):
+                    with gr.Accordion("Manual Comparison Video Generator", open=True):
+                        gr.Markdown("### Generate Custom Comparison Videos")
+                        gr.Markdown("Upload two videos to create a manual side-by-side or top-bottom comparison video using the same FFmpeg settings and layout logic as the automatic comparison feature.")
+                        
+                        gr.Markdown("**Step 1:** Upload the original or reference video for comparison")
+                        manual_original_video = gr.Video(
+                            label="Original/Reference Video",
+                            sources=["upload"],
+                            interactive=True,
+                            height=200
+                        )
+                        
+                        gr.Markdown("**Step 2:** Upload the upscaled or enhanced video for comparison")
+                        manual_upscaled_video = gr.Video(
+                            label="Upscaled/Enhanced Video", 
+                            sources=["upload"],
+                            interactive=True,
+                            height=200
+                        )
+                        
+                        gr.Markdown("**Step 3:** Generate the comparison video using current FFmpeg settings")
+                        manual_comparison_button = gr.Button(
+                            "Generate Manual Comparison Video",
+                            variant="primary",
+                            size="lg"
+                        )
+                        
+                        manual_comparison_status = gr.Textbox(
+                            label="Manual Comparison Status",
+                            lines=2,
+                            interactive=False,
+                            visible=False
+                        )
 
             with gr.Accordion("Comparison Video To See Difference", open=True):
                 comparison_video = gr.Video(label="Comparison Video", interactive=False, height=512)
@@ -1229,6 +1268,59 @@ This helps visualize the quality improvement from upscaling."""
     outputs =status_textbox
     )
 
+    def manual_comparison_wrapper(
+        manual_original_video_val,
+        manual_upscaled_video_val,
+        ffmpeg_preset_dropdown_val,
+        ffmpeg_quality_slider_val,
+        ffmpeg_use_gpu_check_val,
+        seed_num_val,
+        random_seed_check_val,
+        progress=gr.Progress(track_tqdm=True)
+    ):
+        """Wrapper function for manual comparison video generation"""
+        # Handle seed logic following user rules
+        if random_seed_check_val:
+            import random
+            current_seed = random.randint(0, 2**32 - 1)
+        else:
+            current_seed = seed_num_val if seed_num_val >= 0 else 99
+            
+        # Validate inputs
+        if manual_original_video_val is None:
+            error_msg = "Please upload an original/reference video"
+            return gr.update(value=None), gr.update(value=error_msg, visible=True)
+            
+        if manual_upscaled_video_val is None:
+            error_msg = "Please upload an upscaled/enhanced video" 
+            return gr.update(value=None), gr.update(value=error_msg, visible=True)
+        
+        try:
+            # Generate manual comparison video
+            output_path, status_message = util_generate_manual_comparison_video(
+                original_video_path=manual_original_video_val,
+                upscaled_video_path=manual_upscaled_video_val,
+                ffmpeg_preset=ffmpeg_preset_dropdown_val,
+                ffmpeg_quality=ffmpeg_quality_slider_val,
+                ffmpeg_use_gpu=ffmpeg_use_gpu_check_val,
+                output_dir=app_config.DEFAULT_OUTPUT_DIR,
+                seed_value=current_seed,
+                logger=logger,
+                progress=progress
+            )
+            
+            if output_path:
+                # Success - update comparison video display and show success status
+                return gr.update(value=output_path), gr.update(value=status_message, visible=True)
+            else:
+                # Failure - show error status
+                return gr.update(value=None), gr.update(value=status_message, visible=True)
+                
+        except Exception as e:
+            error_msg = f"Unexpected error during manual comparison: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return gr.update(value=None), gr.update(value=error_msg, visible=True)
+
     def update_seed_num_interactive (is_random_seed_checked ):
         return gr .update (interactive =not is_random_seed_checked )
 
@@ -1236,6 +1328,25 @@ This helps visualize the quality improvement from upscaling."""
     fn =update_seed_num_interactive ,
     inputs =random_seed_check ,
     outputs =seed_num
+    )
+
+    # Wire up manual comparison button
+    manual_comparison_button.click(
+        fn=manual_comparison_wrapper,
+        inputs=[
+            manual_original_video,
+            manual_upscaled_video,
+            ffmpeg_preset_dropdown,
+            ffmpeg_quality_slider,
+            ffmpeg_use_gpu_check,
+            seed_num,
+            random_seed_check
+        ],
+        outputs=[
+            comparison_video,
+            manual_comparison_status
+        ],
+        show_progress_on=[comparison_video]
     )
 
     # RIFE UI event handlers
