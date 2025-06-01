@@ -24,7 +24,7 @@ def process_single_scene(
     save_metadata=False, metadata_params_base: dict = None,
     
     # FPS decrease parameters for scenes
-    enable_fps_decrease=False, target_fps=24.0, fps_interpolation_method="drop",
+    enable_fps_decrease=False, fps_decrease_mode="multiplier", fps_multiplier_preset="1/2x (Half FPS)", fps_multiplier_custom=0.5, target_fps=24.0, fps_interpolation_method="drop",
     
     # RIFE interpolation parameters for scenes and chunks
     enable_rife_interpolation=False, rife_multiplier=2, rife_fp16=True, rife_uhd=False, rife_scale=1.0,

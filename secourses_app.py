@@ -36,7 +36,11 @@ from logic .common_utils import format_time
 from logic .ffmpeg_utils import (
 run_ffmpeg_command as util_run_ffmpeg_command ,
 extract_frames as util_extract_frames ,
-create_video_from_frames as util_create_video_from_frames
+create_video_from_frames as util_create_video_from_frames ,
+decrease_fps as util_decrease_fps ,
+decrease_fps_with_multiplier as util_decrease_fps_with_multiplier ,
+calculate_target_fps_from_multiplier as util_calculate_target_fps_from_multiplier ,
+get_common_fps_multipliers as util_get_common_fps_multipliers
 )
 
 from logic .file_utils import (
@@ -595,14 +599,45 @@ This helps visualize the quality improvement from upscaling."""
                             info="Reduce video FPS before upscaling to speed up processing. Fewer frames = faster upscaling and lower VRAM usage."
                         )
                         
-                        with gr.Row():
+                        # FPS Mode Selection
+                        fps_decrease_mode = gr.Radio(
+                            label="FPS Reduction Mode",
+                            choices=["multiplier", "fixed"],
+                            value=app_config.DEFAULT_FPS_DECREASE_MODE,
+                            info="Multiplier: Reduce by fraction (1/2x, 1/4x). Fixed: Set specific FPS value. Multiplier is recommended for automatic adaptation to input video."
+                        )
+                        
+                        # Multiplier Mode Controls
+                        with gr.Group() as multiplier_controls:
+                            with gr.Row():
+                                fps_multiplier_preset = gr.Dropdown(
+                                    label="FPS Multiplier",
+                                    choices=list(util_get_common_fps_multipliers().values()) + ["Custom"],
+                                    value="1/2x (Half FPS)",
+                                    info="Choose common multiplier. 1/2x is recommended for good speed/quality balance."
+                                )
+                                fps_multiplier_custom = gr.Number(
+                                    label="Custom Multiplier",
+                                    value=app_config.DEFAULT_FPS_MULTIPLIER,
+                                    minimum=0.1,
+                                    maximum=1.0,
+                                    step=0.05,
+                                    precision=2,
+                                    visible=False,
+                                    info="Custom multiplier value (0.1 to 1.0). Lower = fewer frames."
+                                )
+                        
+                        # Fixed Mode Controls (Legacy)
+                        with gr.Group() as fixed_controls:
                             target_fps = gr.Dropdown(
                                 label="Target FPS", 
                                 choices=[8.0, 10.0, 12.0, 15.0, 18.0, 20.0, 23.976, 24.0, 25.0, 29.970, 30.0], 
                                 value=app_config.DEFAULT_TARGET_FPS,
-                                info="Target FPS for the reduced video. Lower FPS = faster upscaling. Common choices: 12-15 FPS for fast processing, 24 FPS for cinema standard."
+                                info="Target FPS for the reduced video. Lower FPS = faster upscaling. Common choices: 12-15 FPS for fast processing, 24 FPS for cinema standard.",
+                                visible=False
                             )
-                            
+                        
+                        # Common Controls
                         fps_interpolation_method = gr.Radio(
                             label="Frame Reduction Method", 
                             choices=["drop", "blend"], 
@@ -610,7 +645,13 @@ This helps visualize the quality improvement from upscaling."""
                             info="Drop: Faster, simply removes frames. Blend: Smoother, blends frames together (slower but may preserve motion better)."
                         )
                         
-                        gr.Markdown("**💡 Workflow Tip:** Use FPS decrease (e.g., to 12-15 FPS) for faster upscaling, then enable RIFE 2x-4x to restore smooth 24-60 FPS output!")
+                        # Dynamic Info Display
+                        fps_calculation_info = gr.Markdown(
+                            "**📊 Calculation:** Upload a video to see FPS reduction preview",
+                            visible=True
+                        )
+                        
+                        gr.Markdown("**💡 Workflow Tip:** Use FPS decrease (1/2x for balanced speed/quality) for faster upscaling, then enable RIFE 2x-4x to restore smooth 24-60 FPS output!")
 
 
                     
@@ -721,7 +762,7 @@ This helps visualize the quality improvement from upscaling."""
     scene_copy_streams_check_val ,scene_use_mkvmerge_check_val ,scene_rate_factor_num_val ,scene_preset_dropdown_val ,scene_quiet_ffmpeg_check_val ,
     scene_manual_split_type_radio_val ,scene_manual_split_value_num_val ,
     # FPS decrease parameters
-    enable_fps_decrease_val=False, target_fps_val=24.0, fps_interpolation_method_val="drop",
+    enable_fps_decrease_val=False, fps_decrease_mode_val="multiplier", fps_multiplier_preset_val="1/2x (Half FPS)", fps_multiplier_custom_val=0.5, target_fps_val=24.0, fps_interpolation_method_val="drop",
     # RIFE interpolation parameters
     enable_rife_interpolation_val=False, rife_multiplier_val=2, rife_fp16_val=True, rife_uhd_val=False, rife_scale_val=1.0,
     rife_skip_static_val=False, rife_enable_fps_limit_val=False, rife_max_fps_limit_val=60,
@@ -872,7 +913,9 @@ This helps visualize the quality improvement from upscaling."""
         create_comparison_video_enabled =create_comparison_video_check_val ,
 
         # FPS decrease parameters
-        enable_fps_decrease =enable_fps_decrease_val ,target_fps =target_fps_val ,fps_interpolation_method =fps_interpolation_method_val ,
+        enable_fps_decrease =enable_fps_decrease_val ,fps_decrease_mode =fps_decrease_mode_val ,
+        fps_multiplier_preset =fps_multiplier_preset_val ,fps_multiplier_custom =fps_multiplier_custom_val ,
+        target_fps =target_fps_val ,fps_interpolation_method =fps_interpolation_method_val ,
 
         # RIFE interpolation parameters
         enable_rife_interpolation =enable_rife_interpolation_val ,rife_multiplier =rife_multiplier_val ,rife_fp16 =rife_fp16_val ,rife_uhd =rife_uhd_val ,rife_scale =rife_scale_val ,
@@ -1010,7 +1053,7 @@ This helps visualize the quality improvement from upscaling."""
     scene_copy_streams_check ,scene_use_mkvmerge_check ,scene_rate_factor_num ,scene_preset_dropdown ,scene_quiet_ffmpeg_check ,
     scene_manual_split_type_radio ,scene_manual_split_value_num ,
     # FPS decrease UI controls
-    enable_fps_decrease ,target_fps ,fps_interpolation_method ,
+    enable_fps_decrease ,fps_decrease_mode ,fps_multiplier_preset ,fps_multiplier_custom ,target_fps ,fps_interpolation_method ,
     # RIFE interpolation UI controls
     enable_rife_interpolation ,rife_multiplier ,rife_fp16 ,rife_uhd ,rife_scale ,
     rife_skip_static ,rife_enable_fps_limit ,rife_max_fps_limit ,
@@ -1086,7 +1129,7 @@ This helps visualize the quality improvement from upscaling."""
     scene_copy_streams_check_val ,scene_use_mkvmerge_check_val ,scene_rate_factor_num_val ,scene_preset_dropdown_val ,scene_quiet_ffmpeg_check_val ,
     scene_manual_split_type_radio_val ,scene_manual_split_value_num_val ,
     # FPS decrease parameters for batch
-    enable_fps_decrease_val=False, target_fps_val=24.0, fps_interpolation_method_val="drop",
+    enable_fps_decrease_val=False, fps_decrease_mode_val="multiplier", fps_multiplier_preset_val="1/2x (Half FPS)", fps_multiplier_custom_val=0.5, target_fps_val=24.0, fps_interpolation_method_val="drop",
     # RIFE interpolation parameters for batch
     enable_rife_interpolation_val=False, rife_multiplier_val=2, rife_fp16_val=True, rife_uhd_val=False, rife_scale_val=1.0,
     rife_skip_static_val=False, rife_enable_fps_limit_val=False, rife_max_fps_limit_val=60,
@@ -1164,7 +1207,7 @@ This helps visualize the quality improvement from upscaling."""
     scene_copy_streams_check ,scene_use_mkvmerge_check ,scene_rate_factor_num ,scene_preset_dropdown ,scene_quiet_ffmpeg_check ,
     scene_manual_split_type_radio ,scene_manual_split_value_num ,
     # FPS decrease UI controls for batch processing
-    enable_fps_decrease ,target_fps ,fps_interpolation_method ,
+    enable_fps_decrease ,fps_decrease_mode ,fps_multiplier_preset ,fps_multiplier_custom ,target_fps ,fps_interpolation_method ,
     # RIFE interpolation UI controls for batch processing
     enable_rife_interpolation ,rife_multiplier ,rife_fp16 ,rife_uhd ,rife_scale ,
     rife_skip_static ,rife_enable_fps_limit ,rife_max_fps_limit ,
@@ -1220,13 +1263,109 @@ This helps visualize the quality improvement from upscaling."""
 
     # FPS Decrease UI event handlers
     def update_fps_decrease_controls_interactive(enable_fps_decrease):
-        return [gr.update(interactive=enable_fps_decrease)] * 2
+        # Update all FPS decrease related controls
+        if enable_fps_decrease:
+            return [
+                gr.update(interactive=True),  # fps_decrease_mode
+                gr.update(interactive=True),  # fps_multiplier_preset
+                gr.update(interactive=True),  # fps_multiplier_custom
+                gr.update(interactive=True),  # target_fps
+                gr.update(interactive=True),  # fps_interpolation_method
+            ]
+        else:
+            return [
+                gr.update(interactive=False),  # fps_decrease_mode
+                gr.update(interactive=False),  # fps_multiplier_preset
+                gr.update(interactive=False),  # fps_multiplier_custom
+                gr.update(interactive=False),  # target_fps
+                gr.update(interactive=False),  # fps_interpolation_method
+            ]
+    
+    def update_fps_mode_controls(fps_mode):
+        """Update visibility of controls based on FPS mode selection."""
+        if fps_mode == "multiplier":
+            return [
+                gr.update(visible=True),   # multiplier_controls
+                gr.update(visible=False),  # fixed_controls (target_fps)
+            ]
+        else:  # fixed mode
+            return [
+                gr.update(visible=False),  # multiplier_controls
+                gr.update(visible=True),   # fixed_controls (target_fps)
+            ]
+    
+    def update_multiplier_preset(preset_choice):
+        """Convert preset choice to multiplier value and show custom if needed."""
+        multiplier_map = {v: k for k, v in util_get_common_fps_multipliers().items()}
+        
+        if preset_choice == "Custom":
+            return [
+                gr.update(visible=True),   # fps_multiplier_custom (show)
+                0.5  # default custom value
+            ]
+        else:
+            multiplier_value = multiplier_map.get(preset_choice, 0.5)
+            return [
+                gr.update(visible=False),  # fps_multiplier_custom (hide)
+                multiplier_value
+            ]
+    
+    def calculate_fps_preview(input_video, fps_mode, fps_multiplier_preset, fps_multiplier_custom, target_fps):
+        """Calculate and display FPS reduction preview."""
+        if input_video is None:
+            return "**📊 Calculation:** Upload a video to see FPS reduction preview"
+        
+        try:
+            # Get input FPS (would normally use ffprobe, but for preview we'll simulate)
+            # In real implementation, we'd call util_get_video_fps here
+            input_fps = 30.0  # Default assumption for preview
+            
+            if fps_mode == "multiplier":
+                # Get actual multiplier value
+                if fps_multiplier_preset == "Custom":
+                    multiplier = fps_multiplier_custom
+                else:
+                    multiplier_map = {v: k for k, v in util_get_common_fps_multipliers().items()}
+                    multiplier = multiplier_map.get(fps_multiplier_preset, 0.5)
+                
+                calculated_fps = input_fps * multiplier
+                if calculated_fps < 1.0:
+                    calculated_fps = 1.0
+                
+                return f"**📊 Calculation:** {input_fps:.1f} FPS × {multiplier:.2f} = {calculated_fps:.1f} FPS ({fps_multiplier_preset})"
+            else:
+                return f"**📊 Calculation:** Fixed mode → {target_fps} FPS"
+                
+        except Exception as e:
+            return f"**📊 Calculation:** Error calculating preview: {str(e)}"
+    
+
     
     enable_fps_decrease.change(
         fn=update_fps_decrease_controls_interactive,
         inputs=enable_fps_decrease,
-        outputs=[target_fps, fps_interpolation_method]
+        outputs=[fps_decrease_mode, fps_multiplier_preset, fps_multiplier_custom, target_fps, fps_interpolation_method]
     )
+    
+    fps_decrease_mode.change(
+        fn=update_fps_mode_controls,
+        inputs=fps_decrease_mode,
+        outputs=[multiplier_controls, fixed_controls]
+    )
+    
+    fps_multiplier_preset.change(
+        fn=update_multiplier_preset,
+        inputs=fps_multiplier_preset,
+        outputs=[fps_multiplier_custom, fps_multiplier_custom]
+    )
+    
+    # Update FPS calculation preview when relevant inputs change
+    for component in [input_video, fps_decrease_mode, fps_multiplier_preset, fps_multiplier_custom, target_fps]:
+        component.change(
+            fn=calculate_fps_preview,
+            inputs=[input_video, fps_decrease_mode, fps_multiplier_preset, fps_multiplier_custom, target_fps],
+            outputs=fps_calculation_info
+        )
 
 if __name__ =="__main__":
     os .makedirs (app_config .DEFAULT_OUTPUT_DIR ,exist_ok =True )

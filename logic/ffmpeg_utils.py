@@ -84,19 +84,79 @@ def get_video_fps(video_path, logger=None):
             logger.warning(f"Could not get FPS using ffprobe for '{video_path}': {e}. Using default {fps} FPS.")
     return fps
 
-def decrease_fps(input_video_path, output_video_path, target_fps, interpolation_method="drop", ffmpeg_preset="medium", ffmpeg_quality_value=23, ffmpeg_use_gpu=False, logger=None):
+def calculate_target_fps_from_multiplier(input_video_path, multiplier, logger=None):
     """
-    Decrease video FPS using FFmpeg.
+    Calculate target FPS by applying a multiplier to the input video's FPS.
+    
+    Args:
+        input_video_path: Path to input video
+        multiplier: FPS multiplier (e.g., 0.5 for half FPS, 0.25 for quarter FPS)
+        logger: Logger instance
+    
+    Returns:
+        tuple: (target_fps: float, input_fps: float, multiplier_applied: float)
+    """
+    if not os.path.exists(input_video_path):
+        error_msg = f"Input video not found: {input_video_path}"
+        if logger:
+            logger.error(error_msg)
+        return 24.0, 30.0, 0.8  # Fallback values
+    
+    # Get input video FPS
+    input_fps = get_video_fps(input_video_path, logger)
+    
+    # Validate multiplier
+    if multiplier <= 0 or multiplier > 1:
+        if logger:
+            logger.warning(f"Invalid multiplier {multiplier}, using 0.5 as fallback")
+        multiplier = 0.5
+    
+    # Calculate target FPS
+    target_fps = input_fps * multiplier
+    
+    # Ensure minimum FPS of 1.0
+    if target_fps < 1.0:
+        if logger:
+            logger.warning(f"Calculated target FPS ({target_fps:.2f}) is too low, using 1.0 FPS minimum")
+        target_fps = 1.0
+        multiplier = target_fps / input_fps
+    
+    if logger:
+        logger.info(f"FPS calculation: {input_fps:.2f} × {multiplier:.3f} = {target_fps:.2f} FPS")
+    
+    return target_fps, input_fps, multiplier
+
+def get_common_fps_multipliers():
+    """
+    Get common FPS multipliers with descriptive names.
+    
+    Returns:
+        dict: Mapping of multiplier values to descriptive names
+    """
+    return {
+        0.5: "1/2x (Half FPS)",
+        0.25: "1/4x (Quarter FPS)", 
+        0.33: "1/3x (Third FPS)",
+        0.67: "2/3x (Two-thirds FPS)",
+        0.75: "3/4x (Three-quarters FPS)",
+        0.125: "1/8x (Eighth FPS)"
+    }
+
+def decrease_fps(input_video_path, output_video_path, target_fps=None, interpolation_method="drop", ffmpeg_preset="medium", ffmpeg_quality_value=23, ffmpeg_use_gpu=False, logger=None, fps_mode="fixed", fps_multiplier=0.5):
+    """
+    Decrease video FPS using FFmpeg with support for both fixed FPS and multiplier modes.
     
     Args:
         input_video_path: Path to input video
         output_video_path: Path for output video
-        target_fps: Target FPS (float)
+        target_fps: Target FPS (float) - used in fixed mode, ignored in multiplier mode
         interpolation_method: "drop" for dropping frames, "blend" for blending frames
         ffmpeg_preset: FFmpeg preset for encoding
         ffmpeg_quality_value: Quality value for encoding
         ffmpeg_use_gpu: Whether to use GPU encoding
         logger: Logger instance
+        fps_mode: "fixed" for absolute FPS value, "multiplier" for relative FPS reduction
+        fps_multiplier: Multiplier for input FPS (e.g., 0.5 for half FPS) - used in multiplier mode
     
     Returns:
         tuple: (success: bool, output_fps: float, message: str)
@@ -107,12 +167,25 @@ def decrease_fps(input_video_path, output_video_path, target_fps, interpolation_
             logger.error(error_msg)
         return False, 0.0, error_msg
     
-    # Get current FPS
-    current_fps = get_video_fps(input_video_path, logger)
+    # Determine target FPS based on mode
+    if fps_mode == "multiplier":
+        calculated_target_fps, input_fps, actual_multiplier = calculate_target_fps_from_multiplier(
+            input_video_path, fps_multiplier, logger
+        )
+        target_fps = calculated_target_fps
+        current_fps = input_fps
+        mode_description = f"multiplier mode ({actual_multiplier:.3f}x)"
+    else:  # fixed mode
+        current_fps = get_video_fps(input_video_path, logger)
+        if target_fps is None:
+            target_fps = 24.0  # Default fallback
+            if logger:
+                logger.warning(f"No target FPS specified in fixed mode, using default {target_fps} FPS")
+        mode_description = "fixed FPS mode"
     
     # Check if FPS decrease is necessary
     if current_fps <= target_fps:
-        msg = f"Input FPS ({current_fps:.2f}) is already at or below target FPS ({target_fps:.2f}). No FPS decrease needed."
+        msg = f"Input FPS ({current_fps:.2f}) is already at or below target FPS ({target_fps:.2f}) in {mode_description}. No FPS decrease needed."
         if logger:
             logger.info(msg)
         # Copy the file instead of processing
@@ -127,7 +200,7 @@ def decrease_fps(input_video_path, output_video_path, target_fps, interpolation_
             return False, 0.0, error_msg
     
     if logger:
-        logger.info(f"Decreasing FPS from {current_fps:.2f} to {target_fps:.2f} using method '{interpolation_method}'")
+        logger.info(f"Decreasing FPS from {current_fps:.2f} to {target_fps:.2f} using {mode_description} and '{interpolation_method}' method")
     
     try:
         # Prepare output directory
@@ -189,7 +262,7 @@ def decrease_fps(input_video_path, output_video_path, target_fps, interpolation_
         # Verify output and get final FPS
         if os.path.exists(output_video_path):
             final_fps = get_video_fps(output_video_path, logger)
-            success_msg = f"FPS decreased successfully from {current_fps:.2f} to {final_fps:.2f} FPS using {interpolation_method} method"
+            success_msg = f"FPS decreased successfully from {current_fps:.2f} to {final_fps:.2f} FPS using {mode_description} and {interpolation_method} method"
             if logger:
                 logger.info(success_msg)
             return True, final_fps, success_msg
@@ -204,6 +277,36 @@ def decrease_fps(input_video_path, output_video_path, target_fps, interpolation_
         if logger:
             logger.error(error_msg)
         return False, 0.0, error_msg
+
+def decrease_fps_with_multiplier(input_video_path, output_video_path, multiplier, interpolation_method="drop", ffmpeg_preset="medium", ffmpeg_quality_value=23, ffmpeg_use_gpu=False, logger=None):
+    """
+    Convenience function to decrease FPS using a multiplier.
+    
+    Args:
+        input_video_path: Path to input video
+        output_video_path: Path for output video  
+        multiplier: FPS multiplier (e.g., 0.5 for half FPS, 0.25 for quarter FPS)
+        interpolation_method: "drop" for dropping frames, "blend" for blending frames
+        ffmpeg_preset: FFmpeg preset for encoding
+        ffmpeg_quality_value: Quality value for encoding
+        ffmpeg_use_gpu: Whether to use GPU encoding
+        logger: Logger instance
+    
+    Returns:
+        tuple: (success: bool, output_fps: float, message: str)
+    """
+    return decrease_fps(
+        input_video_path=input_video_path,
+        output_video_path=output_video_path,
+        target_fps=None,  # Not used in multiplier mode
+        interpolation_method=interpolation_method,
+        ffmpeg_preset=ffmpeg_preset,
+        ffmpeg_quality_value=ffmpeg_quality_value,
+        ffmpeg_use_gpu=ffmpeg_use_gpu,
+        logger=logger,
+        fps_mode="multiplier",
+        fps_multiplier=multiplier
+    )
 
 def is_resolution_too_small_for_nvenc(width, height, logger=None):
     """Check if resolution is too small for NVENC (minimum 145x96)."""

@@ -19,7 +19,8 @@ from .ffmpeg_utils import (
     run_ffmpeg_command as util_run_ffmpeg_command,
     extract_frames as util_extract_frames,
     create_video_from_frames as util_create_video_from_frames,
-    decrease_fps as util_decrease_fps
+    decrease_fps as util_decrease_fps,
+    get_common_fps_multipliers as util_get_common_fps_multipliers
 )
 from .file_utils import (
     get_batch_filename as util_get_batch_filename,
@@ -57,7 +58,7 @@ def run_upscale (
     create_comparison_video_enabled ,
 
     # FPS decrease parameters
-    enable_fps_decrease =False ,target_fps =24.0 ,fps_interpolation_method ="drop",
+    enable_fps_decrease =False ,fps_decrease_mode ="multiplier" ,fps_multiplier_preset ="1/2x (Half FPS)" ,fps_multiplier_custom =0.5 ,target_fps =24.0 ,fps_interpolation_method ="drop",
 
     # RIFE interpolation parameters
     enable_rife_interpolation =False ,rife_multiplier =2 ,rife_fp16 =True ,rife_uhd =False ,rife_scale =1.0 ,
@@ -118,8 +119,9 @@ def run_upscale (
     "current_seed": current_seed, # Added current_seed
     
     # FPS decrease metadata
-    "fps_decrease_enabled":enable_fps_decrease ,"fps_decrease_target":target_fps ,
-    "fps_decrease_method":fps_interpolation_method ,
+    "fps_decrease_enabled":enable_fps_decrease ,"fps_decrease_mode":fps_decrease_mode ,
+    "fps_decrease_multiplier_preset":fps_multiplier_preset ,"fps_decrease_multiplier_custom":fps_multiplier_custom ,
+    "fps_decrease_target":target_fps ,"fps_decrease_method":fps_interpolation_method ,
     
     # RIFE interpolation metadata
     "rife_enabled":enable_rife_interpolation ,"rife_multiplier":rife_multiplier ,"rife_fp16":rife_fp16 ,
@@ -335,7 +337,24 @@ def run_upscale (
         if enable_fps_decrease:
             fps_decrease_start_time = time.time()
             progress(current_overall_progress, desc="Applying FPS decrease...")
-            fps_decrease_status_msg = f"Decreasing FPS to {target_fps} using {fps_interpolation_method} method..."
+            
+            # Convert UI parameters to backend format
+            actual_target_fps = target_fps  # Default for fixed mode
+            actual_fps_mode = fps_decrease_mode
+            actual_multiplier = fps_multiplier_custom
+            
+            if fps_decrease_mode == "multiplier":
+                # Convert preset to multiplier value if not using custom
+                if fps_multiplier_preset != "Custom":
+                    multiplier_map = {v: k for k, v in util_get_common_fps_multipliers().items()}
+                    actual_multiplier = multiplier_map.get(fps_multiplier_preset, 0.5)
+                else:
+                    actual_multiplier = fps_multiplier_custom
+                
+                fps_decrease_status_msg = f"Decreasing FPS using {fps_multiplier_preset} (×{actual_multiplier:.3f}) with {fps_interpolation_method} method..."
+            else:
+                fps_decrease_status_msg = f"Decreasing FPS to {target_fps} using {fps_interpolation_method} method..."
+            
             status_log.append(fps_decrease_status_msg)
             logger.info(fps_decrease_status_msg)
             yield None, "\n".join(status_log), last_chunk_video_path, fps_decrease_status_msg, None
@@ -344,16 +363,18 @@ def run_upscale (
                 # Generate FPS decreased video path
                 fps_decreased_video_path = os.path.join(temp_dir, "fps_decreased_input.mp4")
                 
-                # Apply FPS decrease
+                # Apply FPS decrease with new parameters
                 fps_success, fps_output_fps, fps_message = util_decrease_fps(
                     input_video_path=current_input_video_for_frames,
                     output_video_path=fps_decreased_video_path,
-                    target_fps=target_fps,
+                    target_fps=actual_target_fps,
                     interpolation_method=fps_interpolation_method,
                     ffmpeg_preset=ffmpeg_preset,
                     ffmpeg_quality_value=ffmpeg_quality_value,
                     ffmpeg_use_gpu=ffmpeg_use_gpu,
-                    logger=logger
+                    logger=logger,
+                    fps_mode=actual_fps_mode,
+                    fps_multiplier=actual_multiplier
                 )
                 
                 if fps_success:
@@ -363,6 +384,10 @@ def run_upscale (
                     params_for_metadata["fps_decrease_applied"] = True
                     params_for_metadata["original_fps"] = params_for_metadata.get("input_fps", "unknown")
                     params_for_metadata["input_fps"] = fps_output_fps
+                    params_for_metadata["fps_decrease_actual_mode"] = actual_fps_mode
+                    params_for_metadata["fps_decrease_actual_multiplier"] = actual_multiplier
+                    params_for_metadata["fps_decrease_actual_target"] = actual_target_fps
+                    params_for_metadata["fps_decrease_calculated_fps"] = fps_output_fps
                     
                     fps_duration = time.time() - fps_decrease_start_time
                     fps_success_msg = f"FPS decrease completed in {format_time(fps_duration)}. {fps_message}"
@@ -559,7 +584,9 @@ def run_upscale (
                         save_metadata=save_metadata, metadata_params_base=scene_metadata_base_params,
                         
                         # FPS decrease parameters for scenes
-                        enable_fps_decrease=enable_fps_decrease, target_fps=target_fps, fps_interpolation_method=fps_interpolation_method,
+                        enable_fps_decrease=enable_fps_decrease, fps_decrease_mode=fps_decrease_mode, 
+                        fps_multiplier_preset=fps_multiplier_preset, fps_multiplier_custom=fps_multiplier_custom,
+                        target_fps=target_fps, fps_interpolation_method=fps_interpolation_method,
                         
                         # RIFE interpolation parameters for scenes and chunks
                         enable_rife_interpolation=enable_rife_interpolation, rife_multiplier=rife_multiplier, rife_fp16=rife_fp16, 
