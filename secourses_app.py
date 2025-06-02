@@ -216,16 +216,11 @@ If CogVLM2 is available, you can use the button below to generate a caption auto
 
                         if app_config.UTIL_COG_VLM_AVAILABLE:
                             with gr.Row():
-                                auto_caption_btn = gr.Button("Generate Caption with CogVLM2", variant="primary", icon="icons/caption.png")
-                                upscale_button = gr.Button("Upscale Video", variant="primary", icon="icons/upscale.png")
+                                auto_caption_btn = gr.Button("Generate Caption with CogVLM2 (No Upscale)", variant="primary", icon="icons/caption.png")
+                                rife_fps_button = gr.Button("RIFE FPS Increase (No Upscale)", variant="primary", icon="icons/fps.png")                                
                             with gr.Row():
-                                rife_fps_button = gr.Button("RIFE FPS Increase", variant="secondary", icon="icons/fps.png")
+                                upscale_button = gr.Button("Upscale Video", variant="primary", icon="icons/upscale.png")
                             caption_status = gr.Textbox(label="Captioning Status", interactive=False, visible=False)
-                        else:
-                            with gr.Row():
-                                upscale_button = gr.Button("Upscale Video", variant="primary", icon="icons/upscale.png")
-                            with gr.Row():
-                                rife_fps_button = gr.Button("RIFE FPS Increase", variant="secondary", icon="icons/fps.png")
                     
                     with gr.Accordion("Prompt Settings", open=True):
                         pos_prompt = gr.Textbox(
@@ -574,7 +569,7 @@ This helps visualize the quality improvement from upscaling."""
                     batch_input_folder = gr.Textbox(label="Input Folder", placeholder="Path to folder containing videos to process...", info="Folder containing video files to process in batch mode.")
                     batch_output_folder = gr.Textbox(label="Output Folder", placeholder="Path to output folder for processed videos...", info="Folder where processed videos will be saved, preserving original filenames.")
             with gr.Row():
-                batch_process_button = gr.Button("Process Batch Folder", variant="primary", visible=True,icon="icons/split.png")
+                batch_process_button = gr.Button("Batch Upscale Input Folder", variant="primary", visible=True,icon="icons/split.png")
 
         with gr.Tab("FPS Increase"):
             with gr.Row():
