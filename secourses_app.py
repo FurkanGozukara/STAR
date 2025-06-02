@@ -84,6 +84,10 @@ from logic .manual_comparison import (
 generate_manual_comparison_video as util_generate_manual_comparison_video
 )
 
+from logic .rife_interpolation import (
+rife_fps_only_wrapper as util_rife_fps_only_wrapper
+)
+
 SELECTED_GPU_ID =0
 
 parser =ArgumentParser (description ="Ultimate SECourses STAR Video Upscaler")
@@ -214,9 +218,14 @@ If CogVLM2 is available, you can use the button below to generate a caption auto
                             with gr.Row():
                                 auto_caption_btn = gr.Button("Generate Caption with CogVLM2", variant="primary", icon="icons/caption.png")
                                 upscale_button = gr.Button("Upscale Video", variant="primary", icon="icons/upscale.png")
+                            with gr.Row():
+                                rife_fps_button = gr.Button("RIFE FPS Increase", variant="secondary", icon="icons/fps.png")
                             caption_status = gr.Textbox(label="Captioning Status", interactive=False, visible=False)
                         else:
-                            upscale_button = gr.Button("Upscale Video", variant="primary", icon="icons/upscale.png")
+                            with gr.Row():
+                                upscale_button = gr.Button("Upscale Video", variant="primary", icon="icons/upscale.png")
+                            with gr.Row():
+                                rife_fps_button = gr.Button("RIFE FPS Increase", variant="secondary", icon="icons/fps.png")
                     
                     with gr.Accordion("Prompt Settings", open=True):
                         pos_prompt = gr.Textbox(
@@ -1132,12 +1141,66 @@ This helps visualize the quality improvement from upscaling."""
             )
             return caption_text ,caption_stat_msg
 
+        def rife_fps_increase_wrapper(
+            input_video_val,
+            rife_multiplier_val=2,
+            rife_fp16_val=True,
+            rife_uhd_val=False,
+            rife_scale_val=1.0,
+            rife_skip_static_val=False,
+            rife_enable_fps_limit_val=False,
+            rife_max_fps_limit_val=60,
+            ffmpeg_preset_dropdown_val="medium",
+            ffmpeg_quality_slider_val=18,
+            ffmpeg_use_gpu_check_val=True,
+            seed_num_val=99,
+            random_seed_check_val=False,
+            progress=gr.Progress(track_tqdm=True)
+        ):
+            """
+            Wrapper function for standalone RIFE FPS increase in Gradio app.
+            
+            This function keeps the app file minimal by delegating to logic functions,
+            following user rules for moving business logic out of secourses_app.py.
+            """
+            return util_rife_fps_only_wrapper(
+                input_video_val=input_video_val,
+                rife_multiplier_val=rife_multiplier_val,
+                rife_fp16_val=rife_fp16_val,
+                rife_uhd_val=rife_uhd_val,
+                rife_scale_val=rife_scale_val,
+                rife_skip_static_val=rife_skip_static_val,
+                rife_enable_fps_limit_val=rife_enable_fps_limit_val,
+                rife_max_fps_limit_val=rife_max_fps_limit_val,
+                ffmpeg_preset_dropdown_val=ffmpeg_preset_dropdown_val,
+                ffmpeg_quality_slider_val=ffmpeg_quality_slider_val,
+                ffmpeg_use_gpu_check_val=ffmpeg_use_gpu_check_val,
+                seed_num_val=seed_num_val,
+                random_seed_check_val=random_seed_check_val,
+                output_dir=app_config.DEFAULT_OUTPUT_DIR,
+                logger=logger,
+                progress=progress
+            )
+
         auto_caption_btn .click (
         fn =auto_caption_wrapper ,
         inputs =[input_video ,cogvlm_quant_radio ,cogvlm_unload_radio ],
         outputs =[user_prompt ,caption_status ],
         show_progress_on =[user_prompt ] # Changed from list to single component for progress
         ).then (lambda :gr .update (visible =True ),None ,caption_status )
+
+    rife_fps_button.click(
+        fn=rife_fps_increase_wrapper,
+        inputs=[
+            input_video,
+            rife_multiplier, rife_fp16, rife_uhd, rife_scale, rife_skip_static,
+            rife_enable_fps_limit, rife_max_fps_limit,
+            ffmpeg_preset_dropdown, ffmpeg_quality_slider, ffmpeg_use_gpu_check,
+            seed_num, random_seed_check
+        ],
+        outputs=[output_video, status_textbox],
+        show_progress_on=[output_video]
+    )
 
     split_only_button .click (
     fn =wrapper_split_video_only_for_gradio ,

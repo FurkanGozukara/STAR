@@ -8,6 +8,7 @@ import glob
 import gradio as gr
 from pathlib import Path
 import re
+import numpy as np
 
 from .ffmpeg_utils import run_ffmpeg_command
 from .file_utils import (
@@ -590,4 +591,220 @@ def apply_rife_to_scenes(scene_paths, multiplier=2, fp16=True, uhd=False, scale=
     if logger:
         logger.info(f"RIFE applied to scenes: {len([p for p in rife_scene_paths if '_FPS' in p])} successful, {len([p for p in rife_scene_paths if '_FPS' not in p])} failed")
     
-    return rife_scene_paths 
+    return rife_scene_paths
+
+
+def increase_fps_standalone(
+    input_video_path, 
+    output_dir=None, 
+    multiplier=2, 
+    fp16=True, 
+    uhd=False, 
+    scale=1.0,
+    skip_static=False, 
+    enable_fps_limit=False, 
+    max_fps_limit=60,
+    ffmpeg_preset="medium", 
+    ffmpeg_quality_value=18, 
+    ffmpeg_use_gpu=True,
+    keep_original=True,
+    overwrite_original=False,
+    seed=99,
+    logger=None, 
+    progress=None
+):
+    """
+    Standalone RIFE FPS increase function for use in Gradio app.
+    
+    This function is designed to be called independently without upscaling,
+    similar to the auto-caption feature. It uses the app-provided seed value
+    and includes metadata generation as per user rules.
+    
+    Args:
+        input_video_path: Path to input video file
+        output_dir: Directory for output video (defaults to same as input)
+        multiplier: FPS multiplication factor
+        fp16: Use FP16 precision
+        uhd: Use UHD mode
+        scale: Scale factor for processing
+        skip_static: Skip static frames
+        enable_fps_limit: Enable FPS limiting
+        max_fps_limit: Maximum FPS limit
+        ffmpeg_preset: FFmpeg encoding preset
+        ffmpeg_quality_value: FFmpeg quality setting
+        ffmpeg_use_gpu: Use GPU acceleration for FFmpeg
+        keep_original: Keep original video file
+        overwrite_original: Overwrite original file with output
+        seed: Seed value from app (no hard-coded seeds as per user rules)
+        logger: Logger instance
+        progress: Progress callback for Gradio
+        
+    Returns:
+        tuple: (output_video_path, status_message)
+    """
+    
+    if logger:
+        logger.info(f"Starting standalone RIFE FPS increase for: {os.path.basename(input_video_path)}")
+        logger.info(f"Using seed: {seed} (from app, not hard-coded)")
+    
+    # Validate input video
+    if not input_video_path or not os.path.exists(input_video_path):
+        error_msg = "Please provide a valid input video file"
+        if logger:
+            logger.error(error_msg)
+        return None, error_msg
+    
+    # Set default output directory if not provided
+    if output_dir is None:
+        output_dir = os.path.dirname(input_video_path)
+    
+    # Ensure output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+    
+    try:
+        # Call the existing increase_fps_single function
+        output_path, status_message = increase_fps_single(
+            video_path=input_video_path,
+            output_path=None,  # Let function generate path
+            multiplier=multiplier,
+            fp16=fp16,
+            uhd=uhd,
+            scale=scale,
+            skip_static=skip_static,
+            enable_fps_limit=enable_fps_limit,
+            max_fps_limit=max_fps_limit,
+            ffmpeg_preset=ffmpeg_preset,
+            ffmpeg_quality_value=ffmpeg_quality_value,
+            ffmpeg_use_gpu=ffmpeg_use_gpu,
+            overwrite_original=overwrite_original,
+            keep_original=keep_original,
+            output_dir=output_dir,
+            seed=seed,  # Use app-provided seed
+            logger=logger,
+            progress=progress
+        )
+        
+        if output_path:
+            success_msg = f"RIFE FPS increase completed successfully. Output: {os.path.basename(output_path)}"
+            if logger:
+                logger.info(success_msg)
+            return output_path, success_msg
+        else:
+            error_msg = f"RIFE processing failed: {status_message}"
+            if logger:
+                logger.error(error_msg)
+            return None, error_msg
+            
+    except Exception as e:
+        error_msg = f"Error during standalone RIFE processing: {str(e)}"
+        if logger:
+            logger.error(error_msg, exc_info=True)
+        return None, error_msg
+
+
+def rife_fps_only_wrapper(
+    input_video_val,
+    rife_multiplier_val=2,
+    rife_fp16_val=True,
+    rife_uhd_val=False,
+    rife_scale_val=1.0,
+    rife_skip_static_val=False,
+    rife_enable_fps_limit_val=False,
+    rife_max_fps_limit_val=60,
+    ffmpeg_preset_dropdown_val="medium",
+    ffmpeg_quality_slider_val=18,
+    ffmpeg_use_gpu_check_val=True,
+    seed_num_val=99,
+    random_seed_check_val=False,
+    output_dir=None,
+    logger=None,
+    progress=None
+):
+    """
+    Wrapper function for RIFE FPS increase in Gradio app.
+    
+    This function handles the business logic for standalone RIFE processing,
+    following user rules for moving logic out of secourses_app.py and 
+    keeping the app file minimal.
+    
+    Args:
+        input_video_val: Input video from Gradio
+        rife_multiplier_val: FPS multiplier from UI
+        rife_fp16_val: FP16 setting from UI
+        rife_uhd_val: UHD setting from UI
+        rife_scale_val: Scale setting from UI
+        rife_skip_static_val: Skip static frames setting from UI
+        rife_enable_fps_limit_val: Enable FPS limit setting from UI
+        rife_max_fps_limit_val: Max FPS limit from UI
+        ffmpeg_preset_dropdown_val: FFmpeg preset from UI
+        ffmpeg_quality_slider_val: FFmpeg quality from UI
+        ffmpeg_use_gpu_check_val: GPU usage setting from UI
+        seed_num_val: Seed value from UI (following user rules)
+        random_seed_check_val: Random seed checkbox from UI
+        output_dir: Output directory (defaults to app config)
+        logger: Logger instance
+        progress: Progress callback
+        
+    Returns:
+        tuple: (output_video_path, status_message) for Gradio display
+    """
+    
+    # Input validation
+    if input_video_val is None:
+        error_msg = "Please upload a video file first"
+        if logger:
+            logger.warning(error_msg)
+        return None, error_msg
+    
+    # Handle seed logic following user rules (no hard-coded seeds)
+    actual_seed_to_use = seed_num_val
+    if random_seed_check_val:
+        actual_seed_to_use = np.random.randint(0, 2**31)
+        if logger:
+            logger.info(f"Random seed checkbox is checked. Using generated seed: {actual_seed_to_use}")
+    elif seed_num_val == -1:
+        actual_seed_to_use = np.random.randint(0, 2**31)
+        if logger:
+            logger.info(f"Seed input is -1. Using generated seed: {actual_seed_to_use}")
+    else:
+        if logger:
+            logger.info(f"Using provided seed: {actual_seed_to_use}")
+    
+    # Set default output directory if not provided
+    if output_dir is None:
+        # Import config to get default output directory
+        from . import config
+        output_dir = getattr(config, 'DEFAULT_OUTPUT_DIR', os.path.dirname(input_video_val))
+    
+    if logger:
+        logger.info(f"Starting RIFE FPS only processing with multiplier: {rife_multiplier_val}x")
+    
+    try:
+        # Call the standalone RIFE function
+        output_path, status_message = increase_fps_standalone(
+            input_video_path=input_video_val,
+            output_dir=output_dir,
+            multiplier=rife_multiplier_val,
+            fp16=rife_fp16_val,
+            uhd=rife_uhd_val,
+            scale=rife_scale_val,
+            skip_static=rife_skip_static_val,
+            enable_fps_limit=rife_enable_fps_limit_val,
+            max_fps_limit=rife_max_fps_limit_val,
+            ffmpeg_preset=ffmpeg_preset_dropdown_val,
+            ffmpeg_quality_value=ffmpeg_quality_slider_val,
+            ffmpeg_use_gpu=ffmpeg_use_gpu_check_val,
+            keep_original=True,  # Always keep original for standalone processing
+            overwrite_original=False,  # Don't overwrite for standalone processing
+            seed=actual_seed_to_use,  # Use app-generated seed (following user rules)
+            logger=logger,
+            progress=progress
+        )
+        
+        return output_path, status_message
+        
+    except Exception as e:
+        error_msg = f"RIFE FPS processing failed: {str(e)}"
+        if logger:
+            logger.error(error_msg, exc_info=True)
+        return None, error_msg 
