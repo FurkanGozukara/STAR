@@ -495,6 +495,23 @@ def process_single_scene(
                         processed_frames_tracker[k_global] = True
                         logger.info(f"SLIDING_WINDOW_DEBUG: Window {window_iter_idx+1} processed frame {k_global+1}")
 
+                # IMMEDIATE FRAME SAVING: Save processed frames immediately after scene sliding window processing
+                if save_frames and scene_output_frames_permanent:
+                    scene_window_frames_saved_count = 0
+                    for k_local in range(save_from_start_offset_local, save_to_end_offset_local):
+                        k_global = start_idx + k_local
+                        if 0 <= k_global < scene_frame_count and processed_frame_filenames[k_global] is not None:
+                            frame_name = scene_frame_files[k_global]
+                            src_frame_path = os.path.join(scene_output_frames_dir, frame_name)
+                            dst_frame_path = os.path.join(scene_output_frames_permanent, frame_name)
+                            if os.path.exists(src_frame_path) and not os.path.exists(dst_frame_path):
+                                shutil.copy2(src_frame_path, dst_frame_path)
+                                scene_window_frames_saved_count += 1
+                    
+                    if scene_window_frames_saved_count > 0:
+                        immediate_save_msg = f"Immediately saved {scene_window_frames_saved_count} processed frames from scene {scene_index + 1} sliding window {window_iter_idx + 1}"
+                        logger.info(immediate_save_msg)
+
                 # Check and save complete chunks for sliding window in scenes (modular)
                 affected_chunks = map_window_to_chunks_scene_mod(start_idx, end_idx, max_chunk_len)
                 logger.info(f"SLIDING_WINDOW_DEBUG: Window {window_iter_idx+1} affects chunks: {affected_chunks}")
@@ -600,6 +617,20 @@ def process_single_scene(
                     frame_np_hwc_uint8 = chunk_sr_frames_uint8[k].cpu().numpy()
                     frame_bgr = cv2.cvtColor(frame_np_hwc_uint8, cv2.COLOR_RGB2BGR)
                     cv2.imwrite(os.path.join(scene_output_frames_dir, frame_name), frame_bgr)
+
+                # IMMEDIATE FRAME SAVING: Save processed frames immediately after scene chunk completion
+                if save_frames and scene_output_frames_permanent:
+                    scene_chunk_frames_saved_count = 0
+                    for k, frame_name in enumerate(scene_frame_files[start_idx:end_idx]):
+                        src_frame_path = os.path.join(scene_output_frames_dir, frame_name)
+                        dst_frame_path = os.path.join(scene_output_frames_permanent, frame_name)
+                        if os.path.exists(src_frame_path) and not os.path.exists(dst_frame_path):
+                            shutil.copy2(src_frame_path, dst_frame_path)
+                            scene_chunk_frames_saved_count += 1
+                    
+                    if scene_chunk_frames_saved_count > 0:
+                        immediate_save_msg = f"Immediately saved {scene_chunk_frames_saved_count} processed frames from scene {scene_index + 1} chunk {chunk_idx + 1}/{num_chunks}"
+                        logger.info(immediate_save_msg)
 
                 if save_chunks and scene_output_dir and scene_name:
                     current_scene_chunks_save_path = os.path.join(scene_output_dir, "scenes", scene_name, "chunks")

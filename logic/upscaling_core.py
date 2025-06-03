@@ -923,6 +923,24 @@ def run_upscale (
                             processed_frame_filenames[k_global] = frame_files[k_global]
                             processed_frames_tracker[k_global] = True
 
+                    # IMMEDIATE FRAME SAVING: Save processed frames immediately after sliding window processing
+                    if save_frames and processed_frames_permanent_save_path:
+                        window_frames_saved_count = 0
+                        for k_local in range(save_from_start_offset_local, save_to_end_offset_local):
+                            k_global = start_idx + k_local
+                            if 0 <= k_global < frame_count and processed_frame_filenames[k_global] is not None:
+                                frame_name = frame_files[k_global]
+                                src_frame_path = os.path.join(output_frames_dir, frame_name)
+                                dst_frame_path = os.path.join(processed_frames_permanent_save_path, frame_name)
+                                if os.path.exists(src_frame_path) and not os.path.exists(dst_frame_path):
+                                    shutil.copy2(src_frame_path, dst_frame_path)
+                                    window_frames_saved_count += 1
+                        
+                        if window_frames_saved_count > 0:
+                            immediate_save_msg = f"Immediately saved {window_frames_saved_count} processed frames from sliding window {current_window_display_num}/{total_windows_to_process}"
+                            logger.info(immediate_save_msg)
+                            status_log.append(immediate_save_msg)
+
                     # Check and save complete chunks
                     affected_chunks = map_window_to_chunks(start_idx, end_idx, max_chunk_len)
                     for chunk_idx in affected_chunks:
@@ -1047,6 +1065,23 @@ def run_upscale (
                         frame_bgr_direct = cv2.cvtColor(frame_np_hwc_uint8_direct, cv2.COLOR_RGB2BGR)
                         cv2.imwrite(os.path.join(output_frames_dir, frame_name_direct), frame_bgr_direct)
 
+                    # IMMEDIATE FRAME SAVING: Save processed frames immediately after chunk completion
+                    if save_frames and processed_frames_permanent_save_path:
+                        chunk_frames_saved_count = 0
+                        for k_direct, frame_name_direct in enumerate(frame_files[start_idx_direct:end_idx_direct]):
+                            src_frame_path = os.path.join(output_frames_dir, frame_name_direct)
+                            dst_frame_path = os.path.join(processed_frames_permanent_save_path, frame_name_direct)
+                            if os.path.exists(src_frame_path):
+                                shutil.copy2(src_frame_path, dst_frame_path)
+                                chunk_frames_saved_count += 1
+                            else:
+                                logger.warning(f"Frame {src_frame_path} not found for immediate saving in chunk {chunk_idx_direct + 1}")
+                        
+                        if chunk_frames_saved_count > 0:
+                            immediate_save_msg = f"Immediately saved {chunk_frames_saved_count} processed frames from chunk {chunk_idx_direct + 1}/{num_chunks_direct} to permanent storage"
+                            logger.info(immediate_save_msg)
+                            status_log.append(immediate_save_msg)
+
                     if save_chunks and chunks_permanent_save_path:
                         current_direct_chunks_save_path = chunks_permanent_save_path
                         os.makedirs(current_direct_chunks_save_path, exist_ok=True)
@@ -1139,21 +1174,47 @@ def run_upscale (
 
         if save_frames and not enable_scene_split and output_frames_dir and processed_frames_permanent_save_path :
             copy_processed_frames_start_time =time .time ()
-            num_processed_frames_to_copy =len (os .listdir (output_frames_dir ))
-            copy_proc_msg =f"Copying {num_processed_frames_to_copy} processed frames to permanent storage: {processed_frames_permanent_save_path}"
+            
+            # Count frames that still need to be copied (skip already saved ones)
+            temp_frames_list = os .listdir (output_frames_dir )
+            frames_to_copy = []
+            frames_already_saved = 0
+            
+            for frame_file_name in temp_frames_list:
+                src_path = os.path.join(output_frames_dir, frame_file_name)
+                dst_path = os.path.join(processed_frames_permanent_save_path, frame_file_name)
+                if os.path.exists(src_path) and not os.path.exists(dst_path):
+                    frames_to_copy.append(frame_file_name)
+                elif os.path.exists(dst_path):
+                    frames_already_saved += 1
+            
+            num_processed_frames_to_copy = len(frames_to_copy)
+            total_frames_found = len(temp_frames_list)
+            
+            if frames_already_saved > 0:
+                copy_proc_msg = f"Copying {num_processed_frames_to_copy} remaining processed frames to permanent storage (skipping {frames_already_saved} already saved): {processed_frames_permanent_save_path}"
+            else:
+                copy_proc_msg = f"Copying {num_processed_frames_to_copy} processed frames to permanent storage: {processed_frames_permanent_save_path}"
+            
             status_log .append (copy_proc_msg )
             logger .info (copy_proc_msg )
             progress (current_overall_progress ,desc ="Copying processed frames...")
             yield None ,"\n".join (status_log ),last_chunk_video_path ,"Copying processed frames.",None
+            
             frames_copied_count =0
-            for frame_file_idx ,frame_file_name in enumerate (os .listdir (output_frames_dir )):
+            for frame_file_name in frames_to_copy:
                 shutil .copy2 (os .path .join (output_frames_dir ,frame_file_name ),os .path .join (processed_frames_permanent_save_path ,frame_file_name ))
                 frames_copied_count +=1
                 if frames_copied_count %100 ==0 or frames_copied_count ==num_processed_frames_to_copy :
                     loop_prog_frac =frames_copied_count /num_processed_frames_to_copy if num_processed_frames_to_copy >0 else 1.0
                     temp_overall_progress =upscaling_loop_progress_start_no_scene_split +(loop_prog_frac *stage_weights ["reassembly_copy_processed"])
                     progress (temp_overall_progress ,desc =f"Copying processed frames: {frames_copied_count}/{num_processed_frames_to_copy}")
-            copied_proc_msg =f"Processed frames copied. Time: {format_time(time.time() - copy_processed_frames_start_time)}"
+            
+            if num_processed_frames_to_copy > 0:
+                copied_proc_msg =f"Processed frames copied ({frames_copied_count} new, {frames_already_saved} already saved). Time: {format_time(time.time() - copy_processed_frames_start_time)}"
+            else:
+                copied_proc_msg =f"All {frames_already_saved} processed frames were already saved immediately during chunk processing. Time: {format_time(time.time() - copy_processed_frames_start_time)}"
+            
             status_log .append (copied_proc_msg )
             logger .info (copied_proc_msg )
             current_overall_progress =upscaling_loop_progress_start_no_scene_split +stage_weights ["reassembly_copy_processed"]
