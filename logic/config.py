@@ -124,6 +124,11 @@ DEFAULT_FPS_MULTIPLIER = 0.5  # Default to 1/2x (half FPS)
 DEFAULT_TARGET_FPS = 24.0  # For fixed mode backward compatibility
 DEFAULT_FPS_INTERPOLATION_METHOD = "drop"
 
+# Batch Processing Options
+DEFAULT_BATCH_SKIP_EXISTING = True
+DEFAULT_BATCH_SAVE_CAPTIONS = True
+DEFAULT_BATCH_USE_PROMPT_FILES = True
+
 # --- Initialization functions ---
 def initialize_paths_and_prompts(base_path_from_app, outputs_folder_from_args, star_cfg_from_app):
     global APP_BASE_PATH, DEFAULT_OUTPUT_DIR, COG_VLM_MODEL_PATH, LIGHT_DEG_MODEL_PATH, HEAVY_DEG_MODEL_PATH, RIFE_MODEL_PATH
@@ -189,6 +194,8 @@ __all__ = [
     'DEFAULT_RIFE_KEEP_ORIGINAL', 'DEFAULT_RIFE_OVERWRITE_ORIGINAL', 'DEFAULT_RIFE_SKIP_EXISTING', 'DEFAULT_RIFE_INCLUDE_SUBFOLDERS',
     # FPS decrease defaults
     'DEFAULT_ENABLE_FPS_DECREASE', 'DEFAULT_FPS_DECREASE_MODE', 'DEFAULT_FPS_MULTIPLIER', 'DEFAULT_TARGET_FPS', 'DEFAULT_FPS_INTERPOLATION_METHOD',
+    # Batch processing defaults
+    'DEFAULT_BATCH_SKIP_EXISTING', 'DEFAULT_BATCH_SAVE_CAPTIONS', 'DEFAULT_BATCH_USE_PROMPT_FILES',
     # Functions
     'initialize_paths_and_prompts', 'get_cogvlm_quant_choices_map', 'get_default_cogvlm_quant_display'
 ] 
