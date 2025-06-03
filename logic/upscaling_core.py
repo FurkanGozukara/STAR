@@ -845,10 +845,10 @@ def run_upscale (
                         continue
 
                     is_last_window_iteration = (window_iter_idx == total_windows_to_process - 1)
-                    if is_last_window_iteration and current_window_len < effective_window_size and frame_count >= effective_window_size:
-                        start_idx = max(0, frame_count - effective_window_size)
-                        end_idx = frame_count
-                        current_window_len = end_idx - start_idx
+                    # Fixed: Removed problematic last window logic that breaks sliding window step consistency
+                    # The original logic would force the last window to be full-size by backing up the start_idx,
+                    # which creates incorrect overlap and breaks the sliding window step pattern.
+                    # Now we process windows exactly as calculated by the step size logic.
 
                     window_lr_frames_bgr = all_lr_frames_bgr[start_idx:end_idx]
                     if not window_lr_frames_bgr:
