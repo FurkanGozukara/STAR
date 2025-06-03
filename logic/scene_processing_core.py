@@ -460,48 +460,28 @@ def process_single_scene(
                     elif color_fix_method == 'Wavelet':
                         window_sr_frames_uint8 = wavelet_color_fix(window_sr_frames_uint8, window_lr_video_data)
                 
+                # Initialize frame save range for this window
                 save_from_start_offset_local = 0
                 save_to_end_offset_local = current_window_len
                 
                 # When save_chunks is enabled, we need consistent chunk boundaries
                 # So we modify the overlap logic to align with max_chunk_len boundaries
-                if total_windows_to_process > 1 and not save_chunks:
-                    # Original overlap logic for seamless video (when not saving chunks)
+                if total_windows_to_process > 1:
+                    # Use simple overlap logic that works correctly
                     overlap_amount = effective_window_size - effective_window_step
                     if overlap_amount > 0:
                         if window_iter_idx == 0:
+                            # First window: save from start to end minus half overlap
                             save_to_end_offset_local = effective_window_size - (overlap_amount // 2)
                         elif is_last_window_iteration:
+                            # Last window: save from half overlap to end
                             save_from_start_offset_local = (overlap_amount // 2)
                         else:
+                            # Middle windows: save only the center portion, avoiding overlap zones
                             save_from_start_offset_local = (overlap_amount // 2)
-                            save_to_end_offset_local = effective_window_size - (overlap_amount - save_from_start_offset_local)
-                    save_from_start_offset_local = max(0, min(save_from_start_offset_local, current_window_len - 1 if current_window_len > 0 else 0))
-                    save_to_end_offset_local = max(save_from_start_offset_local, min(save_to_end_offset_local, current_window_len))
-                elif total_windows_to_process > 1 and save_chunks:
-                    # Modified overlap logic for chunk boundary alignment
-                    overlap_amount = effective_window_size - effective_window_step
-                    if overlap_amount > 0:
-                        # Calculate which frames this window should contribute based on chunk boundaries
-                        chunk_boundary_start = (start_idx // max_chunk_len) * max_chunk_len
-                        chunk_boundary_end = min(((start_idx // max_chunk_len) + 1) * max_chunk_len, scene_frame_count)
-                        
-                        # Only save frames that belong to complete chunks within this window
-                        window_contribution_start = max(0, chunk_boundary_start - start_idx)
-                        window_contribution_end = min(current_window_len, chunk_boundary_end - start_idx)
-                        
-                        # Adjust for multiple chunks if window spans across chunk boundaries
-                        save_from_start_offset_local = max(0, window_contribution_start)
-                        save_to_end_offset_local = min(current_window_len, window_contribution_end)
-                        
-                        # Ensure we don't process frames already handled by previous windows
-                        if window_iter_idx > 0:
-                            # Skip frames that should have been processed by previous windows
-                            prev_window_end = window_indices_to_process[window_iter_idx - 1] + effective_window_size
-                            if start_idx < prev_window_end:
-                                overlap_skip = prev_window_end - start_idx
-                                save_from_start_offset_local = max(save_from_start_offset_local, overlap_skip)
+                            save_to_end_offset_local = effective_window_size - (overlap_amount // 2)
                     
+                    # Ensure bounds are valid
                     save_from_start_offset_local = max(0, min(save_from_start_offset_local, current_window_len - 1 if current_window_len > 0 else 0))
                     save_to_end_offset_local = max(save_from_start_offset_local, min(save_to_end_offset_local, current_window_len))
                 
