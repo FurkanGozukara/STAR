@@ -749,6 +749,161 @@ def run_upscale (
                             return False
                     return True
 
+                # NEW: Effective chunk mapping for sliding window based on window step
+                def get_effective_chunk_mappings(frame_count, effective_window_step):
+                    """Calculate effective chunk boundaries based on sliding window step size"""
+                    effective_chunks = []
+                    current_start = 0
+                    chunk_idx = 0
+                    
+                    while current_start < frame_count:
+                        if chunk_idx == 0:
+                            # First chunk: 24 frames (frames 1-24)
+                            overlap_amount = effective_window_size - effective_window_step
+                            first_chunk_size = effective_window_size - (overlap_amount // 2)
+                            current_end = min(current_start + first_chunk_size, frame_count)
+                        else:
+                            # Subsequent chunks: window_step frames each
+                            current_end = min(current_start + effective_window_step, frame_count)
+                        
+                        if current_start < frame_count:
+                            effective_chunks.append({
+                                'chunk_idx': chunk_idx,
+                                'start_frame': current_start,
+                                'end_frame': current_end,
+                                'frame_count': current_end - current_start
+                            })
+                            current_start = current_end
+                            chunk_idx += 1
+                        else:
+                            break
+                    
+                    return effective_chunks
+
+                def map_window_to_effective_chunks(start_idx, end_idx, effective_chunks):
+                    """Map a window frame range to affected effective chunk indices"""
+                    affected_chunks = []
+                    for chunk_info in effective_chunks:
+                        chunk_start = chunk_info['start_frame']
+                        chunk_end = chunk_info['end_frame']
+                        # Check if window overlaps with this chunk
+                        if not (end_idx <= chunk_start or start_idx >= chunk_end):
+                            affected_chunks.append(chunk_info['chunk_idx'])
+                    return affected_chunks
+
+                def is_effective_chunk_complete(chunk_idx, processed_frames_tracker, effective_chunks):
+                    """Check if all frames in an effective chunk have been processed"""
+                    chunk_info = next((c for c in effective_chunks if c['chunk_idx'] == chunk_idx), None)
+                    if not chunk_info:
+                        return False
+                    
+                    start_frame = chunk_info['start_frame']
+                    end_frame = chunk_info['end_frame']
+                    for frame_idx in range(start_frame, end_frame):
+                        if not processed_frames_tracker[frame_idx]:
+                            return False
+                    return True
+
+                def save_effective_sliding_window_chunk(chunk_idx, effective_chunks, save_chunks, chunks_permanent_save_path, 
+                                            temp_dir, output_frames_dir, frame_files, input_fps_val, ffmpeg_preset, 
+                                            ffmpeg_quality_value, ffmpeg_use_gpu, logger, enable_rife_interpolation, 
+                                            rife_apply_to_chunks, rife_multiplier, rife_fp16, rife_uhd, rife_scale, 
+                                            rife_skip_static, rife_enable_fps_limit, rife_max_fps_limit, rife_keep_original, 
+                                            current_seed):
+                    """Save an effective chunk video from sliding window processed frames"""
+                    if not save_chunks or not chunks_permanent_save_path:
+                        return None, None
+                    
+                    chunk_info = next((c for c in effective_chunks if c['chunk_idx'] == chunk_idx), None)
+                    if not chunk_info:
+                        return None, None
+                    
+                    start_frame = chunk_info['start_frame']
+                    end_frame = chunk_info['end_frame']
+                    current_chunk_display_num = chunk_idx + 1
+                    
+                    chunk_video_filename = f"chunk_{current_chunk_display_num:04d}.mp4"
+                    chunk_video_path = os.path.join(chunks_permanent_save_path, chunk_video_filename)
+                    chunk_temp_dir = os.path.join(temp_dir, f"temp_sliding_chunk_{current_chunk_display_num}")
+                    os.makedirs(chunk_temp_dir, exist_ok=True)
+
+                    frames_for_chunk = []
+                    for k, frame_name in enumerate(frame_files[start_frame:end_frame]):
+                        src_frame = os.path.join(output_frames_dir, frame_name)
+                        dst_frame = os.path.join(chunk_temp_dir, f"frame_{k+1:06d}.png")
+                        if os.path.exists(src_frame):
+                            shutil.copy2(src_frame, dst_frame)
+                            frames_for_chunk.append(dst_frame)
+                        else:
+                            logger.warning(f"Src frame {src_frame} not found for sliding window chunk video.")
+                    
+                    if frames_for_chunk:
+                        util_create_video_from_frames(chunk_temp_dir, chunk_video_path, input_fps_val,
+                                                    ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger)
+                        
+                        # Apply RIFE interpolation to sliding window chunk if enabled
+                        final_chunk_video_path = chunk_video_path  # Default to original chunk
+                        if enable_rife_interpolation and rife_apply_to_chunks and os.path.exists(chunk_video_path):
+                            try:
+                                # Import RIFE function locally to avoid circular imports
+                                from .rife_interpolation import increase_fps_single
+                                
+                                # Generate RIFE chunk output path
+                                chunk_video_dir = os.path.dirname(chunk_video_path)
+                                chunk_video_name = os.path.splitext(os.path.basename(chunk_video_path))[0]
+                                rife_chunk_video_path = os.path.join(chunk_video_dir, f"{chunk_video_name}_{rife_multiplier}x_FPS.mp4")
+                                
+                                # Apply RIFE interpolation to chunk
+                                rife_result, rife_message = increase_fps_single(
+                                    video_path=chunk_video_path,
+                                    output_path=rife_chunk_video_path,
+                                    multiplier=rife_multiplier,
+                                    fp16=rife_fp16,
+                                    uhd=rife_uhd,
+                                    scale=rife_scale,
+                                    skip_static=rife_skip_static,
+                                    enable_fps_limit=rife_enable_fps_limit,
+                                    max_fps_limit=rife_max_fps_limit,
+                                    ffmpeg_preset=ffmpeg_preset,
+                                    ffmpeg_quality_value=ffmpeg_quality_value,
+                                    ffmpeg_use_gpu=ffmpeg_use_gpu,
+                                    overwrite_original=False,  # Don't overwrite chunks, keep both
+                                    keep_original=rife_keep_original,
+                                    output_dir=chunk_video_dir,
+                                    seed=current_seed,
+                                    logger=logger,
+                                    progress=None  # Don't pass progress to avoid conflicts
+                                )
+                                
+                                if rife_result:
+                                    final_chunk_video_path = rife_result  # Use RIFE version as final chunk
+                                    logger.info(f"Effective Sliding Window Chunk {current_chunk_display_num}: RIFE interpolation completed")
+                                else:
+                                    logger.warning(f"Effective Sliding Window Chunk {current_chunk_display_num}: RIFE interpolation failed: {rife_message}")
+                                    
+                            except Exception as e_chunk_rife:
+                                logger.error(f"Effective Sliding Window Chunk {current_chunk_display_num}: Error during RIFE interpolation: {e_chunk_rife}")
+                        
+                        shutil.rmtree(chunk_temp_dir)
+                        
+                        effective_frame_count = chunk_info['frame_count']
+                        chunk_save_msg = f"Saved effective sliding window chunk {current_chunk_display_num} ({effective_frame_count} frames: {start_frame+1}-{end_frame}) to: {final_chunk_video_path}"
+                        logger.info(chunk_save_msg)
+                        
+                        return final_chunk_video_path, f"Effective Sliding Window Chunk {current_chunk_display_num} ({effective_frame_count} frames: {start_frame+1}-{end_frame})"
+                    else:
+                        logger.warning(f"No frames for effective sliding window chunk {current_chunk_display_num}, video not created.")
+                        shutil.rmtree(chunk_temp_dir)
+                        return None, None
+
+                # Calculate effective chunk mappings
+                effective_chunks = get_effective_chunk_mappings(frame_count, effective_window_step)
+                
+                # Log effective chunk information
+                logger.info(f"Sliding window effective chunks calculated:")
+                for chunk_info in effective_chunks:
+                    logger.info(f"  Chunk {chunk_info['chunk_idx']+1}: {chunk_info['frame_count']} frames (frames {chunk_info['start_frame']+1}-{chunk_info['end_frame']})")
+
                 def save_sliding_window_chunk(chunk_idx, max_chunk_len, total_frames, save_chunks, chunks_permanent_save_path, 
                                             temp_dir, output_frames_dir, frame_files, input_fps_val, ffmpeg_preset, 
                                             ffmpeg_quality_value, ffmpeg_use_gpu, logger, enable_rife_interpolation, 
@@ -941,12 +1096,12 @@ def run_upscale (
                             logger.info(immediate_save_msg)
                             status_log.append(immediate_save_msg)
 
-                    # Check and save complete chunks
-                    affected_chunks = map_window_to_chunks(start_idx, end_idx, max_chunk_len)
-                    for chunk_idx in affected_chunks:
-                        if chunk_idx not in saved_chunks and is_chunk_complete(chunk_idx, processed_frames_tracker, max_chunk_len, frame_count):
-                            chunk_video_path, chunk_status = save_sliding_window_chunk(
-                                chunk_idx, max_chunk_len, frame_count, save_chunks, chunks_permanent_save_path,
+                    # Check and save complete chunks using EFFECTIVE chunk mapping
+                    affected_effective_chunks = map_window_to_effective_chunks(start_idx, end_idx, effective_chunks)
+                    for chunk_idx in affected_effective_chunks:
+                        if chunk_idx not in saved_chunks and is_effective_chunk_complete(chunk_idx, processed_frames_tracker, effective_chunks):
+                            chunk_video_path, chunk_status = save_effective_sliding_window_chunk(
+                                chunk_idx, effective_chunks, save_chunks, chunks_permanent_save_path,
                                 temp_dir, output_frames_dir, frame_files, input_fps_val, ffmpeg_preset,
                                 ffmpeg_quality_value, ffmpeg_use_gpu, logger, enable_rife_interpolation,
                                 rife_apply_to_chunks, rife_multiplier, rife_fp16, rife_uhd, rife_scale,
@@ -957,7 +1112,7 @@ def run_upscale (
                                 saved_chunks.add(chunk_idx)
                                 last_chunk_video_path = chunk_video_path
                                 last_chunk_status = chunk_status
-                                status_log.append(f"Saved chunk {chunk_idx + 1} from sliding window processing")
+                                status_log.append(f"Saved effective chunk {chunk_idx + 1} from sliding window processing")
                                 yield None, "\n".join(status_log), last_chunk_video_path, last_chunk_status, None
 
                     del window_data_cuda, window_sr_tensor_bcthw, window_sr_frames_uint8
@@ -989,13 +1144,13 @@ def run_upscale (
                     logger.info(missed_msg)
                     yield None, "\n".join(status_log), last_chunk_video_path, missed_msg, None
 
-                # Save any remaining incomplete chunks after all windows are processed
-                num_total_chunks = math.ceil(frame_count / max_chunk_len) if max_chunk_len > 0 else 1
-                for chunk_idx in range(num_total_chunks):
+                # Save any remaining incomplete effective chunks after all windows are processed
+                for chunk_info in effective_chunks:
+                    chunk_idx = chunk_info['chunk_idx']
                     if chunk_idx not in saved_chunks:
-                        # Force save incomplete chunks
-                        chunk_video_path, chunk_status = save_sliding_window_chunk(
-                            chunk_idx, max_chunk_len, frame_count, save_chunks, chunks_permanent_save_path,
+                        # Force save incomplete effective chunks
+                        chunk_video_path, chunk_status = save_effective_sliding_window_chunk(
+                            chunk_idx, effective_chunks, save_chunks, chunks_permanent_save_path,
                             temp_dir, output_frames_dir, frame_files, input_fps_val, ffmpeg_preset,
                             ffmpeg_quality_value, ffmpeg_use_gpu, logger, enable_rife_interpolation,
                             rife_apply_to_chunks, rife_multiplier, rife_fp16, rife_uhd, rife_scale,
@@ -1006,7 +1161,7 @@ def run_upscale (
                             saved_chunks.add(chunk_idx)
                             last_chunk_video_path = chunk_video_path
                             last_chunk_status = chunk_status
-                            status_log.append(f"Saved remaining chunk {chunk_idx + 1} from sliding window processing")
+                            status_log.append(f"Saved remaining effective chunk {chunk_idx + 1} from sliding window processing")
                             yield None, "\n".join(status_log), last_chunk_video_path, last_chunk_status, None
 
             else:
