@@ -627,6 +627,7 @@ save_metadata =False ,metadata_params_base: dict =None # This is already structu
                                 "current_chunk": chunk_idx + 1,
                                 "total_chunks": num_chunks,
                                 "overall_process_start_time": scene_start_time, # For scene's own processing time calculation
+                                "chunk_frame_range": (start_idx + 1, end_idx)  # 1-indexed frame range for this chunk
                                 # scene_specific_data is not added here, as this is chunk progress within a scene
                                 # but we need to pass scene_fps to params_dict if it's not already there correctly.
                                 # metadata_params_base should have a general input_fps, _prepare_metadata_dict will prioritize scene_fps from scene_specific_data if present.
@@ -695,7 +696,8 @@ save_metadata =False ,metadata_params_base: dict =None # This is already structu
                 "scene_frame_count":scene_frame_count ,
                 "scene_fps":scene_fps ,
                 "scene_processing_time":scene_duration ,
-                "scene_video_path":scene_output_video # Temporary path, final path is part of main metadata
+                "scene_video_path":scene_output_video, # Temporary path, final path is part of main metadata
+                "scene_frame_range": (1, scene_frame_count)  # 1-indexed frame range for this scene
             }
             
             # For the final scene metadata, we augment the base parameters with scene-specific info
@@ -1698,6 +1700,7 @@ progress =gr .Progress (track_tqdm =True )
                             "current_chunk": current_chunk_display_num,
                             "total_chunks": num_chunks,
                             "overall_process_start_time": overall_process_start_time,
+                            "chunk_frame_range": (start_idx + 1, end_idx)  # 1-indexed frame range for this chunk
                         }
                         try:
                             metadata_handler.save_metadata(
@@ -1835,6 +1838,10 @@ progress =gr .Progress (track_tqdm =True )
                 "processing_time_total": processing_time_total,
                 # overall_process_start_time is not needed here as we provide total
             }
+            
+            # Add frame range information for the complete video
+            if frame_count > 0:
+                final_status_info["video_frame_range"] = (1, frame_count)  # 1-indexed total video frame range
             # Ensure all derived params in params_for_metadata are up-to-date
             # input_fps for the overall video (if not scene split) should be in params_for_metadata["input_fps"]
             # If scene split, that field might be less relevant for the *final* metadata if scenes had different FPS.

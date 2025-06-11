@@ -70,12 +70,20 @@ def _prepare_metadata_dict(params_dict: dict, status_info: dict = None) -> dict:
         "rife_output_video_path_if_enabled": os.path.abspath(params_dict.get("rife_output_path", "")) if params_dict.get("rife_enabled") and params_dict.get("rife_output_path") else "N/A",
     }
 
+    # Add frame range information for chunks, scenes, and sliding windows
     if status_info:
         processing_time_total = status_info.get("processing_time_total")
         overall_process_start_time = status_info.get("overall_process_start_time")
         current_chunk = status_info.get("current_chunk")
         total_chunks = status_info.get("total_chunks")
         scene_specific_data = status_info.get("scene_specific_data")
+        
+        # Frame range information
+        chunk_frame_range = status_info.get("chunk_frame_range")
+        scene_frame_range = status_info.get("scene_frame_range")
+        sliding_window_frame_range = status_info.get("sliding_window_frame_range")
+        effective_chunk_ranges = status_info.get("effective_chunk_ranges")
+        video_frame_range = status_info.get("video_frame_range")
 
         current_processing_time = None
         if overall_process_start_time is not None and processing_time_total is None:
@@ -90,13 +98,47 @@ def _prepare_metadata_dict(params_dict: dict, status_info: dict = None) -> dict:
             metadata["processing_time_seconds"] = "N/A"
             metadata["processing_time_formatted"] = "N/A"
 
+        # Add overall video frame range information
+        if video_frame_range:
+            metadata["overall_video_frame_range"] = f"frames {video_frame_range[0]}-{video_frame_range[1]}"
+            metadata["overall_video_frame_count"] = video_frame_range[1] - video_frame_range[0] + 1
+        else:
+            metadata["overall_video_frame_range"] = "N/A"
+            metadata["overall_video_frame_count"] = "N/A"
+
         if current_chunk is not None and total_chunks is not None:
             metadata["current_chunk_progress"] = f"{current_chunk}/{total_chunks}"
             metadata["processing_status"] = f"In progress - chunk {current_chunk} of {total_chunks} completed"
+            
+            # Add frame range for current chunk
+            if chunk_frame_range:
+                metadata["current_chunk_frame_range"] = f"frames {chunk_frame_range[0]}-{chunk_frame_range[1]}"
+                metadata["current_chunk_frame_count"] = chunk_frame_range[1] - chunk_frame_range[0] + 1
+            else:
+                metadata["current_chunk_frame_range"] = "N/A"
+                metadata["current_chunk_frame_count"] = "N/A"
+                
         elif processing_time_total is not None:
             metadata["processing_status"] = "Completed"
         else:
             metadata["processing_status"] = "In progress" # Default if no other status applies
+
+        # Add sliding window frame range information
+        if sliding_window_frame_range:
+            metadata["sliding_window_frame_range"] = f"frames {sliding_window_frame_range[0]}-{sliding_window_frame_range[1]}"
+            metadata["sliding_window_frame_count"] = sliding_window_frame_range[1] - sliding_window_frame_range[0] + 1
+        else:
+            metadata["sliding_window_frame_range"] = "N/A"
+            metadata["sliding_window_frame_count"] = "N/A"
+
+        # Add effective chunk ranges for sliding window processing
+        if effective_chunk_ranges:
+            chunk_ranges_str = []
+            for i, (start, end) in enumerate(effective_chunk_ranges):
+                chunk_ranges_str.append(f"Chunk {i+1}: frames {start+1}-{end}")
+            metadata["effective_chunk_ranges"] = "; ".join(chunk_ranges_str)
+        else:
+            metadata["effective_chunk_ranges"] = "N/A"
 
         if scene_specific_data:
             metadata.update({
@@ -109,9 +151,30 @@ def _prepare_metadata_dict(params_dict: dict, status_info: dict = None) -> dict:
                 "scene_processing_time_formatted": format_time(scene_specific_data.get("scene_processing_time", 0)) if scene_specific_data.get("scene_processing_time") else "N/A",
                 "scene_video_path": os.path.abspath(scene_specific_data.get("scene_video_path", "")) if scene_specific_data.get("scene_video_path") else "N/A"
             })
+            
+            # Add scene frame range information
+            scene_frame_range_from_data = scene_specific_data.get("scene_frame_range")
+            if scene_frame_range_from_data:
+                metadata["scene_frame_range"] = f"frames {scene_frame_range_from_data[0]}-{scene_frame_range_from_data[1]}"
+                metadata["scene_total_frames"] = scene_frame_range_from_data[1] - scene_frame_range_from_data[0] + 1
+            elif scene_frame_range:
+                metadata["scene_frame_range"] = f"frames {scene_frame_range[0]}-{scene_frame_range[1]}"
+                metadata["scene_total_frames"] = scene_frame_range[1] - scene_frame_range[0] + 1
+            else:
+                metadata["scene_frame_range"] = "N/A"
+                metadata["scene_total_frames"] = "N/A"
     else: # No status_info, assume basic fields might be missing timing/progress
         metadata["processing_time_seconds"] = "N/A"
         metadata["processing_time_formatted"] = "N/A"
+        metadata["current_chunk_frame_range"] = "N/A"
+        metadata["current_chunk_frame_count"] = "N/A"
+        metadata["sliding_window_frame_range"] = "N/A"
+        metadata["sliding_window_frame_count"] = "N/A"
+        metadata["effective_chunk_ranges"] = "N/A"
+        metadata["scene_frame_range"] = "N/A"
+        metadata["scene_total_frames"] = "N/A"
+        metadata["overall_video_frame_range"] = "N/A"
+        metadata["overall_video_frame_count"] = "N/A"
         if "processing_status" not in metadata: # Only set if not already set by other logic
              metadata["processing_status"] = "Unknown"
         

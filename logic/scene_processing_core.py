@@ -804,7 +804,7 @@ def process_single_scene(
                         meta_chunk_dir = os.path.join(scene_output_dir, "scenes", scene_name, "chunk_progress_metadata") if scene_output_dir and scene_name else os.path.join(temp_dir, scene_name or f"s_unknown_temp_{chunk_idx+1}", "chunk_progress_metadata")
                         os.makedirs(meta_chunk_dir, exist_ok=True)
                         
-                        # Include RIFE chunk information in status
+                        # Include RIFE chunk information in status and frame range
                         chunk_status_info = {
                             "current_chunk": chunk_idx + 1, 
                             "total_chunks": num_chunks, 
@@ -812,7 +812,8 @@ def process_single_scene(
                             "chunk_video_path": final_chunk_video_path,
                             "original_chunk_video_path": chunk_video_path,
                             "rife_applied_to_chunk": enable_rife_interpolation and rife_apply_to_chunks,
-                            "rife_multiplier_used_for_chunk": rife_multiplier if enable_rife_interpolation and rife_apply_to_chunks else None
+                            "rife_multiplier_used_for_chunk": rife_multiplier if enable_rife_interpolation and rife_apply_to_chunks else None,
+                            "chunk_frame_range": (start_idx + 1, end_idx)  # 1-indexed frame range for this chunk
                         }
                         
                         # Add comprehensive RIFE metadata to chunk-specific metadata
@@ -937,7 +938,8 @@ def process_single_scene(
                 "scene_video_path": final_scene_video,  # Use final_scene_video (could be RIFE)
                 "original_scene_video_path": scene_output_video,  # Always include original path
                 "rife_applied": enable_rife_interpolation and rife_apply_to_scenes,
-                "rife_multiplier_used": rife_multiplier if enable_rife_interpolation and rife_apply_to_scenes else None
+                "rife_multiplier_used": rife_multiplier if enable_rife_interpolation and rife_apply_to_scenes else None,
+                "scene_frame_range": (1, scene_frame_count)  # 1-indexed frame range for this scene
             }
             
             # Add comprehensive RIFE metadata to scene-specific metadata
