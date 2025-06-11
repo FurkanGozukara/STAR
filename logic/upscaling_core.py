@@ -45,7 +45,7 @@ def run_upscale (
     upscale_factor_slider ,cfg_scale ,steps ,solver_mode ,
     max_chunk_len ,enable_chunk_optimization ,vae_chunk ,color_fix_method ,
     enable_tiling ,tile_size ,tile_overlap ,
-    enable_sliding_window ,window_size ,window_step ,
+    enable_context_window ,context_overlap ,
     enable_target_res ,target_h ,target_w ,target_res_mode ,
     ffmpeg_preset ,ffmpeg_quality_value ,ffmpeg_use_gpu ,
     save_frames ,save_metadata ,save_chunks ,
@@ -108,7 +108,7 @@ def run_upscale (
     "ui_total_diffusion_steps":steps ,"solver_mode":solver_mode ,
     "max_chunk_len":max_chunk_len ,"enable_chunk_optimization":enable_chunk_optimization ,"vae_chunk":vae_chunk ,"color_fix_method":color_fix_method ,
     "enable_tiling":enable_tiling ,"tile_size":tile_size ,"tile_overlap":tile_overlap ,
-    "enable_sliding_window":enable_sliding_window ,"window_size":window_size ,"window_step":window_step ,
+    "enable_context_window":enable_context_window ,"context_overlap":context_overlap ,
     "enable_target_res":enable_target_res ,"target_h":target_h ,"target_w":target_w ,
     "target_res_mode":target_res_mode ,"ffmpeg_preset":ffmpeg_preset ,
     "ffmpeg_quality_value":ffmpeg_quality_value ,"ffmpeg_use_gpu":ffmpeg_use_gpu ,
@@ -597,7 +597,7 @@ def run_upscale (
                         scene_video_path=scene_video_path_item, scene_index=scene_idx, total_scenes=total_scenes, temp_dir=temp_dir, # star_model (instance) removed
                         final_prompt=scene_prompt_override, upscale_factor=upscale_factor_val, final_h=final_h_val, final_w=final_w_val, ui_total_diffusion_steps=ui_total_diffusion_steps,
                         solver_mode=solver_mode, cfg_scale=cfg_scale, max_chunk_len=max_chunk_len, enable_chunk_optimization=enable_chunk_optimization, vae_chunk=vae_chunk, color_fix_method=color_fix_method,
-                        enable_tiling=enable_tiling, tile_size=tile_size, tile_overlap=tile_overlap, enable_sliding_window=enable_sliding_window, window_size=window_size, window_step=window_step,
+                        enable_tiling=enable_tiling, tile_size=tile_size, tile_overlap=tile_overlap, enable_context_window=enable_context_window, context_overlap=context_overlap,
                         save_frames=save_frames, scene_output_dir=frames_output_subfolder, progress_callback=scene_upscale_progress_callback,
                         enable_auto_caption_per_scene=scene_enable_auto_caption_current,
                         cogvlm_quant=actual_cogvlm_quant_val,
@@ -734,118 +734,59 @@ def run_upscale (
             if not all_lr_frames_bgr:
                 raise gr.Error("No valid frames found for direct upscaling.")
             
-            if enable_sliding_window:
-                # SLIDING WINDOW PROCESSING WITH CHUNK SAVING
-                loop_name = "Sliding Window Process"
-                sliding_status_msg = f"Sliding Window: Size={window_size}, Step={window_step}. Processing {frame_count} frames."
-                status_log.append(sliding_status_msg)
-                logger.info(sliding_status_msg)
-                yield None, "\n".join(status_log), last_chunk_video_path, sliding_status_msg, None
+            if enable_context_window:
+                # CONTEXT WINDOW PROCESSING WITH CHUNK SAVING  
+                loop_name = "Context Window Process"
+                context_status_msg = f"Context Window: Max Chunk={max_chunk_len}, Context Overlap={context_overlap}. Processing {frame_count} frames."
+                status_log.append(context_status_msg)
+                logger.info(context_status_msg)
+                yield None, "\n".join(status_log), last_chunk_video_path, context_status_msg, None
 
-                # Initialize sliding window parameters
+                # Import the new context processor
+                from .context_processor import calculate_context_chunks, get_chunk_frame_indices, validate_chunk_plan, format_chunk_plan_summary
+
+                # Calculate context-based chunk plan
+                context_chunks = calculate_context_chunks(
+                    total_frames=frame_count,
+                    max_chunk_len=max_chunk_len,
+                    context_overlap=context_overlap
+                )
+
+                # Validate chunk plan
+                is_valid, validation_errors = validate_chunk_plan(context_chunks, frame_count)
+                if not is_valid:
+                    error_msg = f"Context chunk plan validation failed: {', '.join(validation_errors)}"
+                    logger.error(error_msg)
+                    raise gr.Error(error_msg)
+
+                # Log chunk plan summary
+                chunk_summary = format_chunk_plan_summary(context_chunks, frame_count, max_chunk_len, context_overlap)
+                logger.info(f"Context processing plan:\n{chunk_summary}")
+                status_log.append(f"📊 Context Plan: {len(context_chunks)} chunks")
+                yield None, "\n".join(status_log), last_chunk_video_path, f"Context Plan: {len(context_chunks)} chunks", None
+
+                # Initialize context processing parameters
                 processed_frame_filenames = [None] * frame_count
-                effective_window_size = int(window_size)
-                effective_window_step = int(window_step)
-                window_indices_to_process = list(range(0, frame_count, effective_window_step))
-                total_windows_to_process = len(window_indices_to_process)
+                total_chunks_to_process = len(context_chunks)
+                processed_chunks_tracker = [False] * total_chunks_to_process
 
-                # Initialize chunk tracking for sliding window
-                saved_chunks = set()  # Track which chunks have been saved
-                processed_frames_tracker = [False] * frame_count  # Track which frames have been processed
-
-                # Helper functions for chunk mapping
-                def map_window_to_chunks(start_idx, end_idx, max_chunk_len):
-                    """Map a window frame range to affected chunk indices"""
-                    first_chunk = start_idx // max_chunk_len
-                    last_chunk = (end_idx - 1) // max_chunk_len
-                    return list(range(first_chunk, last_chunk + 1))
-
-                def get_chunk_frame_range(chunk_idx, max_chunk_len, total_frames):
-                    """Get the frame range for a specific chunk"""
-                    start_frame = chunk_idx * max_chunk_len
-                    end_frame = min((chunk_idx + 1) * max_chunk_len, total_frames)
-                    return start_frame, end_frame
-
-                def is_chunk_complete(chunk_idx, processed_frames_tracker, max_chunk_len, total_frames):
-                    """Check if all frames in a chunk have been processed"""
-                    start_frame, end_frame = get_chunk_frame_range(chunk_idx, max_chunk_len, total_frames)
-                    for frame_idx in range(start_frame, end_frame):
-                        if not processed_frames_tracker[frame_idx]:
-                            return False
-                    return True
-
-                # NEW: Effective chunk mapping for sliding window based on window step
-                def get_effective_chunk_mappings(frame_count, effective_window_step):
-                    """Calculate effective chunk boundaries based on sliding window step size"""
-                    effective_chunks = []
-                    current_start = 0
-                    chunk_idx = 0
-                    
-                    while current_start < frame_count:
-                        if chunk_idx == 0:
-                            # First chunk: 24 frames (frames 1-24)
-                            overlap_amount = effective_window_size - effective_window_step
-                            first_chunk_size = effective_window_size - (overlap_amount // 2)
-                            current_end = min(current_start + first_chunk_size, frame_count)
-                        else:
-                            # Subsequent chunks: window_step frames each
-                            current_end = min(current_start + effective_window_step, frame_count)
-                        
-                        if current_start < frame_count:
-                            effective_chunks.append({
-                                'chunk_idx': chunk_idx,
-                                'start_frame': current_start,
-                                'end_frame': current_end,
-                                'frame_count': current_end - current_start
-                            })
-                            current_start = current_end
-                            chunk_idx += 1
-                        else:
-                            break
-                    
-                    return effective_chunks
-
-                def map_window_to_effective_chunks(start_idx, end_idx, effective_chunks):
-                    """Map a window frame range to affected effective chunk indices"""
-                    affected_chunks = []
-                    for chunk_info in effective_chunks:
-                        chunk_start = chunk_info['start_frame']
-                        chunk_end = chunk_info['end_frame']
-                        # Check if window overlaps with this chunk
-                        if not (end_idx <= chunk_start or start_idx >= chunk_end):
-                            affected_chunks.append(chunk_info['chunk_idx'])
-                    return affected_chunks
-
-                def is_effective_chunk_complete(chunk_idx, processed_frames_tracker, effective_chunks):
-                    """Check if all frames in an effective chunk have been processed"""
-                    chunk_info = next((c for c in effective_chunks if c['chunk_idx'] == chunk_idx), None)
-                    if not chunk_info:
-                        return False
-                    
-                    start_frame = chunk_info['start_frame']
-                    end_frame = chunk_info['end_frame']
-                    for frame_idx in range(start_frame, end_frame):
-                        if not processed_frames_tracker[frame_idx]:
-                            return False
-                    return True
-
-                def save_effective_sliding_window_chunk(chunk_idx, effective_chunks, save_chunks, chunks_permanent_save_path, 
+                def save_context_window_chunk(chunk_info, save_chunks, chunks_permanent_save_path, 
                                             temp_dir, output_frames_dir, frame_files, input_fps_val, ffmpeg_preset, 
                                             ffmpeg_quality_value, ffmpeg_use_gpu, logger, enable_rife_interpolation, 
                                             rife_apply_to_chunks, rife_multiplier, rife_fp16, rife_uhd, rife_scale, 
                                             rife_skip_static, rife_enable_fps_limit, rife_max_fps_limit, rife_keep_original, 
                                             current_seed):
-                    """Save an effective chunk video from sliding window processed frames"""
+                    """Save a chunk video from context window processed frames"""
                     if not save_chunks or not chunks_permanent_save_path:
                         return None, None
                     
-                    chunk_info = next((c for c in effective_chunks if c['chunk_idx'] == chunk_idx), None)
                     if not chunk_info:
                         return None, None
                     
-                    start_frame = chunk_info['start_frame']
-                    end_frame = chunk_info['end_frame']
-                    current_chunk_display_num = chunk_idx + 1
+                    # Get output frame range (what was actually generated)
+                    output_start_0 = chunk_info['output_start'] - 1  # Convert to 0-based
+                    output_end_0 = chunk_info['output_end'] - 1      # Convert to 0-based
+                    current_chunk_display_num = chunk_info['chunk_idx'] + 1
                     
                     chunk_video_filename = f"chunk_{current_chunk_display_num:04d}.mp4"
                     chunk_video_path = os.path.join(chunks_permanent_save_path, chunk_video_filename)
@@ -1751,15 +1692,24 @@ def run_upscale (
             params_dict=params_for_metadata, status_info=status_info_for_final_meta, logger=logger
         )
         if success:
+            # Initialize metadata_save_start_time if not already set
+            if 'metadata_save_start_time' not in locals():
+                metadata_save_start_time = time.time()
             final_meta_msg = f"Final metadata saved: {message.split(': ')[-1]}. Time to save: {format_time(time.time() - metadata_save_start_time)}"
             status_log.append(final_meta_msg)
             logger.info(final_meta_msg)
         else:
             status_log.append(f"Error saving final metadata: {message}")
             logger.error(message)
-        current_overall_progress = initial_progress_metadata + stage_weights["metadata"]
+        # Handle metadata progress increment safely
+        if 'initial_progress_metadata' in locals():
+            current_overall_progress = initial_progress_metadata + stage_weights["metadata"]
+        else:
+            current_overall_progress += stage_weights["metadata"]
         progress(current_overall_progress, desc="Metadata saved.")
-        yield final_output_path, "\n".join(status_log), last_chunk_video_path, final_meta_msg if success else message, None
+        # Use final_output_path if available, otherwise use output_video_path as fallback
+        final_path_for_yield = final_output_path if 'final_output_path' in locals() else output_video_path
+        yield final_path_for_yield, "\n".join(status_log), last_chunk_video_path, final_meta_msg if success else message, None
     else: # Metadata saving disabled
         if stage_weights["metadata"] > 0.0:
             current_overall_progress += stage_weights["metadata"]
@@ -1776,4 +1726,6 @@ def run_upscale (
     else :
         progress (1.0 ,desc =final_desc )
 
-    yield final_output_path ,"\n".join (status_log ),last_chunk_video_path ,"Processing complete!",None
+    # Use final_output_path if available, otherwise use output_video_path as fallback
+    final_path_for_final_yield = final_output_path if 'final_output_path' in locals() else output_video_path
+    yield final_path_for_final_yield ,"\n".join (status_log ),last_chunk_video_path ,"Processing complete!",None

@@ -438,27 +438,21 @@ The total combined prompt length is limited to 77 tokens."""
 
             with gr .Row ():
                 with gr .Column (scale =1 ):
-                    with gr .Accordion ("Sliding Window - Overlapped Processing Thus Better Quality but Slower",open =True ):
-                        enable_sliding_window_check =gr .Checkbox (
-                        label ="Enable Sliding Window",
-                        value =app_config .DEFAULT_ENABLE_SLIDING_WINDOW ,
-                        info ="""Processes the video in overlapping temporal chunks (windows). Use if you aim maximum quality and have better consistency between chunks.
-- Mechanism: Takes a 'Window Size' of frames, processes it, saves results from the central part, then slides the window forward by 'Window Step', processing overlapping frames.
-- Quality Impact: Can improve quality of processing if you use higher Windows and overlapped frame count
-- VRAM Impact : To lower VRAM you can set like Window Size 8 and Window Step Size 4
-- Speed Impact: Slower (due to processing overlapping frames multiple times). When enabled, 'Window Size' dictates chunk size instead of 'Max Frames per Chunk'."""
+                    with gr .Accordion ("Context Window - Previous Frames for Better Consistency",open =True ):
+                        enable_context_window_check =gr .Checkbox (
+                        label ="Enable Context Window",
+                        value =app_config .DEFAULT_ENABLE_CONTEXT_WINDOW ,
+                        info ="""Include previous frames as context when processing each chunk (except the first). Similar to "Optimize Last Chunk Quality" but applied to all chunks.
+- Mechanism: Each chunk (except first) includes N previous frames as context, but only outputs new frames. Provides temporal consistency without complex overlap logic.
+- Quality Impact: Better temporal consistency and reduced flickering between chunks. More context = better consistency.
+- VRAM Impact: Medium increase due to processing context frames (recommend 25-50% of Max Frames per Chunk).
+- Speed Impact: Slower due to processing additional context frames, but simpler and more predictable than traditional sliding window."""
                         )
-                        with gr .Row ():
-                            window_size_num =gr .Slider (
-                            label ="Window Size (frames)",
-                            value =app_config .DEFAULT_WINDOW_SIZE ,minimum =2 ,maximum =256 ,step =4 ,
-                            info ="Number of frames in each temporal window. Acts like 'Max Frames per Chunk' but applied as a sliding window. Lower value = less VRAM, less temporal context."
-                            )
-                            window_step_num =gr .Slider (
-                            label ="Window Step (frames)",
-                            value =app_config .DEFAULT_WINDOW_STEP ,minimum =1 ,maximum =128 ,step =1 ,
-                            info ="How many frames to advance for the next window. (Window Size - Window Step) = Overlap. Smaller step = more overlap = better consistency but slower. Recommended: Step = Size / 2."
-                            )
+                        context_overlap_num =gr .Slider (
+                        label ="Context Overlap (frames)",
+                        value =app_config .DEFAULT_CONTEXT_OVERLAP ,minimum =0 ,maximum =31 ,step =1 ,
+                        info ="Number of previous frames to include as context for each chunk (except first). 0 = disabled (same as normal chunking). Higher values = better consistency but more VRAM and slower processing. Recommend: 25-50% of Max Frames per Chunk."
+                        )
 
                 with gr .Column (scale =1 ):
                     with gr .Accordion ("Advanced: Tiling (Very High Res / Low VRAM)",open =True ):
@@ -788,10 +782,21 @@ This helps visualize the quality improvement from upscaling."""
     inputs =enable_tiling_check ,
     outputs =[tile_size_num ,tile_overlap_num ]
     )
-    enable_sliding_window_check .change (
-    lambda x :[gr .update (interactive =x )]*2 ,
-    inputs =enable_sliding_window_check ,
-    outputs =[window_size_num ,window_step_num ]
+    enable_context_window_check .change (
+    lambda x :gr .update (interactive =x ),
+    inputs =enable_context_window_check ,
+    outputs =context_overlap_num 
+    )
+
+    def update_context_overlap_max (max_chunk_len ):
+        """Update the maximum value of context overlap based on max_chunk_len"""
+        new_max =max (0 ,int (max_chunk_len )-1 )
+        return gr .update (maximum =new_max )
+
+    max_chunk_len_slider .change (
+    fn =update_context_overlap_max ,
+    inputs =max_chunk_len_slider ,
+    outputs =context_overlap_num 
     )
     scene_splitting_outputs =[
     scene_split_mode_radio ,scene_min_scene_len_num ,scene_threshold_num ,scene_drop_short_check ,scene_merge_last_check ,
@@ -838,7 +843,7 @@ This helps visualize the quality improvement from upscaling."""
     upscale_factor_slider_val ,cfg_slider_val ,steps_slider_val ,solver_mode_radio_val ,
     max_chunk_len_slider_val ,enable_chunk_optimization_check_val ,vae_chunk_slider_val ,color_fix_dropdown_val ,
     enable_tiling_check_val ,tile_size_num_val ,tile_overlap_num_val ,
-    enable_sliding_window_check_val ,window_size_num_val ,window_step_num_val ,
+    enable_context_window_check_val ,context_overlap_num_val ,
     enable_target_res_check_val ,target_h_num_val ,target_w_num_val ,target_res_mode_radio_val ,
     ffmpeg_preset_dropdown_val ,ffmpeg_quality_slider_val ,ffmpeg_use_gpu_check_val ,
     save_frames_checkbox_val ,save_metadata_checkbox_val ,save_chunks_checkbox_val ,
@@ -986,7 +991,7 @@ This helps visualize the quality improvement from upscaling."""
         upscale_factor_slider =upscale_factor_slider_val ,cfg_scale =cfg_slider_val ,steps =steps_slider_val ,solver_mode =solver_mode_radio_val ,
         max_chunk_len =max_chunk_len_slider_val ,enable_chunk_optimization =enable_chunk_optimization_check_val ,vae_chunk =vae_chunk_slider_val ,color_fix_method =color_fix_dropdown_val ,
         enable_tiling =enable_tiling_check_val ,tile_size =tile_size_num_val ,tile_overlap =tile_overlap_num_val ,
-        enable_sliding_window =enable_sliding_window_check_val ,window_size =window_size_num_val ,window_step =window_step_num_val ,
+        enable_context_window =enable_context_window_check_val ,context_overlap =context_overlap_num_val ,
         enable_target_res =enable_target_res_check_val ,target_h =target_h_num_val ,target_w =target_w_num_val ,target_res_mode =target_res_mode_radio_val ,
         ffmpeg_preset =ffmpeg_preset_dropdown_val ,ffmpeg_quality_value =ffmpeg_quality_slider_val ,ffmpeg_use_gpu =ffmpeg_use_gpu_check_val ,
         save_frames =save_frames_checkbox_val ,save_metadata =save_metadata_checkbox_val ,save_chunks =save_chunks_checkbox_val ,
@@ -1127,7 +1132,7 @@ This helps visualize the quality improvement from upscaling."""
     upscale_factor_slider ,cfg_slider ,steps_slider ,solver_mode_radio ,
     max_chunk_len_slider ,enable_chunk_optimization_check ,vae_chunk_slider ,color_fix_dropdown ,
     enable_tiling_check ,tile_size_num ,tile_overlap_num ,
-    enable_sliding_window_check ,window_size_num ,window_step_num ,
+    enable_context_window_check ,context_overlap_num ,
     enable_target_res_check ,target_h_num ,target_w_num ,target_res_mode_radio ,
     ffmpeg_preset_dropdown ,ffmpeg_quality_slider ,ffmpeg_use_gpu_check ,
     save_frames_checkbox ,save_metadata_checkbox ,save_chunks_checkbox ,
@@ -1251,7 +1256,7 @@ This helps visualize the quality improvement from upscaling."""
     upscale_factor_slider_val ,cfg_slider_val ,steps_slider_val ,solver_mode_radio_val ,
     max_chunk_len_slider_val ,enable_chunk_optimization_check_val ,vae_chunk_slider_val ,color_fix_dropdown_val ,
     enable_tiling_check_val ,tile_size_num_val ,tile_overlap_num_val ,
-    enable_sliding_window_check_val ,window_size_num_val ,window_step_num_val ,
+    enable_context_window_check_val ,context_overlap_num_val ,
     enable_target_res_check_val ,target_h_num_val ,target_w_num_val ,target_res_mode_radio_val ,
     ffmpeg_preset_dropdown_val ,ffmpeg_quality_slider_val ,ffmpeg_use_gpu_check_val ,
     save_frames_checkbox_val ,save_metadata_checkbox_val ,save_chunks_checkbox_val ,
@@ -1306,8 +1311,8 @@ This helps visualize the quality improvement from upscaling."""
         upscale_factor_slider_val ,cfg_slider_val ,steps_slider_val ,solver_mode_radio_val ,
         max_chunk_len_slider_val ,enable_chunk_optimization_check_val ,vae_chunk_slider_val ,color_fix_dropdown_val ,
         enable_tiling_check_val ,tile_size_num_val ,tile_overlap_num_val ,
-        enable_sliding_window_check_val ,window_size_num_val ,window_step_num_val ,
-        enable_target_res_check_val ,target_h_num_val ,target_w_num_val ,target_res_mode_radio_val ,
+            enable_context_window_check_val ,context_overlap_num_val ,
+    enable_target_res_check_val ,target_h_num_val ,target_w_num_val ,target_res_mode_radio_val ,
         ffmpeg_preset_dropdown_val ,ffmpeg_quality_slider_val ,ffmpeg_use_gpu_check_val ,
         save_frames_checkbox_val ,save_metadata_checkbox_val ,save_chunks_checkbox_val ,
         create_comparison_video_check_val ,
@@ -1343,7 +1348,7 @@ This helps visualize the quality improvement from upscaling."""
     upscale_factor_slider ,cfg_slider ,steps_slider ,solver_mode_radio ,
     max_chunk_len_slider ,enable_chunk_optimization_check ,vae_chunk_slider ,color_fix_dropdown ,
     enable_tiling_check ,tile_size_num ,tile_overlap_num ,
-    enable_sliding_window_check ,window_size_num ,window_step_num ,
+    enable_context_window_check ,context_overlap_num ,
     enable_target_res_check ,target_h_num ,target_w_num ,target_res_mode_radio ,
     ffmpeg_preset_dropdown ,ffmpeg_quality_slider ,ffmpeg_use_gpu_check ,
     save_frames_checkbox ,save_metadata_checkbox ,save_chunks_checkbox ,
