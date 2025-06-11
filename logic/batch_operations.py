@@ -97,6 +97,7 @@ def process_batch_videos(
     batch_enable_auto_caption_val=False,
     batch_cogvlm_quant_val=None,
     batch_cogvlm_unload_val=None,
+    current_seed=99,
 
     progress=gr.Progress(track_tqdm=True)
 ):
@@ -251,14 +252,16 @@ def process_batch_videos(
                     rife_keep_original=rife_keep_original_val, 
                     rife_overwrite_original=rife_overwrite_original_val,
 
-                    is_batch_mode=True, 
-                    batch_output_dir=batch_output_folder_val, 
-                    original_filename=video_file,
-
+                    is_batch_mode=True,
+                    batch_output_dir=batch_output_folder_val,
+                    original_filename=video_name,
+                    
                     enable_auto_caption_per_scene=enable_auto_caption_for_this_video,
-                    cogvlm_quant=batch_cogvlm_quant_val if enable_auto_caption_for_this_video else None,
+                    cogvlm_quant=batch_cogvlm_quant_val if enable_auto_caption_for_this_video else 0,
                     cogvlm_unload=batch_cogvlm_unload_val if enable_auto_caption_for_this_video else 'full',
-                    progress=progress # Pass the Gradio progress tracker
+
+                    current_seed=current_seed,
+                    progress=progress
                 )
 
                 final_output = None

@@ -1323,6 +1323,7 @@ This helps visualize the quality improvement from upscaling."""
         batch_cogvlm_quant_val =get_quant_value_from_display (cogvlm_quant_radio_val )if batch_enable_auto_caption_val else None ,
         batch_cogvlm_unload_val =cogvlm_unload_radio_val if batch_enable_auto_caption_val else 'full',
 
+        current_seed =actual_seed_for_batch ,
         progress =progress 
         )
 
