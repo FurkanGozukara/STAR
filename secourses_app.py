@@ -712,13 +712,12 @@ This helps visualize the quality improvement from upscaling."""
                                 info ="Custom multiplier value (0.1 to 1.0). Lower = fewer frames."
                                 )
 
-                        with gr .Group ()as fixed_controls :
+                        with gr .Group (visible =False )as fixed_controls :
                             target_fps =gr .Dropdown (
                             label ="Target FPS",
                             choices =[8.0 ,10.0 ,12.0 ,15.0 ,18.0 ,20.0 ,23.976 ,24.0 ,25.0 ,29.970 ,30.0 ],
                             value =app_config .DEFAULT_TARGET_FPS ,
-                            info ="Target FPS for the reduced video. Lower FPS = faster upscaling. Common choices: 12-15 FPS for fast processing, 24 FPS for cinema standard.",
-                            visible =False 
+                            info ="Target FPS for the reduced video. Lower FPS = faster upscaling. Common choices: 12-15 FPS for fast processing, 24 FPS for cinema standard."
                             )
 
                         fps_interpolation_method =gr .Radio (

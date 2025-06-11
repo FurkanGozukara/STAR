@@ -138,6 +138,7 @@ def run_upscale (
 
     stage_weights ={
     "init_paths_res":0.03 ,
+    "fps_decrease":0.05 if enable_fps_decrease else 0.0, # Added FPS decrease stage
     "scene_split":0.05 if enable_scene_split else 0.0 ,
     "downscale":0.07 , # This will be set to 0 if no downscale needed later
     "model_load":0.05 ,
@@ -245,6 +246,96 @@ def run_upscale (
         current_overall_progress +=stage_weights ["init_paths_res"]
         progress (current_overall_progress ,desc ="Calculating target resolution...")
 
+        # FPS Decrease Processing (if enabled) - MOVED TO BE FIRST
+        fps_decreased_video_path = None
+        current_input_video_for_frames = input_video_path  # Initialize with original input
+        if enable_fps_decrease:
+            fps_decrease_start_time = time.time()
+            progress(current_overall_progress, desc="Applying FPS decrease...")
+            
+            # Convert UI parameters to backend format
+            actual_target_fps = target_fps  # Default for fixed mode
+            actual_fps_mode = fps_decrease_mode
+            actual_multiplier = fps_multiplier_custom
+            
+            if fps_decrease_mode == "multiplier":
+                # Convert preset to multiplier value if not using custom
+                if fps_multiplier_preset != "Custom":
+                    multiplier_map = {v: k for k, v in util_get_common_fps_multipliers().items()}
+                    actual_multiplier = multiplier_map.get(fps_multiplier_preset, 0.5)
+                else:
+                    actual_multiplier = fps_multiplier_custom
+                
+                fps_decrease_status_msg = f"Decreasing FPS using {fps_multiplier_preset} (×{actual_multiplier:.3f}) with {fps_interpolation_method} method..."
+            else:
+                fps_decrease_status_msg = f"Decreasing FPS to {target_fps} using {fps_interpolation_method} method..."
+            
+            status_log.append(fps_decrease_status_msg)
+            logger.info(fps_decrease_status_msg)
+            yield None, "\n".join(status_log), last_chunk_video_path, fps_decrease_status_msg, None
+            
+            try:
+                # Generate FPS decreased video path
+                fps_decreased_video_path = os.path.join(temp_dir, "fps_decreased_input.mp4")
+                
+                # Apply FPS decrease to ORIGINAL input video (before any other processing)
+                fps_success, fps_output_fps, fps_message = util_decrease_fps(
+                    input_video_path=input_video_path,  # Use original input, not processed
+                    output_video_path=fps_decreased_video_path,
+                    target_fps=actual_target_fps,
+                    interpolation_method=fps_interpolation_method,
+                    ffmpeg_preset=ffmpeg_preset,
+                    ffmpeg_quality_value=ffmpeg_quality_value,
+                    ffmpeg_use_gpu=ffmpeg_use_gpu,
+                    logger=logger,
+                    fps_mode=actual_fps_mode,
+                    fps_multiplier=actual_multiplier
+                )
+                
+                if fps_success:
+                    # Update the input video path for all subsequent processing
+                    current_input_video_for_frames = fps_decreased_video_path
+                    # Update metadata
+                    params_for_metadata["fps_decrease_applied"] = True
+                    params_for_metadata["original_fps"] = params_for_metadata.get("input_fps", "unknown")
+                    params_for_metadata["input_fps"] = fps_output_fps
+                    params_for_metadata["fps_decrease_actual_mode"] = actual_fps_mode
+                    params_for_metadata["fps_decrease_actual_multiplier"] = actual_multiplier
+                    params_for_metadata["fps_decrease_actual_target"] = actual_target_fps
+                    params_for_metadata["fps_decrease_calculated_fps"] = fps_output_fps
+                    
+                    fps_duration = time.time() - fps_decrease_start_time
+                    fps_success_msg = f"FPS decrease completed in {format_time(fps_duration)}. {fps_message}"
+                    status_log.append(fps_success_msg)
+                    logger.info(fps_success_msg)
+                    current_overall_progress += stage_weights["fps_decrease"]
+                    progress(current_overall_progress, desc=f"FPS decreased to {fps_output_fps:.2f}")
+                    yield None, "\n".join(status_log), last_chunk_video_path, f"FPS decreased to {fps_output_fps:.2f}", None
+                else:
+                    # FPS decrease failed, continue with original video
+                    fps_duration = time.time() - fps_decrease_start_time
+                    fps_error_msg = f"FPS decrease failed after {format_time(fps_duration)}: {fps_message}. Continuing with original video."
+                    status_log.append(fps_error_msg)
+                    logger.warning(fps_error_msg)
+                    params_for_metadata["fps_decrease_applied"] = False
+                    params_for_metadata["fps_decrease_error"] = fps_message
+                    current_overall_progress += stage_weights["fps_decrease"]
+                    yield None, "\n".join(status_log), last_chunk_video_path, "FPS decrease failed, using original", None
+                    
+            except Exception as e_fps:
+                fps_duration = time.time() - fps_decrease_start_time
+                fps_exception_msg = f"Exception during FPS decrease after {format_time(fps_duration)}: {str(e_fps)}. Continuing with original video."
+                status_log.append(fps_exception_msg)
+                logger.error(fps_exception_msg, exc_info=True)
+                params_for_metadata["fps_decrease_applied"] = False
+                params_for_metadata["fps_decrease_error"] = str(e_fps)
+                current_overall_progress += stage_weights["fps_decrease"]
+                yield None, "\n".join(status_log), last_chunk_video_path, "FPS decrease error, using original", None
+        else:
+            # FPS decrease disabled
+            params_for_metadata["fps_decrease_applied"] = False
+            current_overall_progress += stage_weights["fps_decrease"]  # Add zero weight if disabled
+
         upscale_factor_val =None
         final_h_val ,final_w_val =None ,None
         needs_downscale = False # Initialize
@@ -298,7 +389,7 @@ def run_upscale (
                         logger .info (f"Falling back to CPU encoding for downscaling due to small target resolution: {ds_w}x{ds_h}")
                     ffmpeg_opts_downscale =f'-c:v libx264 -preset {ffmpeg_preset} -crf {ffmpeg_quality_value} -pix_fmt yuv420p'
 
-                cmd =f'ffmpeg -y -i "{input_video_path}" -vf "{scale_filter}" {ffmpeg_opts_downscale} -c:a copy "{downscaled_temp_video}"'
+                cmd =f'ffmpeg -y -i "{current_input_video_for_frames}" -vf "{scale_filter}" {ffmpeg_opts_downscale} -c:a copy "{downscaled_temp_video}"'
                 util_run_ffmpeg_command (cmd ,"Input Downscaling with Audio Copy",logger =logger )
                 current_input_video_for_frames =downscaled_temp_video
 
@@ -332,90 +423,7 @@ def run_upscale (
             logger .info (direct_upscale_msg )
             yield None ,"\n".join (status_log ),last_chunk_video_path ,last_chunk_status,None
 
-        # FPS Decrease Processing (if enabled)
-        fps_decreased_video_path = None
-        if enable_fps_decrease:
-            fps_decrease_start_time = time.time()
-            progress(current_overall_progress, desc="Applying FPS decrease...")
-            
-            # Convert UI parameters to backend format
-            actual_target_fps = target_fps  # Default for fixed mode
-            actual_fps_mode = fps_decrease_mode
-            actual_multiplier = fps_multiplier_custom
-            
-            if fps_decrease_mode == "multiplier":
-                # Convert preset to multiplier value if not using custom
-                if fps_multiplier_preset != "Custom":
-                    multiplier_map = {v: k for k, v in util_get_common_fps_multipliers().items()}
-                    actual_multiplier = multiplier_map.get(fps_multiplier_preset, 0.5)
-                else:
-                    actual_multiplier = fps_multiplier_custom
-                
-                fps_decrease_status_msg = f"Decreasing FPS using {fps_multiplier_preset} (×{actual_multiplier:.3f}) with {fps_interpolation_method} method..."
-            else:
-                fps_decrease_status_msg = f"Decreasing FPS to {target_fps} using {fps_interpolation_method} method..."
-            
-            status_log.append(fps_decrease_status_msg)
-            logger.info(fps_decrease_status_msg)
-            yield None, "\n".join(status_log), last_chunk_video_path, fps_decrease_status_msg, None
-            
-            try:
-                # Generate FPS decreased video path
-                fps_decreased_video_path = os.path.join(temp_dir, "fps_decreased_input.mp4")
-                
-                # Apply FPS decrease with new parameters
-                fps_success, fps_output_fps, fps_message = util_decrease_fps(
-                    input_video_path=current_input_video_for_frames,
-                    output_video_path=fps_decreased_video_path,
-                    target_fps=actual_target_fps,
-                    interpolation_method=fps_interpolation_method,
-                    ffmpeg_preset=ffmpeg_preset,
-                    ffmpeg_quality_value=ffmpeg_quality_value,
-                    ffmpeg_use_gpu=ffmpeg_use_gpu,
-                    logger=logger,
-                    fps_mode=actual_fps_mode,
-                    fps_multiplier=actual_multiplier
-                )
-                
-                if fps_success:
-                    # Update the input video path for all subsequent processing
-                    current_input_video_for_frames = fps_decreased_video_path
-                    # Update metadata
-                    params_for_metadata["fps_decrease_applied"] = True
-                    params_for_metadata["original_fps"] = params_for_metadata.get("input_fps", "unknown")
-                    params_for_metadata["input_fps"] = fps_output_fps
-                    params_for_metadata["fps_decrease_actual_mode"] = actual_fps_mode
-                    params_for_metadata["fps_decrease_actual_multiplier"] = actual_multiplier
-                    params_for_metadata["fps_decrease_actual_target"] = actual_target_fps
-                    params_for_metadata["fps_decrease_calculated_fps"] = fps_output_fps
-                    
-                    fps_duration = time.time() - fps_decrease_start_time
-                    fps_success_msg = f"FPS decrease completed in {format_time(fps_duration)}. {fps_message}"
-                    status_log.append(fps_success_msg)
-                    logger.info(fps_success_msg)
-                    progress(current_overall_progress, desc=f"FPS decreased to {fps_output_fps:.2f}")
-                    yield None, "\n".join(status_log), last_chunk_video_path, f"FPS decreased to {fps_output_fps:.2f}", None
-                else:
-                    # FPS decrease failed, continue with original video
-                    fps_duration = time.time() - fps_decrease_start_time
-                    fps_error_msg = f"FPS decrease failed after {format_time(fps_duration)}: {fps_message}. Continuing with original video."
-                    status_log.append(fps_error_msg)
-                    logger.warning(fps_error_msg)
-                    params_for_metadata["fps_decrease_applied"] = False
-                    params_for_metadata["fps_decrease_error"] = fps_message
-                    yield None, "\n".join(status_log), last_chunk_video_path, "FPS decrease failed, using original", None
-                    
-            except Exception as e_fps:
-                fps_duration = time.time() - fps_decrease_start_time
-                fps_exception_msg = f"Exception during FPS decrease after {format_time(fps_duration)}: {str(e_fps)}. Continuing with original video."
-                status_log.append(fps_exception_msg)
-                logger.error(fps_exception_msg, exc_info=True)
-                params_for_metadata["fps_decrease_applied"] = False
-                params_for_metadata["fps_decrease_error"] = str(e_fps)
-                yield None, "\n".join(status_log), last_chunk_video_path, "FPS decrease error, using original", None
-        else:
-            # FPS decrease disabled
-            params_for_metadata["fps_decrease_applied"] = False
+
 
         scene_video_paths =[]
         if enable_scene_split :
