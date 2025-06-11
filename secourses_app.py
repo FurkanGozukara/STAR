@@ -615,7 +615,7 @@ This helps visualize the quality improvement from upscaling."""
             # Add the help content at the bottom in 3 columns
             create_batch_processing_help()
 
-        with gr .Tab ("FPS Increase"):
+        with gr .Tab ("FPS Increase - Decrease"):
             with gr .Row ():
                 with gr .Column (scale =1 ):
                     with gr .Accordion ("RIFE Interpolation Settings",open =True ):

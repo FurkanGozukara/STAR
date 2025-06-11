@@ -122,7 +122,7 @@ DEFAULT_ENABLE_FPS_DECREASE = False
 DEFAULT_FPS_DECREASE_MODE = "multiplier"  # "multiplier" or "fixed"
 DEFAULT_FPS_MULTIPLIER = 0.5  # Default to 1/2x (half FPS)
 DEFAULT_TARGET_FPS = 24.0  # For fixed mode backward compatibility
-DEFAULT_FPS_INTERPOLATION_METHOD = "drop"
+DEFAULT_FPS_INTERPOLATION_METHOD = "blend"
 
 # Batch Processing Options
 DEFAULT_BATCH_SKIP_EXISTING = True
