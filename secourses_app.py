@@ -510,6 +510,7 @@ This helps visualize the quality improvement from upscaling."""
                         save_frames_checkbox =gr .Checkbox (label ="Save Input and Processed Frames",value =app_config .DEFAULT_SAVE_FRAMES ,info ="If checked, saves the extracted input frames and the upscaled output frames into a subfolder named after the output video (e.g., '0001/input_frames' and '0001/processed_frames').")
                         save_metadata_checkbox =gr .Checkbox (label ="Save Processing Metadata",value =app_config .DEFAULT_SAVE_METADATA ,info ="If checked, saves a .txt file (e.g., '0001.txt') in the main output folder, containing all processing parameters and total processing time.")
                         save_chunks_checkbox =gr .Checkbox (label ="Save Processed Chunks",value =app_config .DEFAULT_SAVE_CHUNKS ,info ="If checked, saves each processed chunk as a video file in a 'chunks' subfolder (e.g., '0001/chunks/chunk_0001.mp4'). Uses the same FFmpeg settings as the final video.")
+                        save_chunk_frames_checkbox =gr .Checkbox (label ="Save Chunk Input Frames (Debug)",value =app_config .DEFAULT_SAVE_CHUNK_FRAMES ,info ="If checked, saves the input frames for each chunk before processing into a 'chunk_frames' subfolder (e.g., '0001/chunk_frames/chunk_01_frame_012.png'). Useful for debugging which frames are processed in each chunk.")
 
                     with gr .Accordion ("Advanced: Seeding (Reproducibility)",open =True ):
                         with gr .Row ():
@@ -846,7 +847,7 @@ This helps visualize the quality improvement from upscaling."""
     enable_context_window_check_val ,context_overlap_num_val ,
     enable_target_res_check_val ,target_h_num_val ,target_w_num_val ,target_res_mode_radio_val ,
     ffmpeg_preset_dropdown_val ,ffmpeg_quality_slider_val ,ffmpeg_use_gpu_check_val ,
-    save_frames_checkbox_val ,save_metadata_checkbox_val ,save_chunks_checkbox_val ,
+    save_frames_checkbox_val ,save_metadata_checkbox_val ,save_chunks_checkbox_val ,save_chunk_frames_checkbox_val ,
     create_comparison_video_check_val ,
     enable_scene_split_check_val ,scene_split_mode_radio_val ,scene_min_scene_len_num_val ,scene_drop_short_check_val ,scene_merge_last_check_val ,
     scene_frame_skip_num_val ,scene_threshold_num_val ,scene_min_content_val_num_val ,scene_frame_window_num_val ,
@@ -994,7 +995,7 @@ This helps visualize the quality improvement from upscaling."""
         enable_context_window =enable_context_window_check_val ,context_overlap =context_overlap_num_val ,
         enable_target_res =enable_target_res_check_val ,target_h =target_h_num_val ,target_w =target_w_num_val ,target_res_mode =target_res_mode_radio_val ,
         ffmpeg_preset =ffmpeg_preset_dropdown_val ,ffmpeg_quality_value =ffmpeg_quality_slider_val ,ffmpeg_use_gpu =ffmpeg_use_gpu_check_val ,
-        save_frames =save_frames_checkbox_val ,save_metadata =save_metadata_checkbox_val ,save_chunks =save_chunks_checkbox_val ,
+        save_frames =save_frames_checkbox_val ,save_metadata =save_metadata_checkbox_val ,save_chunks =save_chunks_checkbox_val ,save_chunk_frames =save_chunk_frames_checkbox_val ,
 
         enable_scene_split =enable_scene_split_check_val ,scene_split_mode =scene_split_mode_radio_val ,scene_min_scene_len =scene_min_scene_len_num_val ,scene_drop_short =scene_drop_short_check_val ,scene_merge_last =scene_merge_last_check_val ,
         scene_frame_skip =scene_frame_skip_num_val ,scene_threshold =scene_threshold_num_val ,scene_min_content_val =scene_min_content_val_num_val ,scene_frame_window =scene_frame_window_num_val ,
@@ -1135,7 +1136,7 @@ This helps visualize the quality improvement from upscaling."""
     enable_context_window_check ,context_overlap_num ,
     enable_target_res_check ,target_h_num ,target_w_num ,target_res_mode_radio ,
     ffmpeg_preset_dropdown ,ffmpeg_quality_slider ,ffmpeg_use_gpu_check ,
-    save_frames_checkbox ,save_metadata_checkbox ,save_chunks_checkbox ,
+    save_frames_checkbox ,save_metadata_checkbox ,save_chunks_checkbox ,save_chunk_frames_checkbox ,
     create_comparison_video_check ,
     enable_scene_split_check ,scene_split_mode_radio ,scene_min_scene_len_num ,scene_drop_short_check ,scene_merge_last_check ,
     scene_frame_skip_num ,scene_threshold_num ,scene_min_content_val_num ,scene_frame_window_num ,
@@ -1259,7 +1260,7 @@ This helps visualize the quality improvement from upscaling."""
     enable_context_window_check_val ,context_overlap_num_val ,
     enable_target_res_check_val ,target_h_num_val ,target_w_num_val ,target_res_mode_radio_val ,
     ffmpeg_preset_dropdown_val ,ffmpeg_quality_slider_val ,ffmpeg_use_gpu_check_val ,
-    save_frames_checkbox_val ,save_metadata_checkbox_val ,save_chunks_checkbox_val ,
+    save_frames_checkbox_val ,save_metadata_checkbox_val ,save_chunks_checkbox_val ,save_chunk_frames_checkbox_val ,
     create_comparison_video_check_val ,
 
     enable_scene_split_check_val ,scene_split_mode_radio_val ,scene_min_scene_len_num_val ,scene_drop_short_check_val ,scene_merge_last_check_val ,
@@ -1314,7 +1315,7 @@ This helps visualize the quality improvement from upscaling."""
             enable_context_window_check_val ,context_overlap_num_val ,
     enable_target_res_check_val ,target_h_num_val ,target_w_num_val ,target_res_mode_radio_val ,
         ffmpeg_preset_dropdown_val ,ffmpeg_quality_slider_val ,ffmpeg_use_gpu_check_val ,
-        save_frames_checkbox_val ,save_metadata_checkbox_val ,save_chunks_checkbox_val ,
+        save_frames_checkbox_val ,save_metadata_checkbox_val ,save_chunks_checkbox_val ,save_chunk_frames_checkbox_val ,
         create_comparison_video_check_val ,
 
         enable_scene_split_check_val ,scene_split_mode_radio_val ,scene_min_scene_len_num_val ,scene_drop_short_check_val ,scene_merge_last_check_val ,
@@ -1351,7 +1352,7 @@ This helps visualize the quality improvement from upscaling."""
     enable_context_window_check ,context_overlap_num ,
     enable_target_res_check ,target_h_num ,target_w_num ,target_res_mode_radio ,
     ffmpeg_preset_dropdown ,ffmpeg_quality_slider ,ffmpeg_use_gpu_check ,
-    save_frames_checkbox ,save_metadata_checkbox ,save_chunks_checkbox ,
+    save_frames_checkbox ,save_metadata_checkbox ,save_chunks_checkbox ,save_chunk_frames_checkbox ,
     create_comparison_video_check ,
     enable_scene_split_check ,scene_split_mode_radio ,scene_min_scene_len_num ,scene_drop_short_check ,scene_merge_last_check ,
     scene_frame_skip_num ,scene_threshold_num ,scene_min_content_val_num ,scene_frame_window_num ,

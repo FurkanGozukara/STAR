@@ -48,7 +48,7 @@ def run_upscale (
     enable_context_window ,context_overlap ,
     enable_target_res ,target_h ,target_w ,target_res_mode ,
     ffmpeg_preset ,ffmpeg_quality_value ,ffmpeg_use_gpu ,
-    save_frames ,save_metadata ,save_chunks ,
+    save_frames ,save_metadata ,save_chunks ,save_chunk_frames ,
 
     enable_scene_split ,scene_split_mode ,scene_min_scene_len ,scene_drop_short ,scene_merge_last ,
     scene_frame_skip ,scene_threshold ,scene_min_content_val ,scene_frame_window ,
@@ -199,19 +199,22 @@ def run_upscale (
         else :
             frames_output_subfolder =os .path .join (main_output_dir ,base_output_filename_no_ext )
 
+        os .makedirs (frames_output_subfolder ,exist_ok =True )
         input_frames_permanent_save_path =os .path .join (frames_output_subfolder ,"input_frames")
         processed_frames_permanent_save_path =os .path .join (frames_output_subfolder ,"processed_frames")
         os .makedirs (input_frames_permanent_save_path ,exist_ok =True )
         os .makedirs (processed_frames_permanent_save_path ,exist_ok =True )
-        logger .info (f"Saving frames to: {frames_output_subfolder}")
 
     if save_chunks :
-        if is_batch_mode :
-            chunks_permanent_save_path =os .path .join (main_output_dir ,"chunks")
-        else :
-            chunks_permanent_save_path =os .path .join (main_output_dir ,base_output_filename_no_ext ,"chunks")
+        chunks_permanent_save_path =os .path .join (frames_output_subfolder if frames_output_subfolder else main_output_dir ,"chunks")
         os .makedirs (chunks_permanent_save_path ,exist_ok =True )
-        logger .info (f"Saving chunks to: {chunks_permanent_save_path}")
+
+    # NEW: Initialize chunk_frames directory for debugging if save_chunk_frames is enabled
+    chunk_frames_permanent_save_path = None
+    if save_chunk_frames:
+        chunk_frames_permanent_save_path = os.path.join(frames_output_subfolder if frames_output_subfolder else main_output_dir, "chunk_frames")
+        os.makedirs(chunk_frames_permanent_save_path, exist_ok=True)
+        logger.info(f"Chunk input frames will be saved to: {chunk_frames_permanent_save_path}")
 
     os .makedirs (temp_dir ,exist_ok =True )
     os .makedirs (input_frames_dir ,exist_ok =True )
@@ -221,6 +224,44 @@ def run_upscale (
     current_input_video_for_frames =input_video_path
     downscaled_temp_video =None
     status_log =["Process started..."]
+
+    def save_chunk_input_frames(chunk_idx, chunk_start_frame, chunk_end_frame, frame_files, input_frames_dir, chunk_frames_save_path, logger, chunk_type="", total_chunks=0):
+        """Save input frames for a specific chunk for debugging purposes"""
+        if not chunk_frames_save_path:
+            return
+        
+        try:
+            chunk_display_num = chunk_idx + 1
+            chunk_frames_for_this_chunk = frame_files[chunk_start_frame:chunk_end_frame]
+            
+            if not chunk_frames_for_this_chunk:
+                logger.warning(f"No frames to save for {chunk_type}chunk {chunk_display_num}")
+                return
+            
+            # Create organized subfolder structure: chunk_frames/chunk1/ (no scene for direct processing)
+            chunk_dir = os.path.join(chunk_frames_save_path, f"chunk{chunk_display_num}")
+            os.makedirs(chunk_dir, exist_ok=True)
+            
+            saved_count = 0
+            for local_idx, frame_file in enumerate(chunk_frames_for_this_chunk):
+                global_frame_idx = chunk_start_frame + local_idx
+                src_path = os.path.join(input_frames_dir, frame_file)
+                
+                if os.path.exists(src_path):
+                    # Use original frame number (1-based) in filename: frame1.png, frame2.png, etc.
+                    dst_filename = f"frame{global_frame_idx + 1}.png"
+                    dst_path = os.path.join(chunk_dir, dst_filename)
+                    shutil.copy2(src_path, dst_path)
+                    saved_count += 1
+                else:
+                    logger.warning(f"Input frame not found for {chunk_type}chunk {chunk_display_num}: {src_path}")
+            
+            if saved_count > 0:
+                chunk_total_info = f"/{total_chunks}" if total_chunks > 0 else ""
+                logger.info(f"Saved {saved_count} input frames for {chunk_type}chunk {chunk_display_num}{chunk_total_info} to chunk_frames/chunk{chunk_display_num}/")
+                
+        except Exception as e:
+            logger.error(f"Error saving chunk input frames for {chunk_type}chunk {chunk_idx + 1}: {e}")
 
     ui_total_diffusion_steps =steps
     direct_upscale_msg =""
@@ -607,6 +648,7 @@ def run_upscale (
                         chunks_permanent_save_path=frames_output_subfolder, # This was scene_output_dir, should be specific path for chunks
                         ffmpeg_preset=ffmpeg_preset, ffmpeg_quality_value=ffmpeg_quality_value, ffmpeg_use_gpu=ffmpeg_use_gpu,
                         save_metadata=save_metadata, metadata_params_base=scene_metadata_base_params,
+                        save_chunk_frames=save_chunk_frames,  # NEW: Pass save_chunk_frames parameter
                         
                         # FPS decrease parameters for scenes
                         enable_fps_decrease=enable_fps_decrease, fps_decrease_mode=fps_decrease_mode, 

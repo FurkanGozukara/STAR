@@ -22,6 +22,7 @@ def process_single_scene(
     enable_auto_caption_per_scene=False, cogvlm_quant=0, cogvlm_unload='full',
     progress=None, save_chunks=False, chunks_permanent_save_path=None, ffmpeg_preset="medium", ffmpeg_quality_value=23, ffmpeg_use_gpu=False,
     save_metadata=False, metadata_params_base: dict = None,
+    save_chunk_frames=False,
     
     # FPS decrease parameters for scenes
     enable_fps_decrease=False, fps_decrease_mode="multiplier", fps_multiplier_preset="1/2x (Half FPS)", fps_multiplier_custom=0.5, target_fps=24.0, fps_interpolation_method="drop",
@@ -159,6 +160,46 @@ def process_single_scene(
         star_model_instance = VideoToVideo_sr_class(model_cfg, device=model_device)
         if logger: logger.info(f"Scene {scene_index + 1}: STAR model loaded on {model_device}. Load time: {format_time(time.time() - model_load_start_time)}")
 
+        def save_chunk_input_frames_scene(chunk_idx, chunk_start_frame, chunk_end_frame, frame_files, input_frames_dir, chunk_frames_save_path, logger, chunk_type="", total_chunks=0):
+            """Save input frames for a specific chunk for debugging purposes in scene processing"""
+            if not chunk_frames_save_path:
+                return
+            
+            try:
+                chunk_display_num = chunk_idx + 1
+                chunk_frames_for_this_chunk = frame_files[chunk_start_frame:chunk_end_frame]
+                
+                if not chunk_frames_for_this_chunk:
+                    logger.warning(f"No frames to save for {chunk_type}chunk {chunk_display_num}")
+                    return
+                
+                # Create organized subfolder structure: chunk_frames/chunk1/ (no extra scene folder since we're already in scene directory)
+                chunk_folder_name = f"chunk{chunk_display_num}"
+                chunk_specific_path = os.path.join(chunk_frames_save_path, chunk_folder_name)
+                os.makedirs(chunk_specific_path, exist_ok=True)
+                
+                saved_count = 0
+                for local_idx, frame_file in enumerate(chunk_frames_for_this_chunk):
+                    src_frame_path = os.path.join(input_frames_dir, frame_file)
+                    if os.path.exists(src_frame_path):
+                        # Use original frame numbering (chunk_start_frame + local_idx + 1 for 1-based indexing)
+                        original_frame_num = chunk_start_frame + local_idx + 1
+                        dst_frame_name = f"frame{original_frame_num:06d}.png"
+                        dst_frame_path = os.path.join(chunk_specific_path, dst_frame_name)
+                        
+                        try:
+                            shutil.copy2(src_frame_path, dst_frame_path)
+                            saved_count += 1
+                        except Exception as copy_e:
+                            logger.warning(f"Failed to copy frame {frame_file} to chunk frames folder: {copy_e}")
+                
+                if logger:
+                    logger.info(f"Saved {saved_count}/{len(chunk_frames_for_this_chunk)} input frames for {chunk_type}chunk {chunk_display_num} to: {chunk_specific_path}")
+                    
+            except Exception as e:
+                if logger:
+                    logger.error(f"Error saving chunk input frames for {chunk_type}chunk {chunk_idx + 1}: {e}")
+
         scene_start_time = time.time()
         scene_name = f"scene_{scene_index + 1:04d}"
 
@@ -180,6 +221,7 @@ def process_single_scene(
 
         scene_input_frames_permanent = None
         scene_output_frames_permanent = None
+        scene_chunk_frames_permanent = None  # NEW: Initialize chunk_frames path
         if save_frames and scene_output_dir:
             scene_frames_dir = os.path.join(scene_output_dir, "scenes", scene_name)
             scene_input_frames_permanent = os.path.join(scene_frames_dir, "input_frames")
@@ -192,6 +234,13 @@ def process_single_scene(
                     os.path.join(scene_input_frames_dir, frame_file),
                     os.path.join(scene_input_frames_permanent, frame_file)
                 )
+
+        # NEW: Initialize chunk_frames directory for debugging if save_chunk_frames is enabled
+        if save_chunk_frames and scene_output_dir:
+            scene_frames_dir = os.path.join(scene_output_dir, "scenes", scene_name)
+            scene_chunk_frames_permanent = os.path.join(scene_frames_dir, "chunk_frames")
+            os.makedirs(scene_chunk_frames_permanent, exist_ok=True)
+            if logger: logger.info(f"Scene {scene_index + 1}: Chunk input frames will be saved to: {scene_chunk_frames_permanent}")
 
         scene_prompt = final_prompt
         generated_scene_caption = None
@@ -349,6 +398,21 @@ def process_single_scene(
 
                 # Get the frames to process (includes context frames)
                 chunk_lr_frames_bgr = all_lr_frames_bgr[process_start_0:process_end_0+1]
+                
+                # NEW: Save chunk input frames for debugging if enabled
+                if save_chunk_frames and scene_chunk_frames_permanent:
+                    save_chunk_input_frames_scene(
+                        chunk_idx=chunk_idx,
+                        chunk_start_frame=process_start_0,
+                        chunk_end_frame=process_end_0+1,  # End is exclusive for slicing
+                        frame_files=scene_frame_files,
+                        input_frames_dir=scene_input_frames_dir,
+                        chunk_frames_save_path=scene_chunk_frames_permanent,
+                        logger=logger,
+                        chunk_type="context ",
+                        total_chunks=total_context_chunks
+                    )
+                
                 chunk_lr_video_data = preprocess(chunk_lr_frames_bgr)
                 chunk_pre_data = {'video_data': chunk_lr_video_data, 'y': scene_prompt, 'target_res': (final_h, final_w)}
                 chunk_data_cuda = collate_fn(chunk_pre_data, model_device)
@@ -471,7 +535,7 @@ def process_single_scene(
                             except Exception as e_chunk_rife:
                                 logger.error(f"Scene {scene_index + 1} Context Chunk {chunk_idx+1}: Error during RIFE interpolation: {e_chunk_rife}")
                         
-                        chunk_status_str = f"Scene {scene_index + 1} Context Chunk {chunk_idx + 1}/{total_context_chunks} (frames {output_start_0+1}-{output_end_0+1})"
+                        chunk_status_str = f"Scene {scene_index + 1} Context Chunk {chunk_idx+1}/{total_context_chunks} (frames {output_start_0+1}-{output_end_0+1})"
                         logger.info(f"Saved scene context chunk {chunk_idx+1}/{total_context_chunks} to: {final_chunk_video_path}")
                         yield "chunk_update", final_chunk_video_path, chunk_status_str
                     else:
@@ -562,6 +626,21 @@ def process_single_scene(
 
                 # Get the frames to process (may be more than output frames for optimized chunks)
                 chunk_lr_frames_bgr = all_lr_frames_bgr[process_start_idx:process_end_idx]
+                
+                # NEW: Save chunk input frames for debugging if enabled
+                if save_chunk_frames and scene_chunk_frames_permanent:
+                    save_chunk_input_frames_scene(
+                        chunk_idx=chunk_idx,
+                        chunk_start_frame=process_start_idx,
+                        chunk_end_frame=process_end_idx,  # End is exclusive for slicing
+                        frame_files=scene_frame_files,
+                        input_frames_dir=scene_input_frames_dir,
+                        chunk_frames_save_path=scene_chunk_frames_permanent,
+                        logger=logger,
+                        chunk_type="",
+                        total_chunks=num_chunks
+                    )
+                
                 chunk_lr_video_data = preprocess(chunk_lr_frames_bgr)
                 chunk_pre_data = {'video_data': chunk_lr_video_data, 'y': scene_prompt, 'target_res': (final_h, final_w)}
                 chunk_data_cuda = collate_fn(chunk_pre_data, model_device)
