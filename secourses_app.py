@@ -418,6 +418,15 @@ The total combined prompt length is limited to 77 tokens."""
 - Quality Impact: Can reduce Temporal Consistency (flicker/motion issues) between chunks if too low, as the model doesn't have context across chunk boundaries. Keep as high as VRAM allows.
 - Speed Impact: Slower (Lower value = Slower, as more chunks are processed)."""
                         )
+                        enable_chunk_optimization_check =gr .Checkbox (
+                        label ="Optimize Last Chunk Quality",
+                        value =app_config .DEFAULT_ENABLE_CHUNK_OPTIMIZATION ,
+                        info ="""Process extra frames for small last chunks to improve quality. When the last chunk has fewer frames than target size (causing quality drops), this processes additional frames but only keeps the necessary output.
+- Example: For 70 frames with 32-frame chunks, instead of processing only 6 frames for the last chunk (poor quality), it processes 23 frames (48-70) but keeps only the last 6 (65-70).
+- Quality Impact: Significantly improves quality for small last chunks.
+- Speed Impact: Minimal impact on total processing time.
+- VRAM Impact: No additional VRAM usage."""
+                        )
                         vae_chunk_slider =gr .Slider (
                         label ="VAE Decode Chunk (VRAM)",
                         minimum =1 ,maximum =16 ,value =app_config .DEFAULT_VAE_CHUNK ,step =1 ,
@@ -827,7 +836,7 @@ This helps visualize the quality improvement from upscaling."""
     def upscale_director_logic (
     input_video_val ,user_prompt_val ,pos_prompt_val ,neg_prompt_val ,model_selector_val ,
     upscale_factor_slider_val ,cfg_slider_val ,steps_slider_val ,solver_mode_radio_val ,
-    max_chunk_len_slider_val ,vae_chunk_slider_val ,color_fix_dropdown_val ,
+    max_chunk_len_slider_val ,enable_chunk_optimization_check_val ,vae_chunk_slider_val ,color_fix_dropdown_val ,
     enable_tiling_check_val ,tile_size_num_val ,tile_overlap_num_val ,
     enable_sliding_window_check_val ,window_size_num_val ,window_step_num_val ,
     enable_target_res_check_val ,target_h_num_val ,target_w_num_val ,target_res_mode_radio_val ,
@@ -975,7 +984,7 @@ This helps visualize the quality improvement from upscaling."""
         input_video_path =input_video_val ,user_prompt =current_user_prompt_val ,
         positive_prompt =pos_prompt_val ,negative_prompt =neg_prompt_val ,model_choice =model_selector_val ,
         upscale_factor_slider =upscale_factor_slider_val ,cfg_scale =cfg_slider_val ,steps =steps_slider_val ,solver_mode =solver_mode_radio_val ,
-        max_chunk_len =max_chunk_len_slider_val ,vae_chunk =vae_chunk_slider_val ,color_fix_method =color_fix_dropdown_val ,
+        max_chunk_len =max_chunk_len_slider_val ,enable_chunk_optimization =enable_chunk_optimization_check_val ,vae_chunk =vae_chunk_slider_val ,color_fix_method =color_fix_dropdown_val ,
         enable_tiling =enable_tiling_check_val ,tile_size =tile_size_num_val ,tile_overlap =tile_overlap_num_val ,
         enable_sliding_window =enable_sliding_window_check_val ,window_size =window_size_num_val ,window_step =window_step_num_val ,
         enable_target_res =enable_target_res_check_val ,target_h =target_h_num_val ,target_w =target_w_num_val ,target_res_mode =target_res_mode_radio_val ,
@@ -1116,7 +1125,7 @@ This helps visualize the quality improvement from upscaling."""
     click_inputs =[
     input_video ,user_prompt ,pos_prompt ,neg_prompt ,model_selector ,
     upscale_factor_slider ,cfg_slider ,steps_slider ,solver_mode_radio ,
-    max_chunk_len_slider ,vae_chunk_slider ,color_fix_dropdown ,
+    max_chunk_len_slider ,enable_chunk_optimization_check ,vae_chunk_slider ,color_fix_dropdown ,
     enable_tiling_check ,tile_size_num ,tile_overlap_num ,
     enable_sliding_window_check ,window_size_num ,window_step_num ,
     enable_target_res_check ,target_h_num ,target_w_num ,target_res_mode_radio ,
@@ -1240,7 +1249,7 @@ This helps visualize the quality improvement from upscaling."""
     batch_input_folder_val ,batch_output_folder_val ,
     user_prompt_val ,pos_prompt_val ,neg_prompt_val ,model_selector_val ,
     upscale_factor_slider_val ,cfg_slider_val ,steps_slider_val ,solver_mode_radio_val ,
-    max_chunk_len_slider_val ,vae_chunk_slider_val ,color_fix_dropdown_val ,
+    max_chunk_len_slider_val ,enable_chunk_optimization_check_val ,vae_chunk_slider_val ,color_fix_dropdown_val ,
     enable_tiling_check_val ,tile_size_num_val ,tile_overlap_num_val ,
     enable_sliding_window_check_val ,window_size_num_val ,window_step_num_val ,
     enable_target_res_check_val ,target_h_num_val ,target_w_num_val ,target_res_mode_radio_val ,
@@ -1295,7 +1304,7 @@ This helps visualize the quality improvement from upscaling."""
         batch_input_folder_val ,batch_output_folder_val ,
         user_prompt_val ,pos_prompt_val ,neg_prompt_val ,model_selector_val ,
         upscale_factor_slider_val ,cfg_slider_val ,steps_slider_val ,solver_mode_radio_val ,
-        max_chunk_len_slider_val ,vae_chunk_slider_val ,color_fix_dropdown_val ,
+        max_chunk_len_slider_val ,enable_chunk_optimization_check_val ,vae_chunk_slider_val ,color_fix_dropdown_val ,
         enable_tiling_check_val ,tile_size_num_val ,tile_overlap_num_val ,
         enable_sliding_window_check_val ,window_size_num_val ,window_step_num_val ,
         enable_target_res_check_val ,target_h_num_val ,target_w_num_val ,target_res_mode_radio_val ,
@@ -1332,7 +1341,7 @@ This helps visualize the quality improvement from upscaling."""
     batch_input_folder ,batch_output_folder ,
     user_prompt ,pos_prompt ,neg_prompt ,model_selector ,
     upscale_factor_slider ,cfg_slider ,steps_slider ,solver_mode_radio ,
-    max_chunk_len_slider ,vae_chunk_slider ,color_fix_dropdown ,
+    max_chunk_len_slider ,enable_chunk_optimization_check ,vae_chunk_slider ,color_fix_dropdown ,
     enable_tiling_check ,tile_size_num ,tile_overlap_num ,
     enable_sliding_window_check ,window_size_num ,window_step_num ,
     enable_target_res_check ,target_h_num ,target_w_num ,target_res_mode_radio ,

@@ -43,7 +43,7 @@ from .rife_interpolation import apply_rife_to_chunks, apply_rife_to_scenes
 def run_upscale (
     input_video_path ,user_prompt ,positive_prompt ,negative_prompt ,model_choice ,
     upscale_factor_slider ,cfg_scale ,steps ,solver_mode ,
-    max_chunk_len ,vae_chunk ,color_fix_method ,
+    max_chunk_len ,enable_chunk_optimization ,vae_chunk ,color_fix_method ,
     enable_tiling ,tile_size ,tile_overlap ,
     enable_sliding_window ,window_size ,window_step ,
     enable_target_res ,target_h ,target_w ,target_res_mode ,
@@ -106,7 +106,7 @@ def run_upscale (
     "negative_prompt":negative_prompt ,"model_choice":model_choice ,
     "upscale_factor_slider":upscale_factor_slider ,"cfg_scale":cfg_scale ,
     "ui_total_diffusion_steps":steps ,"solver_mode":solver_mode ,
-    "max_chunk_len":max_chunk_len ,"vae_chunk":vae_chunk ,"color_fix_method":color_fix_method ,
+    "max_chunk_len":max_chunk_len ,"enable_chunk_optimization":enable_chunk_optimization ,"vae_chunk":vae_chunk ,"color_fix_method":color_fix_method ,
     "enable_tiling":enable_tiling ,"tile_size":tile_size ,"tile_overlap":tile_overlap ,
     "enable_sliding_window":enable_sliding_window ,"window_size":window_size ,"window_step":window_step ,
     "enable_target_res":enable_target_res ,"target_h":target_h ,"target_w":target_w ,
@@ -596,7 +596,7 @@ def run_upscale (
                     scene_processor_generator = process_single_scene (
                         scene_video_path=scene_video_path_item, scene_index=scene_idx, total_scenes=total_scenes, temp_dir=temp_dir, # star_model (instance) removed
                         final_prompt=scene_prompt_override, upscale_factor=upscale_factor_val, final_h=final_h_val, final_w=final_w_val, ui_total_diffusion_steps=ui_total_diffusion_steps,
-                        solver_mode=solver_mode, cfg_scale=cfg_scale, max_chunk_len=max_chunk_len, vae_chunk=vae_chunk, color_fix_method=color_fix_method,
+                        solver_mode=solver_mode, cfg_scale=cfg_scale, max_chunk_len=max_chunk_len, enable_chunk_optimization=enable_chunk_optimization, vae_chunk=vae_chunk, color_fix_method=color_fix_method,
                         enable_tiling=enable_tiling, tile_size=tile_size, tile_overlap=tile_overlap, enable_sliding_window=enable_sliding_window, window_size=window_size, window_step=window_step,
                         save_frames=save_frames, scene_output_dir=frames_output_subfolder, progress_callback=scene_upscale_progress_callback,
                         enable_auto_caption_per_scene=scene_enable_auto_caption_current,
@@ -1197,12 +1197,56 @@ def run_upscale (
                             yield None, "\n".join(status_log), last_chunk_video_path, last_chunk_status, None
 
             else:
-                # DIRECT CHUNK PROCESSING (existing logic)
-                num_chunks_direct = math.ceil(frame_count / max_chunk_len) if max_chunk_len > 0 else 1
-                for chunk_idx_direct in range(num_chunks_direct):
-                    start_idx_direct = chunk_idx_direct * max_chunk_len
-                    end_idx_direct = min((chunk_idx_direct + 1) * max_chunk_len, frame_count)
-                    current_chunk_len_direct = end_idx_direct - start_idx_direct
+                # DIRECT CHUNK PROCESSING with optimization
+                if enable_chunk_optimization:
+                    # Import chunk optimization module
+                    from .chunk_optimization import (
+                        calculate_optimized_chunk_boundaries,
+                        get_chunk_frames_for_processing,
+                        extract_output_frames_from_processed,
+                        get_output_frame_names,
+                        log_chunk_optimization_summary
+                    )
+                    
+                    # Calculate optimized chunk boundaries
+                    chunk_boundaries = calculate_optimized_chunk_boundaries(
+                        total_frames=frame_count,
+                        max_chunk_len=max_chunk_len,
+                        min_last_chunk_ratio=app_config_module.DEFAULT_CHUNK_OPTIMIZATION_MIN_RATIO,
+                        logger=logger
+                    )
+                    
+                    # Log optimization summary
+                    log_chunk_optimization_summary(chunk_boundaries, frame_count, max_chunk_len, logger)
+                    
+                    num_chunks_direct = len(chunk_boundaries)
+                    
+                else:
+                    # Standard chunking (fallback)
+                    num_chunks_direct = math.ceil(frame_count / max_chunk_len) if max_chunk_len > 0 else 1
+                    chunk_boundaries = []
+                    for chunk_idx in range(num_chunks_direct):
+                        start_idx = chunk_idx * max_chunk_len
+                        end_idx = min((chunk_idx + 1) * max_chunk_len, frame_count)
+                        chunk_boundaries.append({
+                            'chunk_idx': chunk_idx,
+                            'start_idx': start_idx,
+                            'end_idx': end_idx,
+                            'process_start_idx': start_idx,
+                            'process_end_idx': end_idx,
+                            'output_start_offset': 0,
+                            'output_end_offset': end_idx - start_idx,
+                            'actual_output_frames': end_idx - start_idx
+                        })
+                
+                for chunk_info in chunk_boundaries:
+                    chunk_idx_direct = chunk_info['chunk_idx']
+                    start_idx_direct = chunk_info['start_idx']
+                    end_idx_direct = chunk_info['end_idx']
+                    process_start_idx = chunk_info['process_start_idx']
+                    process_end_idx = chunk_info['process_end_idx']
+                    current_chunk_len_direct = process_end_idx - process_start_idx
+                    
                     if current_chunk_len_direct == 0:
                         continue
 
@@ -1212,7 +1256,10 @@ def run_upscale (
                         current_time_chunk = time.time()
                         step_duration_chunk = current_time_chunk - chunk_diffusion_timer_direct['last_time']
                         chunk_diffusion_timer_direct['last_time'] = current_time_chunk
-                        desc_for_log_direct = f"Direct Upscale Chunk {chunk_idx_direct + 1}/{num_chunks_direct} (frames {start_idx_direct}-{end_idx_direct - 1})"
+                        if enable_chunk_optimization and process_start_idx != start_idx_direct:
+                            desc_for_log_direct = f"Direct Upscale Chunk {chunk_idx_direct + 1}/{num_chunks_direct} (processing {process_start_idx}-{process_end_idx - 1}, output {start_idx_direct}-{end_idx_direct - 1})"
+                        else:
+                            desc_for_log_direct = f"Direct Upscale Chunk {chunk_idx_direct + 1}/{num_chunks_direct} (frames {start_idx_direct}-{end_idx_direct - 1})"
                         eta_seconds_chunk = step_duration_chunk * (total_steps_chunk - step) if step_duration_chunk > 0 and total_steps_chunk > 0 else 0
                         eta_formatted_chunk = format_time(eta_seconds_chunk)
                         logger.info(f"{desc_for_log_direct} - Diffusion: Step {step}/{total_steps_chunk}, Duration: {step_duration_chunk:.2f}s, ETA: {eta_formatted_chunk}")
@@ -1221,7 +1268,8 @@ def run_upscale (
                         current_overall_progress_temp = upscaling_loop_progress_start_no_scene_split + (progress_val_rel_direct * stage_weights["upscaling_loop"])
                         progress(current_overall_progress_temp, desc=f"{desc_for_log_direct} (Diff: {step}/{total_steps_chunk})")
 
-                        chunk_lr_frames_bgr_direct = all_lr_frames_bgr[start_idx_direct:end_idx_direct]
+                        # Get the frames to process (may be more than output frames for optimized chunks)
+                        chunk_lr_frames_bgr_direct = all_lr_frames_bgr[process_start_idx:process_end_idx]
                     chunk_lr_video_data_direct = preprocess_func(chunk_lr_frames_bgr_direct)
                     chunk_pre_data_direct = {
                         'video_data': chunk_lr_video_data_direct, 
@@ -1246,16 +1294,29 @@ def run_upscale (
                         elif color_fix_method == 'Wavelet':
                             chunk_sr_frames_uint8_direct = wavelet_color_fix_func(chunk_sr_frames_uint8_direct, chunk_lr_video_data_direct)
 
-                    # Ensure frame_files is available for naming output files
-                    for k_direct, frame_name_direct in enumerate(frame_files[start_idx_direct:end_idx_direct]):
-                        frame_np_hwc_uint8_direct = chunk_sr_frames_uint8_direct[k_direct].cpu().numpy()
+                    # Extract only the output frames (for optimized chunks, this trims the result)
+                    if enable_chunk_optimization:
+                        # Convert to list for easier slicing
+                        chunk_sr_frames_list = [frame for frame in chunk_sr_frames_uint8_direct]
+                        # Extract the output frames using chunk optimization logic
+                        output_frames = extract_output_frames_from_processed(chunk_sr_frames_list, chunk_info)
+                        # Get the corresponding frame names for output
+                        output_frame_names = get_output_frame_names(frame_files, chunk_info)
+                    else:
+                        # Standard processing - use all frames
+                        output_frames = [frame for frame in chunk_sr_frames_uint8_direct]
+                        output_frame_names = frame_files[start_idx_direct:end_idx_direct]
+
+                    # Save the output frames with correct names
+                    for k_direct, (frame_tensor, frame_name_direct) in enumerate(zip(output_frames, output_frame_names)):
+                        frame_np_hwc_uint8_direct = frame_tensor.cpu().numpy()
                         frame_bgr_direct = cv2.cvtColor(frame_np_hwc_uint8_direct, cv2.COLOR_RGB2BGR)
                         cv2.imwrite(os.path.join(output_frames_dir, frame_name_direct), frame_bgr_direct)
 
                     # IMMEDIATE FRAME SAVING: Save processed frames immediately after chunk completion
                     if save_frames and processed_frames_permanent_save_path:
                         chunk_frames_saved_count = 0
-                        for k_direct, frame_name_direct in enumerate(frame_files[start_idx_direct:end_idx_direct]):
+                        for frame_name_direct in output_frame_names:
                             src_frame_path = os.path.join(output_frames_dir, frame_name_direct)
                             dst_frame_path = os.path.join(processed_frames_permanent_save_path, frame_name_direct)
                             if os.path.exists(src_frame_path):
@@ -1277,7 +1338,7 @@ def run_upscale (
                         chunk_temp_assembly_dir_direct = os.path.join(temp_dir, f"temp_direct_chunk_{chunk_idx_direct+1}")
                         os.makedirs(chunk_temp_assembly_dir_direct, exist_ok=True)
                         frames_for_this_video_chunk_direct = []
-                        for k_chunk_frame_direct, frame_name_in_chunk_direct in enumerate(frame_files[start_idx_direct:end_idx_direct]):
+                        for k_chunk_frame_direct, frame_name_in_chunk_direct in enumerate(output_frame_names):
                             src_direct = os.path.join(output_frames_dir, frame_name_in_chunk_direct)
                             dst_direct = os.path.join(chunk_temp_assembly_dir_direct, f"frame_{k_chunk_frame_direct+1:06d}.png")
                             if os.path.exists(src_direct):

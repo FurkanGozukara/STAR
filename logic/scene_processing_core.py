@@ -15,7 +15,7 @@ import gc # Added for garbage collection
 def process_single_scene(
     scene_video_path, scene_index, total_scenes, temp_dir,
     final_prompt, upscale_factor, final_h, final_w, ui_total_diffusion_steps,
-    solver_mode, cfg_scale, max_chunk_len, vae_chunk, color_fix_method,
+    solver_mode, cfg_scale, max_chunk_len, enable_chunk_optimization, vae_chunk, color_fix_method,
     enable_tiling, tile_size, tile_overlap, enable_sliding_window, window_size, window_step,
     save_frames, scene_output_dir, progress_callback=None,
 
@@ -664,13 +664,58 @@ def process_single_scene(
                         yield "chunk_update", chunk_video_path, chunk_status
 
         else:
-            # Chunked processing mode
+            # Chunked processing mode with optimization
             import math
-            num_chunks = math.ceil(scene_frame_count / max_chunk_len) if max_chunk_len > 0 else 1
-            for chunk_idx in range(num_chunks):
-                start_idx = chunk_idx * max_chunk_len
-                end_idx = min((chunk_idx + 1) * max_chunk_len, scene_frame_count)
-                current_chunk_len = end_idx - start_idx
+            
+            if enable_chunk_optimization:
+                # Import chunk optimization module
+                from .chunk_optimization import (
+                    calculate_optimized_chunk_boundaries,
+                    get_chunk_frames_for_processing,
+                    extract_output_frames_from_processed,
+                    get_output_frame_names,
+                    log_chunk_optimization_summary
+                )
+                
+                # Calculate optimized chunk boundaries
+                chunk_boundaries = calculate_optimized_chunk_boundaries(
+                    total_frames=scene_frame_count,
+                    max_chunk_len=max_chunk_len,
+                    min_last_chunk_ratio=app_config_module_param.DEFAULT_CHUNK_OPTIMIZATION_MIN_RATIO,
+                    logger=logger
+                )
+                
+                # Log optimization summary
+                log_chunk_optimization_summary(chunk_boundaries, scene_frame_count, max_chunk_len, logger)
+                
+                num_chunks = len(chunk_boundaries)
+                
+            else:
+                # Standard chunking (fallback)
+                num_chunks = math.ceil(scene_frame_count / max_chunk_len) if max_chunk_len > 0 else 1
+                chunk_boundaries = []
+                for chunk_idx in range(num_chunks):
+                    start_idx = chunk_idx * max_chunk_len
+                    end_idx = min((chunk_idx + 1) * max_chunk_len, scene_frame_count)
+                    chunk_boundaries.append({
+                        'chunk_idx': chunk_idx,
+                        'start_idx': start_idx,
+                        'end_idx': end_idx,
+                        'process_start_idx': start_idx,
+                        'process_end_idx': end_idx,
+                        'output_start_offset': 0,
+                        'output_end_offset': end_idx - start_idx,
+                        'actual_output_frames': end_idx - start_idx
+                    })
+            
+            for chunk_info in chunk_boundaries:
+                chunk_idx = chunk_info['chunk_idx']
+                start_idx = chunk_info['start_idx']
+                end_idx = chunk_info['end_idx']
+                process_start_idx = chunk_info['process_start_idx']
+                process_end_idx = chunk_info['process_end_idx']
+                current_chunk_len = process_end_idx - process_start_idx
+                
                 if current_chunk_len == 0:
                     continue
 
@@ -681,7 +726,11 @@ def process_single_scene(
                     current_time = time.time()
                     step_duration = current_time - scene_chunk_diffusion_timer['last_time']
                     scene_chunk_diffusion_timer['last_time'] = current_time
-                    _desc_for_log = f"Scene {scene_index+1} Chunk {chunk_idx+1}/{num_chunks} (frames {start_idx}-{end_idx-1})"
+                    
+                    if enable_chunk_optimization and process_start_idx != start_idx:
+                        _desc_for_log = f"Scene {scene_index+1} Chunk {chunk_idx+1}/{num_chunks} (processing {process_start_idx}-{process_end_idx-1}, output {start_idx}-{end_idx-1})"
+                    else:
+                        _desc_for_log = f"Scene {scene_index+1} Chunk {chunk_idx+1}/{num_chunks} (frames {start_idx}-{end_idx-1})"
 
                     eta_seconds = step_duration * (total_steps - step) if step_duration > 0 and total_steps > 0 else 0
                     eta_formatted = format_time(eta_seconds)
@@ -691,7 +740,8 @@ def process_single_scene(
                     if progress_callback:
                         progress_callback((0.3 + ((chunk_idx + (step / total_steps if total_steps > 0 else 1)) / num_chunks) * 0.5), f"{_desc_for_log} (Diff: {step}/{total_steps})")
 
-                chunk_lr_frames_bgr = all_lr_frames_bgr[start_idx:end_idx]
+                # Get the frames to process (may be more than output frames for optimized chunks)
+                chunk_lr_frames_bgr = all_lr_frames_bgr[process_start_idx:process_end_idx]
                 chunk_lr_video_data = preprocess(chunk_lr_frames_bgr)
                 chunk_pre_data = {'video_data': chunk_lr_video_data, 'y': scene_prompt, 'target_res': (final_h, final_w)}
                 chunk_data_cuda = collate_fn(chunk_pre_data, model_device)
@@ -710,15 +760,29 @@ def process_single_scene(
                     elif color_fix_method == 'Wavelet':
                         chunk_sr_frames_uint8 = wavelet_color_fix(chunk_sr_frames_uint8, chunk_lr_video_data)
 
-                for k, frame_name in enumerate(scene_frame_files[start_idx:end_idx]):
-                    frame_np_hwc_uint8 = chunk_sr_frames_uint8[k].cpu().numpy()
+                # Extract only the output frames (for optimized chunks, this trims the result)
+                if enable_chunk_optimization:
+                    # Convert to list for easier slicing
+                    chunk_sr_frames_list = [frame for frame in chunk_sr_frames_uint8]
+                    # Extract the output frames using chunk optimization logic
+                    output_frames = extract_output_frames_from_processed(chunk_sr_frames_list, chunk_info)
+                    # Get the corresponding frame names for output
+                    output_frame_names = get_output_frame_names(scene_frame_files, chunk_info)
+                else:
+                    # Standard processing - use all frames
+                    output_frames = [frame for frame in chunk_sr_frames_uint8]
+                    output_frame_names = scene_frame_files[start_idx:end_idx]
+
+                # Save the output frames with correct names
+                for k, (frame_tensor, frame_name) in enumerate(zip(output_frames, output_frame_names)):
+                    frame_np_hwc_uint8 = frame_tensor.cpu().numpy()
                     frame_bgr = cv2.cvtColor(frame_np_hwc_uint8, cv2.COLOR_RGB2BGR)
                     cv2.imwrite(os.path.join(scene_output_frames_dir, frame_name), frame_bgr)
 
                 # IMMEDIATE FRAME SAVING: Save processed frames immediately after scene chunk completion
                 if save_frames and scene_output_frames_permanent:
                     scene_chunk_frames_saved_count = 0
-                    for k, frame_name in enumerate(scene_frame_files[start_idx:end_idx]):
+                    for frame_name in output_frame_names:
                         src_frame_path = os.path.join(scene_output_frames_dir, frame_name)
                         dst_frame_path = os.path.join(scene_output_frames_permanent, frame_name)
                         if os.path.exists(src_frame_path) and not os.path.exists(dst_frame_path):
@@ -737,7 +801,7 @@ def process_single_scene(
                     chunk_temp_assembly_dir = os.path.join(temp_dir, scene_name, f"temp_chunk_{chunk_idx+1}")
                     os.makedirs(chunk_temp_assembly_dir, exist_ok=True)
                     frames_for_this_video_chunk = []
-                    for k_chunk_frame, frame_name_in_chunk in enumerate(scene_frame_files[start_idx:end_idx]):
+                    for k_chunk_frame, frame_name_in_chunk in enumerate(output_frame_names):
                         src = os.path.join(scene_output_frames_dir, frame_name_in_chunk)
                         dst = os.path.join(chunk_temp_assembly_dir, f"frame_{k_chunk_frame+1:06d}.png")
                         if os.path.exists(src):
