@@ -304,6 +304,23 @@ def run_upscale (
                     params_for_metadata["fps_decrease_actual_target"] = actual_target_fps
                     params_for_metadata["fps_decrease_calculated_fps"] = fps_output_fps
                     
+                    # Save FPS decreased video to session-specific output folder for user reference
+                    try:
+                        if is_batch_mode:
+                            session_output_dir = main_output_dir
+                        else:
+                            session_output_dir = os.path.join(main_output_dir, base_output_filename_no_ext)
+                            os.makedirs(session_output_dir, exist_ok=True)
+                        
+                        fps_decreased_save_path = os.path.join(session_output_dir, "FPS_Reduced_Used_Video.mp4")
+                        import shutil
+                        shutil.copy2(fps_decreased_video_path, fps_decreased_save_path)
+                        logger.info(f"FPS decreased video saved to: {fps_decreased_save_path}")
+                        params_for_metadata["fps_decrease_saved_path"] = fps_decreased_save_path
+                    except Exception as e_save:
+                        logger.warning(f"Failed to save FPS decreased video to session folder: {e_save}")
+                        params_for_metadata["fps_decrease_saved_path"] = "Failed to save"
+                    
                     fps_duration = time.time() - fps_decrease_start_time
                     fps_success_msg = f"FPS decrease completed in {format_time(fps_duration)}. {fps_message}"
                     status_log.append(fps_success_msg)
