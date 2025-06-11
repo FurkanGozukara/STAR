@@ -1037,10 +1037,17 @@ def run_upscale (
                         progress(current_overall_progress_temp, desc=f"{base_desc_win} - Diffusion: {step_cb}/{total_steps_cb}")
 
                     with torch.no_grad():
+                        # Reseed before each window to maintain deterministic noise across windows for temporal consistency
+                        if setup_seed_func is not None:
+                            try:
+                                setup_seed_func(current_seed)
+                            except Exception as e_seed:
+                                logger.warning(f"Reseed attempt inside sliding window failed: {e_seed}")
+
                         window_sr_tensor_bcthw = star_model_ns.test(
                             window_data_cuda, total_noise_levels, steps=ui_total_diffusion_steps, solver_mode=solver_mode,
                             guide_scale=cfg_scale, max_chunk_len=current_window_len, vae_decoder_chunk_size=min(vae_chunk, current_window_len),
-                            progress_callback=diffusion_callback_for_window
+                            progress_callback=diffusion_callback_for_window, seed=current_seed
                         )
                     
                     window_sr_frames_uint8 = tensor2vid_func(window_sr_tensor_bcthw)
@@ -1204,7 +1211,7 @@ def run_upscale (
                             solver_mode=solver_mode, guide_scale=cfg_scale,
                             max_chunk_len=current_chunk_len_direct, 
                             vae_decoder_chunk_size=min(vae_chunk, current_chunk_len_direct),
-                            progress_callback=diffusion_callback_for_chunk_direct
+                            progress_callback=diffusion_callback_for_chunk_direct, seed=current_seed
                         )
                     chunk_sr_frames_uint8_direct = tensor2vid_func(chunk_sr_tensor_bcthw_direct)
 

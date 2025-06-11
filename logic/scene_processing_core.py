@@ -271,7 +271,7 @@ def process_single_scene(
                             patch_data_tensor_cuda, total_noise_levels, steps=ui_total_diffusion_steps,
                             solver_mode=solver_mode, guide_scale=cfg_scale,
                             max_chunk_len=1, vae_decoder_chunk_size=1,
-                            progress_callback=current_scene_patch_diffusion_cb)
+                            progress_callback=current_scene_patch_diffusion_cb, seed=current_seed)
                     patch_sr_frames_uint8 = tensor2vid(patch_sr_tensor_bcthw)
                     if color_fix_method != 'None':
                         if color_fix_method == 'AdaIN':
@@ -533,11 +533,21 @@ def process_single_scene(
                 window_pre_data = {'video_data': window_lr_video_data, 'y': scene_prompt, 'target_res': (final_h, final_w)}
                 window_data_cuda = collate_fn(window_pre_data, model_device)
                 with torch.no_grad():
+                    # Reseed before each window to maintain deterministic noise across windows for temporal consistency
+                    try:
+                        import random
+                        random.seed(current_seed)
+                        torch.manual_seed(current_seed)
+                        if torch.cuda.is_available():
+                            torch.cuda.manual_seed_all(current_seed)
+                    except Exception as e_seed:
+                        logger.warning(f"Reseed attempt inside scene sliding window failed: {e_seed}")
+
                     window_sr_tensor_bcthw = star_model_instance.test(
                         window_data_cuda, total_noise_levels, steps=ui_total_diffusion_steps,
                         solver_mode=solver_mode, guide_scale=cfg_scale,
                         max_chunk_len=current_window_len, vae_decoder_chunk_size=min(vae_chunk, current_window_len),
-                        progress_callback=current_scene_window_diffusion_cb)
+                        progress_callback=current_scene_window_diffusion_cb, seed=current_seed)
                 window_sr_frames_uint8 = tensor2vid(window_sr_tensor_bcthw)
                 if color_fix_method != 'None':
                     if color_fix_method == 'AdaIN':
@@ -691,7 +701,7 @@ def process_single_scene(
                         chunk_data_cuda, total_noise_levels, steps=ui_total_diffusion_steps,
                         solver_mode=solver_mode, guide_scale=cfg_scale,
                         max_chunk_len=current_chunk_len, vae_decoder_chunk_size=min(vae_chunk, current_chunk_len),
-                        progress_callback=current_scene_chunk_diffusion_cb)
+                        progress_callback=current_scene_chunk_diffusion_cb, seed=current_seed)
                 chunk_sr_frames_uint8 = tensor2vid(chunk_sr_tensor_bcthw)
 
                 if color_fix_method != 'None':

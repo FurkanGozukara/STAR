@@ -409,7 +409,7 @@ class GaussianDiffusion(object):
         
         fn = model_chunk_fn if chunk_inds is not None else model_fn
         x0 = solver_fn(
-            noise, fn, sigmas, variant_info=variant_info, show_progress=show_progress, progress_callback=progress_callback, **kwargs)
+            noise, fn, sigmas, variant_info=variant_info, show_progress=show_progress, progress_callback=progress_callback, seed=seed, **kwargs)
         return (x0, intermediates) if return_intermediate is not None else x0
 
 

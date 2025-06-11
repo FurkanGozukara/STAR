@@ -38,16 +38,23 @@ def sample_heun(noise,
                 s_tmin=0.,
                 s_tmax=float('inf'),
                 s_noise=1.,
-                show_progress=True):
+                show_progress=True,
+                seed=None,
+                **kwargs):
     """
     Implements Algorithm 2 (Heun steps) from Karras et al. (2022).
     """
+    # Set up generator for deterministic noise if seed is provided
+    generator = torch.Generator(device=noise.device)
+    if seed is not None and seed >= 0:
+        generator.manual_seed(seed)
+    
     x = noise * sigmas[0]
     for i in trange(len(sigmas) - 1, disable=not show_progress):
         gamma = 0.
         if s_tmin <= sigmas[i] <= s_tmax and sigmas[i] < float('inf'):
             gamma = min(s_churn / (len(sigmas) - 1), 2**0.5 - 1)
-        eps = torch.randn_like(x) * s_noise
+        eps = torch.randn_like(x, generator=generator if seed is not None and seed >= 0 else None) * s_noise
         sigma_hat = sigmas[i] * (gamma + 1)
         if gamma > 0:
             x = x + eps * (sigma_hat**2 - sigmas[i]**2)**0.5
@@ -149,7 +156,8 @@ def sample_dpmpp_2m_sde(noise,
                         solver_type='midpoint',
                         show_progress=True,
                         variant_info=None,
-                        progress_callback=None):
+                        progress_callback=None,
+                        seed=None):
     """
     DPM-Solver++ (2M) SDE.
     """
@@ -158,7 +166,7 @@ def sample_dpmpp_2m_sde(noise,
     x = noise * sigmas[0]
     sigma_min, sigma_max = sigmas[sigmas > 0].min(), sigmas[
         sigmas < float('inf')].max()
-    noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max)
+    noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=seed if seed >= 0 else None)
     old_denoised = None
     h_last = None
 
