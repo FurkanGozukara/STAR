@@ -811,7 +811,7 @@ def run_upscale (
                 total_chunks_to_process = len(context_chunks)
                 processed_chunks_tracker = [False] * total_chunks_to_process
 
-                def save_context_window_chunk(chunk_info, save_chunks, chunks_permanent_save_path, 
+                def save_context_window_chunk(chunk_info, chunk_idx, save_chunks, chunks_permanent_save_path, 
                                             temp_dir, output_frames_dir, frame_files, input_fps_val, ffmpeg_preset, 
                                             ffmpeg_quality_value, ffmpeg_use_gpu, logger, enable_rife_interpolation, 
                                             rife_apply_to_chunks, rife_multiplier, rife_fp16, rife_uhd, rife_scale, 
@@ -825,103 +825,8 @@ def run_upscale (
                         return None, None
                     
                     # Get output frame range (what was actually generated)
-                    output_start_0 = chunk_info['output_start'] - 1  # Convert to 0-based
-                    output_end_0 = chunk_info['output_end'] - 1      # Convert to 0-based
-                    current_chunk_display_num = chunk_info['chunk_idx'] + 1
-                    
-                    chunk_video_filename = f"chunk_{current_chunk_display_num:04d}.mp4"
-                    chunk_video_path = os.path.join(chunks_permanent_save_path, chunk_video_filename)
-                    chunk_temp_dir = os.path.join(temp_dir, f"temp_sliding_chunk_{current_chunk_display_num}")
-                    os.makedirs(chunk_temp_dir, exist_ok=True)
-
-                    frames_for_chunk = []
-                    for k, frame_name in enumerate(frame_files[start_frame:end_frame]):
-                        src_frame = os.path.join(output_frames_dir, frame_name)
-                        dst_frame = os.path.join(chunk_temp_dir, f"frame_{k+1:06d}.png")
-                        if os.path.exists(src_frame):
-                            shutil.copy2(src_frame, dst_frame)
-                            frames_for_chunk.append(dst_frame)
-                        else:
-                            logger.warning(f"Src frame {src_frame} not found for sliding window chunk video.")
-                    
-                    if frames_for_chunk:
-                        util_create_video_from_frames(chunk_temp_dir, chunk_video_path, input_fps_val,
-                                                    ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger)
-                        
-                        # Apply RIFE interpolation to sliding window chunk if enabled
-                        final_chunk_video_path = chunk_video_path  # Default to original chunk
-                        if enable_rife_interpolation and rife_apply_to_chunks and os.path.exists(chunk_video_path):
-                            try:
-                                # Import RIFE function locally to avoid circular imports
-                                from .rife_interpolation import increase_fps_single
-                                
-                                # Generate RIFE chunk output path
-                                chunk_video_dir = os.path.dirname(chunk_video_path)
-                                chunk_video_name = os.path.splitext(os.path.basename(chunk_video_path))[0]
-                                rife_chunk_video_path = os.path.join(chunk_video_dir, f"{chunk_video_name}_{rife_multiplier}x_FPS.mp4")
-                                
-                                # Apply RIFE interpolation to chunk
-                                rife_result, rife_message = increase_fps_single(
-                                    video_path=chunk_video_path,
-                                    output_path=rife_chunk_video_path,
-                                    multiplier=rife_multiplier,
-                                    fp16=rife_fp16,
-                                    uhd=rife_uhd,
-                                    scale=rife_scale,
-                                    skip_static=rife_skip_static,
-                                    enable_fps_limit=rife_enable_fps_limit,
-                                    max_fps_limit=rife_max_fps_limit,
-                                    ffmpeg_preset=ffmpeg_preset,
-                                    ffmpeg_quality_value=ffmpeg_quality_value,
-                                    ffmpeg_use_gpu=ffmpeg_use_gpu,
-                                    overwrite_original=False,  # Don't overwrite chunks, keep both
-                                    keep_original=rife_keep_original,
-                                    output_dir=chunk_video_dir,
-                                    seed=current_seed,
-                                    logger=logger,
-                                    progress=None  # Don't pass progress to avoid conflicts
-                                )
-                                
-                                if rife_result:
-                                    final_chunk_video_path = rife_result  # Use RIFE version as final chunk
-                                    logger.info(f"Effective Sliding Window Chunk {current_chunk_display_num}: RIFE interpolation completed")
-                                else:
-                                    logger.warning(f"Effective Sliding Window Chunk {current_chunk_display_num}: RIFE interpolation failed: {rife_message}")
-                                    
-                            except Exception as e_chunk_rife:
-                                logger.error(f"Effective Sliding Window Chunk {current_chunk_display_num}: Error during RIFE interpolation: {e_chunk_rife}")
-                        
-                        shutil.rmtree(chunk_temp_dir)
-                        
-                        effective_frame_count = chunk_info['frame_count']
-                        chunk_save_msg = f"Saved effective sliding window chunk {current_chunk_display_num} ({effective_frame_count} frames: {start_frame+1}-{end_frame}) to: {final_chunk_video_path}"
-                        logger.info(chunk_save_msg)
-                        
-                        return final_chunk_video_path, f"Effective Sliding Window Chunk {current_chunk_display_num} ({effective_frame_count} frames: {start_frame+1}-{end_frame})"
-                    else:
-                        logger.warning(f"No frames for effective sliding window chunk {current_chunk_display_num}, video not created.")
-                        shutil.rmtree(chunk_temp_dir)
-                        return None, None
-
-                # Calculate effective chunk mappings
-                effective_chunks = get_effective_chunk_mappings(frame_count, effective_window_step)
-                
-                # Log effective chunk information
-                logger.info(f"Sliding window effective chunks calculated:")
-                for chunk_info in effective_chunks:
-                    logger.info(f"  Chunk {chunk_info['chunk_idx']+1}: {chunk_info['frame_count']} frames (frames {chunk_info['start_frame']+1}-{chunk_info['end_frame']})")
-
-                def save_sliding_window_chunk(chunk_idx, max_chunk_len, total_frames, save_chunks, chunks_permanent_save_path, 
-                                            temp_dir, output_frames_dir, frame_files, input_fps_val, ffmpeg_preset, 
-                                            ffmpeg_quality_value, ffmpeg_use_gpu, logger, enable_rife_interpolation, 
-                                            rife_apply_to_chunks, rife_multiplier, rife_fp16, rife_uhd, rife_scale, 
-                                            rife_skip_static, rife_enable_fps_limit, rife_max_fps_limit, rife_keep_original, 
-                                            current_seed):
-                    """Save a chunk video from sliding window processed frames"""
-                    if not save_chunks or not chunks_permanent_save_path:
-                        return None, None
-                    
-                    start_frame, end_frame = get_chunk_frame_range(chunk_idx, max_chunk_len, total_frames)
+                    output_start_0 = chunk_info['output_start']  # Already 0-based from context processor
+                    output_end_0 = chunk_info['output_end']      # Already 0-based from context processor
                     current_chunk_display_num = chunk_idx + 1
                     
                     chunk_video_filename = f"chunk_{current_chunk_display_num:04d}.mp4"
@@ -929,6 +834,10 @@ def run_upscale (
                     chunk_temp_dir = os.path.join(temp_dir, f"temp_sliding_chunk_{current_chunk_display_num}")
                     os.makedirs(chunk_temp_dir, exist_ok=True)
 
+                    # Get the output frame range for chunk video creation
+                    start_frame = output_start_0
+                    end_frame = output_end_0 + 1  # Make end_frame exclusive for slicing
+                    
                     frames_for_chunk = []
                     for k, frame_name in enumerate(frame_files[start_frame:end_frame]):
                         src_frame = os.path.join(output_frames_dir, frame_name)
@@ -937,13 +846,13 @@ def run_upscale (
                             shutil.copy2(src_frame, dst_frame)
                             frames_for_chunk.append(dst_frame)
                         else:
-                            logger.warning(f"Src frame {src_frame} not found for sliding window chunk video.")
+                            logger.warning(f"Src frame {src_frame} not found for context window chunk video.")
                     
                     if frames_for_chunk:
                         util_create_video_from_frames(chunk_temp_dir, chunk_video_path, input_fps_val,
                                                     ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger)
                         
-                        # Apply RIFE interpolation to sliding window chunk if enabled
+                        # Apply RIFE interpolation to context window chunk if enabled
                         final_chunk_video_path = chunk_video_path  # Default to original chunk
                         if enable_rife_interpolation and rife_apply_to_chunks and os.path.exists(chunk_video_path):
                             try:
@@ -979,176 +888,204 @@ def run_upscale (
                                 
                                 if rife_result:
                                     final_chunk_video_path = rife_result  # Use RIFE version as final chunk
-                                    logger.info(f"Sliding Window Chunk {current_chunk_display_num}: RIFE interpolation completed")
+                                    logger.info(f"Context Window Chunk {current_chunk_display_num}: RIFE interpolation completed")
                                 else:
-                                    logger.warning(f"Sliding Window Chunk {current_chunk_display_num}: RIFE interpolation failed: {rife_message}")
+                                    logger.warning(f"Context Window Chunk {current_chunk_display_num}: RIFE interpolation failed: {rife_message}")
                                     
                             except Exception as e_chunk_rife:
-                                logger.error(f"Sliding Window Chunk {current_chunk_display_num}: Error during RIFE interpolation: {e_chunk_rife}")
+                                logger.error(f"Context Window Chunk {current_chunk_display_num}: Error during RIFE interpolation: {e_chunk_rife}")
                         
                         shutil.rmtree(chunk_temp_dir)
                         
-                        chunk_save_msg = f"Saved sliding window chunk {current_chunk_display_num} (frames {start_frame+1}-{end_frame}) to: {final_chunk_video_path}"
+                        effective_frame_count = chunk_info['new_frames']  # Use new_frames from context processor
+                        chunk_save_msg = f"Saved context window chunk {current_chunk_display_num} ({effective_frame_count} frames: {start_frame+1}-{end_frame}) to: {final_chunk_video_path}"
                         logger.info(chunk_save_msg)
                         
-                        return final_chunk_video_path, f"Sliding Window Chunk {current_chunk_display_num} (frames {start_frame+1}-{end_frame})"
+                        return final_chunk_video_path, f"Context Window Chunk {current_chunk_display_num} ({effective_frame_count} frames: {start_frame+1}-{end_frame})"
                     else:
-                        logger.warning(f"No frames for sliding window chunk {current_chunk_display_num}, video not created.")
+                        logger.warning(f"No frames for context window chunk {current_chunk_display_num}, video not created.")
                         shutil.rmtree(chunk_temp_dir)
                         return None, None
 
-                # Process sliding windows
-                for window_iter_idx, i_start_idx in enumerate(window_indices_to_process):
-                    start_idx = i_start_idx
-                    end_idx = min(i_start_idx + effective_window_size, frame_count)
-                    current_window_len = end_idx - start_idx
+                # Add missing utility functions for sliding window processing
+                def get_chunk_frame_range(chunk_idx, max_chunk_len, total_frames):
+                    """Get the frame range for a specific chunk"""
+                    start_frame = chunk_idx * max_chunk_len
+                    end_frame = min((chunk_idx + 1) * max_chunk_len, total_frames)
+                    return start_frame, end_frame
 
-                    if current_window_len == 0:
+                def map_window_to_chunks(start_idx, end_idx, max_chunk_len):
+                    """Map a window frame range to affected chunk indices"""
+                    first_chunk = start_idx // max_chunk_len
+                    last_chunk = (end_idx - 1) // max_chunk_len
+                    return list(range(first_chunk, last_chunk + 1))
+
+                def is_chunk_complete(chunk_idx, processed_frames_tracker, max_chunk_len, total_frames):
+                    """Check if all frames in a chunk have been processed"""
+                    start_frame, end_frame = get_chunk_frame_range(chunk_idx, max_chunk_len, total_frames)
+                    for frame_idx in range(start_frame, end_frame):
+                        if not processed_frames_tracker[frame_idx]:
+                            return False
+                    return True
+
+                def get_effective_chunk_mappings(frame_count, effective_window_step):
+                    """Calculate effective chunk mappings for sliding window processing"""
+                    chunks = []
+                    chunk_idx = 0
+                    start_frame = 0
+                    
+                    while start_frame < frame_count:
+                        end_frame = min(start_frame + effective_window_step, frame_count)
+                        frame_count_for_chunk = end_frame - start_frame
+                        
+                        chunk_info = {
+                            'chunk_idx': chunk_idx,
+                            'start_frame': start_frame,
+                            'end_frame': end_frame,
+                            'frame_count': frame_count_for_chunk
+                        }
+                        chunks.append(chunk_info)
+                        
+                        chunk_idx += 1
+                        start_frame = end_frame
+                    
+                    return chunks
+
+                # Process context window chunks
+                processed_frame_filenames = [None] * frame_count
+                total_chunks_to_process = len(context_chunks)
+
+                for chunk_idx, chunk_info in enumerate(context_chunks):
+                    # Get chunk processing frames
+                    processing_frames, output_frames_indices = get_chunk_frame_indices(
+                        chunk_info
+                    )
+                    
+                    # Get output frames (frames that will be saved from this chunk)
+                    output_frames = output_frames_indices
+                    
+                    # Extract frames for processing
+                    chunk_lr_frames_bgr = [all_lr_frames_bgr[i] for i in processing_frames]
+                    
+                    if not chunk_lr_frames_bgr:
                         continue
 
-                    is_last_window_iteration = (window_iter_idx == total_windows_to_process - 1)
-                    # Fixed: Removed problematic last window logic that breaks sliding window step consistency
-                    # The original logic would force the last window to be full-size by backing up the start_idx,
-                    # which creates incorrect overlap and breaks the sliding window step pattern.
-                    # Now we process windows exactly as calculated by the step size logic.
-
-                    window_lr_frames_bgr = all_lr_frames_bgr[start_idx:end_idx]
-                    if not window_lr_frames_bgr:
-                        continue
-
-                    window_lr_video_data = preprocess_func(window_lr_frames_bgr)
-                    window_pre_data = {'video_data': window_lr_video_data, 'y': final_prompt,
+                    chunk_lr_video_data = preprocess_func(chunk_lr_frames_bgr)
+                    chunk_pre_data = {'video_data': chunk_lr_video_data, 'y': final_prompt,
                                      'target_res': (final_h_val, final_w_val)}
-                    window_data_cuda = collate_fn_func(window_pre_data, model_device_ns)
+                    chunk_data_cuda = collate_fn_func(chunk_pre_data, model_device_ns)
 
-                    current_window_display_num = window_iter_idx + 1
+                    current_chunk_display_num = chunk_idx + 1
 
-                    window_diffusion_timer = {'last_time': time.time()}
-                    def diffusion_callback_for_window(step_cb, total_steps_cb):
-                        nonlocal window_diffusion_timer
+                    chunk_diffusion_timer = {'last_time': time.time()}
+                    def diffusion_callback_for_chunk(step=None, total_steps=None, step_cb=None, total_steps_cb=None):
+                        nonlocal chunk_diffusion_timer
+                        # Handle both keyword and positional argument styles
+                        current_step = step if step is not None else step_cb
+                        current_total_steps = total_steps if total_steps is not None else total_steps_cb
+                        
                         current_time = time.time()
-                        step_duration = current_time - window_diffusion_timer['last_time']
-                        window_diffusion_timer['last_time'] = current_time
+                        step_duration = current_time - chunk_diffusion_timer['last_time']
+                        chunk_diffusion_timer['last_time'] = current_time
 
-                        _current_slide_loop_time_cb = time.time() - upscaling_loop_start_time
-                        _avg_time_per_window_cb = _current_slide_loop_time_cb / current_window_display_num if current_window_display_num > 0 else 0
-                        _eta_seconds_slide_cb = (total_windows_to_process - current_window_display_num) * _avg_time_per_window_cb if current_window_display_num < total_windows_to_process and _avg_time_per_window_cb > 0 else 0
-                        _speed_slide_cb = 1 / _avg_time_per_window_cb if _avg_time_per_window_cb > 0 else 0
+                        _current_chunk_loop_time_cb = time.time() - upscaling_loop_start_time
+                        _avg_time_per_chunk_cb = _current_chunk_loop_time_cb / current_chunk_display_num if current_chunk_display_num > 0 else 0
+                        _eta_seconds_chunk_cb = (total_chunks_to_process - current_chunk_display_num) * _avg_time_per_chunk_cb if current_chunk_display_num < total_chunks_to_process and _avg_time_per_chunk_cb > 0 else 0
+                        _speed_chunk_cb = 1 / _avg_time_per_chunk_cb if _avg_time_per_chunk_cb > 0 else 0
 
-                        base_desc_win = f"{loop_name}: {current_window_display_num}/{total_windows_to_process} windows (frames {start_idx}-{end_idx-1}) | ETA: {format_time(_eta_seconds_slide_cb)} | Speed: {_speed_slide_cb:.2f} w/s"
-                        log_step_info = f"{step_duration:.2f} second / it" if step_duration > 0.001 else f"step {step_cb}/{total_steps_cb}"
-                        logger.info(f"    ↳ {loop_name} - Window {current_window_display_num}/{total_windows_to_process} (frames {start_idx}-{end_idx-1}) - {log_step_info}")
+                        base_desc_chunk = f"{loop_name}: {current_chunk_display_num}/{total_chunks_to_process} chunks (frames {chunk_info['output_start']}-{chunk_info['output_end']}) | ETA: {format_time(_eta_seconds_chunk_cb)} | Speed: {_speed_chunk_cb:.2f} c/s"
+                        log_step_info = f"{step_duration:.2f}s/it" if step_duration > 0.001 else f"step {current_step}/{current_total_steps}"
+                        logger.info(f"    ↳ {loop_name} - Chunk {current_chunk_display_num}/{total_chunks_to_process} (frames {chunk_info['output_start']}-{chunk_info['output_end']}) - {log_step_info}")
 
-                        progress_val_rel = (current_window_display_num + (step_cb / total_steps_cb if total_steps_cb > 0 else 1)) / total_windows_to_process
+                        progress_val_rel = (current_chunk_display_num + (current_step / current_total_steps if current_total_steps > 0 else 1)) / total_chunks_to_process
                         current_overall_progress_temp = upscaling_loop_progress_start_no_scene_split + (progress_val_rel * stage_weights["upscaling_loop"])
-                        progress(current_overall_progress_temp, desc=f"{base_desc_win} - Diffusion: {step_cb}/{total_steps_cb}")
+                        progress(current_overall_progress_temp, desc=f"{base_desc_chunk} - Diffusion: {current_step}/{current_total_steps}")
 
                     with torch.no_grad():
-                        # Reseed before each window to maintain deterministic noise across windows for temporal consistency
+                        # Reseed before each chunk to maintain deterministic noise across chunks for temporal consistency
                         if setup_seed_func is not None:
                             try:
                                 setup_seed_func(current_seed)
                             except Exception as e_seed:
-                                logger.warning(f"Reseed attempt inside sliding window failed: {e_seed}")
+                                logger.warning(f"Reseed attempt inside context window failed: {e_seed}")
 
-                        window_sr_tensor_bcthw = star_model_ns.test(
-                            window_data_cuda, total_noise_levels, steps=ui_total_diffusion_steps, solver_mode=solver_mode,
-                            guide_scale=cfg_scale, max_chunk_len=current_window_len, vae_decoder_chunk_size=min(vae_chunk, current_window_len),
-                            progress_callback=diffusion_callback_for_window, seed=current_seed
+                        chunk_sr_tensor_bcthw = star_model_ns.test(
+                            chunk_data_cuda, total_noise_levels, steps=ui_total_diffusion_steps, solver_mode=solver_mode,
+                            guide_scale=cfg_scale, max_chunk_len=len(chunk_lr_frames_bgr), vae_decoder_chunk_size=min(vae_chunk, len(chunk_lr_frames_bgr)),
+                            progress_callback=diffusion_callback_for_chunk, seed=current_seed
                         )
                     
-                    window_sr_frames_uint8 = tensor2vid_func(window_sr_tensor_bcthw)
+                    chunk_sr_frames_uint8 = tensor2vid_func(chunk_sr_tensor_bcthw)
 
                     if color_fix_method != 'None':
                         if color_fix_method == 'AdaIN':
-                            window_sr_frames_uint8 = adain_color_fix_func(window_sr_frames_uint8, window_lr_video_data)
+                            chunk_sr_frames_uint8 = adain_color_fix_func(chunk_sr_frames_uint8, chunk_lr_video_data)
                         elif color_fix_method == 'Wavelet':
-                            window_sr_frames_uint8 = wavelet_color_fix_func(window_sr_frames_uint8, window_lr_video_data)
+                            chunk_sr_frames_uint8 = wavelet_color_fix_func(chunk_sr_frames_uint8, chunk_lr_video_data)
 
-                    # Handle overlapping regions for sliding window
-                    save_from_start_offset_local = 0
-                    save_to_end_offset_local = current_window_len
-                    if total_windows_to_process > 1:
-                        overlap_amount = effective_window_size - effective_window_step
-                        if overlap_amount > 0:
-                            if window_iter_idx == 0:
-                                save_to_end_offset_local = effective_window_size - (overlap_amount // 2)
-                            elif is_last_window_iteration:
-                                save_from_start_offset_local = (overlap_amount // 2)
-                            else:
-                                save_from_start_offset_local = (overlap_amount // 2)
-                                save_to_end_offset_local = effective_window_size - (overlap_amount - save_from_start_offset_local)
-                        save_from_start_offset_local = max(0, min(save_from_start_offset_local, current_window_len - 1 if current_window_len > 0 else 0))
-                        save_to_end_offset_local = max(save_from_start_offset_local, min(save_to_end_offset_local, current_window_len))
-
-                    # Save processed frames
-                    for k_local in range(save_from_start_offset_local, save_to_end_offset_local):
-                        k_global = start_idx + k_local
-                        if 0 <= k_global < frame_count and processed_frame_filenames[k_global] is None:
-                            frame_np_hwc_uint8 = window_sr_frames_uint8[k_local].cpu().numpy()
+                    # Save output frames (only the new frames, not the context frames)
+                    context_offset = len(processing_frames) - len(output_frames)
+                    for local_idx, global_frame_idx in enumerate(output_frames):
+                        processed_frame_idx = context_offset + local_idx
+                        if 0 <= global_frame_idx < frame_count and processed_frame_filenames[global_frame_idx] is None:
+                            frame_np_hwc_uint8 = chunk_sr_frames_uint8[processed_frame_idx].cpu().numpy()
                             frame_bgr = cv2.cvtColor(frame_np_hwc_uint8, cv2.COLOR_RGB2BGR)
-                            out_f_path = os.path.join(output_frames_dir, frame_files[k_global])
+                            out_f_path = os.path.join(output_frames_dir, frame_files[global_frame_idx])
                             cv2.imwrite(out_f_path, frame_bgr)
-                            processed_frame_filenames[k_global] = frame_files[k_global]
-                            processed_frames_tracker[k_global] = True
+                            processed_frame_filenames[global_frame_idx] = frame_files[global_frame_idx]
 
-                    # IMMEDIATE FRAME SAVING: Save processed frames immediately after sliding window processing
+                    # Save processed frames immediately if enabled
                     if save_frames and processed_frames_permanent_save_path:
-                        window_frames_saved_count = 0
-                        for k_local in range(save_from_start_offset_local, save_to_end_offset_local):
-                            k_global = start_idx + k_local
-                            if 0 <= k_global < frame_count and processed_frame_filenames[k_global] is not None:
-                                frame_name = frame_files[k_global]
+                        chunk_frames_saved_count = 0
+                        for global_frame_idx in output_frames:
+                            if 0 <= global_frame_idx < frame_count and processed_frame_filenames[global_frame_idx] is not None:
+                                frame_name = frame_files[global_frame_idx]
                                 src_frame_path = os.path.join(output_frames_dir, frame_name)
                                 dst_frame_path = os.path.join(processed_frames_permanent_save_path, frame_name)
                                 if os.path.exists(src_frame_path) and not os.path.exists(dst_frame_path):
                                     shutil.copy2(src_frame_path, dst_frame_path)
-                                    window_frames_saved_count += 1
+                                    chunk_frames_saved_count += 1
                         
-                        if window_frames_saved_count > 0:
-                            immediate_save_msg = f"Immediately saved {window_frames_saved_count} processed frames from sliding window {current_window_display_num}/{total_windows_to_process}"
+                        if chunk_frames_saved_count > 0:
+                            immediate_save_msg = f"Immediately saved {chunk_frames_saved_count} processed frames from context chunk {current_chunk_display_num}/{total_chunks_to_process}"
                             logger.info(immediate_save_msg)
                             status_log.append(immediate_save_msg)
 
-                    # Check and save complete chunks using EFFECTIVE chunk mapping
-                    affected_effective_chunks = map_window_to_effective_chunks(start_idx, end_idx, effective_chunks)
-                    for chunk_idx in affected_effective_chunks:
-                        if chunk_idx not in saved_chunks and is_effective_chunk_complete(chunk_idx, processed_frames_tracker, effective_chunks):
-                            chunk_video_path, chunk_status = save_effective_sliding_window_chunk(
-                                chunk_idx, effective_chunks, save_chunks, chunks_permanent_save_path,
-                                temp_dir, output_frames_dir, frame_files, input_fps_val, ffmpeg_preset,
-                                ffmpeg_quality_value, ffmpeg_use_gpu, logger, enable_rife_interpolation,
-                                rife_apply_to_chunks, rife_multiplier, rife_fp16, rife_uhd, rife_scale,
-                                rife_skip_static, rife_enable_fps_limit, rife_max_fps_limit, rife_keep_original,
-                                current_seed
-                            )
-                            if chunk_video_path:
-                                saved_chunks.add(chunk_idx)
-                                last_chunk_video_path = chunk_video_path
-                                last_chunk_status = chunk_status
-                                status_log.append(f"Saved effective chunk {chunk_idx + 1} from sliding window processing")
-                                yield None, "\n".join(status_log), last_chunk_video_path, last_chunk_status, None
+                    # Save chunk video if enabled
+                    if save_chunks and chunks_permanent_save_path:
+                        chunk_video_path, chunk_status = save_context_window_chunk(
+                            chunk_info, chunk_idx, save_chunks, chunks_permanent_save_path,
+                            temp_dir, output_frames_dir, frame_files, input_fps_val, ffmpeg_preset,
+                            ffmpeg_quality_value, ffmpeg_use_gpu, logger, enable_rife_interpolation,
+                            rife_apply_to_chunks, rife_multiplier, rife_fp16, rife_uhd, rife_scale,
+                            rife_skip_static, rife_enable_fps_limit, rife_max_fps_limit, rife_keep_original,
+                            current_seed
+                        )
+                        if chunk_video_path:
+                            last_chunk_video_path = chunk_video_path
+                            last_chunk_status = chunk_status
+                            status_log.append(f"Saved context chunk {current_chunk_display_num}")
+                            yield None, "\n".join(status_log), last_chunk_video_path, last_chunk_status, None
 
-                    del window_data_cuda, window_sr_tensor_bcthw, window_sr_frames_uint8
+                    del chunk_data_cuda, chunk_sr_tensor_bcthw, chunk_sr_frames_uint8
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
 
                     # Progress update
-                    loop_progress_frac = current_window_display_num / total_windows_to_process if total_windows_to_process > 0 else 1.0
+                    loop_progress_frac = current_chunk_display_num / total_chunks_to_process if total_chunks_to_process > 0 else 1.0
                     current_overall_progress_temp = upscaling_loop_progress_start_no_scene_split + (loop_progress_frac * stage_weights["upscaling_loop"])
-                    progress(current_overall_progress_temp, desc=f"Sliding window {current_window_display_num}/{total_windows_to_process} processed")
-                    yield None, "\n".join(status_log), last_chunk_video_path, f"Sliding window {current_window_display_num}/{total_windows_to_process} processed", None
+                    progress(current_overall_progress_temp, desc=f"Context chunk {current_chunk_display_num}/{total_chunks_to_process} processed")
+                    yield None, "\n".join(status_log), last_chunk_video_path, f"Context chunk {current_chunk_display_num}/{total_chunks_to_process} processed", None
 
                 # Handle any missed frames with fallback
                 num_missed_fallback = 0
                 for idx_fb, fname_fb in enumerate(frame_files):
                     if processed_frame_filenames[idx_fb] is None:
                         num_missed_fallback += 1
-                        logger.warning(f"Frame {fname_fb} (index {idx_fb}) was not processed by sliding window, copying LR frame.")
+                        logger.warning(f"Frame {fname_fb} (index {idx_fb}) was not processed by context window, copying LR frame.")
                         lr_frame_path = os.path.join(input_frames_dir, fname_fb)
                         if os.path.exists(lr_frame_path):
                             shutil.copy2(lr_frame_path, os.path.join(output_frames_dir, fname_fb))
-                            processed_frames_tracker[idx_fb] = True
                         else:
                             logger.error(f"LR frame {lr_frame_path} not found for fallback copy.")
                 
@@ -1157,26 +1094,6 @@ def run_upscale (
                     status_log.append(missed_msg)
                     logger.info(missed_msg)
                     yield None, "\n".join(status_log), last_chunk_video_path, missed_msg, None
-
-                # Save any remaining incomplete effective chunks after all windows are processed
-                for chunk_info in effective_chunks:
-                    chunk_idx = chunk_info['chunk_idx']
-                    if chunk_idx not in saved_chunks:
-                        # Force save incomplete effective chunks
-                        chunk_video_path, chunk_status = save_effective_sliding_window_chunk(
-                            chunk_idx, effective_chunks, save_chunks, chunks_permanent_save_path,
-                            temp_dir, output_frames_dir, frame_files, input_fps_val, ffmpeg_preset,
-                            ffmpeg_quality_value, ffmpeg_use_gpu, logger, enable_rife_interpolation,
-                            rife_apply_to_chunks, rife_multiplier, rife_fp16, rife_uhd, rife_scale,
-                            rife_skip_static, rife_enable_fps_limit, rife_max_fps_limit, rife_keep_original,
-                            current_seed
-                        )
-                        if chunk_video_path:
-                            saved_chunks.add(chunk_idx)
-                            last_chunk_video_path = chunk_video_path
-                            last_chunk_status = chunk_status
-                            status_log.append(f"Saved remaining effective chunk {chunk_idx + 1} from sliding window processing")
-                            yield None, "\n".join(status_log), last_chunk_video_path, last_chunk_status, None
 
             else:
                 # DIRECT CHUNK PROCESSING with optimization
@@ -1233,8 +1150,12 @@ def run_upscale (
                         continue
 
                     chunk_diffusion_timer_direct = {'last_time': time.time()}
-                    def diffusion_callback_for_chunk_direct(step, total_steps_chunk):
+                    def diffusion_callback_for_chunk_direct(step=None, total_steps=None, total_steps_chunk=None):
                         nonlocal chunk_diffusion_timer_direct
+                        # Handle both keyword and positional argument styles
+                        current_step = step if step is not None else 0
+                        current_total_steps = total_steps if total_steps is not None else (total_steps_chunk if total_steps_chunk is not None else 1)
+                        
                         current_time_chunk = time.time()
                         step_duration_chunk = current_time_chunk - chunk_diffusion_timer_direct['last_time']
                         chunk_diffusion_timer_direct['last_time'] = current_time_chunk
@@ -1242,13 +1163,13 @@ def run_upscale (
                             desc_for_log_direct = f"Direct Upscale Chunk {chunk_idx_direct + 1}/{num_chunks_direct} (processing {process_start_idx}-{process_end_idx - 1}, output {start_idx_direct}-{end_idx_direct - 1})"
                         else:
                             desc_for_log_direct = f"Direct Upscale Chunk {chunk_idx_direct + 1}/{num_chunks_direct} (frames {start_idx_direct}-{end_idx_direct - 1})"
-                        eta_seconds_chunk = step_duration_chunk * (total_steps_chunk - step) if step_duration_chunk > 0 and total_steps_chunk > 0 else 0
+                        eta_seconds_chunk = step_duration_chunk * (current_total_steps - current_step) if step_duration_chunk > 0 and current_total_steps > 0 else 0
                         eta_formatted_chunk = format_time(eta_seconds_chunk)
-                        logger.info(f"{desc_for_log_direct} - Diffusion: Step {step}/{total_steps_chunk}, Duration: {step_duration_chunk:.2f}s, ETA: {eta_formatted_chunk}")
+                        logger.info(f"{desc_for_log_direct} - Diffusion: Step {current_step}/{current_total_steps}, Duration: {step_duration_chunk:.2f}s, ETA: {eta_formatted_chunk}")
                         
-                        progress_val_rel_direct = (chunk_idx_direct + (step / total_steps_chunk if total_steps_chunk > 0 else 1)) / num_chunks_direct
+                        progress_val_rel_direct = (chunk_idx_direct + (current_step / current_total_steps if current_total_steps > 0 else 1)) / num_chunks_direct
                         current_overall_progress_temp = upscaling_loop_progress_start_no_scene_split + (progress_val_rel_direct * stage_weights["upscaling_loop"])
-                        progress(current_overall_progress_temp, desc=f"{desc_for_log_direct} (Diff: {step}/{total_steps_chunk})")
+                        progress(current_overall_progress_temp, desc=f"{desc_for_log_direct} (Diff: {current_step}/{current_total_steps})")
 
                         # Get the frames to process (may be more than output frames for optimized chunks)
                         chunk_lr_frames_bgr_direct = all_lr_frames_bgr[process_start_idx:process_end_idx]
