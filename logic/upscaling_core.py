@@ -354,7 +354,6 @@ def run_upscale (
                             os.makedirs(session_output_dir, exist_ok=True)
                         
                         fps_decreased_save_path = os.path.join(session_output_dir, "FPS_Reduced_Used_Video.mp4")
-                        import shutil
                         shutil.copy2(fps_decreased_video_path, fps_decreased_save_path)
                         logger.info(f"FPS decreased video saved to: {fps_decreased_save_path}")
                         params_for_metadata["fps_decrease_saved_path"] = fps_decreased_save_path
