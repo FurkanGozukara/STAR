@@ -40,7 +40,9 @@ create_video_from_frames as util_create_video_from_frames ,
 decrease_fps as util_decrease_fps ,
 decrease_fps_with_multiplier as util_decrease_fps_with_multiplier ,
 calculate_target_fps_from_multiplier as util_calculate_target_fps_from_multiplier ,
-get_common_fps_multipliers as util_get_common_fps_multipliers 
+get_common_fps_multipliers as util_get_common_fps_multipliers ,
+get_video_info as util_get_video_info ,
+format_video_info_message as util_format_video_info_message 
 )
 
 from logic .file_utils import (
@@ -1562,6 +1564,42 @@ This helps visualize the quality improvement from upscaling."""
     fn =update_multiplier_preset ,
     inputs =fps_multiplier_preset ,
     outputs =[fps_multiplier_custom ,fps_multiplier_custom ]
+    )
+
+    def display_video_info(video_path):
+        """Display video information when a video is uploaded."""
+        if video_path is None:
+            return ""
+        
+        try:
+            # Get video information
+            video_info = util_get_video_info(video_path, logger)
+            
+            if video_info:
+                # Format the message
+                filename = os.path.basename(video_path) if video_path else None
+                info_message = util_format_video_info_message(video_info, filename)
+                
+                # Log the information
+                logger.info(f"Video uploaded: {filename}")
+                logger.info(f"Video details: {video_info['frames']} frames, {video_info['fps']:.2f} FPS, {video_info['duration']:.2f}s, {video_info['width']}x{video_info['height']}")
+                
+                return info_message
+            else:
+                error_msg = "❌ Could not read video information"
+                logger.warning(f"Failed to get video info for: {video_path}")
+                return error_msg
+                
+        except Exception as e:
+            error_msg = f"❌ Error reading video: {str(e)}"
+            logger.error(f"Exception in display_video_info: {e}")
+            return error_msg
+
+    # Add video info display when video is uploaded
+    input_video.change(
+        fn=display_video_info,
+        inputs=input_video,
+        outputs=status_textbox
     )
 
     for component in [input_video ,fps_decrease_mode ,fps_multiplier_preset ,fps_multiplier_custom ,target_fps ]:

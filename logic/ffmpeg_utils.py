@@ -362,4 +362,195 @@ def create_video_from_frames(frame_dir, output_path, fps, ffmpeg_preset, ffmpeg_
             logger.info(f"Using libx264 with preset {ffmpeg_preset} and CRF {ffmpeg_quality_value}.")
 
     cmd = f'ffmpeg -y -framerate {fps} -i "{input_pattern}" {video_codec_opts} "{output_path}"'
-    run_ffmpeg_command(cmd, "Video Reassembly (silent)", logger) 
+    run_ffmpeg_command(cmd, "Video Reassembly (silent)", logger)
+
+def get_video_info(video_path, logger=None):
+    """
+    Get comprehensive video information including frames, FPS, duration, and resolution.
+    
+    Args:
+        video_path: Path to the video file
+        logger: Logger instance for logging
+    
+    Returns:
+        dict: Dictionary containing video information with keys:
+              'frames', 'fps', 'duration', 'width', 'height', 'format', 'bitrate'
+              Returns None if video cannot be read
+    """
+    if not os.path.exists(video_path):
+        if logger:
+            logger.error(f"Video file not found: {video_path}")
+        return None
+    
+    video_info = {
+        'frames': 0,
+        'fps': 0.0,
+        'duration': 0.0,
+        'width': 0,
+        'height': 0,
+        'format': 'Unknown',
+        'bitrate': 'Unknown'
+    }
+    
+    try:
+        # First, get the actual frame count directly using ffprobe
+        frame_count_cmd = (
+            f'ffprobe -v error -select_streams v:0 '
+            f'-count_frames -show_entries stream=nb_read_frames '
+            f'-of csv=p=0 "{video_path}"'
+        )
+        
+        try:
+            frame_count_process = subprocess.run(frame_count_cmd, shell=True, check=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
+            actual_frame_count = frame_count_process.stdout.strip()
+            if actual_frame_count and actual_frame_count.isdigit():
+                video_info['frames'] = int(actual_frame_count)
+                if logger:
+                    logger.debug(f"Got actual frame count from ffprobe: {video_info['frames']}")
+        except subprocess.CalledProcessError:
+            if logger:
+                logger.debug("Direct frame count failed, will use alternative methods")
+        
+        # Use ffprobe to get comprehensive video information
+        probe_cmd = (
+            f'ffprobe -v error -select_streams v:0 '
+            f'-show_entries stream=width,height,r_frame_rate,duration,bit_rate '
+            f'-show_entries format=format_name,duration,bit_rate '
+            f'-of csv=s=,:p=0 "{video_path}"'
+        )
+        
+        process = subprocess.run(probe_cmd, shell=True, check=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
+        lines = process.stdout.strip().split('\n')
+        
+        # Parse stream information (first line)
+        if len(lines) >= 1 and lines[0]:
+            stream_parts = lines[0].split(',')
+            if len(stream_parts) >= 4:
+                try:
+                    video_info['width'] = int(stream_parts[0]) if stream_parts[0] else 0
+                    video_info['height'] = int(stream_parts[1]) if stream_parts[1] else 0
+                    
+                    # Parse frame rate
+                    if '/' in stream_parts[2]:
+                        num, den = map(int, stream_parts[2].split('/'))
+                        video_info['fps'] = num / den if den != 0 else 0.0
+                    elif stream_parts[2]:
+                        video_info['fps'] = float(stream_parts[2])
+                    
+                    # Parse duration from stream
+                    if stream_parts[3]:
+                        video_info['duration'] = float(stream_parts[3])
+                    
+                    # Parse bitrate from stream
+                    if len(stream_parts) > 4 and stream_parts[4]:
+                        bitrate_bps = int(stream_parts[4])
+                        video_info['bitrate'] = f"{bitrate_bps // 1000} kbps"
+                except (ValueError, IndexError) as e:
+                    if logger:
+                        logger.warning(f"Error parsing stream info: {e}")
+        
+        # Parse format information (second line) - fallback for duration and bitrate
+        if len(lines) >= 2 and lines[1]:
+            format_parts = lines[1].split(',')
+            if len(format_parts) >= 1:
+                video_info['format'] = format_parts[0]
+                
+                # Use format duration if stream duration not available
+                if video_info['duration'] == 0.0 and len(format_parts) > 1 and format_parts[1]:
+                    try:
+                        video_info['duration'] = float(format_parts[1])
+                    except ValueError:
+                        pass
+                
+                # Use format bitrate if stream bitrate not available
+                if video_info['bitrate'] == 'Unknown' and len(format_parts) > 2 and format_parts[2]:
+                    try:
+                        bitrate_bps = int(format_parts[2])
+                        video_info['bitrate'] = f"{bitrate_bps // 1000} kbps"
+                    except ValueError:
+                        pass
+        
+        # Fallback to OpenCV if ffprobe didn't get all info
+        if video_info['width'] == 0 or video_info['height'] == 0 or video_info['frames'] == 0:
+            try:
+                cap = cv2.VideoCapture(video_path)
+                if cap.isOpened():
+                    if video_info['width'] == 0:
+                        video_info['width'] = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    if video_info['height'] == 0:
+                        video_info['height'] = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    if video_info['frames'] == 0:
+                        video_info['frames'] = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                        if logger:
+                            logger.debug(f"Got frame count from OpenCV: {video_info['frames']}")
+                    if video_info['fps'] == 0.0:
+                        video_info['fps'] = cap.get(cv2.CAP_PROP_FPS)
+                    
+                    cap.release()
+            except Exception as cv_e:
+                if logger:
+                    logger.warning(f"OpenCV fallback failed: {cv_e}")
+        
+        # Final fallback: calculate frame count from FPS and duration if still not available
+        if video_info['frames'] == 0 and video_info['fps'] > 0 and video_info['duration'] > 0:
+            calculated_frames = int(video_info['fps'] * video_info['duration'])
+            video_info['frames'] = calculated_frames
+            if logger:
+                logger.debug(f"Calculated frame count from FPS×duration: {calculated_frames}")
+        
+        # Recalculate duration if we have accurate frame count and FPS but no duration
+        if video_info['duration'] == 0.0 and video_info['frames'] > 0 and video_info['fps'] > 0:
+            video_info['duration'] = video_info['frames'] / video_info['fps']
+        
+        if logger:
+            logger.info(f"Video info for '{os.path.basename(video_path)}': "
+                       f"{video_info['frames']} frames, {video_info['fps']:.2f} FPS, "
+                       f"{video_info['duration']:.2f}s, {video_info['width']}x{video_info['height']}, "
+                       f"{video_info['format']}, {video_info['bitrate']}")
+        
+        return video_info
+        
+    except subprocess.CalledProcessError as e:
+        if logger:
+            logger.error(f"ffprobe failed for '{video_path}': {e}")
+    except Exception as e:
+        if logger:
+            logger.error(f"Error getting video info for '{video_path}': {e}")
+    
+    return None
+
+def format_video_info_message(video_info, filename=None):
+    """
+    Format video information into a readable message.
+    
+    Args:
+        video_info: Dictionary from get_video_info()
+        filename: Optional filename to include in message
+    
+    Returns:
+        str: Formatted message string
+    """
+    if not video_info:
+        return "❌ Could not read video information"
+    
+    filename_part = f" for '{filename}'" if filename else ""
+    
+    # Format duration as MM:SS
+    duration_minutes = int(video_info['duration'] // 60)
+    duration_seconds = int(video_info['duration'] % 60)
+    duration_str = f"{duration_minutes}:{duration_seconds:02d}"
+    
+    # Format file size info if available
+    resolution_str = f"{video_info['width']}x{video_info['height']}"
+    
+    message = (
+        f"📹 Video Information{filename_part}:\n"
+        f"   • Frames: {video_info['frames']:,}\n"
+        f"   • FPS: {video_info['fps']:.2f}\n"
+        f"   • Duration: {duration_str} ({video_info['duration']:.2f}s)\n"
+        f"   • Resolution: {resolution_str}\n"
+        f"   • Format: {video_info['format']}\n"
+        f"   • Bitrate: {video_info['bitrate']}"
+    )
+    
+    return message 
