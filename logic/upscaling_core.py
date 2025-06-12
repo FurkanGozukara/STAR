@@ -615,10 +615,26 @@ def run_upscale (
             logger.info("Image upscaler mode enabled - using deterministic image upscaling")
             status_log.append("Using image-based upscaling instead of STAR model")
             yield None, "\n".join(status_log), last_chunk_video_path, "Initializing image upscaler...", None
-            
+
+            # --- NEW: Progress mapping wrapper ---
+            # The image upscaler reports progress in the 0.0-1.0 range relative to its own work.
+            # Map that relative value to the absolute progress space of the overall pipeline so
+            # that the Gradio progress bar reflects the ongoing frame processing.
+            def _image_upscaler_progress_wrapper(rel_val: float, desc: str = ""):
+                """Translate image-upscaler relative progress (0-1) to absolute pipeline progress."""
+                try:
+                    # Clamp relative value to the valid range just to be safe
+                    rel_val_clamped = max(0.0, min(1.0, rel_val))
+                    abs_progress = upscaling_loop_progress_start + rel_val_clamped * stage_weights["upscaling_loop"]
+                    progress(abs_progress, desc=desc)
+                except Exception as prog_exc:
+                    # Fail gracefully if the progress object is unavailable (e.g., during unit tests)
+                    if logger:
+                        logger.debug(f"Image upscaler progress wrapper error (ignored): {prog_exc}")
+
             # Import image upscaler core here to avoid circular imports
             from .image_upscaler_core import process_video_with_image_upscaler
-            
+
             try:
                 # Process with image upscaler
                 for result in process_video_with_image_upscaler(
@@ -658,7 +674,7 @@ def run_upscale (
                     
                     # Dependencies
                     logger=logger,
-                    progress=progress,
+                    progress=_image_upscaler_progress_wrapper,
                     
                     # Utility functions (injected dependencies)
                     util_extract_frames=util_extract_frames,
