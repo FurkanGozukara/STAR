@@ -425,6 +425,22 @@ def process_single_video_image_upscaler(
     os.makedirs(input_frames_dir, exist_ok=True)
     os.makedirs(output_frames_dir, exist_ok=True)
     
+    # NEW: Set up permanent frame save directories *before* processing so that
+    # processed frames can be written there in real-time.
+    permanent_frames_subdir = None
+    permanent_processed_frames_dir = None
+    permanent_input_frames_dir = None
+
+    if save_frames and base_output_filename_no_ext:
+        permanent_frames_subdir = os.path.join(output_dir, base_output_filename_no_ext)
+        permanent_processed_frames_dir = os.path.join(permanent_frames_subdir, "processed_frames")
+        permanent_input_frames_dir = os.path.join(permanent_frames_subdir, "input_frames")
+
+        # Ensure the directories exist now so that individual frames can be
+        # copied during processing without race conditions.
+        os.makedirs(permanent_processed_frames_dir, exist_ok=True)
+        os.makedirs(permanent_input_frames_dir, exist_ok=True)
+    
     try:
         # Extract frames
         extract_start = time.time()
@@ -435,6 +451,15 @@ def process_single_video_image_upscaler(
         frame_count, actual_fps, frame_files = util_extract_frames(
             input_video_path, input_frames_dir, logger=logger
         )
+        
+        # Immediately copy input frames to their final location if requested so
+        # the user can inspect them while the upscale runs.
+        if save_frames and permanent_input_frames_dir:
+            try:
+                shutil.copytree(input_frames_dir, permanent_input_frames_dir, dirs_exist_ok=True)
+            except Exception as copy_in_e:
+                if logger:
+                    logger.warning(f"Could not copy input frames early: {copy_in_e}")
         
         if actual_fps:
             input_fps = actual_fps
@@ -467,6 +492,7 @@ def process_single_video_image_upscaler(
             batch_size=batch_size,
             device=device,
             progress_callback=progress_callback,
+            secondary_output_dir=permanent_processed_frames_dir,
             logger=logger
         )
         
@@ -508,26 +534,24 @@ def process_single_video_image_upscaler(
         if logger:
             logger.info(video_complete_msg)
         
-        # Handle frame saving
-        if save_frames:
-            frame_save_msg = "Saving processed frames..."
+        # Handle frame saving – final sync/copy for any remaining files that
+        # might not have been flushed yet or if save_frames was disabled.
+        if save_frames and permanent_frames_subdir:
+            frame_save_msg = "Synchronising processed frames to output directory..."
             status_log.append(frame_save_msg)
-            
-            # Create frames subdirectory
-            frames_subdir = os.path.join(output_dir, base_output_filename_no_ext)
-            os.makedirs(frames_subdir, exist_ok=True)
-            
-            input_frames_save_dir = os.path.join(frames_subdir, "input_frames")
-            output_frames_save_dir = os.path.join(frames_subdir, "processed_frames")
-            
-            # Copy frames
-            if os.path.exists(input_frames_dir):
-                shutil.copytree(input_frames_dir, input_frames_save_dir, dirs_exist_ok=True)
-            if os.path.exists(output_frames_dir):
-                shutil.copytree(output_frames_dir, output_frames_save_dir, dirs_exist_ok=True)
-            
-            frame_save_complete_msg = f"Frames saved to: {frames_subdir}"
-            status_log.append(frame_save_complete_msg)
+
+            try:
+                # Ensure any frames still only in the temp directory are copied
+                # over (e.g. if secondary save failed for some reason).
+                shutil.copytree(output_frames_dir, permanent_processed_frames_dir, dirs_exist_ok=True)
+
+                frame_save_complete_msg = f"Frames saved to: {permanent_frames_subdir}"
+                status_log.append(frame_save_complete_msg)
+            except Exception as final_copy_e:
+                warn_msg = f"Warning: could not final-sync frames: {final_copy_e}"
+                status_log.append(warn_msg)
+                if logger:
+                    logger.warning(warn_msg)
         
         # Final yield with the output video path
         yield output_video_path, "\n".join(status_log), output_video_path, "Video processing complete", None
@@ -571,11 +595,33 @@ def process_single_scene_image_upscaler(
     os.makedirs(scene_input_frames_dir, exist_ok=True)
     os.makedirs(scene_output_frames_dir, exist_ok=True)
     
+    # NEW: Prepare permanent scene frame dirs upfront if requested so frames are
+    # saved immediately.
+    permanent_scene_frames_dir = None
+    permanent_scene_processed_dir = None
+    permanent_scene_input_dir = None
+
+    if save_frames and base_output_filename_no_ext:
+        permanent_scene_frames_dir = os.path.join(output_dir, base_output_filename_no_ext, "scenes", scene_name)
+        permanent_scene_processed_dir = os.path.join(permanent_scene_frames_dir, "processed_frames")
+        permanent_scene_input_dir = os.path.join(permanent_scene_frames_dir, "input_frames")
+
+        os.makedirs(permanent_scene_processed_dir, exist_ok=True)
+        os.makedirs(permanent_scene_input_dir, exist_ok=True)
+    
     try:
         # Extract frames from scene
         frame_count, scene_fps, frame_files = util_extract_frames(
             scene_video_path, scene_input_frames_dir, logger=logger
         )
+        
+        # Immediately copy input frames for the scene if requested
+        if save_frames and permanent_scene_input_dir:
+            try:
+                shutil.copytree(scene_input_frames_dir, permanent_scene_input_dir, dirs_exist_ok=True)
+            except Exception as copy_scene_in_e:
+                if logger:
+                    logger.warning(f"Could not copy scene input frames early: {copy_scene_in_e}")
         
         if scene_fps:
             input_fps = scene_fps
@@ -596,6 +642,7 @@ def process_single_scene_image_upscaler(
             batch_size=batch_size,
             device=device,
             progress_callback=None,
+            secondary_output_dir=permanent_scene_processed_dir,
             logger=logger
         )
         
@@ -617,16 +664,13 @@ def process_single_scene_image_upscaler(
             logger=logger
         )
         
-        # Handle scene frame saving - FIXED: Follow STAR pattern
-        if save_frames and base_output_filename_no_ext:
-            # Follow STAR pattern: {output_dir}/{base_filename_no_ext}/scenes/{scene_name}/
-            scene_frames_dir = os.path.join(output_dir, base_output_filename_no_ext, "scenes", scene_name)
-            os.makedirs(scene_frames_dir, exist_ok=True)
-            
-            if os.path.exists(scene_input_frames_dir):
-                shutil.copytree(scene_input_frames_dir, os.path.join(scene_frames_dir, "input_frames"), dirs_exist_ok=True)
-            if os.path.exists(scene_output_frames_dir):
-                shutil.copytree(scene_output_frames_dir, os.path.join(scene_frames_dir, "processed_frames"), dirs_exist_ok=True)
+        # Final sync for any frames still only in temp dir
+        if save_frames and permanent_scene_frames_dir:
+            try:
+                shutil.copytree(scene_output_frames_dir, permanent_scene_processed_dir, dirs_exist_ok=True)
+            except Exception as final_scene_copy_e:
+                if logger:
+                    logger.warning(f"Could not final-sync scene frames: {final_scene_copy_e}")
         
         # Final yield with the scene output path
         yield scene_output_path, "\n".join(status_log), scene_output_path, f"Scene {scene_index + 1} complete", None

@@ -458,6 +458,7 @@ def process_frames_batch(
     batch_size: int = 4,
     device: str = "cuda",
     progress_callback = None,
+    secondary_output_dir: str = None,
     logger: logging.Logger = None
 ) -> Tuple[int, int]:
     """
@@ -471,12 +472,18 @@ def process_frames_batch(
         batch_size: Number of frames to process at once
         device: Device to process on
         progress_callback: Optional callback for progress updates
+        secondary_output_dir: Optional secondary output directory for immediate saving
         logger: Logger instance
         
     Returns:
         Tuple of (processed_count, failed_count)
     """
     os.makedirs(output_dir, exist_ok=True)
+    
+    # If a secondary directory is provided, create it as well so we can copy
+    # frames there in real-time.
+    if secondary_output_dir:
+        os.makedirs(secondary_output_dir, exist_ok=True)
     
     processed_count = 0
     failed_count = 0
@@ -573,7 +580,7 @@ def process_frames_batch(
                         # Convert tensor to frame
                         output_frame = tensor_to_frame(output_tensor)
                         
-                        # Save frame
+                        # Save frame to the primary (temporary) output dir
                         output_path = os.path.join(output_dir, frame_file)
                         success = cv2.imwrite(output_path, output_frame)
                         
@@ -582,6 +589,17 @@ def process_frames_batch(
                         
                         processed_count += 1
                         processed_in_current_batch += 1
+                        
+                        # Additionally save to the secondary permanent folder
+                        if secondary_output_dir:
+                            try:
+                                secondary_path = os.path.join(secondary_output_dir, frame_file)
+                                # Use cv2.imwrite again – this is usually fast because
+                                # the data is already resident in memory.
+                                cv2.imwrite(secondary_path, output_frame)
+                            except Exception as sec_e:
+                                if logger:
+                                    logger.warning(f"Could not write frame {frame_file} to secondary dir: {sec_e}")
                         
                     except Exception as e:
                         if logger:

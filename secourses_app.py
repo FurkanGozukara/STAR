@@ -97,6 +97,13 @@ scan_for_models as util_scan_for_models,
 get_model_info as util_get_model_info
 )
 
+from logic .temp_folder_utils import (
+get_temp_folder_path as util_get_temp_folder_path ,
+calculate_temp_folder_size as util_calculate_temp_folder_size ,
+format_temp_folder_size as util_format_temp_folder_size ,
+clear_temp_folder as util_clear_temp_folder
+)
+
 SELECTED_GPU_ID =0 
 
 parser =ArgumentParser (description ="Ultimate SECourses STAR Video Upscaler")
@@ -229,6 +236,12 @@ If CogVLM2 is available, you can use the button below to generate a caption auto
                                 rife_fps_button =gr .Button ("RIFE FPS Increase (No Upscale)",variant ="primary",icon ="icons/fps.png")
                             with gr .Row ():
                                 upscale_button =gr .Button ("Upscale Video",variant ="primary",icon ="icons/upscale.png")
+
+                            # Add Delete Temp Folder button directly under Upscale Video
+                            with gr .Row ():
+                                initial_temp_size_label = util_format_temp_folder_size(logger)
+                                delete_temp_button = gr.Button(f"Delete Temp Folder ({initial_temp_size_label})", variant="stop")
+
                             caption_status =gr .Textbox (label ="Captioning Status",interactive =False ,visible =False )
 
                     with gr .Accordion ("Prompt Settings",open =True ):
@@ -1746,7 +1759,36 @@ This helps visualize the quality improvement from upscaling."""
         outputs =fps_calculation_info 
         )
 
+    # NOTE: Duplicate Temp folder cleanup button definition removed. The button is already created earlier under the Upscale Video section.
 
+    # --- Button callback
+    def clear_temp_folder_wrapper(progress: gr.Progress = gr.Progress(track_tqdm=True)):
+        logger.info("Temp cleanup requested via UI button")
+        before_bytes = util_calculate_temp_folder_size(logger)
+        success = util_clear_temp_folder(logger)
+        after_bytes = util_calculate_temp_folder_size(logger)
+        freed_bytes = max(before_bytes - after_bytes, 0)
+
+        logger.info(
+            f"Temp cleanup completed. Freed {freed_bytes / (1024**3):.2f} GB (Remaining: {after_bytes / (1024**3):.2f} GB)"
+        )
+
+        after_label = util_format_temp_folder_size(logger)
+        status_message = (
+            f"✅ Temp folder cleared. Freed {freed_bytes / (1024**3):.2f} GB. Remaining: {after_label}"
+            if success
+            else "⚠️ Temp folder cleanup encountered errors. Check logs."
+        )
+
+        return gr.update(value=status_message), gr.update(value=f"Delete Temp Folder ({after_label})")
+
+    # Attach callback to the original button (defined earlier)
+    delete_temp_button.click(
+        fn=clear_temp_folder_wrapper,
+        inputs=[],
+        outputs=[status_textbox, delete_temp_button],
+        show_progress_on=[status_textbox]
+    )
 
 if __name__ =="__main__":
     os .makedirs (app_config .DEFAULT_OUTPUT_DIR ,exist_ok =True )
