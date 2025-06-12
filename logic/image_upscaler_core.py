@@ -212,6 +212,7 @@ def process_video_with_image_upscaler(
                         device=device,
                         temp_dir=temp_dir,
                         output_dir=output_dir,
+                        base_output_filename_no_ext=base_output_filename_no_ext,
                         save_frames=save_frames,
                         input_fps=input_fps,
                         ffmpeg_preset=ffmpeg_preset,
@@ -547,6 +548,7 @@ def process_single_scene_image_upscaler(
     device: str,
     temp_dir: str,
     output_dir: str,
+    base_output_filename_no_ext: str,
     save_frames: bool,
     input_fps: float,
     ffmpeg_preset: str,
@@ -615,9 +617,10 @@ def process_single_scene_image_upscaler(
             logger=logger
         )
         
-        # Handle scene frame saving
-        if save_frames:
-            scene_frames_dir = os.path.join(output_dir, f"scenes/{scene_name}")
+        # Handle scene frame saving - FIXED: Follow STAR pattern
+        if save_frames and base_output_filename_no_ext:
+            # Follow STAR pattern: {output_dir}/{base_filename_no_ext}/scenes/{scene_name}/
+            scene_frames_dir = os.path.join(output_dir, base_output_filename_no_ext, "scenes", scene_name)
             os.makedirs(scene_frames_dir, exist_ok=True)
             
             if os.path.exists(scene_input_frames_dir):
