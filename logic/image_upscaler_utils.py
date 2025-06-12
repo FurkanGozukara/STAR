@@ -13,6 +13,7 @@ import shutil
 from typing import List, Dict, Tuple, Optional, Any
 from collections import defaultdict
 import logging
+import math
 
 # Supported model file extensions
 SUPPORTED_EXTENSIONS = ['.pth', '.safetensors', '.pt', '.bin', '.onnx']
@@ -481,6 +482,11 @@ def process_frames_batch(
     failed_count = 0
     total_frames = len(frame_files)
     
+    # Calculate total number of processing steps (batches) so we can report detailed progress
+    # Guard against division by zero if batch_size is somehow 0
+    total_steps = math.ceil(total_frames / batch_size) if batch_size else 1
+    current_step = 0  # Will be incremented at the start of each batch
+    
     # Group frames by size for efficient batching
     frames_by_size = group_frames_by_size(frame_files, input_dir, logger)
     
@@ -490,6 +496,9 @@ def process_frames_batch(
         
         # Process frames in batches within each size group
         for i in range(0, len(size_frame_files), batch_size):
+            # Increment the global step counter *before* processing so that step numbers start at 1
+            current_step += 1
+
             batch_files = size_frame_files[i:i + batch_size]
             
             # Track how many frames get successfully written in this particular batch so we
@@ -591,22 +600,31 @@ def process_frames_batch(
                 
                 # Update progress
                 if progress_callback:
-                    # Guard against progress values going slightly over 1.0 due to rounding or
-                    # a temporary mismatch in processed / failed counters. 1.0 is the maximum
-                    # accepted by Gradio progress bars – values above this can raise an
-                    # IndexError inside Gradio internals.
+                    # Guard against progress values going slightly over 1.0 due to rounding issues.
                     progress_value = (processed_count + failed_count) / total_frames if total_frames else 1.0
-                    if progress_value > 1.0:
-                        progress_value = 1.0
+                    progress_value = min(progress_value, 1.0)
 
-                    # Gradio can occasionally raise exceptions if the queue is full or if the
-                    # supplied values are out of range. Wrap the callback in a safe guard so
-                    # that a UI-related issue does not break the actual frame processing logic.
+                    # Build a richer description including step/frame counts
+                    progress_desc = (
+                        f"Step {current_step}/{total_steps} | "
+                        f"Frames {processed_count}/{total_frames} processed"
+                    )
+
                     try:
-                        progress_callback(progress_value, f"Processed {processed_count}/{total_frames} frames")
+                        progress_callback(progress_value, progress_desc)
                     except Exception as prog_e:
                         if logger:
                             logger.debug(f"Non-critical progress callback error ignored: {prog_e}")
+                
+                # Console logging for CLI users
+                if logger:
+                    remaining_steps = max(total_steps - current_step, 0)
+                    remaining_frames = max(total_frames - processed_count, 0)
+                    logger.info(
+                        f"Image Upscaler Progress — Step {current_step}/{total_steps} complete. "
+                        f"Processed frames: {processed_count}/{total_frames}. "
+                        f"Remaining steps: {remaining_steps}, Remaining frames: {remaining_frames}."
+                    )
                 
                 # Clear GPU memory
                 if torch.cuda.is_available():
