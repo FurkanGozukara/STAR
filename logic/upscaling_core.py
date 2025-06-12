@@ -71,6 +71,9 @@ def run_upscale (
     cogvlm_quant =0 , # This will be the integer value
     cogvlm_unload ='full',
 
+    # Image upscaler parameters
+    enable_image_upscaler =False ,image_upscaler_model =None ,image_upscaler_batch_size =4 ,
+
     # Injected dependencies
     logger: logging.Logger = None,
     app_config_module=None, # The app_config module from secourses_app
@@ -129,6 +132,10 @@ def run_upscale (
     "rife_fps_limit_enabled":rife_enable_fps_limit ,"rife_fps_limit":rife_max_fps_limit ,
     "rife_apply_to_chunks":rife_apply_to_chunks ,"rife_apply_to_scenes":rife_apply_to_scenes ,
     "rife_keep_original":rife_keep_original ,"rife_overwrite_original":rife_overwrite_original ,
+
+    # Image upscaler metadata
+    "image_upscaler_enabled":enable_image_upscaler ,"image_upscaler_model":image_upscaler_model ,
+    "image_upscaler_batch_size":image_upscaler_batch_size ,
 
     "final_output_path":None ,"orig_w":None ,"orig_h":None ,
     "input_fps":None ,"upscale_factor":None ,"final_w":None ,"final_h":None ,
@@ -598,7 +605,94 @@ def run_upscale (
         scene_metadata_base_params =params_for_metadata .copy ()if enable_scene_split else None
         silent_upscaled_video_path = None # Initialize
 
-        if enable_scene_split and scene_video_paths :
+        # MAIN BRANCHING LOGIC: Image Upscaler vs STAR
+        if enable_image_upscaler:
+            # Route to image upscaler processing
+            logger.info("Image upscaler mode enabled - using deterministic image upscaling")
+            status_log.append("Using image-based upscaling instead of STAR model")
+            yield None, "\n".join(status_log), last_chunk_video_path, "Initializing image upscaler...", None
+            
+            # Import image upscaler core here to avoid circular imports
+            from .image_upscaler_core import process_video_with_image_upscaler
+            
+            try:
+                # Process with image upscaler
+                for result in process_video_with_image_upscaler(
+                    input_video_path=current_input_video_for_frames,
+                    selected_model_filename=image_upscaler_model,
+                    batch_size=image_upscaler_batch_size,
+                    upscale_models_dir=app_config_module.UPSCALE_MODELS_DIR,
+                    output_frames_dir=output_frames_dir,
+                    input_frames_dir=input_frames_dir,
+                    save_frames=save_frames,
+                    input_frames_permanent_save_path=input_frames_permanent_save_path,
+                    processed_frames_permanent_save_path=processed_frames_permanent_save_path,
+                    save_chunks=save_chunks,
+                    chunks_permanent_save_path=chunks_permanent_save_path,
+                    save_chunk_frames=save_chunk_frames,
+                    chunk_frames_permanent_save_path=chunk_frames_permanent_save_path,
+                    enable_scene_split=enable_scene_split,
+                    scene_split_mode=scene_split_mode,
+                    scene_min_scene_len=scene_min_scene_len,
+                    scene_drop_short=scene_drop_short,
+                    scene_merge_last=scene_merge_last,
+                    scene_frame_skip=scene_frame_skip,
+                    scene_threshold=scene_threshold,
+                    scene_min_content_val=scene_min_content_val,
+                    scene_frame_window=scene_frame_window,
+                    scene_copy_streams=scene_copy_streams,
+                    scene_use_mkvmerge=scene_use_mkvmerge,
+                    scene_rate_factor=scene_rate_factor,
+                    scene_preset=scene_preset,
+                    scene_quiet_ffmpeg=scene_quiet_ffmpeg,
+                    scene_manual_split_type=scene_manual_split_type,
+                    scene_manual_split_value=scene_manual_split_value,
+                    ffmpeg_preset=ffmpeg_preset,
+                    ffmpeg_quality_value=ffmpeg_quality_value,
+                    ffmpeg_use_gpu=ffmpeg_use_gpu,
+                    upscaling_loop_progress_start=upscaling_loop_progress_start,
+                    stage_weights=stage_weights,
+                    logger=logger,
+                    progress=progress
+                ):
+                    if result is not None:
+                        result_type, *data = result
+                        if result_type == "chunk_update":
+                            chunk_vid_path, chunk_stat_str = data
+                            last_chunk_video_path = chunk_vid_path
+                            last_chunk_status = chunk_stat_str
+                            temp_status_log = status_log + [f"Processed: {chunk_stat_str}"]
+                            yield None, "\n".join(temp_status_log), last_chunk_video_path, last_chunk_status, None
+                        elif result_type == "progress_update":
+                            progress_val, desc_msg = data
+                            status_log.append(desc_msg)
+                            yield None, "\n".join(status_log), last_chunk_video_path, desc_msg, None
+                        elif result_type == "complete":
+                            silent_upscaled_video_path = data[0]
+                            input_fps_val = data[1] if len(data) > 1 else 30.0
+                            params_for_metadata["input_fps"] = input_fps_val
+                            break
+                        elif result_type == "error":
+                            error_msg = data[0]
+                            logger.error(f"Image upscaler error: {error_msg}")
+                            status_log.append(f"Image upscaler error: {error_msg}")
+                            yield None, "\n".join(status_log), last_chunk_video_path, f"Error: {error_msg}", None
+                            raise gr.Error(f"Image upscaling failed: {error_msg}")
+                
+                # Update progress after image upscaling
+                current_overall_progress = upscaling_loop_progress_start + stage_weights["upscaling_loop"]
+                progress(current_overall_progress, desc="Image upscaling complete")
+                status_log.append("Image upscaling completed successfully")
+                logger.info("Image upscaling completed successfully")
+                yield None, "\n".join(status_log), last_chunk_video_path, "Image upscaling complete", None
+                
+            except Exception as e:
+                logger.error(f"Error in image upscaler processing: {e}", exc_info=True)
+                status_log.append(f"Image upscaler error: {e}")
+                yield None, "\n".join(status_log), last_chunk_video_path, f"Error: {e}", None
+                raise gr.Error(f"Image upscaling failed: {e}")
+                
+        elif enable_scene_split and scene_video_paths :
             processed_scene_videos =[]
             total_scenes =len (scene_video_paths )
             first_scene_caption =None
@@ -660,6 +754,10 @@ def run_upscale (
                         rife_enable_fps_limit=rife_enable_fps_limit, rife_max_fps_limit=rife_max_fps_limit,
                         rife_apply_to_scenes=rife_apply_to_scenes, rife_apply_to_chunks=rife_apply_to_chunks, 
                         rife_keep_original=rife_keep_original, current_seed=current_seed,
+                        
+                        # Image upscaler parameters for scenes
+                        enable_image_upscaler=enable_image_upscaler, image_upscaler_model=image_upscaler_model, 
+                        image_upscaler_batch_size=image_upscaler_batch_size,
                         
                         util_extract_frames=util_extract_frames, util_auto_caption=util_auto_caption, 
                         util_create_video_from_frames=util_create_video_from_frames, 

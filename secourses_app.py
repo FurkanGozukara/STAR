@@ -92,6 +92,11 @@ from logic .rife_interpolation import (
 rife_fps_only_wrapper as util_rife_fps_only_wrapper 
 )
 
+from logic .image_upscaler_utils import (
+scan_for_models as util_scan_for_models,
+get_model_info as util_get_model_info
+)
+
 SELECTED_GPU_ID =0 
 
 parser =ArgumentParser (description ="Ultimate SECourses STAR Video Upscaler")
@@ -381,6 +386,52 @@ The total combined prompt length is limited to 77 tokens."""
                         info ="""Attempts to match the color tone of the output to the input video. Helps prevent color shifts.
 'AdaIN' / 'Wavelet': Different algorithms for color matching. AdaIN is often a good default.
 'None': Disables color correction."""
+                        )
+                    
+                    # Image Upscaler Panel
+                    with gr .Group ():
+                        gr .Markdown ("### Image-Based Upscaler (Alternative to STAR)")
+                        enable_image_upscaler_check =gr .Checkbox (
+                        label ="Enable Image-Based Upscaling",
+                        value =app_config .DEFAULT_ENABLE_IMAGE_UPSCALER ,
+                        info ="""Use deterministic image upscaler models instead of STAR. When enabled:
+- Processes frames individually using spandrel-compatible models
+- Ignores prompts, auto-caption, context window, and tiling settings
+- Supports various architectures: DAT-2, ESRGAN, HAT, RCAN, OmniSR, CUGAN
+- Much faster processing with batch support"""
+                        )
+                        
+                        # Scan for available models
+                        try:
+                            available_model_files = util_scan_for_models(app_config.UPSCALE_MODELS_DIR, logger)
+                            if available_model_files:
+                                # For initial load, just show filenames to avoid slow startup
+                                model_choices = available_model_files
+                                default_model_choice = model_choices[0]
+                            else:
+                                model_choices = ["No models found - place models in upscale_models/"]
+                                default_model_choice = model_choices[0]
+                        except Exception as e:
+                            logger.warning(f"Failed to scan for upscaler models: {e}")
+                            model_choices = ["Error scanning models - check upscale_models/ directory"]
+                            default_model_choice = model_choices[0]
+                        
+                        image_upscaler_model_dropdown =gr .Dropdown (
+                        label ="Upscaler Model",
+                        choices =model_choices ,
+                        value =default_model_choice ,
+                        info ="Select the image upscaler model. Models should be placed in the 'upscale_models/' directory.",
+                        interactive =False  # Will be enabled when checkbox is checked
+                        )
+                        
+                        image_upscaler_batch_size_slider =gr .Slider (
+                        label ="Batch Size",
+                        minimum =app_config .DEFAULT_IMAGE_UPSCALER_MIN_BATCH_SIZE ,
+                        maximum =app_config .DEFAULT_IMAGE_UPSCALER_MAX_BATCH_SIZE ,
+                        value =app_config .DEFAULT_IMAGE_UPSCALER_BATCH_SIZE ,
+                        step =1 ,
+                        info ="Number of frames to process simultaneously. Higher values = faster processing but more VRAM usage. Adjust based on your GPU memory.",
+                        interactive =False  # Will be enabled when checkbox is checked
                         )
                 with gr .Column (scale =1 ):
                     if app_config .UTIL_COG_VLM_AVAILABLE :
@@ -789,6 +840,37 @@ This helps visualize the quality improvement from upscaling."""
     outputs =context_overlap_num 
     )
 
+    # Image upscaler controls
+    def update_image_upscaler_controls(enable_image_upscaler):
+        """Enable/disable image upscaler controls based on checkbox state."""
+        return [
+            gr.update(interactive=enable_image_upscaler),  # model dropdown
+            gr.update(interactive=enable_image_upscaler)   # batch size slider
+        ]
+    
+    enable_image_upscaler_check.change(
+        fn=update_image_upscaler_controls,
+        inputs=enable_image_upscaler_check,
+        outputs=[image_upscaler_model_dropdown, image_upscaler_batch_size_slider]
+    )
+    
+    def refresh_upscaler_models():
+        """Refresh the list of available upscaler models."""
+        try:
+            available_model_files = util_scan_for_models(app_config.UPSCALE_MODELS_DIR, logger)
+            if available_model_files:
+                # Just show filenames for faster refresh
+                model_choices = available_model_files
+                default_choice = model_choices[0]
+            else:
+                model_choices = ["No models found - place models in upscale_models/"]
+                default_choice = model_choices[0]
+            return gr.update(choices=model_choices, value=default_choice)
+        except Exception as e:
+            logger.warning(f"Failed to refresh upscaler models: {e}")
+            return gr.update(choices=["Error scanning models - check upscale_models/ directory"], 
+                           value="Error scanning models - check upscale_models/ directory")
+
     def update_context_overlap_max (max_chunk_len ):
         """Update the maximum value of context overlap based on max_chunk_len"""
         new_max =max (0 ,int (max_chunk_len )-1 )
@@ -862,6 +944,10 @@ This helps visualize the quality improvement from upscaling."""
     cogvlm_quant_radio_val =None ,cogvlm_unload_radio_val =None ,
     do_auto_caption_first_val =False ,
     seed_num_val =99 ,random_seed_check_val =False ,
+    
+    # Image upscaler parameters
+    enable_image_upscaler_val =False ,image_upscaler_model_val =None ,image_upscaler_batch_size_val =4 ,
+    
     progress =gr .Progress (track_tqdm =True )
     ):
 
@@ -1159,6 +1245,9 @@ This helps visualize the quality improvement from upscaling."""
         click_inputs .extend ([gr .State (None ),gr .State (None ),gr .State (False )])
 
     click_inputs .extend ([seed_num ,random_seed_check ])
+    
+    # Add image upscaler parameters
+    click_inputs .extend ([enable_image_upscaler_check ,image_upscaler_model_dropdown ,image_upscaler_batch_size_slider ])
 
     click_outputs_list .extend ([last_chunk_video ,chunk_status_text ])
 
@@ -1277,6 +1366,10 @@ This helps visualize the quality improvement from upscaling."""
     batch_skip_existing_val =True ,batch_use_prompt_files_val =True ,batch_save_captions_val =True ,
     batch_enable_auto_caption_val =False ,cogvlm_quant_radio_val =None ,cogvlm_unload_radio_val =None ,
     seed_num_val =99 ,random_seed_check_val =False ,
+    
+    # Image upscaler parameters for batch
+    enable_image_upscaler_val =False ,image_upscaler_model_val =None ,image_upscaler_batch_size_val =4 ,
+    
     progress =gr .Progress (track_tqdm =True )
     ):
 
@@ -1304,7 +1397,12 @@ This helps visualize the quality improvement from upscaling."""
         ImageSpliterTh_class =ImageSpliterTh ,
         adain_color_fix_func =adain_color_fix ,
         wavelet_color_fix_func =wavelet_color_fix ,
-        current_seed =actual_seed_for_batch 
+        current_seed =actual_seed_for_batch ,
+        
+        # Image upscaler parameters
+        enable_image_upscaler =enable_image_upscaler_val ,
+        image_upscaler_model =image_upscaler_model_val ,
+        image_upscaler_batch_size =image_upscaler_batch_size_val 
         )
 
         return process_batch_videos (
@@ -1376,6 +1474,9 @@ This helps visualize the quality improvement from upscaling."""
         batch_process_inputs .extend ([gr .State (None ),gr .State (None )])
 
     batch_process_inputs .extend ([seed_num ,random_seed_check ])
+    
+    # Add image upscaler parameters to batch processing
+    batch_process_inputs .extend ([enable_image_upscaler_check ,image_upscaler_model_dropdown ,image_upscaler_batch_size_slider ])
 
     batch_process_button .click (
     fn =process_batch_videos_wrapper ,

@@ -32,6 +32,9 @@ def process_single_scene(
     rife_skip_static=False, rife_enable_fps_limit=False, rife_max_fps_limit=60,
     rife_apply_to_scenes=True, rife_apply_to_chunks=True, rife_keep_original=True, current_seed=99,
     
+    # Image upscaler parameters for scenes
+    enable_image_upscaler=False, image_upscaler_model=None, image_upscaler_batch_size=4,
+    
     # Dependencies injected as parameters
     util_extract_frames=None,
     util_auto_caption=None, 
@@ -123,42 +126,50 @@ def process_single_scene(
         otherwise the original upscaled scene video.
     """
     star_model_instance = None # Initialize to ensure cleanup can run
+    model_device = None # Initialize for later use
+    
     try:
-        # Model loading moved inside
-        if logger: logger.info(f"Scene {scene_index + 1}: Initializing STAR model for this scene.")
-        model_load_start_time = time.time()
-        # Use the passed app_config_module_param and util_get_gpu_device_param
-        # Ensure app_config_module_param has the necessary attributes like LIGHT_DEG_MODEL_PATH etc.
-        # Determine model_file_path based on a passed parameter or a heuristic if not directly available
-        # For now, assuming a way to get model_choice or it's implicitly handled by app_config_module_param paths
+        # Only load STAR model if not using image upscaler
+        if not enable_image_upscaler:
+            # Model loading moved inside
+            if logger: logger.info(f"Scene {scene_index + 1}: Initializing STAR model for this scene.")
+            model_load_start_time = time.time()
+            # Use the passed app_config_module_param and util_get_gpu_device_param
+            # Ensure app_config_module_param has the necessary attributes like LIGHT_DEG_MODEL_PATH etc.
+            # Determine model_file_path based on a passed parameter or a heuristic if not directly available
+            # For now, assuming a way to get model_choice or it's implicitly handled by app_config_module_param paths
 
-        # This part needs to be adapted based on how model_choice is determined or passed.
-        # For simplicity, let's assume app_config_module_param.CURRENT_MODEL_FILE_PATH exists or similar
-        # Or, we might need to pass model_choice into this function as well.
-        # For now, this is a placeholder, needs correct model path derivation.
-        # It's likely process_single_scene will need model_choice passed to it.
-        # Let's assume for now 'model_file_path_for_scene' is derived correctly. This is a CRITICAL part.
-        # We'll assume it needs to be passed in or determined from app_config.
+            # This part needs to be adapted based on how model_choice is determined or passed.
+            # For simplicity, let's assume app_config_module_param.CURRENT_MODEL_FILE_PATH exists or similar
+            # Or, we might need to pass model_choice into this function as well.
+            # For now, this is a placeholder, needs correct model path derivation.
+            # It's likely process_single_scene will need model_choice passed to it.
+            # Let's assume for now 'model_file_path_for_scene' is derived correctly. This is a CRITICAL part.
+            # We'll assume it needs to be passed in or determined from app_config.
 
-        # Placeholder: model_choice would ideally be passed to process_single_scene
-        # For this refactor, let's assume it's available via metadata_params_base or similar for now
-        # Or that app_config_module_param has a way to get the default/current one if not specified.
-        
-        model_choice_from_meta = metadata_params_base.get("model_choice", app_config_module_param.DEFAULT_MODEL_CHOICE if app_config_module_param else "Light Degradation")
+            # Placeholder: model_choice would ideally be passed to process_single_scene
+            # For this refactor, let's assume it's available via metadata_params_base or similar for now
+            # Or that app_config_module_param has a way to get the default/current one if not specified.
+            
+            model_choice_from_meta = metadata_params_base.get("model_choice", app_config_module_param.DEFAULT_MODEL_CHOICE if app_config_module_param else "Light Degradation")
 
-        model_file_path_for_scene = app_config_module_param.LIGHT_DEG_MODEL_PATH if model_choice_from_meta == app_config_module_param.DEFAULT_MODEL_CHOICE else app_config_module_param.HEAVY_DEG_MODEL_PATH
+            model_file_path_for_scene = app_config_module_param.LIGHT_DEG_MODEL_PATH if model_choice_from_meta == app_config_module_param.DEFAULT_MODEL_CHOICE else app_config_module_param.HEAVY_DEG_MODEL_PATH
 
-        if not os.path.exists(model_file_path_for_scene):
-            if logger: logger.error(f"STAR model not found for scene: {model_file_path_for_scene}")
-            raise FileNotFoundError(f"STAR model not found for scene: {model_file_path_for_scene}")
+            if not os.path.exists(model_file_path_for_scene):
+                if logger: logger.error(f"STAR model not found for scene: {model_file_path_for_scene}")
+                raise FileNotFoundError(f"STAR model not found for scene: {model_file_path_for_scene}")
 
-        model_cfg = EasyDict_class()
-        model_cfg.model_path = model_file_path_for_scene
-        
-        # Use the passed util_get_gpu_device_param
-        model_device = torch.device(util_get_gpu_device_param(logger=logger)) if torch.cuda.is_available() else torch.device('cpu')
-        star_model_instance = VideoToVideo_sr_class(model_cfg, device=model_device)
-        if logger: logger.info(f"Scene {scene_index + 1}: STAR model loaded on {model_device}. Load time: {format_time(time.time() - model_load_start_time)}")
+            model_cfg = EasyDict_class()
+            model_cfg.model_path = model_file_path_for_scene
+            
+            # Use the passed util_get_gpu_device_param
+            model_device = torch.device(util_get_gpu_device_param(logger=logger)) if torch.cuda.is_available() else torch.device('cpu')
+            star_model_instance = VideoToVideo_sr_class(model_cfg, device=model_device)
+            if logger: logger.info(f"Scene {scene_index + 1}: STAR model loaded on {model_device}. Load time: {format_time(time.time() - model_load_start_time)}")
+        else:
+            if logger: logger.info(f"Scene {scene_index + 1}: Skipping STAR model loading (using image upscaler)")
+            # Still need device for potential other operations
+            model_device = torch.device(util_get_gpu_device_param(logger=logger)) if torch.cuda.is_available() else torch.device('cpu')
 
         def save_chunk_input_frames_scene(chunk_idx, chunk_start_frame, chunk_end_frame, frame_files, input_frames_dir, chunk_frames_save_path, logger, chunk_type="", total_chunks=0):
             """Save input frames for a specific chunk for debugging purposes in scene processing"""
@@ -281,7 +292,85 @@ def process_single_scene(
         if progress_callback:
             progress_callback(0.3, f"Scene {scene_index + 1}: Starting upscaling...")
 
-        if enable_tiling:
+        # MAIN BRANCHING LOGIC: Image Upscaler vs STAR for scenes
+        if enable_image_upscaler:
+            # Route to image upscaler processing for this scene
+            if logger:
+                logger.info(f"Scene {scene_index + 1}: Using image upscaler instead of STAR")
+            
+            # Import image upscaler utilities
+            from .image_upscaler_utils import (
+                load_model, get_model_info, process_frames_batch,
+                extract_model_filename_from_dropdown
+            )
+            
+            try:
+                # Extract actual model filename
+                actual_model_filename = extract_model_filename_from_dropdown(image_upscaler_model)
+                if not actual_model_filename:
+                    raise Exception(f"Invalid image upscaler model: {image_upscaler_model}")
+                
+                # Get model path
+                upscale_models_dir = app_config_module_param.UPSCALE_MODELS_DIR
+                model_path = os.path.join(upscale_models_dir, actual_model_filename)
+                
+                if progress_callback:
+                    progress_callback(0.35, f"Scene {scene_index + 1}: Loading image upscaler model...")
+                
+                # Load the image upscaler model
+                device = "cuda" if util_get_gpu_device_param and util_get_gpu_device_param(logger=logger) != "cpu" else "cpu"
+                model = load_model(model_path, device=device, logger=logger)
+                
+                if model is None:
+                    raise Exception(f"Failed to load image upscaler model: {actual_model_filename}")
+                
+                model_info = get_model_info(model_path, logger)
+                model_scale = model_info.get("scale", "Unknown")
+                model_arch = model_info.get("architecture_name", "Unknown")
+                
+                if logger:
+                    logger.info(f"Scene {scene_index + 1}: Loaded image upscaler {actual_model_filename} (Scale: {model_scale}x, Architecture: {model_arch})")
+                
+                if progress_callback:
+                    progress_callback(0.4, f"Scene {scene_index + 1}: Processing frames with image upscaler...")
+                
+                # Process frames with image upscaler
+                def scene_progress_callback(progress_val, desc):
+                    if progress_callback:
+                        # Map progress from 0.4 to 0.8 for frame processing
+                        mapped_progress = 0.4 + (progress_val * 0.4)
+                        progress_callback(mapped_progress, f"Scene {scene_index + 1}: {desc}")
+                
+                processed_count, failed_count = process_frames_batch(
+                    frame_files=scene_frame_files,
+                    input_dir=scene_input_frames_dir,
+                    output_dir=scene_output_frames_dir,
+                    model=model,
+                    batch_size=image_upscaler_batch_size,
+                    device=device,
+                    progress_callback=scene_progress_callback,
+                    logger=logger
+                )
+                
+                if processed_count == 0:
+                    raise Exception(f"No frames processed for scene {scene_index + 1}")
+                
+                if logger:
+                    logger.info(f"Scene {scene_index + 1}: Image upscaler processed {processed_count} frames, {failed_count} failed")
+                
+                # Clean up model to free memory
+                del model
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                
+            except Exception as e:
+                error_msg = f"Scene {scene_index + 1}: Image upscaler error: {str(e)}"
+                if logger:
+                    logger.error(error_msg, exc_info=True)
+                yield "error", error_msg, None, None, None
+                return
+                
+        elif enable_tiling:
             # Tiling mode processing
             for i, frame_filename in enumerate(scene_frame_files):
                 frame_lr_bgr = cv2.imread(os.path.join(scene_input_frames_dir, frame_filename))

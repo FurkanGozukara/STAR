@@ -98,6 +98,11 @@ def process_batch_videos(
     batch_cogvlm_quant_val=None,
     batch_cogvlm_unload_val=None,
     current_seed=99,
+    
+    # Image upscaler parameters for batch processing
+    enable_image_upscaler_val=False,
+    image_upscaler_model_val=None,
+    image_upscaler_batch_size_val=4,
 
     progress=gr.Progress(track_tqdm=True)
 ):
@@ -119,6 +124,9 @@ def process_batch_videos(
         batch_enable_auto_caption_val: Enable auto-captioning for videos without prompt files
         batch_cogvlm_quant_val: CogVLM quantization for batch auto-captioning
         batch_cogvlm_unload_val: CogVLM memory management for batch auto-captioning
+        enable_image_upscaler_val: Enable image-based upscaling instead of STAR
+        image_upscaler_model_val: Selected image upscaler model filename
+        image_upscaler_batch_size_val: Batch size for image upscaler processing
         progress: Gradio progress tracker
         
     Returns:
@@ -177,11 +185,14 @@ def process_batch_videos(
                         logger.info(f"Using prompt from file for {video_name}: '{effective_prompt[:50]}...'")
 
                 # 3. Handle auto-captioning if enabled and no prompt file exists
+                # Note: Auto-captioning is disabled when using image upscaler since it doesn't use prompts
                 enable_auto_caption_for_this_video = False
-                if batch_enable_auto_caption_val and prompt_source != "prompt_file":
+                if batch_enable_auto_caption_val and prompt_source != "prompt_file" and not enable_image_upscaler_val:
                     enable_auto_caption_for_this_video = True
                     prompt_source = "auto_caption"
                     logger.info(f"Will auto-caption {video_name} (no prompt file found)")
+                elif enable_image_upscaler_val and batch_enable_auto_caption_val:
+                    logger.info(f"Auto-captioning disabled for {video_name} (using image upscaler - prompts not used)")
 
                 # 4. Process the video
                 upscale_generator = run_upscale_func(
@@ -260,6 +271,11 @@ def process_batch_videos(
                     enable_auto_caption_per_scene=enable_auto_caption_for_this_video,
                     cogvlm_quant=batch_cogvlm_quant_val if enable_auto_caption_for_this_video else 0,
                     cogvlm_unload=batch_cogvlm_unload_val if enable_auto_caption_for_this_video else 'full',
+                    
+                    # Image upscaler parameters for batch processing
+                    enable_image_upscaler=enable_image_upscaler_val,
+                    image_upscaler_model=image_upscaler_model_val,
+                    image_upscaler_batch_size=image_upscaler_batch_size_val,
 
                     current_seed=current_seed,
                     progress=progress
@@ -317,7 +333,16 @@ def process_batch_videos(
         status_msg += f"  ✅ Successfully processed: {len(processed_files)} videos\n"
         status_msg += f"  ⏩ Skipped (existing): {len(skipped_files)} videos\n"
         status_msg += f"  ❌ Failed: {len(failed_files)} videos\n"
-        status_msg += f"  📁 Output folder: {batch_output_folder_val}\n\n"
+        status_msg += f"  📁 Output folder: {batch_output_folder_val}\n"
+        
+        # Add upscaler mode information
+        if enable_image_upscaler_val:
+            from .image_upscaler_utils import extract_model_filename_from_dropdown
+            actual_model_name = extract_model_filename_from_dropdown(image_upscaler_model_val) if image_upscaler_model_val else "Unknown"
+            status_msg += f"  🖼️ Upscaler: Image-based ({actual_model_name}, batch size: {image_upscaler_batch_size_val})\n"
+        else:
+            status_msg += f"  ⭐ Upscaler: STAR Model\n"
+        status_msg += "\n"
 
         if batch_save_captions_val and any(caption_stats.values()):
             status_msg += f"📝 **Caption Management:**\n"
@@ -326,6 +351,9 @@ def process_batch_videos(
             if caption_stats['failed'] > 0:
                 status_msg += f"  ❌ Caption save failed: {caption_stats['failed']}\n"
             status_msg += "\n"
+        elif enable_image_upscaler_val and batch_enable_auto_caption_val:
+            status_msg += f"📝 **Caption Management:**\n"
+            status_msg += f"  ℹ️ Auto-captioning was disabled (image upscaler doesn't use prompts)\n\n"
 
         # Show prompt source breakdown
         prompt_sources = {}

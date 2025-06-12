@@ -67,6 +67,19 @@ def _prepare_metadata_dict(params_dict: dict, status_info: dict = None) -> dict:
         "rife_overwrite_original_if_enabled": params_dict.get("rife_overwrite_original", "N/A") if params_dict.get("rife_enabled") else "N/A",
         "rife_processing_time_seconds_if_enabled": f"{params_dict.get('rife_processing_time'):.2f}" if params_dict.get("rife_enabled") and params_dict.get('rife_processing_time') is not None else "N/A",
         "rife_output_video_path_if_enabled": os.path.abspath(params_dict.get("rife_output_path", "")) if params_dict.get("rife_enabled") and params_dict.get("rife_output_path") else "N/A",
+        
+        # Image upscaler metadata
+        "image_upscaler_enabled": params_dict.get("image_upscaler_enabled", False),
+        "upscaler_type": params_dict.get("upscaler_type", "STAR"),
+        "image_upscaler_model_if_enabled": params_dict.get("image_upscaler_model", "N/A") if params_dict.get("image_upscaler_enabled") else "N/A",
+        "image_upscaler_model_display_if_enabled": params_dict.get("image_upscaler_model_display", "N/A") if params_dict.get("image_upscaler_enabled") else "N/A",
+        "image_upscaler_architecture_if_enabled": params_dict.get("image_upscaler_architecture", "N/A") if params_dict.get("image_upscaler_enabled") else "N/A",
+        "image_upscaler_scale_factor_if_enabled": params_dict.get("image_upscaler_scale_factor", "N/A") if params_dict.get("image_upscaler_enabled") else "N/A",
+        "image_upscaler_batch_size_if_enabled": params_dict.get("image_upscaler_batch_size", "N/A") if params_dict.get("image_upscaler_enabled") else "N/A",
+        "image_upscaler_device_if_enabled": params_dict.get("image_upscaler_device", "N/A") if params_dict.get("image_upscaler_enabled") else "N/A",
+        "image_upscaler_processing_time_seconds_if_enabled": f"{params_dict.get('image_upscaler_processing_time'):.2f}" if params_dict.get("image_upscaler_enabled") and params_dict.get('image_upscaler_processing_time') is not None else "N/A",
+        "image_upscaler_frames_processed_if_enabled": params_dict.get("image_upscaler_frames_processed", "N/A") if params_dict.get("image_upscaler_enabled") else "N/A",
+        "image_upscaler_frames_failed_if_enabled": params_dict.get("image_upscaler_frames_failed", "N/A") if params_dict.get("image_upscaler_enabled") else "N/A",
     }
 
     # Add frame range information for chunks, scenes, and sliding windows
@@ -194,6 +207,83 @@ def _save_metadata_to_file_internal(metadata_params: dict, filepath: str, logger
             logger.error(error_msg)
         return False, error_msg
 
+
+def save_image_upscaler_metadata(
+    output_video_path: str,
+    input_video_path: str,
+    model_filename: str,
+    model_display_name: str,
+    model_architecture: str,
+    model_scale_factor: str,
+    batch_size: int,
+    device: str,
+    frames_processed: int,
+    frames_failed: int,
+    processing_time: float,
+    seed: int = 99,
+    logger: logging.Logger = None
+) -> tuple[bool, str]:
+    """
+    Save metadata specifically for image upscaler processing.
+    
+    Args:
+        output_video_path: Path to the output video
+        input_video_path: Path to the input video
+        model_filename: Actual model filename
+        model_display_name: Display name from dropdown
+        model_architecture: Model architecture (e.g., DAT-2, ESRGAN)
+        model_scale_factor: Upscaling factor (e.g., "4x")
+        batch_size: Batch size used for processing
+        device: Device used (cuda/cpu)
+        frames_processed: Number of frames successfully processed
+        frames_failed: Number of frames that failed
+        processing_time: Total processing time in seconds
+        seed: Random seed used
+        logger: Logger instance
+        
+    Returns:
+        Tuple of (success: bool, message: str)
+    """
+    try:
+        # Create metadata dictionary
+        metadata_dict = {
+            "upscaler_type": "image_upscaler",
+            "image_upscaler_enabled": True,
+            "image_upscaler_model": model_filename,
+            "image_upscaler_model_display": model_display_name,
+            "image_upscaler_architecture": model_architecture,
+            "image_upscaler_scale_factor": model_scale_factor,
+            "image_upscaler_batch_size": batch_size,
+            "image_upscaler_device": device,
+            "image_upscaler_frames_processed": frames_processed,
+            "image_upscaler_frames_failed": frames_failed,
+            "image_upscaler_processing_time": processing_time,
+            "input_video_path": os.path.abspath(input_video_path),
+            "final_output_path": os.path.abspath(output_video_path),
+            "current_seed": seed,
+            "processing_time_seconds": f"{processing_time:.2f}",
+            "processing_time_formatted": format_time(processing_time),
+            "processing_status": "Completed"
+        }
+        
+        # Generate metadata file path
+        output_dir = os.path.dirname(output_video_path)
+        base_filename = os.path.splitext(os.path.basename(output_video_path))[0]
+        metadata_filepath = os.path.join(output_dir, f"{base_filename}_image_upscaler_metadata.txt")
+        
+        # Save metadata
+        success, message = _save_metadata_to_file_internal(metadata_dict, metadata_filepath, logger)
+        
+        if success:
+            return True, f"Image upscaler metadata saved to: {metadata_filepath}"
+        else:
+            return False, f"Failed to save image upscaler metadata: {message}"
+            
+    except Exception as e:
+        error_msg = f"Error creating image upscaler metadata: {e}"
+        if logger:
+            logger.error(error_msg)
+        return False, error_msg
 
 def save_rife_metadata(
     output_video_path: str,

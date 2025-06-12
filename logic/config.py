@@ -21,6 +21,8 @@ COG_VLM_MODEL_PATH = None
 LIGHT_DEG_MODEL_PATH = None
 HEAVY_DEG_MODEL_PATH = None
 RIFE_MODEL_PATH = None
+# Image upscaler models directory
+UPSCALE_MODELS_DIR = None
 
 # --- Prompt constants (to be initialized by secourses_app.py from star_cfg) ---
 DEFAULT_POS_PROMPT = "Default Positive Prompt Placeholder"
@@ -133,10 +135,19 @@ DEFAULT_BATCH_SKIP_EXISTING = True
 DEFAULT_BATCH_SAVE_CAPTIONS = True
 DEFAULT_BATCH_USE_PROMPT_FILES = True
 
+# Image Upscaler Settings
+DEFAULT_ENABLE_IMAGE_UPSCALER = False
+DEFAULT_IMAGE_UPSCALER_MODEL = None  # Will be set to first available model
+DEFAULT_IMAGE_UPSCALER_BATCH_SIZE = 4
+DEFAULT_IMAGE_UPSCALER_MIN_BATCH_SIZE = 1
+DEFAULT_IMAGE_UPSCALER_MAX_BATCH_SIZE = 1000
+DEFAULT_IMAGE_UPSCALER_DEVICE = "cuda"  # "cuda" or "cpu"
+DEFAULT_IMAGE_UPSCALER_CACHE_MODELS = True
+
 # --- Initialization functions ---
 def initialize_paths_and_prompts(base_path_from_app, outputs_folder_from_args, star_cfg_from_app):
     global APP_BASE_PATH, DEFAULT_OUTPUT_DIR, COG_VLM_MODEL_PATH, LIGHT_DEG_MODEL_PATH, HEAVY_DEG_MODEL_PATH, RIFE_MODEL_PATH
-    global DEFAULT_POS_PROMPT, DEFAULT_NEG_PROMPT
+    global DEFAULT_POS_PROMPT, DEFAULT_NEG_PROMPT, UPSCALE_MODELS_DIR
 
     APP_BASE_PATH = base_path_from_app
     DEFAULT_OUTPUT_DIR = os.path.abspath(outputs_folder_from_args)
@@ -144,6 +155,8 @@ def initialize_paths_and_prompts(base_path_from_app, outputs_folder_from_args, s
     LIGHT_DEG_MODEL_PATH = os.path.join(APP_BASE_PATH, 'pretrained_weight', 'light_deg.pt')
     HEAVY_DEG_MODEL_PATH = os.path.join(APP_BASE_PATH, 'pretrained_weight', 'heavy_deg.pt')
     RIFE_MODEL_PATH = os.path.join(APP_BASE_PATH, '..', 'Practical-RIFE', 'train_log')
+    # Initialize image upscaler models directory
+    UPSCALE_MODELS_DIR = os.path.join(APP_BASE_PATH, 'upscale_models')
 
     if star_cfg_from_app:
         DEFAULT_POS_PROMPT = star_cfg_from_app.positive_prompt
@@ -163,13 +176,44 @@ def get_cogvlm_quant_choices_map(torch_cuda_available, util_bitsandbytes_availab
 def get_default_cogvlm_quant_display(cogvlm_quant_choices_map):
     return DEFAULT_COGVLM_QUANT_DISPLAY_INT4 if 4 in cogvlm_quant_choices_map else DEFAULT_COGVLM_QUANT_DISPLAY_FP16
 
+def get_image_upscaler_settings():
+    """
+    Get the current image upscaler configuration settings.
+    
+    Returns:
+        Dict containing image upscaler configuration
+    """
+    return {
+        'enabled': DEFAULT_ENABLE_IMAGE_UPSCALER,
+        'model': DEFAULT_IMAGE_UPSCALER_MODEL,
+        'batch_size': DEFAULT_IMAGE_UPSCALER_BATCH_SIZE,
+        'min_batch_size': DEFAULT_IMAGE_UPSCALER_MIN_BATCH_SIZE,
+        'max_batch_size': DEFAULT_IMAGE_UPSCALER_MAX_BATCH_SIZE,
+        'device': DEFAULT_IMAGE_UPSCALER_DEVICE,
+        'cache_models': DEFAULT_IMAGE_UPSCALER_CACHE_MODELS,
+        'models_dir': UPSCALE_MODELS_DIR
+    }
+
+def validate_image_upscaler_batch_size(batch_size):
+    """
+    Validate and clamp image upscaler batch size to allowed range.
+    
+    Args:
+        batch_size: Requested batch size
+        
+    Returns:
+        Validated batch size within allowed range
+    """
+    return max(DEFAULT_IMAGE_UPSCALER_MIN_BATCH_SIZE, 
+               min(DEFAULT_IMAGE_UPSCALER_MAX_BATCH_SIZE, batch_size))
+
 # Expose UTIL_COG_VLM_AVAILABLE and UTIL_BITSANDBYTES_AVAILABLE from cogvlm_utils if they were imported successfully
 # This makes them centrally accessible via this config module.
 # The main app should ensure cogvlm_utils is in sys.path before importing config if direct import within config fails.
 
 __all__ = [
     # Initialized values
-    'APP_BASE_PATH', 'DEFAULT_OUTPUT_DIR', 'COG_VLM_MODEL_PATH', 'LIGHT_DEG_MODEL_PATH', 'HEAVY_DEG_MODEL_PATH', 'RIFE_MODEL_PATH',
+    'APP_BASE_PATH', 'DEFAULT_OUTPUT_DIR', 'COG_VLM_MODEL_PATH', 'LIGHT_DEG_MODEL_PATH', 'HEAVY_DEG_MODEL_PATH', 'RIFE_MODEL_PATH', 'UPSCALE_MODELS_DIR',
     'DEFAULT_POS_PROMPT', 'DEFAULT_NEG_PROMPT',
     # Direct imports/values
     'UTIL_COG_VLM_AVAILABLE', 'UTIL_BITSANDBYTES_AVAILABLE',
@@ -201,6 +245,10 @@ __all__ = [
     'DEFAULT_ENABLE_FPS_DECREASE', 'DEFAULT_FPS_DECREASE_MODE', 'DEFAULT_FPS_MULTIPLIER', 'DEFAULT_TARGET_FPS', 'DEFAULT_FPS_INTERPOLATION_METHOD',
     # Batch processing defaults
     'DEFAULT_BATCH_SKIP_EXISTING', 'DEFAULT_BATCH_SAVE_CAPTIONS', 'DEFAULT_BATCH_USE_PROMPT_FILES',
+    # Image upscaler defaults
+    'DEFAULT_ENABLE_IMAGE_UPSCALER', 'DEFAULT_IMAGE_UPSCALER_MODEL', 'DEFAULT_IMAGE_UPSCALER_BATCH_SIZE',
+    'DEFAULT_IMAGE_UPSCALER_MIN_BATCH_SIZE', 'DEFAULT_IMAGE_UPSCALER_MAX_BATCH_SIZE', 'DEFAULT_IMAGE_UPSCALER_DEVICE', 'DEFAULT_IMAGE_UPSCALER_CACHE_MODELS',
     # Functions
-    'initialize_paths_and_prompts', 'get_cogvlm_quant_choices_map', 'get_default_cogvlm_quant_display'
+    'initialize_paths_and_prompts', 'get_cogvlm_quant_choices_map', 'get_default_cogvlm_quant_display',
+    'get_image_upscaler_settings', 'validate_image_upscaler_batch_size'
 ] 
