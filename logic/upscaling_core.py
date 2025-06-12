@@ -674,7 +674,26 @@ def run_upscale (
                     output_video_path, status_message, chunk_video_path, chunk_status, comparison_video_path = result
                     
                     if output_video_path is not None:
-                        silent_upscaled_video_path = output_video_path
+                        # For scene splitting with image upscaler, we need to ensure proper naming
+                        # to avoid conflicts during audio merging
+                        if enable_scene_split:
+                            # Use STAR naming pattern for intermediate file
+                            silent_upscaled_video_path = os.path.join(temp_dir, "silent_upscaled_video.mp4")
+                            # Copy/move the image upscaler output to the expected path
+                            if output_video_path != silent_upscaled_video_path:
+                                shutil.copy2(output_video_path, silent_upscaled_video_path)
+                                logger.info(f"Image upscaler: Copied output to intermediate path for audio merge: {silent_upscaled_video_path}")
+                            
+                            # Important: The image upscaler returned a temp path, but we need to use the permanent path
+                            # The permanent target path was already established at the beginning of this function
+                            # We need to save the temp output path and restore the target permanent path
+                            image_upscaler_temp_output = output_video_path  # Save the temp path returned by image upscaler
+                            output_video_path = params_for_metadata["final_output_path"]  # Restore the permanent target path
+                            logger.info(f"Image upscaler: Restoring permanent output path: {output_video_path} (was temp: {image_upscaler_temp_output})")
+                        else:
+                            # Direct upscaling without scene splitting
+                            silent_upscaled_video_path = output_video_path
+                        
                         params_for_metadata["input_fps"] = input_fps_val
                         # Final result - break out of loop
                         break

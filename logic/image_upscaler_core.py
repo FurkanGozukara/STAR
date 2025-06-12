@@ -202,7 +202,8 @@ def process_video_with_image_upscaler(
                 
                 # Process single scene
                 try:
-                    scene_output_path = yield from process_single_scene_image_upscaler(
+                    scene_output_path = None
+                    for result_tuple in process_single_scene_image_upscaler(
                         scene_video_path=scene_video_path,
                         scene_index=scene_idx,
                         total_scenes=total_scenes,
@@ -221,8 +222,17 @@ def process_video_with_image_upscaler(
                         util_create_video_from_frames=util_create_video_from_frames,
                         format_time=format_time,
                         status_log=status_log
-                    )
+                    ):
+                        # Forward intermediate yields and extract final output path
+                        output_video_path_inner, status_message_inner, chunk_video_path_inner, chunk_status_inner, comparison_video_path_inner = result_tuple
+                        
+                        if output_video_path_inner is not None:
+                            scene_output_path = output_video_path_inner
+                            
+                        # Forward the yield to caller
+                        yield result_tuple
                     
+                    # Handle scene completion
                     if scene_output_path:
                         processed_scenes.append(scene_output_path)
                         last_chunk_video_path = scene_output_path
@@ -263,7 +273,8 @@ def process_video_with_image_upscaler(
         
         else:
             # Process entire video directly
-            output_video_path = yield from process_single_video_image_upscaler(
+            output_video_path = None
+            for result_tuple in process_single_video_image_upscaler(
                 input_video_path=input_video_path,
                 model=model,
                 batch_size=batch_size,
@@ -282,7 +293,15 @@ def process_video_with_image_upscaler(
                 format_time=format_time,
                 status_log=status_log,
                 progress=progress
-            )
+            ):
+                # Forward intermediate yields and extract final output path
+                output_video_path_inner, status_message_inner, chunk_video_path_inner, chunk_status_inner, comparison_video_path_inner = result_tuple
+                
+                if output_video_path_inner is not None:
+                    output_video_path = output_video_path_inner
+                    
+                # Forward the yield to caller
+                yield result_tuple
         
         # Save metadata if enabled
         if save_metadata and metadata_handler_module and output_video_path:
@@ -396,7 +415,7 @@ def process_single_video_image_upscaler(
     format_time,
     status_log: List[str],
     progress = None
-) -> Generator[str, None, None]:
+) -> Generator[Tuple[Optional[str], str, Optional[str], str, Optional[str]], None, None]:
     """Process a single video with image upscaler."""
     
     # Create temporary directories
@@ -410,7 +429,7 @@ def process_single_video_image_upscaler(
         extract_start = time.time()
         extract_msg = "Extracting frames from video..."
         status_log.append(extract_msg)
-        yield None
+        yield None, "\n".join(status_log), None, "Extracting frames...", None
         
         frame_count, actual_fps, frame_files = util_extract_frames(
             input_video_path, input_frames_dir, logger=logger
@@ -425,7 +444,7 @@ def process_single_video_image_upscaler(
         if logger:
             logger.info(extract_complete_msg)
         
-        yield None
+        yield None, "\n".join(status_log), None, f"Extracted {frame_count} frames", None
         
         # Process frames with image upscaler
         process_start = time.time()
@@ -436,7 +455,7 @@ def process_single_video_image_upscaler(
             if progress:
                 progress(progress_val, desc=desc)
         
-        yield None
+        yield None, "\n".join(status_log), None, "Processing frames...", None
         
         # Process frames in batches
         processed_count, failed_count = process_frames_batch(
@@ -459,7 +478,7 @@ def process_single_video_image_upscaler(
         if processed_count == 0:
             raise Exception("No frames were processed successfully")
         
-        yield None
+        yield None, "\n".join(status_log), None, f"Processed {processed_count} frames", None
         
         # Create output video
         video_start = time.time()
@@ -469,7 +488,7 @@ def process_single_video_image_upscaler(
         # Generate output path
         output_video_path = os.path.join(output_dir, f"{base_output_filename_no_ext}.mp4")
         
-        yield None
+        yield None, "\n".join(status_log), None, "Creating video...", None
         
         # Create video from frames
         util_create_video_from_frames(
@@ -509,12 +528,14 @@ def process_single_video_image_upscaler(
             frame_save_complete_msg = f"Frames saved to: {frames_subdir}"
             status_log.append(frame_save_complete_msg)
         
-        yield output_video_path
+        # Final yield with the output video path
+        yield output_video_path, "\n".join(status_log), output_video_path, "Video processing complete", None
         
     except Exception as e:
         error_msg = f"Error in single video processing: {str(e)}"
         if logger:
             logger.error(error_msg, exc_info=True)
+        yield None, "\n".join(status_log), None, f"Error: {error_msg}", None
         raise
 
 def process_single_scene_image_upscaler(
@@ -536,7 +557,7 @@ def process_single_scene_image_upscaler(
     util_create_video_from_frames,
     format_time,
     status_log: List[str]
-) -> Generator[str, None, None]:
+) -> Generator[Tuple[Optional[str], str, Optional[str], str, Optional[str]], None, None]:
     """Process a single scene with image upscaler."""
     
     scene_name = f"scene_{scene_index + 1:04d}"
@@ -562,6 +583,8 @@ def process_single_scene_image_upscaler(
         if logger:
             logger.info(scene_extract_msg)
         
+        yield None, "\n".join(status_log), None, f"Extracting frames from {scene_name}...", None
+        
         # Process frames
         processed_count, failed_count = process_frames_batch(
             frame_files=frame_files,
@@ -576,6 +599,8 @@ def process_single_scene_image_upscaler(
         
         if processed_count == 0:
             raise Exception(f"No frames processed for scene {scene_index + 1}")
+        
+        yield None, "\n".join(status_log), None, f"Processing {scene_name} frames...", None
         
         # Create scene output video
         scene_output_path = os.path.join(temp_dir, f"{scene_name}_upscaled.mp4")
@@ -600,12 +625,14 @@ def process_single_scene_image_upscaler(
             if os.path.exists(scene_output_frames_dir):
                 shutil.copytree(scene_output_frames_dir, os.path.join(scene_frames_dir, "processed_frames"), dirs_exist_ok=True)
         
-        yield scene_output_path
+        # Final yield with the scene output path
+        yield scene_output_path, "\n".join(status_log), scene_output_path, f"Scene {scene_index + 1} complete", None
         
     except Exception as e:
         error_msg = f"Error processing scene {scene_index + 1}: {str(e)}"
         if logger:
             logger.error(error_msg, exc_info=True)
+        yield None, "\n".join(status_log), None, error_msg, None
         raise
 
 def get_available_image_upscaler_models(upscale_models_dir: str, logger: logging.Logger = None) -> List[Dict[str, Any]]:
