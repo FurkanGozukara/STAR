@@ -622,62 +622,74 @@ def run_upscale (
                     selected_model_filename=image_upscaler_model,
                     batch_size=image_upscaler_batch_size,
                     upscale_models_dir=app_config_module.UPSCALE_MODELS_DIR,
-                    output_frames_dir=output_frames_dir,
-                    input_frames_dir=input_frames_dir,
+                    
+                    # Video processing parameters
+                    enable_target_res=enable_target_res,
+                    target_h=target_h,
+                    target_w=target_w,
+                    target_res_mode=target_res_mode,
+                    
+                    # Frame saving and output parameters
                     save_frames=save_frames,
-                    input_frames_permanent_save_path=input_frames_permanent_save_path,
-                    processed_frames_permanent_save_path=processed_frames_permanent_save_path,
+                    save_metadata=save_metadata,
                     save_chunks=save_chunks,
-                    chunks_permanent_save_path=chunks_permanent_save_path,
                     save_chunk_frames=save_chunk_frames,
-                    chunk_frames_permanent_save_path=chunk_frames_permanent_save_path,
+                    
+                    # Scene processing parameters
                     enable_scene_split=enable_scene_split,
-                    scene_split_mode=scene_split_mode,
-                    scene_min_scene_len=scene_min_scene_len,
-                    scene_drop_short=scene_drop_short,
-                    scene_merge_last=scene_merge_last,
-                    scene_frame_skip=scene_frame_skip,
-                    scene_threshold=scene_threshold,
-                    scene_min_content_val=scene_min_content_val,
-                    scene_frame_window=scene_frame_window,
-                    scene_copy_streams=scene_copy_streams,
-                    scene_use_mkvmerge=scene_use_mkvmerge,
-                    scene_rate_factor=scene_rate_factor,
-                    scene_preset=scene_preset,
-                    scene_quiet_ffmpeg=scene_quiet_ffmpeg,
-                    scene_manual_split_type=scene_manual_split_type,
-                    scene_manual_split_value=scene_manual_split_value,
+                    scene_video_paths=scene_video_paths,
+                    
+                    # Directory and file management
+                    temp_dir=temp_dir,
+                    output_dir=app_config_module.DEFAULT_OUTPUT_DIR,
+                    base_output_filename_no_ext=base_output_filename_no_ext,
+                    
+                    # FPS parameters
+                    input_fps=input_fps_val,
+                    
+                    # FFmpeg parameters
                     ffmpeg_preset=ffmpeg_preset,
                     ffmpeg_quality_value=ffmpeg_quality_value,
                     ffmpeg_use_gpu=ffmpeg_use_gpu,
-                    upscaling_loop_progress_start=upscaling_loop_progress_start,
-                    stage_weights=stage_weights,
+                    
+                    # Dependencies
                     logger=logger,
-                    progress=progress
+                    progress=progress,
+                    
+                    # Utility functions (injected dependencies)
+                    util_extract_frames=util_extract_frames,
+                    util_create_video_from_frames=util_create_video_from_frames,
+                    util_get_gpu_device=util_get_gpu_device,
+                    format_time=format_time,
+                    
+                    # Metadata parameters
+                    params_for_metadata=params_for_metadata,
+                    metadata_handler_module=metadata_handler_module,
+                    
+                    # Status tracking
+                    status_log=status_log,
+                    current_seed=current_seed
                 ):
-                    if result is not None:
-                        result_type, *data = result
-                        if result_type == "chunk_update":
-                            chunk_vid_path, chunk_stat_str = data
-                            last_chunk_video_path = chunk_vid_path
-                            last_chunk_status = chunk_stat_str
-                            temp_status_log = status_log + [f"Processed: {chunk_stat_str}"]
-                            yield None, "\n".join(temp_status_log), last_chunk_video_path, last_chunk_status, None
-                        elif result_type == "progress_update":
-                            progress_val, desc_msg = data
-                            status_log.append(desc_msg)
-                            yield None, "\n".join(status_log), last_chunk_video_path, desc_msg, None
-                        elif result_type == "complete":
-                            silent_upscaled_video_path = data[0]
-                            input_fps_val = data[1] if len(data) > 1 else 30.0
-                            params_for_metadata["input_fps"] = input_fps_val
-                            break
-                        elif result_type == "error":
-                            error_msg = data[0]
-                            logger.error(f"Image upscaler error: {error_msg}")
-                            status_log.append(f"Image upscaler error: {error_msg}")
-                            yield None, "\n".join(status_log), last_chunk_video_path, f"Error: {error_msg}", None
-                            raise gr.Error(f"Image upscaling failed: {error_msg}")
+                    # The image upscaler yields: (output_video_path, status_message, chunk_video_path, chunk_status, comparison_video_path)
+                    output_video_path, status_message, chunk_video_path, chunk_status, comparison_video_path = result
+                    
+                    if output_video_path is not None:
+                        silent_upscaled_video_path = output_video_path
+                        params_for_metadata["input_fps"] = input_fps_val
+                        # Final result - break out of loop
+                        break
+                    
+                    if status_message:
+                        status_log.append(status_message)
+                    
+                    if chunk_video_path is not None:
+                        last_chunk_video_path = chunk_video_path
+                    
+                    if chunk_status:
+                        last_chunk_status = chunk_status
+                    
+                    # Yield progress update
+                    yield None, "\n".join(status_log), last_chunk_video_path, last_chunk_status, comparison_video_path
                 
                 # Update progress after image upscaling
                 current_overall_progress = upscaling_loop_progress_start + stage_weights["upscaling_loop"]

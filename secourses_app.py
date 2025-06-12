@@ -970,6 +970,7 @@ This helps visualize the quality improvement from upscaling."""
 
         should_auto_caption_entire_video =(do_auto_caption_first_val and 
         not enable_scene_split_check_val and 
+        not enable_image_upscaler_val and 
         app_config .UTIL_COG_VLM_AVAILABLE )
 
         if should_auto_caption_entire_video :
@@ -1038,8 +1039,20 @@ This helps visualize the quality improvement from upscaling."""
                     gr .update (value =current_comparison_video_val ))
             log_accumulator_director =[]
 
-        elif do_auto_caption_first_val and enable_scene_split_check_val and app_config .UTIL_COG_VLM_AVAILABLE :
+        elif do_auto_caption_first_val and enable_scene_split_check_val and not enable_image_upscaler_val and app_config .UTIL_COG_VLM_AVAILABLE :
             msg ="Scene splitting enabled: Auto-captioning will be done per scene during upscaling."
+            logger .info (msg )
+            log_accumulator_director .append (msg )
+            current_status_text_val ="\n".join (log_accumulator_director )
+
+            yield (gr .update (value =current_output_video_val ),gr .update (value =current_status_text_val ),
+            gr .update (value =current_user_prompt_val ),
+            gr .update (value =current_caption_status_text_val ,visible =current_caption_status_visible_val ),
+            gr .update (value =current_last_chunk_video_val ),gr .update (value =current_chunk_status_text_val ),
+            gr .update (value =current_comparison_video_val ))
+
+        elif do_auto_caption_first_val and enable_image_upscaler_val :
+            msg ="Image-based upscaling is enabled. Auto-captioning is disabled as image upscalers don't use prompts."
             logger .info (msg )
             log_accumulator_director .append (msg )
             current_status_text_val ="\n".join (log_accumulator_director )
@@ -1100,7 +1113,7 @@ This helps visualize the quality improvement from upscaling."""
 
         is_batch_mode =False ,batch_output_dir =None ,original_filename =None ,
 
-        enable_auto_caption_per_scene =(do_auto_caption_first_val and enable_scene_split_check_val and app_config .UTIL_COG_VLM_AVAILABLE ),
+        enable_auto_caption_per_scene =(do_auto_caption_first_val and enable_scene_split_check_val and not enable_image_upscaler_val and app_config .UTIL_COG_VLM_AVAILABLE ),
         cogvlm_quant =actual_cogvlm_quant_for_captioning ,
         cogvlm_unload =cogvlm_unload_radio_val if cogvlm_unload_radio_val else 'full',
 
@@ -1117,7 +1130,12 @@ This helps visualize the quality improvement from upscaling."""
         adain_color_fix_func =adain_color_fix ,
         wavelet_color_fix_func =wavelet_color_fix ,
         progress =progress ,
-        current_seed =actual_seed_to_use 
+        current_seed =actual_seed_to_use ,
+        
+        # Image upscaler parameters
+        enable_image_upscaler =enable_image_upscaler_val ,
+        image_upscaler_model =image_upscaler_model_val ,
+        image_upscaler_batch_size =image_upscaler_batch_size_val 
         )
 
         for yielded_output_video ,yielded_status_log ,yielded_chunk_video ,yielded_chunk_status ,yielded_comparison_video in upscale_generator :

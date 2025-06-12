@@ -133,6 +133,11 @@ def process_video_with_image_upscaler(
             yield None, "\n".join(status_log), None, error_msg, None
             return
         
+        # Determine device first
+        device = "cuda" if util_get_gpu_device and util_get_gpu_device(logger=logger) != "cpu" else "cpu"
+        if logger:
+            logger.info(f"Using device: {device}")
+        
         # Update metadata with image upscaler info
         params_for_metadata.update({
             "upscaler_type": "image_upscaler",
@@ -155,11 +160,6 @@ def process_video_with_image_upscaler(
             logger.info(init_msg)
         
         yield None, "\n".join(status_log), None, "Loading image upscaler model...", None
-        
-        # Determine device
-        device = "cuda" if util_get_gpu_device and util_get_gpu_device(logger=logger) != "cpu" else "cpu"
-        if logger:
-            logger.info(f"Using device: {device}")
         
         # Load the model
         model_load_start = time.time()
