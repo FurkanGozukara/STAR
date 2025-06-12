@@ -194,7 +194,7 @@ progress =gr .Progress (track_tqdm =True )
     )
 
 with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
-    gr .Markdown ("# Ultimate SECourses STAR Video Upscaler V48")
+    gr .Markdown ("# Ultimate SECourses STAR Video Upscaler V100 Pre Release")
 
     with gr .Tabs ():
         with gr .Tab ("Main"):
