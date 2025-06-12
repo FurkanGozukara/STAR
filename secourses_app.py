@@ -208,7 +208,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         )
                         with gr .Row ():
                             user_prompt =gr .Textbox (
-                            label ="Describe the Video Content (Prompt)",
+                            label ="Describe the Video Content (Prompt) (Useful only for STAR Model)",
                             lines =3 ,
                             placeholder ="e.g., A panda playing guitar by a lake at sunset.",
                             info ="""Describe the main subject and action in the video. This guides the upscaling process.
@@ -216,7 +216,7 @@ Combined with the Positive Prompt below, the effective text length influencing t
 If CogVLM2 is available, you can use the button below to generate a caption automatically."""
                             )
                         with gr .Row ():
-                            auto_caption_then_upscale_check =gr .Checkbox (label ="Auto-caption then Upscale",value =app_config .DEFAULT_AUTO_CAPTION_THEN_UPSCALE ,info ="If checked, clicking 'Upscale Video' will first generate a caption and use it as the prompt.")
+                            auto_caption_then_upscale_check =gr .Checkbox (label ="Auto-caption then Upscale (Useful only for STAR Model)",value =app_config .DEFAULT_AUTO_CAPTION_THEN_UPSCALE ,info ="If checked, clicking 'Upscale Video' will first generate a caption and use it as the prompt.")
 
                             available_gpus =util_get_available_gpus ()
                             gpu_choices =["Auto"]+available_gpus if available_gpus else ["Auto","No CUDA GPUs detected"]
@@ -244,7 +244,7 @@ If CogVLM2 is available, you can use the button below to generate a caption auto
 
                             caption_status =gr .Textbox (label ="Captioning Status",interactive =False ,visible =False )
 
-                    with gr .Accordion ("Prompt Settings",open =True ):
+                    with gr .Accordion ("Prompt Settings (Useful only for STAR Model)",open =True ):
                         pos_prompt =gr .Textbox (
                         label ="Default Positive Prompt (Appended)",
                         value =app_config .DEFAULT_POS_PROMPT ,
@@ -360,7 +360,7 @@ The total combined prompt length is limited to 77 tokens."""
             with gr .Row ():
                 with gr .Column (scale =1 ):
                     with gr .Group ():
-                        gr .Markdown ("### Core Upscaling Settings")
+                        gr .Markdown ("### Core Upscaling Settings for STAR Model")
                         model_selector =gr .Dropdown (
                         label ="STAR Model",
                         choices =["Light Degradation","Heavy Degradation"],
@@ -401,17 +401,49 @@ The total combined prompt length is limited to 77 tokens."""
 'None': Disables color correction."""
                         )
                     
+                    with gr .Accordion ("Performance & VRAM Optimization (Only for STAR Model)",open =True ):
+                        max_chunk_len_slider =gr .Slider (
+                        label ="Max Frames per Chunk (VRAM)",
+                        minimum =4 ,maximum =96 ,value =app_config .DEFAULT_MAX_CHUNK_LEN ,step =4 ,
+                        info ="""IMPORTANT for VRAM. This is the standard way the application manages VRAM. It divides the entire sequence of video frames into sequential, non-overlapping chunks.
+- Mechanism: The STAR model processes one complete chunk (of this many frames) at a time.
+- VRAM Impact: High Reduction (Lower value = Less VRAM).
+- Bigger Chunk + Bigger VRAM = Faster Processing and Better Quality 
+- Quality Impact: Can reduce Temporal Consistency (flicker/motion issues) between chunks if too low, as the model doesn't have context across chunk boundaries. Keep as high as VRAM allows.
+- Speed Impact: Slower (Lower value = Slower, as more chunks are processed)."""
+                        )
+                        enable_chunk_optimization_check =gr .Checkbox (
+                        label ="Optimize Last Chunk Quality",
+                        value =app_config .DEFAULT_ENABLE_CHUNK_OPTIMIZATION ,
+                        info ="""Process extra frames for small last chunks to improve quality. When the last chunk has fewer frames than target size (causing quality drops), this processes additional frames but only keeps the necessary output.
+- Example: For 70 frames with 32-frame chunks, instead of processing only 6 frames for the last chunk (poor quality), it processes 23 frames (48-70) but keeps only the last 6 (65-70).
+- Quality Impact: Significantly improves quality for small last chunks.
+- Speed Impact: Minimal impact on total processing time.
+- VRAM Impact: No additional VRAM usage."""
+                        )
+                        vae_chunk_slider =gr .Slider (
+                        label ="VAE Decode Chunk (VRAM)",
+                        minimum =1 ,maximum =16 ,value =app_config .DEFAULT_VAE_CHUNK ,step =1 ,
+                        info ="""Controls max latent frames decoded back to pixels by VAE simultaneously.
+- VRAM Impact: High Reduction (Lower value = Less VRAM during decode stage).
+- Quality Impact: Minimal / Negligible. Safe to lower.
+- Speed Impact: Slower (Lower value = Slower decoding)."""
+                        )
+
+                with gr .Column (scale =1 ):
                     # Image Upscaler Panel
                     with gr .Group ():
                         gr .Markdown ("### Image-Based Upscaler (Alternative to STAR)")
                         enable_image_upscaler_check =gr .Checkbox (
-                        label ="Enable Image-Based Upscaling",
+                        label ="Enable Image-Based Upscaling (Disables STAR Model)",
                         value =app_config .DEFAULT_ENABLE_IMAGE_UPSCALER ,
                         info ="""Use deterministic image upscaler models instead of STAR. When enabled:
 - Processes frames individually using spandrel-compatible models
 - Ignores prompts, auto-caption, context window, and tiling settings
 - Supports various architectures: DAT-2, ESRGAN, HAT, RCAN, OmniSR, CUGAN
-- Much faster processing with batch support"""
+- Much faster processing with batch support
+- Uses way lesser VRAM
+- Lower quality compared to high Max Frames per Chunk STAR model upscale"""
                         )
                         
                         # Scan for available models
@@ -446,9 +478,9 @@ The total combined prompt length is limited to 77 tokens."""
                         info ="Number of frames to process simultaneously. Higher values = faster processing but more VRAM usage. Adjust based on your GPU memory.",
                         interactive =False  # Will be enabled when checkbox is checked
                         )
-                with gr .Column (scale =1 ):
+
                     if app_config .UTIL_COG_VLM_AVAILABLE :
-                        with gr .Accordion ("Auto-Captioning Settings (CogVLM2)",open =True ):
+                        with gr .Accordion ("Auto-Captioning Settings (CogVLM2) (Only for STAR Model)",open =True ):
                             cogvlm_quant_choices_map =app_config .get_cogvlm_quant_choices_map (torch .cuda .is_available (),app_config .UTIL_BITSANDBYTES_AVAILABLE )
                             cogvlm_quant_radio_choices_display =list (cogvlm_quant_choices_map .values ())
                             default_quant_display_val =app_config .get_default_cogvlm_quant_display (cogvlm_quant_choices_map )
@@ -471,38 +503,7 @@ The total combined prompt length is limited to 77 tokens."""
                     else :
                         gr .Markdown ("_(Auto-captioning disabled as CogVLM2 components are not fully available.)_")
 
-                    with gr .Accordion ("Performance & VRAM Optimization",open =True ):
-                        max_chunk_len_slider =gr .Slider (
-                        label ="Max Frames per Chunk (VRAM)",
-                        minimum =4 ,maximum =96 ,value =app_config .DEFAULT_MAX_CHUNK_LEN ,step =4 ,
-                        info ="""IMPORTANT for VRAM. This is the standard way the application manages VRAM. It divides the entire sequence of video frames into sequential, non-overlapping chunks.
-- Mechanism: The STAR model processes one complete chunk (of this many frames) at a time.
-- VRAM Impact: High Reduction (Lower value = Less VRAM).
-- Bigger Chunk + Bigger VRAM = Faster Processing and Better Quality 
-- Quality Impact: Can reduce Temporal Consistency (flicker/motion issues) between chunks if too low, as the model doesn't have context across chunk boundaries. Keep as high as VRAM allows.
-- Speed Impact: Slower (Lower value = Slower, as more chunks are processed)."""
-                        )
-                        enable_chunk_optimization_check =gr .Checkbox (
-                        label ="Optimize Last Chunk Quality",
-                        value =app_config .DEFAULT_ENABLE_CHUNK_OPTIMIZATION ,
-                        info ="""Process extra frames for small last chunks to improve quality. When the last chunk has fewer frames than target size (causing quality drops), this processes additional frames but only keeps the necessary output.
-- Example: For 70 frames with 32-frame chunks, instead of processing only 6 frames for the last chunk (poor quality), it processes 23 frames (48-70) but keeps only the last 6 (65-70).
-- Quality Impact: Significantly improves quality for small last chunks.
-- Speed Impact: Minimal impact on total processing time.
-- VRAM Impact: No additional VRAM usage."""
-                        )
-                        vae_chunk_slider =gr .Slider (
-                        label ="VAE Decode Chunk (VRAM)",
-                        minimum =1 ,maximum =16 ,value =app_config .DEFAULT_VAE_CHUNK ,step =1 ,
-                        info ="""Controls max latent frames decoded back to pixels by VAE simultaneously.
-- VRAM Impact: High Reduction (Lower value = Less VRAM during decode stage).
-- Quality Impact: Minimal / Negligible. Safe to lower.
-- Speed Impact: Slower (Lower value = Slower decoding)."""
-                        )
-
-            with gr .Row ():
-                with gr .Column (scale =1 ):
-                    with gr .Accordion ("Context Window - Previous Frames for Better Consistency",open =True ):
+                    with gr .Accordion ("Context Window - Previous Frames for Better Consistency (Only for STAR Model)",open =True ):
                         enable_context_window_check =gr .Checkbox (
                         label ="Enable Context Window",
                         value =app_config .DEFAULT_ENABLE_CONTEXT_WINDOW ,
@@ -518,8 +519,7 @@ The total combined prompt length is limited to 77 tokens."""
                         info ="Number of previous frames to include as context for each chunk (except first). 0 = disabled (same as normal chunking). Higher values = better consistency but more VRAM and slower processing. Recommend: 25-50% of Max Frames per Chunk."
                         )
 
-                with gr .Column (scale =1 ):
-                    with gr .Accordion ("Advanced: Tiling (Very High Res / Low VRAM)",open =True ):
+                    with gr .Accordion ("Advanced: Tiling (Very High Res / Low VRAM)",open =True, visible=False ):
                         enable_tiling_check =gr .Checkbox (
                         label ="Enable Tiled Upscaling",
                         value =app_config .DEFAULT_ENABLE_TILING ,
