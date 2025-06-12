@@ -256,32 +256,65 @@ def tensor_to_frame(tensor: torch.Tensor) -> np.ndarray:
     Convert an output tensor to a BGR frame.
     
     Args:
-        tensor: Output tensor from model (CHW format)
+        tensor: Output tensor from model (CHW format, with or without batch dimension)
         
     Returns:
         BGR frame as numpy array (HWC, uint8)
     """
-    # Move to CPU and convert to numpy
-    img_np = tensor.squeeze(0).permute(1, 2, 0).cpu().numpy()
-    # Clip and convert to uint8
-    img_np = (img_np * 255.0).clip(0, 255).astype(np.uint8)
-    # Convert RGB to BGR
-    frame_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
-    return frame_bgr
+    try:
+        # Handle different tensor shapes
+        if tensor.dim() == 4:  # NCHW format (batch dimension)
+            # Take the first (and should be only) item from batch
+            if tensor.shape[0] > 0:
+                img_tensor = tensor[0]  # CHW
+            else:
+                raise ValueError("Empty batch tensor")
+        elif tensor.dim() == 3:  # CHW format (no batch dimension)
+            img_tensor = tensor
+        else:
+            raise ValueError(f"Unexpected tensor shape: {tensor.shape}")
+        
+        # Move to CPU and convert to numpy
+        img_np = img_tensor.permute(1, 2, 0).cpu().numpy()
+        # Clip and convert to uint8
+        img_np = (img_np * 255.0).clip(0, 255).astype(np.uint8)
+        # Convert RGB to BGR
+        frame_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+        return frame_bgr
+        
+    except Exception as e:
+        # Create a debug frame if conversion fails
+        raise ValueError(f"Failed to convert tensor to frame: {e}, tensor shape: {tensor.shape}")
 
 def tensor_to_pil(tensor: torch.Tensor) -> Image.Image:
     """
     Convert an output tensor to a PIL Image.
     
     Args:
-        tensor: Output tensor from model
+        tensor: Output tensor from model (CHW format, with or without batch dimension)
         
     Returns:
         PIL Image in RGB format
     """
-    img_np = tensor.squeeze(0).permute(1, 2, 0).cpu().numpy()
-    img_np = (img_np * 255.0).clip(0, 255).astype(np.uint8)
-    return Image.fromarray(img_np)
+    try:
+        # Handle different tensor shapes
+        if tensor.dim() == 4:  # NCHW format (batch dimension)
+            # Take the first (and should be only) item from batch
+            if tensor.shape[0] > 0:
+                img_tensor = tensor[0]  # CHW
+            else:
+                raise ValueError("Empty batch tensor")
+        elif tensor.dim() == 3:  # CHW format (no batch dimension)
+            img_tensor = tensor
+        else:
+            raise ValueError(f"Unexpected tensor shape: {tensor.shape}")
+        
+        img_np = img_tensor.permute(1, 2, 0).cpu().numpy()
+        img_np = (img_np * 255.0).clip(0, 255).astype(np.uint8)
+        return Image.fromarray(img_np)
+        
+    except Exception as e:
+        raise ValueError(f"Failed to convert tensor to PIL: {e}, tensor shape: {tensor.shape}")
 
 def group_frames_by_size(frame_files: List[str], frames_dir: str, logger: logging.Logger = None) -> Dict[Tuple[int, int], List[str]]:
     """
@@ -338,27 +371,82 @@ def upscale_frame_batch(
         logger: Logger instance
         
     Returns:
-        List of upscaled frame tensors
+        List of upscaled frame tensors (same length as input or empty on failure)
     """
     if not frame_tensors:
         return []
     
     try:
+        if logger:
+            logger.debug(f"Processing batch of {len(frame_tensors)} tensors")
+            for i, tensor in enumerate(frame_tensors):
+                logger.debug(f"  Input tensor {i}: shape={tensor.shape}, dtype={tensor.dtype}")
+        
         # Stack tensors into batch (NCHW)
         input_batch = torch.stack(frame_tensors)
+        
+        if logger:
+            logger.debug(f"Stacked input batch shape: {input_batch.shape}")
         
         # Run inference
         with torch.no_grad():
             output_batch = model(input_batch)
         
+        if logger:
+            logger.debug(f"Model output batch shape: {output_batch.shape if output_batch is not None else 'None'}")
+        
+        # Validate output batch
+        if output_batch is None:
+            if logger:
+                logger.error(f"Model returned None output for batch of {len(frame_tensors)} frames")
+            return []
+            
+        if output_batch.shape[0] != input_batch.shape[0]:
+            if logger:
+                logger.error(f"Invalid output batch: expected {input_batch.shape[0]} frames, got {output_batch.shape[0]}")
+            return []
+        
         # Split back into individual tensors
-        output_tensors = [output_batch[i] for i in range(output_batch.shape[0])]
+        output_tensors = []
+        for i in range(output_batch.shape[0]):
+            try:
+                individual_tensor = output_batch[i]
+                if logger:
+                    logger.debug(f"  Output tensor {i}: shape={individual_tensor.shape}, dtype={individual_tensor.dtype}")
+                output_tensors.append(individual_tensor)
+            except IndexError as e:
+                if logger:
+                    logger.error(f"Index error extracting frame {i} from output batch: {e}")
+                    logger.error(f"  Output batch shape: {output_batch.shape}")
+                    logger.error(f"  Trying to access index {i}")
+                # Return empty list to indicate complete failure
+                return []
+        
+        # Final validation of output tensors list
+        if len(output_tensors) != len(frame_tensors):
+            if logger:
+                logger.error(f"Output tensor count mismatch: expected {len(frame_tensors)}, got {len(output_tensors)}")
+            return []
+        
+        if logger:
+            logger.debug(f"Successfully processed batch: {len(output_tensors)} output tensors")
         
         return output_tensors
         
+    except RuntimeError as e:
+        if "out of memory" in str(e).lower():
+            if logger:
+                logger.error(f"GPU out of memory during batch upscaling: {e}")
+            # Try to clear cache and return empty
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        else:
+            if logger:
+                logger.error(f"Runtime error in batch upscaling: {e}")
+        return []
     except Exception as e:
         if logger:
-            logger.error(f"Error in batch upscaling: {e}")
+            logger.error(f"Unexpected error in batch upscaling: {e}")
         return []
 
 def process_frames_batch(
@@ -404,6 +492,10 @@ def process_frames_batch(
         for i in range(0, len(size_frame_files), batch_size):
             batch_files = size_frame_files[i:i + batch_size]
             
+            # Track how many frames get successfully written in this particular batch so we
+            # can accurately update failure counts even if an unexpected exception occurs
+            processed_in_current_batch = 0  # reset for every batch
+            
             try:
                 # Load frame tensors
                 frame_tensors = []
@@ -430,7 +522,23 @@ def process_frames_batch(
                     continue
                 
                 # Upscale batch
+                if logger:
+                    # Temporarily increase log level for debugging
+                    original_level = logger.level
+                    logger.setLevel(logging.DEBUG)
+                
                 output_tensors = upscale_frame_batch(frame_tensors, model, device, logger)
+                
+                if logger:
+                    # Restore original log level
+                    logger.setLevel(original_level)
+                
+                # Handle batch processing failure
+                if not output_tensors:
+                    if logger:
+                        logger.error(f"Batch processing completely failed for {len(valid_files)} frames")
+                    failed_count += len(valid_files)
+                    continue
                 
                 if len(output_tensors) != len(valid_files):
                     if logger:
@@ -438,22 +546,67 @@ def process_frames_batch(
                     failed_count += len(valid_files)
                     continue
                 
-                # Save output frames
-                for frame_file, output_tensor in zip(valid_files, output_tensors):
+                # Save output frames - ensure we don't exceed the shorter list
+                actual_outputs = min(len(valid_files), len(output_tensors))
+                for idx in range(actual_outputs):
+                    frame_file = valid_files[idx]
                     try:
+                        # Get output tensor with bounds checking
+                        if idx >= len(output_tensors):
+                            raise IndexError(f"Index {idx} exceeds output tensor list length {len(output_tensors)}")
+                        
+                        output_tensor = output_tensors[idx]
+                        
+                        # Debug tensor info
+                        if logger:
+                            logger.debug(f"Processing tensor {idx}: shape={output_tensor.shape}, dtype={output_tensor.dtype}")
+                        
+                        # Convert tensor to frame
                         output_frame = tensor_to_frame(output_tensor)
+                        
+                        # Save frame
                         output_path = os.path.join(output_dir, frame_file)
-                        cv2.imwrite(output_path, output_frame)
+                        success = cv2.imwrite(output_path, output_frame)
+                        
+                        if not success:
+                            raise RuntimeError(f"cv2.imwrite failed for {frame_file}")
+                        
                         processed_count += 1
+                        processed_in_current_batch += 1
+                        
                     except Exception as e:
                         if logger:
-                            logger.error(f"Error saving frame {frame_file}: {e}")
+                            logger.error(f"Error saving frame {frame_file} (index {idx}): {e}")
+                            logger.error(f"  Tensor info: {type(output_tensor) if 'output_tensor' in locals() else 'not available'}")
+                            if 'output_tensor' in locals():
+                                logger.error(f"  Tensor shape: {output_tensor.shape}")
                         failed_count += 1
+                
+                # Count any remaining frames that couldn't be processed due to batch failure
+                if actual_outputs < len(valid_files):
+                    unprocessed_count = len(valid_files) - actual_outputs
+                    failed_count += unprocessed_count
+                    if logger:
+                        logger.warning(f"Could not process {unprocessed_count} frames due to batch processing failure")
                 
                 # Update progress
                 if progress_callback:
-                    progress_value = (processed_count + failed_count) / total_frames
-                    progress_callback(progress_value, f"Processed {processed_count}/{total_frames} frames")
+                    # Guard against progress values going slightly over 1.0 due to rounding or
+                    # a temporary mismatch in processed / failed counters. 1.0 is the maximum
+                    # accepted by Gradio progress bars – values above this can raise an
+                    # IndexError inside Gradio internals.
+                    progress_value = (processed_count + failed_count) / total_frames if total_frames else 1.0
+                    if progress_value > 1.0:
+                        progress_value = 1.0
+
+                    # Gradio can occasionally raise exceptions if the queue is full or if the
+                    # supplied values are out of range. Wrap the callback in a safe guard so
+                    # that a UI-related issue does not break the actual frame processing logic.
+                    try:
+                        progress_callback(progress_value, f"Processed {processed_count}/{total_frames} frames")
+                    except Exception as prog_e:
+                        if logger:
+                            logger.debug(f"Non-critical progress callback error ignored: {prog_e}")
                 
                 # Clear GPU memory
                 if torch.cuda.is_available():
@@ -462,7 +615,12 @@ def process_frames_batch(
             except Exception as e:
                 if logger:
                     logger.error(f"Error processing batch {i//batch_size + 1}: {e}")
-                failed_count += len(batch_files)
+                # Only the frames that have *not* already been marked as processed in this
+                # batch should be added to the failed counter to avoid double-counting.
+                failed_in_this_batch = len(batch_files) - processed_in_current_batch
+                if failed_in_this_batch < 0:
+                    failed_in_this_batch = 0  # sanity safeguard
+                failed_count += failed_in_this_batch
     
     if logger:
         logger.info(f"Frame processing complete: {processed_count} processed, {failed_count} failed")

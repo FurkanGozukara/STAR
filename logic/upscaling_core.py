@@ -604,6 +604,10 @@ def run_upscale (
         gpu_device =util_get_gpu_device (logger =logger )
         scene_metadata_base_params =params_for_metadata .copy ()if enable_scene_split else None
         silent_upscaled_video_path = None # Initialize
+        
+        # Initialize progress variable for non-scene-split processing (used by frame copying section later)
+        if not enable_scene_split:
+            upscaling_loop_progress_start_no_scene_split = current_overall_progress
 
         # MAIN BRANCHING LOGIC: Image Upscaler vs STAR
         if enable_image_upscaler:
@@ -1536,7 +1540,17 @@ def run_upscale (
                 raise gr .Error ("Silent video not found for final output.")
         else :
             if os .path .exists (silent_upscaled_video_path ):
-                 util_run_ffmpeg_command (f'ffmpeg -y -i "{silent_upscaled_video_path}" -i "{audio_source_video}" -c:v copy -c:a copy -map 0:v:0 -map 1:a:0? -shortest "{final_output_path}"',"Final Video and Audio Merge",logger =logger )
+                # Use a temporary file for the merge to avoid FFmpeg "same input/output file" error
+                temp_merged_video = os .path .join (temp_dir ,"temp_merged_with_audio.mp4")
+                util_run_ffmpeg_command (f'ffmpeg -y -i "{silent_upscaled_video_path}" -i "{audio_source_video}" -c:v copy -c:a copy -map 0:v:0 -map 1:a:0? -shortest "{temp_merged_video}"',"Final Video and Audio Merge",logger =logger )
+                
+                # Move the temporary merged file to the final output path
+                if os .path .exists (temp_merged_video ):
+                    shutil .move (temp_merged_video ,final_output_path )
+                    logger .info (f"Moved merged video from temp location to final output: {final_output_path}")
+                else :
+                    logger .error (f"Temporary merged video not found: {temp_merged_video}")
+                    raise gr .Error ("Temporary merged video not found after audio merge.")
             else :
                 logger .error (f"Silent upscaled video path {silent_upscaled_video_path} not found for audio merge.")
                 raise gr .Error ("Silent video not found for audio merge.")
