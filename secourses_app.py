@@ -1280,15 +1280,16 @@ This helps visualize the quality improvement from upscaling."""
     progress =gr .Progress (track_tqdm =True )
     ):
 
-        actual_seed_for_batch =seed_num_val 
-        if random_seed_check_val :
-            actual_seed_for_batch =np .random .randint (0 ,2 **31 )
-            logger .info (f"Batch: Random seed checked. Using generated seed: {actual_seed_for_batch}")
-        elif seed_num_val ==-1 :
-            actual_seed_for_batch =np .random .randint (0 ,2 **31 )
-            logger .info (f"Batch: Seed input is -1. Using generated seed: {actual_seed_for_batch}")
-        else :
-            logger .info (f"Batch: Using provided seed: {actual_seed_for_batch}")
+        actual_seed_for_batch = seed_num_val
+        if random_seed_check_val:
+            actual_seed_for_batch = np.random.randint(0, 2**31)
+            logger.info(f"Batch: Random seed checked. Using generated seed: {actual_seed_for_batch}")
+        elif seed_num_val == -1:
+            actual_seed_for_batch = np.random.randint(0, 2**31)
+            logger.info(f"Batch: Seed input is -1. Using generated seed: {actual_seed_for_batch}")
+        else:
+            actual_seed_for_batch = seed_num_val
+            logger.info(f"Batch: Using provided seed: {actual_seed_for_batch}")
 
         partial_run_upscale_for_batch =partial (core_run_upscale ,
         logger =logger ,
@@ -1307,40 +1308,40 @@ This helps visualize the quality improvement from upscaling."""
         )
 
         return process_batch_videos (
-        batch_input_folder_val ,batch_output_folder_val ,
-        user_prompt_val ,pos_prompt_val ,neg_prompt_val ,model_selector_val ,
-        upscale_factor_slider_val ,cfg_slider_val ,steps_slider_val ,solver_mode_radio_val ,
-        max_chunk_len_slider_val ,enable_chunk_optimization_check_val ,vae_chunk_slider_val ,color_fix_dropdown_val ,
-        enable_tiling_check_val ,tile_size_num_val ,tile_overlap_num_val ,
-            enable_context_window_check_val ,context_overlap_num_val ,
-    enable_target_res_check_val ,target_h_num_val ,target_w_num_val ,target_res_mode_radio_val ,
-        ffmpeg_preset_dropdown_val ,ffmpeg_quality_slider_val ,ffmpeg_use_gpu_check_val ,
-        save_frames_checkbox_val ,save_metadata_checkbox_val ,save_chunks_checkbox_val ,save_chunk_frames_checkbox_val ,
-        create_comparison_video_check_val ,
+        batch_input_folder_val, batch_output_folder_val,
+        user_prompt_val, pos_prompt_val, neg_prompt_val, model_selector_val,
+        upscale_factor_slider_val, cfg_slider_val, steps_slider_val, solver_mode_radio_val,
+        max_chunk_len_slider_val, enable_chunk_optimization_check_val, vae_chunk_slider_val, color_fix_dropdown_val,
+        enable_tiling_check_val, tile_size_num_val, tile_overlap_num_val,
+        enable_context_window_check_val, context_overlap_num_val,
+        enable_target_res_check_val, target_h_num_val, target_w_num_val, target_res_mode_radio_val,
+        ffmpeg_preset_dropdown_val, ffmpeg_quality_slider_val, ffmpeg_use_gpu_check_val,
+        save_frames_checkbox_val, save_metadata_checkbox_val, save_chunks_checkbox_val, save_chunk_frames_checkbox_val,
+        create_comparison_video_check_val,
 
-        enable_scene_split_check_val ,scene_split_mode_radio_val ,scene_min_scene_len_num_val ,scene_drop_short_check_val ,scene_merge_last_check_val ,
-        scene_frame_skip_num_val ,scene_threshold_num_val ,scene_min_content_val_num_val ,scene_frame_window_num_val ,
-        scene_copy_streams_check_val ,scene_use_mkvmerge_check_val ,scene_rate_factor_num_val ,scene_preset_dropdown_val ,scene_quiet_ffmpeg_check_val ,
-        scene_manual_split_type_radio_val ,scene_manual_split_value_num_val ,
+        enable_scene_split_check_val, scene_split_mode_radio_val, scene_min_scene_len_num_val, scene_drop_short_check_val, scene_merge_last_check_val,
+        scene_frame_skip_num_val, scene_threshold_num_val, scene_min_content_val_num_val, scene_frame_window_num_val,
+        scene_copy_streams_check_val, scene_use_mkvmerge_check_val, scene_rate_factor_num_val, scene_preset_dropdown_val, scene_quiet_ffmpeg_check_val,
+        scene_manual_split_type_radio_val, scene_manual_split_value_num_val,
 
-        enable_fps_decrease_val ,target_fps_val ,fps_interpolation_method_val ,
+        enable_fps_decrease_val, target_fps_val, fps_interpolation_method_val,
 
-        enable_rife_interpolation_val ,rife_multiplier_val ,rife_fp16_val ,rife_uhd_val ,rife_scale_val ,
-        rife_skip_static_val ,rife_enable_fps_limit_val ,rife_max_fps_limit_val ,
-        rife_apply_to_chunks_val ,rife_apply_to_scenes_val ,rife_keep_original_val ,rife_overwrite_original_val ,
+        enable_rife_interpolation_val, rife_multiplier_val, rife_fp16_val, rife_uhd_val, rife_scale_val,
+        rife_skip_static_val, rife_enable_fps_limit_val, rife_max_fps_limit_val,
+        rife_apply_to_chunks_val, rife_apply_to_scenes_val, rife_keep_original_val, rife_overwrite_original_val,
 
-        run_upscale_func =partial_run_upscale_for_batch ,
-        logger =logger ,
+        partial_run_upscale_for_batch,  # run_upscale_func (positional)
+        logger,                         # logger (positional)
 
-        batch_skip_existing_val =batch_skip_existing_val ,
-        batch_use_prompt_files_val =batch_use_prompt_files_val ,
-        batch_save_captions_val =batch_save_captions_val ,
-        batch_enable_auto_caption_val =batch_enable_auto_caption_val ,
-        batch_cogvlm_quant_val =get_quant_value_from_display (cogvlm_quant_radio_val )if batch_enable_auto_caption_val else None ,
-        batch_cogvlm_unload_val =cogvlm_unload_radio_val if batch_enable_auto_caption_val else 'full',
+        batch_skip_existing_val=batch_skip_existing_val,
+        batch_use_prompt_files_val=batch_use_prompt_files_val,
+        batch_save_captions_val=batch_save_captions_val,
+        batch_enable_auto_caption_val=batch_enable_auto_caption_val,
+        batch_cogvlm_quant_val=get_quant_value_from_display(cogvlm_quant_radio_val) if batch_enable_auto_caption_val else None,
+        batch_cogvlm_unload_val=cogvlm_unload_radio_val if batch_enable_auto_caption_val else 'full',
 
-        current_seed =actual_seed_for_batch ,
-        progress =progress 
+        current_seed=actual_seed_for_batch,
+        progress=progress
         )
 
     batch_process_inputs =[
