@@ -1150,6 +1150,10 @@ def run_upscale (
                         continue
 
                     chunk_diffusion_timer_direct = {'last_time': time.time()}
+                    
+                    # Get the frames to process (may be more than output frames for optimized chunks)
+                    chunk_lr_frames_bgr_direct = all_lr_frames_bgr[process_start_idx:process_end_idx]
+                    
                     def diffusion_callback_for_chunk_direct(step=None, total_steps=None, total_steps_chunk=None):
                         nonlocal chunk_diffusion_timer_direct
                         # Handle both keyword and positional argument styles
@@ -1171,8 +1175,6 @@ def run_upscale (
                         current_overall_progress_temp = upscaling_loop_progress_start_no_scene_split + (progress_val_rel_direct * stage_weights["upscaling_loop"])
                         progress(current_overall_progress_temp, desc=f"{desc_for_log_direct} (Diff: {current_step}/{current_total_steps})")
 
-                        # Get the frames to process (may be more than output frames for optimized chunks)
-                        chunk_lr_frames_bgr_direct = all_lr_frames_bgr[process_start_idx:process_end_idx]
                     chunk_lr_video_data_direct = preprocess_func(chunk_lr_frames_bgr_direct)
                     chunk_pre_data_direct = {
                         'video_data': chunk_lr_video_data_direct, 
