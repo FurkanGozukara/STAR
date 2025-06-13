@@ -33,6 +33,13 @@ def wavelet_color_fix(target, source):
     target = rearrange(target, 'T H W C -> T C H W') / 255
     source = (source + 1) / 2
 
+    # Ensure the source (style) frames match the spatial resolution of the target (content).
+    # The wavelet_reconstruction function requires the two tensors to have the same H/W.
+    if source.shape[-2:] != target.shape[-2:]:
+        # Upsample the low-resolution source frames to the target's resolution using bilinear
+        # interpolation.  align_corners=False avoids value range shifts.
+        source = F.interpolate(source, size=target.shape[-2:], mode='bilinear', align_corners=False)
+
     # Apply wavelet reconstruction
     result_tensor_list = []
     for i in range(0, target.shape[0]):
