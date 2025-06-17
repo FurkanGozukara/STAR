@@ -97,6 +97,17 @@ scan_for_models as util_scan_for_models,
 get_model_info as util_get_model_info
 )
 
+from logic .video_editor import (
+parse_time_ranges as util_parse_time_ranges,
+parse_frame_ranges as util_parse_frame_ranges,
+validate_ranges as util_validate_ranges,
+get_video_detailed_info as util_get_video_detailed_info,
+cut_video_segments as util_cut_video_segments,
+create_preview_segment as util_create_preview_segment,
+estimate_processing_time as util_estimate_processing_time,
+format_video_info_for_display as util_format_video_info_for_display
+)
+
 from logic .temp_folder_utils import (
 get_temp_folder_path as util_get_temp_folder_path ,
 calculate_temp_folder_size as util_calculate_temp_folder_size ,
@@ -196,8 +207,8 @@ progress =gr .Progress (track_tqdm =True )
 with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
     gr .Markdown ("# Ultimate SECourses STAR Video Upscaler V100 Pre Release")
 
-    with gr .Tabs ():
-        with gr .Tab ("Main"):
+    with gr .Tabs ()as main_tabs :
+        with gr .Tab ("Main",id ="main_tab"):
             with gr .Row ():
                 with gr .Column (scale =1 ):
                     with gr .Group ():
@@ -205,6 +216,15 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         label ="Input Video",
                         sources =["upload"],
                         interactive =True ,height =512 
+                        )
+                        
+                        # Integration status (hidden by default)
+                        integration_status =gr .Textbox (
+                        label ="Integration Status",
+                        interactive =False ,
+                        lines =2 ,
+                        visible =False ,
+                        value =""
                         )
                         with gr .Row ():
                             user_prompt =gr .Textbox (
@@ -278,7 +298,7 @@ The total combined prompt length is limited to 77 tokens."""
                         value ="No chunks processed yet"
                         )
 
-        with gr .Tab ("Resolution & Scene Split"):
+        with gr .Tab ("Resolution & Scene Split",id ="resolution_tab"):
             with gr .Row ():
                 with gr .Column (scale =1 ):
                     with gr .Accordion ("Target Resolution - Maintains Your Input Video Aspect Ratio",open =True ):
@@ -356,7 +376,7 @@ The total combined prompt length is limited to 77 tokens."""
                                 scene_preset_dropdown =gr .Dropdown (label ="Encoding Preset",choices =['ultrafast','superfast','veryfast','faster','fast','medium','slow','slower','veryslow'],value =app_config .DEFAULT_SCENE_ENCODING_PRESET ,info ="Encoding speed vs quality trade-off. Only used if Copy Streams is disabled.")
                             scene_quiet_ffmpeg_check =gr .Checkbox (label ="Quiet FFmpeg",value =app_config .DEFAULT_SCENE_QUIET_FFMPEG ,info ="Suppress ffmpeg output during scene splitting.")
 
-        with gr .Tab ("Core Settings"):
+        with gr .Tab ("Core Settings",id ="core_tab"):
             with gr .Row ():
                 with gr .Column (scale =1 ):
                     with gr .Group ():
@@ -540,7 +560,7 @@ The total combined prompt length is limited to 77 tokens."""
                             info ="How much the tiles overlap (in input resolution pixels). Higher overlap helps reduce seams but increases processing time. Recommend 1/4 to 1/2 of Tile Size."
                             )
 
-        with gr .Tab ("Output & Comparison"):
+        with gr .Tab ("Output & Comparison",id ="output_tab"):
             with gr .Row ():
                 with gr .Column (scale =1 ):
                     with gr .Accordion ("FFmpeg Encoding Settings",open =True ):
@@ -631,7 +651,7 @@ This helps visualize the quality improvement from upscaling."""
             with gr .Accordion ("Comparison Video To See Difference",open =True ):
                 comparison_video =gr .Video (label ="Comparison Video",interactive =False ,height =512 )
 
-        with gr .Tab ("Batch Upscaling"):
+        with gr .Tab ("Batch Upscaling",id ="batch_tab"):
 
             with gr .Accordion ("Batch Processing Options",open =True ):
                 with gr .Row ():
@@ -683,7 +703,7 @@ This helps visualize the quality improvement from upscaling."""
             # Add the help content at the bottom in 3 columns
             create_batch_processing_help()
 
-        with gr .Tab ("FPS Increase - Decrease"):
+        with gr .Tab ("FPS Increase - Decrease",id ="fps_tab"):
             with gr .Row ():
                 with gr .Column (scale =1 ):
                     with gr .Accordion ("RIFE Interpolation Settings",open =True ):
@@ -829,6 +849,144 @@ This helps visualize the quality improvement from upscaling."""
                             value =app_config .DEFAULT_RIFE_OVERWRITE_ORIGINAL ,
                             info ="Replace the original upscaled video with the RIFE version as the primary output. When disabled, both versions are available."
                             )
+
+        with gr .Tab ("Edit Videos",id ="edit_tab"):
+            gr .Markdown ("# Video Editor - Cut and Extract Video Segments")
+            gr .Markdown ("**Cut specific time ranges or frame ranges from your videos with precise FFmpeg encoding.**")
+            
+            with gr .Row ():
+                with gr .Column (scale =1 ):
+                    # Video Upload Section
+                    with gr .Group ():
+                        input_video_edit =gr .Video (
+                        label ="Input Video for Editing",
+                        sources =["upload"],
+                        interactive =True ,
+                        height =300 
+                        )
+                        
+                        # Video Information Display
+                        video_info_display =gr .Textbox (
+                        label ="Video Information",
+                        interactive =False ,
+                        lines =6 ,
+                        info ="Shows duration, FPS, frame count, resolution",
+                        value ="📹 Upload a video to see detailed information"
+                        )
+
+                    # Action Buttons
+                    with gr .Row ():
+                        cut_and_save_btn =gr .Button ("Cut and Save",variant ="primary",icon ="icons/cut_paste.png")
+                        cut_and_upscale_btn =gr .Button ("Cut and Move to Upscale",variant ="primary",icon ="icons/move_icon.png")
+                    
+                    # Cutting Mode Selection
+                    with gr .Accordion ("Cutting Settings",open =True ):
+                        cutting_mode =gr .Radio (
+                        label ="Cutting Mode",
+                        choices =['time_ranges','frame_ranges'],
+                        value ='time_ranges',
+                        info ="Choose between time-based or frame-based cutting"
+                        )
+                        
+                        # Time Range Inputs (visible when time_ranges selected)
+                        with gr .Group ()as time_range_controls :
+                            time_ranges_input =gr .Textbox (
+                            label ="Time Ranges (seconds)",
+                            placeholder ="1-3,5-8,10-15 or 1:30-2:45,3:00-4:30",
+                            info ="Format: start1-end1,start2-end2,... (supports decimal seconds and MM:SS format)",
+                            lines =2 
+                            )
+                        
+                        # Frame Range Inputs (hidden when time_ranges selected)
+                        with gr .Group (visible =False )as frame_range_controls :
+                            frame_ranges_input =gr .Textbox (
+                            label ="Frame Ranges",
+                            placeholder ="30-90,150-210,300-450",
+                            info ="Format: start1-end1,start2-end2,... (frame numbers are 0-indexed)",
+                            lines =2 
+                            )
+                        
+                        # Cut Information Display
+                        cut_info_display =gr .Textbox (
+                        label ="Cut Analysis",
+                        interactive =False ,
+                        lines =3 ,
+                        info ="Shows details about the cuts being made",
+                        value ="✏️ Enter ranges above to see cut analysis"
+                        )
+                    
+                    # Precision and Preview Options
+                    with gr .Accordion ("Options",open =True ):
+                        precise_cutting_mode =gr .Radio (
+                        label ="Cutting Precision",
+                        choices =['precise','fast'],
+                        value ='precise',
+                        info ="Precise: Frame-accurate re-encoding. Fast: Stream copy (faster but may be less accurate)"
+                        )
+                        
+                        preview_first_segment =gr .Checkbox (
+                        label ="Generate Preview of First Segment",
+                        value =True ,
+                        info ="Create a preview video of the first cut segment for verification"
+                        )
+                        
+                        # Processing Time Estimate
+                        processing_estimate =gr .Textbox (
+                        label ="Processing Time Estimate",
+                        interactive =False ,
+                        lines =1 ,
+                        value ="📊 Upload video and enter ranges to see time estimate"
+                        )
+                    
+
+                    
+                with gr .Column (scale =1 ):
+                    # Output Video Display
+                    with gr .Group ():
+                        output_video_edit =gr .Video (
+                        label ="Cut Video Output",
+                        interactive =False ,
+                        height =400 
+                        )
+                        
+                        # Preview Video (for first segment)
+                        preview_video_edit =gr .Video (
+                        label ="Preview (First Segment)",
+                        interactive =False ,
+                        height =300 
+                        )
+                    
+                    # Status and Progress
+                    with gr .Group ():
+                        edit_status_textbox =gr .Textbox (
+                        label ="Edit Status & Log",
+                        interactive =False ,
+                        lines =8 ,
+                        max_lines =15 ,
+                        value ="🎞️ Ready to edit videos. Upload a video and specify cut ranges to begin."
+                        )
+                    
+                    # Quick Help
+                    with gr .Accordion ("Quick Help & Examples",open =False ):
+                        gr .Markdown ("""
+**Time Range Examples:**
+- `1-3` → Cut from 1 to 3 seconds
+- `1.5-3.2` → Cut from 1.5 to 3.2 seconds  
+- `1:30-2:45` → Cut from 1 minute 30 seconds to 2 minutes 45 seconds
+- `0:05-0:10,0:20-0:30` → Multiple segments
+
+**Frame Range Examples:**
+- `30-90` → Cut frames 30 to 90
+- `30-90,150-210` → Cut frames 30-90 and 150-210
+- `0-120,240-360` → Multiple frame segments
+
+**Tips:**
+- Use time ranges for easier input (supports MM:SS format)
+- Use frame ranges for frame-perfect editing
+- Preview first segment to verify before processing
+- All cuts use your current FFmpeg settings from Output & Comparison tab
+- Cut videos are saved in organized folders with metadata
+""")
 
     def update_steps_display (mode ):
         if mode =='fast':
@@ -1788,6 +1946,329 @@ This helps visualize the quality improvement from upscaling."""
         inputs=[],
         outputs=[status_textbox, delete_temp_button],
         show_progress_on=[status_textbox]
+    )
+
+    # ==================== VIDEO EDITOR EVENT HANDLERS ====================
+    
+    def update_cutting_mode_controls(cutting_mode_val):
+        """Show/hide inputs based on cutting mode selection."""
+        if cutting_mode_val == "time_ranges":
+            return [
+                gr.update(visible=True),   # time_range_controls
+                gr.update(visible=False)   # frame_range_controls
+            ]
+        else:
+            return [
+                gr.update(visible=False),  # time_range_controls
+                gr.update(visible=True)    # frame_range_controls
+            ]
+    
+    def display_detailed_video_info_edit(video_path):
+        """Display detailed video information for the editor tab."""
+        if video_path is None:
+            return "📹 Upload a video to see detailed information"
+        
+        try:
+            video_info = util_get_video_detailed_info(video_path, logger)
+            if video_info:
+                formatted_info = util_format_video_info_for_display(video_info)
+                logger.info(f"Video editor: Video uploaded - {video_info.get('filename', 'Unknown')}")
+                return formatted_info
+            else:
+                error_msg = "❌ Could not read video information"
+                logger.warning(f"Video editor: Failed to get video info for: {video_path}")
+                return error_msg
+                
+        except Exception as e:
+            error_msg = f"❌ Error reading video: {str(e)}"
+            logger.error(f"Video editor: Exception in video info: {e}")
+            return error_msg
+    
+    def validate_and_analyze_cuts(ranges_input, cutting_mode_val, video_path):
+        """Validate cut ranges and provide analysis."""
+        if video_path is None:
+            return "✏️ Upload a video first", "📊 Upload video and enter ranges to see time estimate"
+        
+        if not ranges_input or not ranges_input.strip():
+            return "✏️ Enter ranges above to see cut analysis", "📊 Upload video and enter ranges to see time estimate"
+        
+        try:
+            # Get video info
+            video_info = util_get_video_detailed_info(video_path, logger)
+            if not video_info:
+                return "❌ Could not read video information", "❌ Cannot estimate without video info"
+            
+            # Parse ranges based on mode
+            if cutting_mode_val == "time_ranges":
+                duration = video_info.get("accurate_duration", video_info.get("duration", 0))
+                ranges = util_parse_time_ranges(ranges_input, duration)
+                max_value = duration
+                range_type = "time"
+            else:
+                total_frames = video_info.get("total_frames", 0)
+                ranges = util_parse_frame_ranges(ranges_input, total_frames)
+                max_value = total_frames
+                range_type = "frame"
+            
+            # Validate ranges
+            validation_result = util_validate_ranges(ranges, max_value, range_type)
+            
+            # Get FFmpeg settings for time estimate
+            ffmpeg_settings = {
+                "use_gpu": ffmpeg_use_gpu_check.value if 'ffmpeg_use_gpu_check' in globals() else False,
+                "preset": ffmpeg_preset_dropdown.value if 'ffmpeg_preset_dropdown' in globals() else "medium",
+                "quality": ffmpeg_quality_slider.value if 'ffmpeg_quality_slider' in globals() else 23
+            }
+            
+            # Estimate processing time
+            time_estimate = util_estimate_processing_time(ranges, video_info, ffmpeg_settings)
+            
+            return validation_result["analysis_text"], time_estimate.get("time_estimate_text", "Could not estimate time")
+            
+        except ValueError as e:
+            return f"❌ Validation Error: {str(e)}", "❌ Cannot estimate due to validation error"
+        except Exception as e:
+            logger.error(f"Video editor: Error in validation: {e}")
+            return f"❌ Error: {str(e)}", "❌ Error during analysis"
+    
+    def get_current_ffmpeg_settings():
+        """Extract current FFmpeg settings from main app state."""
+        try:
+            return {
+                "use_gpu": ffmpeg_use_gpu_check.value if 'ffmpeg_use_gpu_check' in globals() else False,
+                "preset": ffmpeg_preset_dropdown.value if 'ffmpeg_preset_dropdown' in globals() else "medium",
+                "quality": ffmpeg_quality_slider.value if 'ffmpeg_quality_slider' in globals() else 23
+            }
+        except:
+            # Fallback settings
+            return {
+                "use_gpu": False,
+                "preset": "medium", 
+                "quality": 23
+            }
+    
+    def cut_video_wrapper(
+        input_video_val, ranges_input, cutting_mode_val, precise_cutting_mode_val, 
+        preview_first_segment_val, seed_num_val=99, random_seed_check_val=False, 
+        progress=gr.Progress(track_tqdm=True)
+    ):
+        """Main function to process video cuts."""
+        if input_video_val is None:
+            return None, None, "❌ Please upload a video first"
+        
+        if not ranges_input or not ranges_input.strip():
+            return None, None, "❌ Please enter cut ranges"
+        
+        try:
+            progress(0, desc="Analyzing video and ranges...")
+            
+            # Get video info
+            video_info = util_get_video_detailed_info(input_video_val, logger)
+            if not video_info:
+                return None, None, "❌ Could not read video information"
+            
+            # Parse ranges
+            if cutting_mode_val == "time_ranges":
+                duration = video_info.get("accurate_duration", video_info.get("duration", 0))
+                ranges = util_parse_time_ranges(ranges_input, duration)
+                range_type = "time"
+                max_value = duration
+            else:
+                total_frames = video_info.get("total_frames", 0)
+                ranges = util_parse_frame_ranges(ranges_input, total_frames)
+                range_type = "frame"
+                max_value = total_frames
+            
+            # Validate ranges
+            validation_result = util_validate_ranges(ranges, max_value, range_type)
+            logger.info(f"Video editor: Validated {len(ranges)} ranges: {validation_result['analysis_text']}")
+            
+            # Get FFmpeg settings
+            ffmpeg_settings = get_current_ffmpeg_settings()
+            
+            # Adjust settings based on precision mode
+            if precise_cutting_mode_val == "fast":
+                ffmpeg_settings["stream_copy"] = True
+            
+            progress(0.1, desc="Starting video cutting...")
+            
+            # Cut video segments
+            result = util_cut_video_segments(
+                video_path=input_video_val,
+                ranges=ranges,
+                range_type=range_type,
+                output_dir=app_config.DEFAULT_OUTPUT_DIR,
+                ffmpeg_settings=ffmpeg_settings,
+                logger=logger,
+                progress=progress,
+                seed=seed_num_val if not random_seed_check_val else np.random.randint(0, 2**31)
+            )
+            
+            if not result["success"]:
+                return None, None, f"❌ Cutting failed: {result.get('error', 'Unknown error')}"
+            
+            # Create preview if requested
+            preview_path = None
+            if preview_first_segment_val and ranges:
+                progress(0.95, desc="Creating preview...")
+                preview_path = util_create_preview_segment(
+                    video_path=input_video_val,
+                    first_range=ranges[0],
+                    range_type=range_type,
+                    output_dir=app_config.DEFAULT_OUTPUT_DIR,
+                    ffmpeg_settings=ffmpeg_settings,
+                    logger=logger
+                )
+            
+            progress(1.0, desc="Video cutting completed!")
+            
+            # Generate status message
+            status_msg = f"""✅ Video cutting completed successfully!
+            
+📁 Output: {result['final_output']}
+📊 Processed: {len(ranges)} segments
+📝 Session: {result['session_dir']}
+💾 Metadata: {result['metadata_path']}
+
+{validation_result['analysis_text']}"""
+            
+            return result["final_output"], preview_path, status_msg
+            
+        except ValueError as e:
+            error_msg = f"❌ Input Error: {str(e)}"
+            logger.error(f"Video editor: {error_msg}")
+            return None, None, error_msg
+        except Exception as e:
+            error_msg = f"❌ Processing Error: {str(e)}"
+            logger.error(f"Video editor: {error_msg}", exc_info=True)
+            return None, None, error_msg
+    
+    def cut_and_move_to_upscale(
+        input_video_val, ranges_input, cutting_mode_val, precise_cutting_mode_val, 
+        preview_first_segment_val, seed_num_val=99, random_seed_check_val=False, 
+        progress=gr.Progress(track_tqdm=True)
+    ):
+        """Cut video and prepare for upscaling."""
+        # First cut the video
+        final_output, preview_path, status_msg = cut_video_wrapper(
+            input_video_val, ranges_input, cutting_mode_val, precise_cutting_mode_val,
+            preview_first_segment_val, seed_num_val, random_seed_check_val, progress
+        )
+        
+        if final_output is None:
+            return None, None, status_msg, gr.update(), gr.update(visible=False)
+        
+        # Enhanced integration message
+        integration_msg = f"""🎬✅ Video cutting completed successfully!
+
+📁 Cut Video: {os.path.basename(final_output)}
+📍 Ready for upscaling in Main tab
+
+💡 Next Steps:
+1. Switch to the 'Main' tab
+2. The cut video has been automatically loaded
+3. Configure upscaling settings as needed
+4. Click 'Upscale Video' to begin processing
+
+{status_msg}"""
+        
+        logger.info(f"Video editor: Cut completed, updating main tab input: {final_output}")
+        
+        # Return updates for video editor tab + main tab integration
+        return (
+            final_output,              # output_video_edit
+            preview_path,              # preview_video_edit  
+            integration_msg,           # edit_status_textbox
+            gr.update(value=final_output),  # Update main tab input_video
+            gr.update(visible=True, value=f"✅ Cut video loaded from Edit Videos tab: {os.path.basename(final_output)}")  # integration_status
+        )
+    
+    def enhanced_cut_and_move_to_upscale(
+        input_video_val, time_ranges_val, frame_ranges_val, cutting_mode_val, 
+        precise_cutting_mode_val, preview_first_segment_val, seed_num_val=99, 
+        random_seed_check_val=False, progress=gr.Progress(track_tqdm=True)
+    ):
+        """Enhanced wrapper for cut and move to upscale with proper main tab integration."""
+        # Select the appropriate ranges input based on mode
+        ranges_input = time_ranges_val if cutting_mode_val == "time_ranges" else frame_ranges_val
+        
+        return cut_and_move_to_upscale(
+            input_video_val, ranges_input, cutting_mode_val, 
+            precise_cutting_mode_val, preview_first_segment_val, 
+            seed_num_val, random_seed_check_val, progress
+        )
+
+    # Video Editor Event Handlers
+    cutting_mode.change(
+        fn=update_cutting_mode_controls,
+        inputs=cutting_mode,
+        outputs=[time_range_controls, frame_range_controls]
+    )
+    
+    input_video_edit.change(
+        fn=display_detailed_video_info_edit,
+        inputs=input_video_edit,
+        outputs=video_info_display
+    )
+    
+    # Real-time validation for range inputs (handles both time and frame ranges)
+    def validate_ranges_wrapper(time_ranges_val, frame_ranges_val, cutting_mode_val, video_path):
+        """Wrapper to handle validation for both input types."""
+        ranges_input = time_ranges_val if cutting_mode_val == "time_ranges" else frame_ranges_val
+        return validate_and_analyze_cuts(ranges_input, cutting_mode_val, video_path)
+    
+    for component in [time_ranges_input, frame_ranges_input, cutting_mode]:
+        component.change(
+            fn=validate_ranges_wrapper,
+            inputs=[time_ranges_input, frame_ranges_input, cutting_mode, input_video_edit],
+            outputs=[cut_info_display, processing_estimate]
+        )
+    
+    # Enhanced button actions with proper integration
+    cut_and_save_btn.click(
+        fn=lambda input_video_val, time_ranges_val, frame_ranges_val, cutting_mode_val, precise_cutting_mode_val, preview_first_segment_val, seed_num_val, random_seed_check_val: cut_video_wrapper(
+            input_video_val, 
+            time_ranges_val if cutting_mode_val == "time_ranges" else frame_ranges_val,
+            cutting_mode_val, 
+            precise_cutting_mode_val, 
+            preview_first_segment_val,
+            seed_num_val,
+            random_seed_check_val
+        ),
+        inputs=[
+            input_video_edit, time_ranges_input, frame_ranges_input, cutting_mode, 
+            precise_cutting_mode, preview_first_segment, seed_num, random_seed_check
+        ],
+        outputs=[output_video_edit, preview_video_edit, edit_status_textbox],
+        show_progress_on=[output_video_edit]
+    )
+    
+    cut_and_upscale_btn.click(
+        fn=enhanced_cut_and_move_to_upscale,
+        inputs=[
+            input_video_edit, time_ranges_input, frame_ranges_input, cutting_mode, 
+            precise_cutting_mode, preview_first_segment, seed_num, random_seed_check
+        ],
+        outputs=[output_video_edit, preview_video_edit, edit_status_textbox, input_video, integration_status],
+        show_progress_on=[output_video_edit]
+    )
+    
+    # Integration status handler - show/hide integration status when main input video changes
+    def handle_main_input_change(video_path):
+        """Handle changes to main input video - hide integration status if user uploads new video"""
+        if video_path is None:
+            return gr.update(visible=False, value="")
+        else:
+            # Check if this is from integration (video path contains logic/)
+            if video_path and "logic/" in video_path:
+                return gr.update(visible=True, value=f"✅ Cut video from Edit Videos tab: {os.path.basename(video_path)}")
+            else:
+                return gr.update(visible=False, value="")
+    
+    input_video.change(
+        fn=handle_main_input_change,
+        inputs=input_video,
+        outputs=integration_status
     )
 
 if __name__ =="__main__":
