@@ -543,31 +543,22 @@ The total combined prompt length is limited to 77 tokens."""
                             interactive =False  # Will be enabled when checkbox is checked
                             )
                         
-                        # Scan for available CodeFormer models
-                        try:
-                            from .logic.face_restoration_utils import scan_codeformer_models
-                            models_info = scan_codeformer_models(app_config.FACE_RESTORATION_MODELS_DIR, logger)
-                            if models_info['available']:
-                                model_choices = ["Auto (Default)"] + [f"{model['name']} ({model['size_mb']:.1f}MB)" for model in models_info['codeformer_models']]
-                                default_model_choice = model_choices[0]
-                                logger.info(f"Found {len(models_info['codeformer_models'])} CodeFormer model(s)")
-                            else:
-                                model_choices = ["No CodeFormer models found - check pretrained_weight/ directory"]
-                                default_model_choice = model_choices[0]
-                                logger.warning("No CodeFormer models found")
-                        except Exception as e:
-                            logger.warning(f"Failed to scan for CodeFormer models: {e}")
-                            model_choices = ["Error scanning models - check pretrained_weight/ directory"]
-                            default_model_choice = model_choices[0]
+
                         
                         with gr .Row ():
-                            codeformer_model_dropdown =gr .Dropdown (
-                            label ="CodeFormer Model",
-                            choices =model_choices ,
-                            value =default_model_choice ,
-                            info ="Select the CodeFormer model. 'Auto' uses the default model. Models should be in pretrained_weight/ directory.",
-                            interactive =False   # Will be enabled when checkbox is checked
-                            )
+                            # CodeFormer Model Selection
+                            with gr .Row ():
+                                # Since CodeFormer models are always available, use a simple dropdown
+                                model_choices = ["Auto (Default)", "codeformer.pth (359.2MB)"]
+                                default_model_choice = "Auto (Default)"
+                                
+                                codeformer_model_dropdown =gr .Dropdown (
+                                label ="CodeFormer Model",
+                                choices =model_choices ,
+                                value =default_model_choice ,
+                                info ="Select the CodeFormer model. 'Auto' uses the default model. Models should be in pretrained_weight/ directory.",
+                                interactive =False   # Will be enabled when checkbox is checked
+                                )
                         
                         face_restoration_batch_size_slider =gr .Slider (
                         label ="Face Restoration Batch Size",
@@ -1125,20 +1116,9 @@ This helps visualize the quality improvement from upscaling."""
                         )
                         
                         with gr .Row ():
-                            # Initialize CodeFormer models for standalone tab
-                            try:
-                                from logic.face_restoration_utils import scan_codeformer_models
-                                standalone_models_info = scan_codeformer_models(app_config.FACE_RESTORATION_MODELS_DIR, logger)
-                                if standalone_models_info['available']:
-                                    standalone_model_choices = ["Auto (Default)"] + [f"{model['name']} ({model['size_mb']:.1f}MB)" for model in standalone_models_info['codeformer_models']]
-                                    standalone_default_model_choice = standalone_model_choices[0]
-                                else:
-                                    standalone_model_choices = ["No CodeFormer models found - check pretrained_weight/ directory"]
-                                    standalone_default_model_choice = standalone_model_choices[0]
-                            except Exception as e:
-                                logger.warning(f"Failed to scan CodeFormer models for standalone tab: {e}")
-                                standalone_model_choices = ["Error scanning models - check pretrained_weight/ directory"]
-                                standalone_default_model_choice = standalone_model_choices[0]
+                            # Since CodeFormer models are always available, use a simple dropdown
+                            standalone_model_choices = ["Auto (Default)", "codeformer.pth (359.2MB)"]
+                            standalone_default_model_choice = "Auto (Default)"
                             
                             standalone_codeformer_model_dropdown =gr .Dropdown (
                             label ="CodeFormer Model",
@@ -1389,19 +1369,11 @@ This helps visualize the quality improvement from upscaling."""
         if dropdown_choice == "Auto (Default)":
             return None  # Use default model
         
-        # Extract model name from "modelname.pth (123.4MB)" format
-        try:
-            model_name = dropdown_choice.split(" (")[0]
-            from logic.face_restoration_utils import scan_codeformer_models
-            models_info = scan_codeformer_models(app_config.FACE_RESTORATION_MODELS_DIR, logger)
-            if models_info['available']:
-                for model in models_info['codeformer_models']:
-                    if model['name'] == model_name:
-                        return model['path']
-            return None
-        except Exception as e:
-            logger.warning(f"Failed to extract CodeFormer model path from dropdown: {e}")
-            return None
+        # For the specific codeformer.pth model, return the known path
+        if dropdown_choice.startswith("codeformer.pth"):
+            return os.path.join(app_config.FACE_RESTORATION_MODELS_DIR, "CodeFormer", "codeformer.pth")
+        
+        return None
 
     def upscale_director_logic (
     input_video_val ,user_prompt_val ,pos_prompt_val ,neg_prompt_val ,model_selector_val ,
