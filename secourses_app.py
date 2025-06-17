@@ -498,6 +498,86 @@ The total combined prompt length is limited to 77 tokens."""
                         info ="Number of frames to process simultaneously. Higher values = faster processing but more VRAM usage. Adjust based on your GPU memory.",
                         interactive =False  # Will be enabled when checkbox is checked
                         )
+                    
+                    # Face Restoration Panel
+                    with gr .Group ():
+                        gr .Markdown ("### Face Restoration (CodeFormer)")
+                        enable_face_restoration_check =gr .Checkbox (
+                        label ="Enable Face Restoration",
+                        value =app_config .DEFAULT_ENABLE_FACE_RESTORATION ,
+                        info ="""Enhance faces in the video using CodeFormer. Works with both STAR and image-based upscaling.
+- Detects and restores faces automatically
+- Can be applied before or after upscaling
+- Supports both face restoration and colorization
+- Requires CodeFormer models in pretrained_weight/ directory"""
+                        )
+                        
+                        face_restoration_fidelity_slider =gr .Slider (
+                        label ="Fidelity Weight",
+                        minimum =0.0 ,
+                        maximum =1.0 ,
+                        value =app_config .DEFAULT_FACE_RESTORATION_FIDELITY ,
+                        step =0.1 ,
+                        info ="""Balance between quality and identity preservation:
+- 0.0-0.3: Prioritize quality/detail (may change facial features)
+- 0.4-0.6: Balanced approach
+- 0.7-1.0: Prioritize identity preservation (may reduce enhancement)""",
+                        interactive =False  # Will be enabled when checkbox is checked
+                        )
+                        
+                        with gr .Row ():
+                            enable_face_colorization_check =gr .Checkbox (
+                            label ="Enable Colorization",
+                            value =app_config .DEFAULT_ENABLE_FACE_COLORIZATION ,
+                            info ="Apply colorization to grayscale faces (experimental feature)",
+                            interactive =False  # Will be enabled when checkbox is checked
+                            )
+                            
+                            face_restoration_when_radio =gr .Radio (
+                            label ="Apply Timing",
+                            choices =['before','after'],
+                            value =app_config .DEFAULT_FACE_RESTORATION_WHEN ,
+                            info ="""When to apply face restoration:
+'before': Apply before upscaling (may be enhanced further)
+'after': Apply after upscaling (final enhancement)""",
+                            interactive =False  # Will be enabled when checkbox is checked
+                            )
+                        
+                        # Scan for available CodeFormer models
+                        try:
+                            from .logic.face_restoration_utils import scan_codeformer_models
+                            models_info = scan_codeformer_models(app_config.FACE_RESTORATION_MODELS_DIR, logger)
+                            if models_info['available']:
+                                model_choices = ["Auto (Default)"] + [f"{model['name']} ({model['size_mb']:.1f}MB)" for model in models_info['codeformer_models']]
+                                default_model_choice = model_choices[0]
+                                logger.info(f"Found {len(models_info['codeformer_models'])} CodeFormer model(s)")
+                            else:
+                                model_choices = ["No CodeFormer models found - check pretrained_weight/ directory"]
+                                default_model_choice = model_choices[0]
+                                logger.warning("No CodeFormer models found")
+                        except Exception as e:
+                            logger.warning(f"Failed to scan for CodeFormer models: {e}")
+                            model_choices = ["Error scanning models - check pretrained_weight/ directory"]
+                            default_model_choice = model_choices[0]
+                        
+                        with gr .Row ():
+                            codeformer_model_dropdown =gr .Dropdown (
+                            label ="CodeFormer Model",
+                            choices =model_choices ,
+                            value =default_model_choice ,
+                            info ="Select the CodeFormer model. 'Auto' uses the default model. Models should be in pretrained_weight/ directory.",
+                            interactive =False   # Will be enabled when checkbox is checked
+                            )
+                        
+                        face_restoration_batch_size_slider =gr .Slider (
+                        label ="Face Restoration Batch Size",
+                        minimum =app_config .DEFAULT_FACE_RESTORATION_MIN_BATCH_SIZE ,
+                        maximum =app_config .DEFAULT_FACE_RESTORATION_MAX_BATCH_SIZE ,
+                        value =app_config .DEFAULT_FACE_RESTORATION_BATCH_SIZE ,
+                        step =1 ,
+                        info ="Number of frames to process simultaneously for face restoration. Higher values = faster processing but more VRAM usage.",
+                        interactive =False  # Will be enabled when checkbox is checked
+                        )
 
                     if app_config .UTIL_COG_VLM_AVAILABLE :
                         with gr .Accordion ("Auto-Captioning Settings (CogVLM2) (Only for STAR Model)",open =True ):
@@ -988,6 +1068,173 @@ This helps visualize the quality improvement from upscaling."""
 - Cut videos are saved in organized folders with metadata
 """)
 
+        with gr .Tab ("Face Restoration",id ="face_restoration_tab"):
+            gr .Markdown ("# Standalone Face Restoration - CodeFormer Processing")
+            gr .Markdown ("**Apply face restoration to videos using CodeFormer without upscaling. Perfect for improving face quality in existing videos.**")
+            
+            with gr .Row ():
+                with gr .Column (scale =1 ):
+                    # Video Upload Section
+                    with gr .Group ():
+                        input_video_face_restoration =gr .Video (
+                        label ="Input Video for Face Restoration",
+                        sources =["upload"],
+                        interactive =True ,
+                        height =400 
+                        )
+                        
+                        # Face Restoration Mode Selection
+                        face_restoration_mode =gr .Radio (
+                        label ="Processing Mode",
+                        choices =["Single Video","Batch Folder"],
+                        value ="Single Video",
+                        info ="Choose between processing a single video or batch processing a folder of videos"
+                        )
+                        
+                        # Batch folder inputs (hidden by default)
+                        with gr .Group (visible =False )as batch_folder_controls :
+                            batch_input_folder_face =gr .Textbox (
+                            label ="Input Folder Path",
+                            placeholder ="C:/path/to/input/videos/",
+                            info ="Folder containing videos to process with face restoration"
+                            )
+                            batch_output_folder_face =gr .Textbox (
+                            label ="Output Folder Path", 
+                            placeholder ="C:/path/to/output/videos/",
+                            info ="Folder where face-restored videos will be saved"
+                            )
+
+                    # Face Restoration Settings
+                    with gr .Accordion ("Face Restoration Settings",open =True ):
+                        standalone_enable_face_restoration =gr .Checkbox (
+                        label ="Enable Face Restoration",
+                        value =True ,
+                        info ="Enable CodeFormer face restoration processing. Must be enabled for any processing to occur."
+                        )
+                        
+                        standalone_face_restoration_fidelity =gr .Slider (
+                        label ="Face Restoration Fidelity Weight",
+                        minimum =0.0 ,maximum =1.0 ,value =0.7 ,step =0.05 ,
+                        info ="Balance between quality (0.3) and identity preservation (0.8). 0.7 is recommended for most videos."
+                        )
+                        
+                        standalone_enable_face_colorization =gr .Checkbox (
+                        label ="Enable Face Colorization",
+                        value =False ,
+                        info ="Enable colorization for grayscale faces. Useful for old black & white videos or grayscale content."
+                        )
+                        
+                        with gr .Row ():
+                            # Initialize CodeFormer models for standalone tab
+                            try:
+                                from logic.face_restoration_utils import scan_codeformer_models
+                                standalone_models_info = scan_codeformer_models(app_config.FACE_RESTORATION_MODELS_DIR, logger)
+                                if standalone_models_info['available']:
+                                    standalone_model_choices = ["Auto (Default)"] + [f"{model['name']} ({model['size_mb']:.1f}MB)" for model in standalone_models_info['codeformer_models']]
+                                    standalone_default_model_choice = standalone_model_choices[0]
+                                else:
+                                    standalone_model_choices = ["No CodeFormer models found - check pretrained_weight/ directory"]
+                                    standalone_default_model_choice = standalone_model_choices[0]
+                            except Exception as e:
+                                logger.warning(f"Failed to scan CodeFormer models for standalone tab: {e}")
+                                standalone_model_choices = ["Error scanning models - check pretrained_weight/ directory"]
+                                standalone_default_model_choice = standalone_model_choices[0]
+                            
+                            standalone_codeformer_model_dropdown =gr .Dropdown (
+                            label ="CodeFormer Model",
+                            choices =standalone_model_choices,
+                            value =standalone_default_model_choice,
+                            info ="Select the CodeFormer model. 'Auto' uses the default model. Models should be in pretrained_weight/ directory."
+                            )
+                        
+                        standalone_face_restoration_batch_size =gr .Slider (
+                        label ="Processing Batch Size",
+                        minimum =1 ,maximum =16 ,value =4 ,step =1 ,
+                        info ="Number of frames to process simultaneously. Higher values = faster processing but more VRAM usage."
+                        )
+
+                    # Processing Controls
+                    with gr .Row ():
+                        face_restoration_process_btn =gr .Button ("Process Face Restoration",variant ="primary",icon ="icons/face_restoration.png")
+                        face_restoration_stop_btn =gr .Button ("Stop Processing",variant ="stop")
+                    
+                    # Processing Options
+                    with gr .Accordion ("Advanced Options",open =False ):
+                        standalone_save_frames =gr .Checkbox (
+                        label ="Save Individual Frames",
+                        value =False ,
+                        info ="Save processed frames as individual image files alongside the video"
+                        )
+                        
+                        standalone_create_comparison =gr .Checkbox (
+                        label ="Create Before/After Comparison Video",
+                        value =True ,
+                        info ="Create a side-by-side comparison video showing original vs face-restored results"
+                        )
+                        
+                        standalone_preserve_audio =gr .Checkbox (
+                        label ="Preserve Original Audio",
+                        value =True ,
+                        info ="Keep the original audio track in the processed video"
+                        )
+
+                with gr .Column (scale =1 ):
+                    # Output Video Display
+                    with gr .Group ():
+                        output_video_face_restoration =gr .Video (
+                        label ="Face Restored Video",
+                        interactive =False ,
+                        height =400 
+                        )
+                        
+                        # Comparison Video (if enabled)
+                        comparison_video_face_restoration =gr .Video (
+                        label ="Before/After Comparison",
+                        interactive =False ,
+                        height =300 ,
+                        visible =True 
+                        )
+                    
+                    # Status and Progress
+                    with gr .Group ():
+                        face_restoration_status =gr .Textbox (
+                        label ="Face Restoration Status & Log",
+                        interactive =False ,
+                        lines =10 ,
+                        max_lines =20 ,
+                        value ="🎭 Ready for face restoration processing. Upload a video and configure settings to begin."
+                        )
+                    
+                    # Processing Statistics
+                    with gr .Accordion ("Processing Statistics",open =True ):
+                        face_restoration_stats =gr .Textbox (
+                        label ="Processing Stats",
+                        interactive =False ,
+                        lines =4 ,
+                        value ="📊 Processing statistics will appear here during face restoration."
+                        )
+                    
+                    # Quick Help
+                    with gr .Accordion ("Face Restoration Help",open =False ):
+                        gr .Markdown ("""
+**Face Restoration Tips:**
+- **Fidelity Weight 0.3-0.5**: Focus on quality enhancement, may change face slightly
+- **Fidelity Weight 0.7-0.8**: Balance between quality and identity preservation  
+- **Fidelity Weight 0.8-1.0**: Maximum identity preservation, minimal changes
+
+**Best Practices:**
+- Use comparison video to evaluate results before final processing
+- Start with fidelity weight 0.7 for most videos
+- Enable colorization only for grayscale/black & white content
+- Higher batch sizes speed up processing but use more VRAM
+- Face restoration works best on videos with clear, visible faces
+
+**Model Requirements:**
+- CodeFormer models should be placed in `pretrained_weight/` directory
+- The system will automatically detect available models
+- 'Auto' mode uses the default CodeFormer model with optimal settings
+""")
+
     def update_steps_display (mode ):
         if mode =='fast':
             return gr .update (value =app_config .DEFAULT_DIFFUSION_STEPS_FAST ,interactive =False )
@@ -1025,6 +1272,47 @@ This helps visualize the quality improvement from upscaling."""
         outputs=[image_upscaler_model_dropdown, image_upscaler_batch_size_slider]
     )
     
+    # Face restoration controls
+    def update_face_restoration_controls(enable_face_restoration):
+        """Enable/disable face restoration controls based on checkbox state."""
+        return [
+            gr.update(interactive=enable_face_restoration),  # fidelity slider
+            gr.update(interactive=enable_face_restoration),  # colorization checkbox
+            gr.update(interactive=enable_face_restoration),  # timing radio
+            gr.update(interactive=enable_face_restoration),  # model dropdown
+            gr.update(interactive=enable_face_restoration)   # batch size slider
+        ]
+    
+    enable_face_restoration_check.change(
+        fn=update_face_restoration_controls,
+        inputs=enable_face_restoration_check,
+        outputs=[
+            face_restoration_fidelity_slider, 
+            enable_face_colorization_check, 
+            face_restoration_when_radio,
+            codeformer_model_dropdown, 
+            face_restoration_batch_size_slider
+        ]
+    )
+    
+
+    
+    # Standalone face restoration controls
+    def update_face_restoration_mode_controls(mode):
+        """Show/hide batch folder controls based on processing mode."""
+        if mode == "Batch Folder":
+            return gr.update(visible=True)
+        else:
+            return gr.update(visible=False)
+    
+    face_restoration_mode.change(
+        fn=update_face_restoration_mode_controls,
+        inputs=face_restoration_mode,
+        outputs=batch_folder_controls
+    )
+    
+
+    
     def refresh_upscaler_models():
         """Refresh the list of available upscaler models."""
         try:
@@ -1041,6 +1329,8 @@ This helps visualize the quality improvement from upscaling."""
             logger.warning(f"Failed to refresh upscaler models: {e}")
             return gr.update(choices=["Error scanning models - check upscale_models/ directory"], 
                            value="Error scanning models - check upscale_models/ directory")
+    
+
 
     def update_context_overlap_max (max_chunk_len ):
         """Update the maximum value of context overlap based on max_chunk_len"""
@@ -1091,6 +1381,27 @@ This helps visualize the quality improvement from upscaling."""
         if display_val is None :return 0 
         if isinstance (display_val ,int ):return display_val 
         return cogvlm_display_to_quant_val_map_global .get (display_val ,0 )
+    
+    def extract_codeformer_model_path_from_dropdown(dropdown_choice):
+        """Extract the actual model path from the dropdown choice."""
+        if not dropdown_choice or dropdown_choice.startswith("No CodeFormer") or dropdown_choice.startswith("Error"):
+            return None
+        if dropdown_choice == "Auto (Default)":
+            return None  # Use default model
+        
+        # Extract model name from "modelname.pth (123.4MB)" format
+        try:
+            model_name = dropdown_choice.split(" (")[0]
+            from logic.face_restoration_utils import scan_codeformer_models
+            models_info = scan_codeformer_models(app_config.FACE_RESTORATION_MODELS_DIR, logger)
+            if models_info['available']:
+                for model in models_info['codeformer_models']:
+                    if model['name'] == model_name:
+                        return model['path']
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to extract CodeFormer model path from dropdown: {e}")
+            return None
 
     def upscale_director_logic (
     input_video_val ,user_prompt_val ,pos_prompt_val ,neg_prompt_val ,model_selector_val ,
@@ -1118,6 +1429,10 @@ This helps visualize the quality improvement from upscaling."""
     
     # Image upscaler parameters
     enable_image_upscaler_val =False ,image_upscaler_model_val =None ,image_upscaler_batch_size_val =4 ,
+    
+    # Face restoration parameters
+    enable_face_restoration_val =False ,face_restoration_fidelity_val =0.7 ,enable_face_colorization_val =False ,
+    face_restoration_when_val ="after" ,codeformer_model_val =None ,face_restoration_batch_size_val =4 ,
     
     progress =gr .Progress (track_tqdm =True )
     ):
@@ -1306,7 +1621,16 @@ This helps visualize the quality improvement from upscaling."""
         # Image upscaler parameters
         enable_image_upscaler =enable_image_upscaler_val ,
         image_upscaler_model =image_upscaler_model_val ,
-        image_upscaler_batch_size =image_upscaler_batch_size_val 
+        image_upscaler_batch_size =image_upscaler_batch_size_val ,
+        
+        # Face restoration parameters
+        enable_face_restoration =enable_face_restoration_val ,
+        face_restoration_fidelity =face_restoration_fidelity_val ,
+        enable_face_colorization =enable_face_colorization_val ,
+        face_restoration_timing ="after_upscale" ,  # Fixed timing mode for single video processing
+        face_restoration_when =face_restoration_when_val ,
+        codeformer_model =extract_codeformer_model_path_from_dropdown(codeformer_model_val) ,
+        face_restoration_batch_size =face_restoration_batch_size_val 
         )
 
         for yielded_output_video ,yielded_status_log ,yielded_chunk_video ,yielded_chunk_status ,yielded_comparison_video in upscale_generator :
@@ -1437,6 +1761,16 @@ This helps visualize the quality improvement from upscaling."""
     
     # Add image upscaler parameters
     click_inputs .extend ([enable_image_upscaler_check ,image_upscaler_model_dropdown ,image_upscaler_batch_size_slider ])
+    
+    # Add face restoration parameters
+    click_inputs .extend ([
+        enable_face_restoration_check ,
+        face_restoration_fidelity_slider ,
+        enable_face_colorization_check ,
+        face_restoration_when_radio ,
+        codeformer_model_dropdown ,
+        face_restoration_batch_size_slider 
+    ])
 
     click_outputs_list .extend ([last_chunk_video ,chunk_status_text ])
 
@@ -1559,6 +1893,11 @@ This helps visualize the quality improvement from upscaling."""
     # Image upscaler parameters for batch
     enable_image_upscaler_val =False ,image_upscaler_model_val =None ,image_upscaler_batch_size_val =4 ,
     
+    # Face restoration parameters for batch
+    enable_face_restoration_val =False ,face_restoration_fidelity_val =0.7 ,enable_face_colorization_val =False ,
+    face_restoration_timing_val ="after_upscale" ,face_restoration_when_val ="after" ,codeformer_model_val =None ,
+    face_restoration_batch_size_val =4 ,
+    
     progress =gr .Progress (track_tqdm =True )
     ):
 
@@ -1591,7 +1930,16 @@ This helps visualize the quality improvement from upscaling."""
         # Image upscaler parameters
         enable_image_upscaler =enable_image_upscaler_val ,
         image_upscaler_model =image_upscaler_model_val ,
-        image_upscaler_batch_size =image_upscaler_batch_size_val 
+        image_upscaler_batch_size =image_upscaler_batch_size_val ,
+        
+        # Face restoration parameters
+        enable_face_restoration =enable_face_restoration_val ,
+        face_restoration_fidelity =face_restoration_fidelity_val ,
+        enable_face_colorization =enable_face_colorization_val ,
+        face_restoration_timing =face_restoration_timing_val ,
+        face_restoration_when =face_restoration_when_val ,
+        codeformer_model =extract_codeformer_model_path_from_dropdown(codeformer_model_val) ,
+        face_restoration_batch_size =face_restoration_batch_size_val 
         )
 
         return process_batch_videos (
@@ -1628,6 +1976,16 @@ This helps visualize the quality improvement from upscaling."""
         batch_cogvlm_unload_val=cogvlm_unload_radio_val if batch_enable_auto_caption_val else 'full',
 
         current_seed=actual_seed_for_batch,
+        
+        # Face restoration parameters for batch processing
+        enable_face_restoration_val=enable_face_restoration_val,
+        face_restoration_fidelity_val=face_restoration_fidelity_val,
+        enable_face_colorization_val=enable_face_colorization_val,
+        face_restoration_timing_val=face_restoration_timing_val,
+        face_restoration_when_val=face_restoration_when_val,
+        codeformer_model_val=codeformer_model_val,
+        face_restoration_batch_size_val=face_restoration_batch_size_val,
+        
         progress=progress
         )
 
@@ -1666,6 +2024,17 @@ This helps visualize the quality improvement from upscaling."""
     
     # Add image upscaler parameters to batch processing
     batch_process_inputs .extend ([enable_image_upscaler_check ,image_upscaler_model_dropdown ,image_upscaler_batch_size_slider ])
+    
+    # Add face restoration parameters to batch processing
+    batch_process_inputs .extend ([
+        enable_face_restoration_check ,
+        face_restoration_fidelity_slider ,
+        enable_face_colorization_check ,
+        gr.State("after_upscale"),  # face_restoration_timing (fixed for batch)
+        face_restoration_when_radio ,
+        codeformer_model_dropdown ,
+        face_restoration_batch_size_slider 
+    ])
 
     batch_process_button .click (
     fn =process_batch_videos_wrapper ,
@@ -1679,6 +2048,184 @@ This helps visualize the quality improvement from upscaling."""
     inputs =gpu_selector ,
     outputs =status_textbox 
     )
+
+    def standalone_face_restoration_wrapper(
+        input_video_val,
+        face_restoration_mode_val,
+        batch_input_folder_val,
+        batch_output_folder_val,
+        enable_face_restoration_val,
+        face_restoration_fidelity_val,
+        enable_face_colorization_val,
+        codeformer_model_val,
+        face_restoration_batch_size_val,
+        save_frames_val,
+        create_comparison_val,
+        preserve_audio_val,
+        seed_num_val=99,
+        random_seed_check_val=False,
+        progress=gr.Progress(track_tqdm=True)
+    ):
+        """
+        Standalone face restoration processing wrapper for Gradio interface.
+        Handles both single video and batch folder processing modes.
+        """
+        try:
+            # Import required modules
+            from logic.face_restoration_utils import restore_video_frames, scan_codeformer_models
+            import os
+            import time
+            import random
+            
+            # Generate seed
+            if random_seed_check_val:
+                actual_seed = random.randint(0, 2**32 - 1)
+                logger.info(f"Generated random seed: {actual_seed}")
+            else:
+                actual_seed = seed_num_val if seed_num_val >= 0 else 99
+            
+            # Validate inputs
+            if not enable_face_restoration_val:
+                return None, None, "⚠️ Face restoration is disabled. Please enable it to process videos.", "❌ Processing disabled"
+            
+            if face_restoration_mode_val == "Single Video":
+                if not input_video_val:
+                    return None, None, "⚠️ Please upload a video file to process.", "❌ No input video"
+                input_path = input_video_val
+                output_dir = app_config.DEFAULT_OUTPUT_DIR
+                processing_mode = "single"
+            else:  # Batch Folder
+                if not batch_input_folder_val or not batch_output_folder_val:
+                    return None, None, "⚠️ Please specify both input and output folder paths for batch processing.", "❌ Missing folder paths"
+                if not os.path.exists(batch_input_folder_val):
+                    return None, None, f"⚠️ Input folder does not exist: {batch_input_folder_val}", "❌ Input folder not found"
+                input_path = batch_input_folder_val
+                output_dir = batch_output_folder_val
+                processing_mode = "batch"
+            
+            # Extract model path from dropdown
+            actual_model_path = extract_codeformer_model_path_from_dropdown(codeformer_model_val)
+            
+            # Progress tracking
+            progress(0.0, "🎭 Starting face restoration processing...")
+            start_time = time.time()
+            
+            # Process video(s)
+            if processing_mode == "single":
+                # Single video processing
+                progress(0.1, "📹 Processing single video...")
+                
+                def progress_callback(current_progress, status_msg):
+                    # Map progress to 0.1-0.9 range for processing
+                    mapped_progress = 0.1 + (current_progress * 0.8)
+                    progress(mapped_progress, f"🎭 {status_msg}")
+                
+                result = restore_video_frames(
+                    video_path=input_path,
+                    output_dir=output_dir,
+                    fidelity_weight=face_restoration_fidelity_val,
+                    enable_colorization=enable_face_colorization_val,
+                    model_path=actual_model_path,
+                    batch_size=face_restoration_batch_size_val,
+                    save_frames=save_frames_val,
+                    create_comparison=create_comparison_val,
+                    preserve_audio=preserve_audio_val,
+                    progress_callback=progress_callback,
+                    logger=logger
+                )
+                
+                if result['success']:
+                    output_video = result['output_video_path']
+                    comparison_video = result.get('comparison_video_path', None)
+                    
+                    # Processing statistics
+                    processing_time = time.time() - start_time
+                    stats_msg = f"""📊 Processing Complete!
+⏱️ Total Time: {processing_time:.1f} seconds
+🎬 Input: {os.path.basename(input_path)}
+📁 Output: {os.path.basename(output_video) if output_video else 'N/A'}
+🎯 Fidelity: {face_restoration_fidelity_val}
+🔧 Batch Size: {face_restoration_batch_size_val}
+✅ Status: Success"""
+                    
+                    progress(1.0, "✅ Face restoration completed successfully!")
+                    return output_video, comparison_video, result['message'], stats_msg
+                else:
+                    return None, None, f"❌ Processing failed: {result['message']}", "❌ Processing failed"
+            
+            else:  # Batch processing
+                progress(0.1, "📁 Starting batch face restoration...")
+                
+                # Find video files in input folder
+                video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv']
+                video_files = []
+                for file in os.listdir(input_path):
+                    if any(file.lower().endswith(ext) for ext in video_extensions):
+                        video_files.append(os.path.join(input_path, file))
+                
+                if not video_files:
+                    return None, None, f"⚠️ No video files found in input folder: {input_path}", "❌ No videos found"
+                
+                # Process each video
+                processed_count = 0
+                failed_count = 0
+                total_files = len(video_files)
+                
+                for i, video_file in enumerate(video_files):
+                    video_name = os.path.basename(video_file)
+                    file_progress = i / total_files
+                    base_progress = 0.1 + (file_progress * 0.8)
+                    
+                    progress(base_progress, f"🎭 Processing {video_name} ({i+1}/{total_files})...")
+                    
+                    def batch_progress_callback(current_progress, status_msg):
+                        # Map individual file progress within the overall batch progress
+                        file_progress_range = 0.8 / total_files
+                        mapped_progress = base_progress + (current_progress * file_progress_range)
+                        progress(mapped_progress, f"🎭 [{i+1}/{total_files}] {video_name}: {status_msg}")
+                    
+                    result = restore_video_frames(
+                        video_path=video_file,
+                        output_dir=output_dir,
+                        fidelity_weight=face_restoration_fidelity_val,
+                        enable_colorization=enable_face_colorization_val,
+                        model_path=actual_model_path,
+                        batch_size=face_restoration_batch_size_val,
+                        save_frames=save_frames_val,
+                        create_comparison=create_comparison_val,
+                        preserve_audio=preserve_audio_val,
+                        progress_callback=batch_progress_callback,
+                        logger=logger
+                    )
+                    
+                    if result['success']:
+                        processed_count += 1
+                        logger.info(f"Successfully processed: {video_name}")
+                    else:
+                        failed_count += 1
+                        logger.error(f"Failed to process {video_name}: {result['message']}")
+                
+                # Batch processing statistics
+                processing_time = time.time() - start_time
+                stats_msg = f"""📊 Batch Processing Complete!
+⏱️ Total Time: {processing_time:.1f} seconds
+📁 Input Folder: {os.path.basename(input_path)}
+📁 Output Folder: {os.path.basename(output_dir)}
+✅ Processed: {processed_count} videos
+❌ Failed: {failed_count} videos
+🎯 Fidelity: {face_restoration_fidelity_val}
+🔧 Batch Size: {face_restoration_batch_size_val}"""
+                
+                if processed_count > 0:
+                    progress(1.0, f"✅ Batch processing completed! {processed_count}/{total_files} videos processed successfully.")
+                    status_msg = f"✅ Batch processing completed!\n\n📊 Results:\n✅ Successfully processed: {processed_count} videos\n❌ Failed: {failed_count} videos\n📁 Output saved to: {output_dir}\n\n⏱️ Total processing time: {processing_time:.1f} seconds"
+                    return None, None, status_msg, stats_msg
+                else:
+                    return None, None, f"❌ Batch processing failed: No videos were processed successfully.", "❌ Batch processing failed"
+        
+        except Exception as e:
+            logger.error(f"Standalone face restoration error: {str(e)}")
+            return None, None, f"❌ Error during face restoration: {str(e)}", "❌ Processing error"
 
     def manual_comparison_wrapper (
     manual_original_video_val ,
@@ -2269,6 +2816,34 @@ This helps visualize the quality improvement from upscaling."""
         fn=handle_main_input_change,
         inputs=input_video,
         outputs=integration_status
+    )
+    
+    # Face Restoration Tab Event Handlers
+    face_restoration_process_btn.click(
+        fn=standalone_face_restoration_wrapper,
+        inputs=[
+            input_video_face_restoration,
+            face_restoration_mode,
+            batch_input_folder_face,
+            batch_output_folder_face,
+            standalone_enable_face_restoration,
+            standalone_face_restoration_fidelity,
+            standalone_enable_face_colorization,
+            standalone_codeformer_model_dropdown,
+            standalone_face_restoration_batch_size,
+            standalone_save_frames,
+            standalone_create_comparison,
+            standalone_preserve_audio,
+            seed_num,
+            random_seed_check
+        ],
+        outputs=[
+            output_video_face_restoration,
+            comparison_video_face_restoration,
+            face_restoration_status,
+            face_restoration_stats
+        ],
+        show_progress_on=[output_video_face_restoration]
     )
 
 if __name__ =="__main__":

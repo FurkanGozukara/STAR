@@ -104,6 +104,15 @@ def process_batch_videos(
     image_upscaler_model_val=None,
     image_upscaler_batch_size_val=4,
 
+    # Face restoration parameters for batch processing
+    enable_face_restoration_val=False,
+    face_restoration_fidelity_val=0.7,
+    enable_face_colorization_val=False,
+    face_restoration_timing_val="after_upscale",
+    face_restoration_when_val="after",
+    codeformer_model_val=None,
+    face_restoration_batch_size_val=4,
+
     progress=gr.Progress(track_tqdm=True)
 ):
     """
@@ -127,6 +136,13 @@ def process_batch_videos(
         enable_image_upscaler_val: Enable image-based upscaling instead of STAR
         image_upscaler_model_val: Selected image upscaler model filename
         image_upscaler_batch_size_val: Batch size for image upscaler processing
+        enable_face_restoration_val: Enable CodeFormer face restoration
+        face_restoration_fidelity_val: CodeFormer fidelity weight (0.0-1.0)
+        enable_face_colorization_val: Enable grayscale face colorization
+        face_restoration_timing_val: When to apply face restoration
+        face_restoration_when_val: Before or after upscaling
+        codeformer_model_val: Path to CodeFormer model
+        face_restoration_batch_size_val: Batch size for face restoration processing
         progress: Gradio progress tracker
         
     Returns:
@@ -277,6 +293,15 @@ def process_batch_videos(
                     image_upscaler_model=image_upscaler_model_val,
                     image_upscaler_batch_size=image_upscaler_batch_size_val,
 
+                    # Face restoration parameters for batch processing
+                    enable_face_restoration=enable_face_restoration_val,
+                    face_restoration_fidelity=face_restoration_fidelity_val,
+                    enable_face_colorization=enable_face_colorization_val,
+                    face_restoration_timing=face_restoration_timing_val,
+                    face_restoration_when=face_restoration_when_val,
+                    codeformer_model=codeformer_model_val,
+                    face_restoration_batch_size=face_restoration_batch_size_val,
+
                     current_seed=current_seed,
                     progress=progress
                 )
@@ -342,6 +367,14 @@ def process_batch_videos(
             status_msg += f"  🖼️ Upscaler: Image-based ({actual_model_name}, batch size: {image_upscaler_batch_size_val})\n"
         else:
             status_msg += f"  ⭐ Upscaler: STAR Model\n"
+        
+        # Add face restoration information
+        if enable_face_restoration_val:
+            colorization_text = " + Colorization" if enable_face_colorization_val else ""
+            timing_text = f"{face_restoration_when_val} upscaling"
+            status_msg += f"  👤 Face Restoration: Enabled (fidelity: {face_restoration_fidelity_val:.1f}, {timing_text}{colorization_text})\n"
+        else:
+            status_msg += f"  👤 Face Restoration: Disabled\n"
         status_msg += "\n"
 
         if batch_save_captions_val and any(caption_stats.values()):

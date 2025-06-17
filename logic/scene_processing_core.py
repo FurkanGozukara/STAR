@@ -10,6 +10,12 @@ import cv2
 import torch
 import numpy as np
 import gc # Added for garbage collection
+from .face_restoration_utils import (
+    setup_codeformer_environment,
+    restore_frames_batch,
+    restore_video_frames,
+    apply_face_restoration_to_scene_frames
+)
 
 
 def process_single_scene(
@@ -34,6 +40,11 @@ def process_single_scene(
     
     # Image upscaler parameters for scenes
     enable_image_upscaler=False, image_upscaler_model=None, image_upscaler_batch_size=4,
+    
+    # Face restoration parameters for scenes
+    enable_face_restoration=False, face_restoration_fidelity=0.7, enable_face_colorization=False,
+    face_restoration_timing="after_upscale", face_restoration_when="after", codeformer_model=None,
+    face_restoration_batch_size=4,
     
     # Dependencies injected as parameters
     util_extract_frames=None,
@@ -287,6 +298,49 @@ def process_single_scene(
 
         if not all_lr_frames_bgr:
             raise Exception(f"No valid frames found in scene {scene_name}")
+
+        # FACE RESTORATION - Apply to Scene Input Frames Before Upscaling
+        if enable_face_restoration and face_restoration_when == "before":
+            if progress_callback:
+                progress_callback(0.25, f"Scene {scene_index + 1}: Applying face restoration before upscaling...")
+            
+            # Create face restoration output directory for input frames
+            scene_face_restored_input_dir = os.path.join(scene_temp_dir, "face_restored_input_frames")
+            
+            # Progress callback for face restoration
+            def scene_face_restoration_input_progress_callback(progress_val, desc):
+                if progress_callback:
+                    # Map face restoration progress to the 0.25-0.3 range
+                    mapped_progress = 0.25 + (progress_val * 0.05)
+                    progress_callback(mapped_progress, desc)
+            
+            # Apply face restoration to input scene frames before upscaling
+            face_restoration_result = apply_face_restoration_to_scene_frames(
+                scene_frames_dir=scene_input_frames_dir,
+                output_frames_dir=scene_face_restored_input_dir,
+                fidelity_weight=face_restoration_fidelity,
+                enable_colorization=enable_face_colorization,
+                model_path=codeformer_model,
+                batch_size=face_restoration_batch_size,
+                progress_callback=scene_face_restoration_input_progress_callback,
+                logger=logger
+            )
+            
+            if face_restoration_result['success']:
+                # Update input frames directory to use face-restored frames for upscaling
+                scene_input_frames_dir = scene_face_restored_input_dir
+                # Reload frames from face-restored directory
+                all_lr_frames_bgr = []
+                for frame_filename in scene_frame_files:
+                    frame_lr_bgr = cv2.imread(os.path.join(scene_input_frames_dir, frame_filename))
+                    if frame_lr_bgr is None:
+                        logger.error(f"Could not read face-restored frame {frame_filename} from scene {scene_name}")
+                        continue
+                    all_lr_frames_bgr.append(frame_lr_bgr)
+                logger.info(f"Scene {scene_index + 1}: Face restoration before upscaling completed successfully")
+            else:
+                logger.warning(f"Scene {scene_index + 1}: Face restoration before upscaling failed: {face_restoration_result['error']}")
+                # Continue with original input frames if face restoration fails
 
         total_noise_levels = 900
         if progress_callback:
@@ -892,6 +946,41 @@ def process_single_scene(
                 del chunk_data_cuda, chunk_sr_tensor_bcthw, chunk_sr_frames_uint8
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+
+        # FACE RESTORATION - Apply to Scene Frames After Upscaling
+        if enable_face_restoration and face_restoration_when == "after":
+            if progress_callback:
+                progress_callback(0.8, f"Scene {scene_index + 1}: Applying face restoration...")
+            
+            # Create face restoration output directory
+            scene_face_restored_frames_dir = os.path.join(scene_temp_dir, "face_restored_frames")
+            
+            # Progress callback for face restoration
+            def scene_face_restoration_progress_callback(progress_val, desc):
+                if progress_callback:
+                    # Map face restoration progress to the 0.8-0.85 range
+                    mapped_progress = 0.8 + (progress_val * 0.05)
+                    progress_callback(mapped_progress, desc)
+            
+            # Apply face restoration to upscaled scene frames
+            face_restoration_result = apply_face_restoration_to_scene_frames(
+                scene_frames_dir=scene_output_frames_dir,
+                output_frames_dir=scene_face_restored_frames_dir,
+                fidelity_weight=face_restoration_fidelity,
+                enable_colorization=enable_face_colorization,
+                model_path=codeformer_model,
+                batch_size=face_restoration_batch_size,
+                progress_callback=scene_face_restoration_progress_callback,
+                logger=logger
+            )
+            
+            if face_restoration_result['success']:
+                # Update output frames directory to use face-restored frames
+                scene_output_frames_dir = scene_face_restored_frames_dir
+                logger.info(f"Scene {scene_index + 1}: Face restoration completed successfully")
+            else:
+                logger.warning(f"Scene {scene_index + 1}: Face restoration failed: {face_restoration_result['error']}")
+                # Continue with original upscaled frames if face restoration fails
 
         if save_frames and scene_output_frames_permanent:
             if progress_callback:

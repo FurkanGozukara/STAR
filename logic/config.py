@@ -23,6 +23,9 @@ HEAVY_DEG_MODEL_PATH = None
 RIFE_MODEL_PATH = None
 # Image upscaler models directory
 UPSCALE_MODELS_DIR = None
+# Face restoration paths
+CODEFORMER_BASE_PATH = None
+FACE_RESTORATION_MODELS_DIR = None
 
 # --- Prompt constants (to be initialized by secourses_app.py from star_cfg) ---
 DEFAULT_POS_PROMPT = "Default Positive Prompt Placeholder"
@@ -144,10 +147,21 @@ DEFAULT_IMAGE_UPSCALER_MAX_BATCH_SIZE = 1000
 DEFAULT_IMAGE_UPSCALER_DEVICE = "cuda"  # "cuda" or "cpu"
 DEFAULT_IMAGE_UPSCALER_CACHE_MODELS = True
 
+# Face Restoration Settings (CodeFormer)
+DEFAULT_ENABLE_FACE_RESTORATION = False
+DEFAULT_FACE_RESTORATION_FIDELITY = 0.7  # 0.0-1.0, higher values preserve identity better
+DEFAULT_ENABLE_FACE_COLORIZATION = False
+DEFAULT_FACE_RESTORATION_TIMING = "after_upscale"  # "before_upscale", "after_upscale", "per_frame"
+DEFAULT_FACE_RESTORATION_WHEN = "after"  # "before", "after" (relative to upscaling process)
+DEFAULT_CODEFORMER_MODEL = None  # Will be set to first available model
+DEFAULT_FACE_RESTORATION_BATCH_SIZE = 4  # Number of frames to process simultaneously
+DEFAULT_FACE_RESTORATION_MIN_BATCH_SIZE = 1
+DEFAULT_FACE_RESTORATION_MAX_BATCH_SIZE = 32
+
 # --- Initialization functions ---
 def initialize_paths_and_prompts(base_path_from_app, outputs_folder_from_args, star_cfg_from_app):
     global APP_BASE_PATH, DEFAULT_OUTPUT_DIR, COG_VLM_MODEL_PATH, LIGHT_DEG_MODEL_PATH, HEAVY_DEG_MODEL_PATH, RIFE_MODEL_PATH
-    global DEFAULT_POS_PROMPT, DEFAULT_NEG_PROMPT, UPSCALE_MODELS_DIR
+    global DEFAULT_POS_PROMPT, DEFAULT_NEG_PROMPT, UPSCALE_MODELS_DIR, CODEFORMER_BASE_PATH, FACE_RESTORATION_MODELS_DIR
 
     APP_BASE_PATH = base_path_from_app
     DEFAULT_OUTPUT_DIR = os.path.abspath(outputs_folder_from_args)
@@ -157,6 +171,9 @@ def initialize_paths_and_prompts(base_path_from_app, outputs_folder_from_args, s
     RIFE_MODEL_PATH = os.path.join(APP_BASE_PATH, '..', 'Practical-RIFE', 'train_log')
     # Initialize image upscaler models directory
     UPSCALE_MODELS_DIR = os.path.join(APP_BASE_PATH, 'upscale_models')
+    # Initialize face restoration paths
+    CODEFORMER_BASE_PATH = os.path.join(os.path.dirname(APP_BASE_PATH), 'CodeFormer_STAR')
+    FACE_RESTORATION_MODELS_DIR = os.path.join(APP_BASE_PATH, 'pretrained_weight')
 
     if star_cfg_from_app:
         DEFAULT_POS_PROMPT = star_cfg_from_app.positive_prompt
@@ -207,6 +224,52 @@ def validate_image_upscaler_batch_size(batch_size):
     return max(DEFAULT_IMAGE_UPSCALER_MIN_BATCH_SIZE, 
                min(DEFAULT_IMAGE_UPSCALER_MAX_BATCH_SIZE, batch_size))
 
+def get_face_restoration_settings():
+    """
+    Get the current face restoration configuration settings.
+    
+    Returns:
+        Dict containing face restoration configuration
+    """
+    return {
+        'enabled': DEFAULT_ENABLE_FACE_RESTORATION,
+        'fidelity_weight': DEFAULT_FACE_RESTORATION_FIDELITY,
+        'enable_colorization': DEFAULT_ENABLE_FACE_COLORIZATION,
+        'timing': DEFAULT_FACE_RESTORATION_TIMING,
+        'when': DEFAULT_FACE_RESTORATION_WHEN,
+        'model': DEFAULT_CODEFORMER_MODEL,
+        'batch_size': DEFAULT_FACE_RESTORATION_BATCH_SIZE,
+        'min_batch_size': DEFAULT_FACE_RESTORATION_MIN_BATCH_SIZE,
+        'max_batch_size': DEFAULT_FACE_RESTORATION_MAX_BATCH_SIZE,
+        'codeformer_base_path': CODEFORMER_BASE_PATH,
+        'models_dir': FACE_RESTORATION_MODELS_DIR
+    }
+
+def validate_face_restoration_batch_size(batch_size):
+    """
+    Validate and clamp face restoration batch size to allowed range.
+    
+    Args:
+        batch_size: Requested batch size
+        
+    Returns:
+        Validated batch size within allowed range
+    """
+    return max(DEFAULT_FACE_RESTORATION_MIN_BATCH_SIZE, 
+               min(DEFAULT_FACE_RESTORATION_MAX_BATCH_SIZE, batch_size))
+
+def validate_face_restoration_fidelity(fidelity_weight):
+    """
+    Validate and clamp face restoration fidelity weight to allowed range.
+    
+    Args:
+        fidelity_weight: Requested fidelity weight (0.0-1.0)
+        
+    Returns:
+        Validated fidelity weight within allowed range
+    """
+    return max(0.0, min(1.0, fidelity_weight))
+
 # Expose UTIL_COG_VLM_AVAILABLE and UTIL_BITSANDBYTES_AVAILABLE from cogvlm_utils if they were imported successfully
 # This makes them centrally accessible via this config module.
 # The main app should ensure cogvlm_utils is in sys.path before importing config if direct import within config fails.
@@ -214,6 +277,7 @@ def validate_image_upscaler_batch_size(batch_size):
 __all__ = [
     # Initialized values
     'APP_BASE_PATH', 'DEFAULT_OUTPUT_DIR', 'COG_VLM_MODEL_PATH', 'LIGHT_DEG_MODEL_PATH', 'HEAVY_DEG_MODEL_PATH', 'RIFE_MODEL_PATH', 'UPSCALE_MODELS_DIR',
+    'CODEFORMER_BASE_PATH', 'FACE_RESTORATION_MODELS_DIR',
     'DEFAULT_POS_PROMPT', 'DEFAULT_NEG_PROMPT',
     # Direct imports/values
     'UTIL_COG_VLM_AVAILABLE', 'UTIL_BITSANDBYTES_AVAILABLE',
@@ -248,7 +312,12 @@ __all__ = [
     # Image upscaler defaults
     'DEFAULT_ENABLE_IMAGE_UPSCALER', 'DEFAULT_IMAGE_UPSCALER_MODEL', 'DEFAULT_IMAGE_UPSCALER_BATCH_SIZE',
     'DEFAULT_IMAGE_UPSCALER_MIN_BATCH_SIZE', 'DEFAULT_IMAGE_UPSCALER_MAX_BATCH_SIZE', 'DEFAULT_IMAGE_UPSCALER_DEVICE', 'DEFAULT_IMAGE_UPSCALER_CACHE_MODELS',
+    # Face restoration defaults
+    'DEFAULT_ENABLE_FACE_RESTORATION', 'DEFAULT_FACE_RESTORATION_FIDELITY', 'DEFAULT_ENABLE_FACE_COLORIZATION',
+    'DEFAULT_FACE_RESTORATION_TIMING', 'DEFAULT_FACE_RESTORATION_WHEN', 'DEFAULT_CODEFORMER_MODEL',
+    'DEFAULT_FACE_RESTORATION_BATCH_SIZE', 'DEFAULT_FACE_RESTORATION_MIN_BATCH_SIZE', 'DEFAULT_FACE_RESTORATION_MAX_BATCH_SIZE',
     # Functions
     'initialize_paths_and_prompts', 'get_cogvlm_quant_choices_map', 'get_default_cogvlm_quant_display',
-    'get_image_upscaler_settings', 'validate_image_upscaler_batch_size'
+    'get_image_upscaler_settings', 'validate_image_upscaler_batch_size',
+    'get_face_restoration_settings', 'validate_face_restoration_batch_size', 'validate_face_restoration_fidelity'
 ] 

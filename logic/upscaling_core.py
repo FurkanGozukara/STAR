@@ -38,6 +38,12 @@ from .nvenc_utils import is_resolution_too_small_for_nvenc
 from .scene_processing_core import process_single_scene
 from .comparison_video import create_comparison_video, get_comparison_output_path
 from .rife_interpolation import apply_rife_to_chunks, apply_rife_to_scenes
+from .face_restoration_utils import (
+    setup_codeformer_environment,
+    restore_frames_batch,
+    restore_video_frames,
+    apply_face_restoration_to_frames
+)
 
 
 def run_upscale (
@@ -73,6 +79,11 @@ def run_upscale (
 
     # Image upscaler parameters
     enable_image_upscaler =False ,image_upscaler_model =None ,image_upscaler_batch_size =4 ,
+
+    # Face restoration parameters
+    enable_face_restoration =False ,face_restoration_fidelity =0.7 ,enable_face_colorization =False ,
+    face_restoration_timing ="after_upscale" ,face_restoration_when ="after" ,codeformer_model =None ,
+    face_restoration_batch_size =4 ,
 
     # Injected dependencies
     logger: logging.Logger = None,
@@ -137,6 +148,12 @@ def run_upscale (
     "image_upscaler_enabled":enable_image_upscaler ,"image_upscaler_model":image_upscaler_model ,
     "image_upscaler_batch_size":image_upscaler_batch_size ,
 
+    # Face restoration metadata
+    "face_restoration_enabled":enable_face_restoration ,"face_restoration_fidelity":face_restoration_fidelity ,
+    "face_colorization_enabled":enable_face_colorization ,"face_restoration_timing":face_restoration_timing ,
+    "face_restoration_when":face_restoration_when ,"codeformer_model":codeformer_model ,
+    "face_restoration_batch_size":face_restoration_batch_size ,
+
     "final_output_path":None ,"orig_w":None ,"orig_h":None ,
     "input_fps":None ,"upscale_factor":None ,"final_w":None ,"final_h":None ,
     }
@@ -151,8 +168,10 @@ def run_upscale (
     "model_load":0.05 ,
     "extract_frames":0.10 ,
     "copy_input_frames":0.05 if save_frames and not enable_scene_split else 0.0, # Adjusted
+    "face_restoration_before":0.08 if enable_face_restoration and face_restoration_when == "before" else 0.0,
     "upscaling_loop":0.50 if enable_scene_split else 0.60 ,
     "scene_merge":0.05 if enable_scene_split else 0.0 ,
+    "face_restoration_after":0.08 if enable_face_restoration and face_restoration_when == "after" else 0.0,
     "reassembly_copy_processed":0.05 if save_frames and not enable_scene_split else 0.0, # Adjusted
     "reassembly_audio_merge":0.03 ,
     "comparison_video": 0.03 if create_comparison_video_enabled else 0.0,
@@ -597,6 +616,56 @@ def run_upscale (
              if stage_weights["copy_input_frames"] > 0.0: # Ensure progress is added if stage was active
                 current_overall_progress +=stage_weights ["copy_input_frames"]
 
+        # FACE RESTORATION - Before Upscaling
+        if enable_face_restoration and face_restoration_when == "before" and not enable_scene_split:
+            face_restoration_before_progress_start = current_overall_progress
+            progress(current_overall_progress, desc="Starting face restoration before upscaling...")
+            
+            face_restoration_before_start_time = time.time()
+            logger.info("Applying face restoration before upscaling...")
+            status_log.append("Applying face restoration before upscaling...")
+            yield None, "\n".join(status_log), last_chunk_video_path, "Face restoration before upscaling...", None
+            
+            # Create face restoration output directory  
+            face_restored_frames_dir = os.path.join(temp_dir, "face_restored_frames_before")
+            
+            # Progress callback for face restoration
+            def face_restoration_before_progress_callback(progress_val, desc):
+                abs_progress = face_restoration_before_progress_start + progress_val * stage_weights["face_restoration_before"]
+                progress(abs_progress, desc=desc)
+            
+            # Apply face restoration to input frames
+            face_restoration_result = apply_face_restoration_to_frames(
+                input_frames_dir=input_frames_dir,
+                output_frames_dir=face_restored_frames_dir,
+                fidelity_weight=face_restoration_fidelity,
+                enable_colorization=enable_face_colorization,
+                model_path=codeformer_model,
+                batch_size=face_restoration_batch_size,
+                progress_callback=face_restoration_before_progress_callback,
+                logger=logger
+            )
+            
+            if face_restoration_result['success']:
+                # Update input frames directory to use face-restored frames for upscaling
+                input_frames_dir = face_restored_frames_dir
+                face_restore_before_msg = f"Face restoration before upscaling completed: {face_restoration_result['processed_count']} frames processed. Time: {format_time(time.time() - face_restoration_before_start_time)}"
+                status_log.append(face_restore_before_msg)
+                logger.info(face_restore_before_msg)
+            else:
+                error_msg = f"Face restoration before upscaling failed: {face_restoration_result['error']}"
+                status_log.append(error_msg)
+                logger.warning(error_msg)
+                # Continue with original frames if face restoration fails
+                
+            current_overall_progress = face_restoration_before_progress_start + stage_weights["face_restoration_before"]
+            progress(current_overall_progress, desc="Face restoration before upscaling completed")
+            yield None, "\n".join(status_log), last_chunk_video_path, "Face restoration before upscaling completed", None
+        else:
+            # Skip face restoration before stage
+            if stage_weights["face_restoration_before"] > 0.0:
+                current_overall_progress += stage_weights["face_restoration_before"]
+
         upscaling_loop_progress_start =current_overall_progress
         progress (current_overall_progress ,desc ="Preparing for upscaling...")
         total_noise_levels =900
@@ -809,6 +878,12 @@ def run_upscale (
                         # Image upscaler parameters for scenes
                         enable_image_upscaler=enable_image_upscaler, image_upscaler_model=image_upscaler_model, 
                         image_upscaler_batch_size=image_upscaler_batch_size,
+                        
+                        # Face restoration parameters for scenes
+                        enable_face_restoration=enable_face_restoration, face_restoration_fidelity=face_restoration_fidelity,
+                        enable_face_colorization=enable_face_colorization, face_restoration_timing=face_restoration_timing,
+                        face_restoration_when=face_restoration_when, codeformer_model=codeformer_model,
+                        face_restoration_batch_size=face_restoration_batch_size,
                         
                         util_extract_frames=util_extract_frames, util_auto_caption=util_auto_caption, 
                         util_create_video_from_frames=util_create_video_from_frames, 
@@ -1525,6 +1600,66 @@ def run_upscale (
         else : # Not saving processed frames or scene split enabled
             if stage_weights["reassembly_copy_processed"] > 0.0:
                  current_overall_progress +=stage_weights ["reassembly_copy_processed"]
+
+        # FACE RESTORATION - After Upscaling
+        if enable_face_restoration and face_restoration_when == "after" and not enable_scene_split:
+            face_restoration_after_progress_start = current_overall_progress
+            progress(current_overall_progress, desc="Starting face restoration after upscaling...")
+            
+            face_restoration_after_start_time = time.time()
+            logger.info("Applying face restoration after upscaling...")
+            status_log.append("Applying face restoration after upscaling...")
+            yield None, "\n".join(status_log), last_chunk_video_path, "Face restoration after upscaling...", None
+            
+            # Create face restoration output directory
+            face_restored_frames_dir = os.path.join(temp_dir, "face_restored_frames_after")
+            
+            # Progress callback for face restoration
+            def face_restoration_after_progress_callback(progress_val, desc):
+                abs_progress = face_restoration_after_progress_start + progress_val * stage_weights["face_restoration_after"]
+                progress(abs_progress, desc=desc)
+            
+            # Apply face restoration to upscaled frames
+            face_restoration_result = apply_face_restoration_to_frames(
+                input_frames_dir=output_frames_dir,
+                output_frames_dir=face_restored_frames_dir,
+                fidelity_weight=face_restoration_fidelity,
+                enable_colorization=enable_face_colorization,
+                model_path=codeformer_model,
+                batch_size=face_restoration_batch_size,
+                progress_callback=face_restoration_after_progress_callback,
+                logger=logger
+            )
+            
+            if face_restoration_result['success']:
+                # Update output frames directory to use face-restored frames for final video
+                output_frames_dir = face_restored_frames_dir
+                face_restore_after_msg = f"Face restoration after upscaling completed: {face_restoration_result['processed_count']} frames processed. Time: {format_time(time.time() - face_restoration_after_start_time)}"
+                status_log.append(face_restore_after_msg)
+                logger.info(face_restore_after_msg)
+                
+                # Update processed frames permanent save path if saving frames
+                if save_frames and processed_frames_permanent_save_path:
+                    # Copy face-restored frames to permanent location
+                    face_restored_files = os.listdir(face_restored_frames_dir)
+                    for face_restored_file in face_restored_files:
+                        src_path = os.path.join(face_restored_frames_dir, face_restored_file)
+                        dst_path = os.path.join(processed_frames_permanent_save_path, face_restored_file)
+                        shutil.copy2(src_path, dst_path)
+                    logger.info(f"Face-restored frames copied to permanent storage: {processed_frames_permanent_save_path}")
+            else:
+                error_msg = f"Face restoration after upscaling failed: {face_restoration_result['error']}"
+                status_log.append(error_msg)
+                logger.warning(error_msg)
+                # Continue with original upscaled frames if face restoration fails
+                
+            current_overall_progress = face_restoration_after_progress_start + stage_weights["face_restoration_after"]
+            progress(current_overall_progress, desc="Face restoration after upscaling completed")
+            yield None, "\n".join(status_log), last_chunk_video_path, "Face restoration after upscaling completed", None
+        else:
+            # Skip face restoration after stage
+            if stage_weights["face_restoration_after"] > 0.0:
+                current_overall_progress += stage_weights["face_restoration_after"]
 
         if not silent_upscaled_video_path: # If not already set (e.g., by scene merge)
             progress (current_overall_progress ,desc ="Creating silent video...")
