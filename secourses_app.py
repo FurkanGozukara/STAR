@@ -1095,6 +1095,11 @@ This helps visualize the quality improvement from upscaling."""
                             info ="Folder where face-restored videos will be saved"
                             )
 
+                    # Processing Controls
+                    with gr .Row ():
+                        face_restoration_process_btn =gr .Button ("Process Face Restoration",variant ="primary",icon ="icons/face_restoration.png")
+                        face_restoration_stop_btn =gr .Button ("Stop Processing",variant ="stop")
+
                     # Face Restoration Settings
                     with gr .Accordion ("Face Restoration Settings",open =True ):
                         standalone_enable_face_restoration =gr .Checkbox (
@@ -1133,10 +1138,7 @@ This helps visualize the quality improvement from upscaling."""
                         info ="Number of frames to process simultaneously. Higher values = faster processing but more VRAM usage."
                         )
 
-                    # Processing Controls
-                    with gr .Row ():
-                        face_restoration_process_btn =gr .Button ("Process Face Restoration",variant ="primary",icon ="icons/face_restoration.png")
-                        face_restoration_stop_btn =gr .Button ("Stop Processing",variant ="stop")
+
                     
                     # Processing Options
                     with gr .Accordion ("Advanced Options",open =False ):
