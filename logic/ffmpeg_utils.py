@@ -3,8 +3,22 @@ import subprocess
 import gradio as gr
 import cv2
 
-def run_ffmpeg_command(cmd, desc="ffmpeg command", logger=None):
-    """Run an FFmpeg command with error handling."""
+def run_ffmpeg_command(cmd, desc="ffmpeg command", logger=None, raise_on_error=True):
+    """
+    Run an FFmpeg command with error handling and optional graceful failure.
+    
+    Args:
+        cmd: FFmpeg command to run
+        desc: Description for logging
+        logger: Logger instance  
+        raise_on_error: If True, raises gr.Error on failure. If False, returns False on failure.
+        
+    Returns:
+        bool: True if successful, False if failed (when raise_on_error=False)
+        
+    Raises:
+        gr.Error: When command fails and raise_on_error=True
+    """
     if logger:
         logger.info(f"Running {desc}: {cmd}")
     try:
@@ -25,11 +39,20 @@ def run_ffmpeg_command(cmd, desc="ffmpeg command", logger=None):
                 logger.error(f"  Stdout: {e.stdout.strip()}")
             if e.stderr:
                 logger.error(f"  Stderr: {e.stderr.strip()}")
-        raise gr.Error(f"ffmpeg command failed (see console for details): {e.stderr.strip()[:500] if e.stderr else 'Unknown ffmpeg error'}")
+        
+        if raise_on_error:
+            raise gr.Error(f"ffmpeg command failed (see console for details): {e.stderr.strip()[:500] if e.stderr else 'Unknown ffmpeg error'}")
+        else:
+            return False
+            
     except Exception as e_gen:
         if logger:
             logger.error(f"Unexpected error preparing/running {desc} for command '{cmd}': {e_gen}")
-        raise gr.Error(f"ffmpeg command failed: {e_gen}")
+        
+        if raise_on_error:
+            raise gr.Error(f"ffmpeg command failed: {e_gen}")
+        else:
+            return False
 
 def extract_frames(video_path, temp_dir, logger=None):
     """Extract frames from video using FFmpeg."""

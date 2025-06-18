@@ -10,23 +10,26 @@ from .ffmpeg_utils import run_ffmpeg_command as util_run_ffmpeg_command
 from .file_utils import get_video_resolution as util_get_video_resolution
 
 
-def determine_comparison_layout(original_w: int, original_h: int, upscaled_w: int, upscaled_h: int) -> Tuple[str, int, int]:
+def determine_comparison_layout(original_w: int, original_h: int, upscaled_w: int, upscaled_h: int, max_dimension: int = 4096) -> Tuple[str, int, int, bool]:
     """
     Determine the best layout (side-by-side or top-bottom) and final dimensions
     for the combined comparison video.
     
     The function aims to choose a layout that fits well within a 1920x1080 target,
-    or otherwise prefers the layout that results in a smaller overall area.
+    or otherwise prefers the layout that results in a smaller overall area while
+    respecting hardware encoder limitations.
     
     Args:
         original_w, original_h: Actual original video width and height.
         upscaled_w, upscaled_h: Actual upscaled video width and height.
+        max_dimension: Maximum width or height allowed (for NVENC: 4096px)
         
     Returns:
-        Tuple of (layout_choice, combined_video_width, combined_video_height).
+        Tuple of (layout_choice, combined_video_width, combined_video_height, needs_downscaling).
         'layout_choice' is "side_by_side" or "top_bottom".
         'combined_video_width' and 'combined_video_height' are the dimensions
         of the final stacked video, ensured to be even.
+        'needs_downscaling' indicates if the result exceeds max_dimension limits.
     """
     
     # --- Calculate dimensions if Side-by-Side (SBS) ---
@@ -59,25 +62,25 @@ def determine_comparison_layout(original_w: int, original_h: int, upscaled_w: in
 
     # --- Decision Logic ---
     TARGET_W, TARGET_H = 1920, 1080 # Target reference resolution
-    NVENC_MAX_WIDTH = 4096  # NVENC hardware encoder maximum width limitation
     
     sbs_exceeds_target = sbs_final_w > TARGET_W or sbs_final_h > TARGET_H
     tb_exceeds_target = tb_final_w > TARGET_W or tb_final_h > TARGET_H
     
-    # Additional check for NVENC width limitations
-    sbs_exceeds_nvenc = sbs_final_w > NVENC_MAX_WIDTH
-    tb_exceeds_nvenc = tb_final_w > NVENC_MAX_WIDTH
+    # Check for hardware encoder limitations (both width AND height)
+    sbs_exceeds_hw_limit = sbs_final_w > max_dimension or sbs_final_h > max_dimension
+    tb_exceeds_hw_limit = tb_final_w > max_dimension or tb_final_h > max_dimension
     
     chosen_layout: str
     combined_w: int
     combined_h: int
+    needs_downscaling: bool = False
 
-    # Prioritize avoiding NVENC width limits to prevent encoding failures
-    if sbs_exceeds_nvenc and not tb_exceeds_nvenc:
-        # SBS exceeds NVENC width limit, TB does not. Choose TB to avoid encoding issues.
+    # Prioritize avoiding hardware encoder limits to prevent encoding failures
+    if sbs_exceeds_hw_limit and not tb_exceeds_hw_limit:
+        # SBS exceeds hardware limit, TB does not. Choose TB to avoid encoding issues.
         chosen_layout, combined_w, combined_h = "top_bottom", tb_final_w, tb_final_h
-    elif not sbs_exceeds_nvenc and tb_exceeds_nvenc:
-        # TB exceeds NVENC width limit, SBS does not. Choose SBS.
+    elif not sbs_exceeds_hw_limit and tb_exceeds_hw_limit:
+        # TB exceeds hardware limit, SBS does not. Choose SBS.
         chosen_layout, combined_w, combined_h = "side_by_side", sbs_final_w, sbs_final_h
     elif not sbs_exceeds_target and tb_exceeds_target:
         # SBS fits within target, TB does not. Choose SBS.
@@ -86,7 +89,7 @@ def determine_comparison_layout(original_w: int, original_h: int, upscaled_w: in
         # TB fits within target, SBS does not. Choose TB.
         chosen_layout, combined_w, combined_h = "top_bottom", tb_final_w, tb_final_h
     else:
-        # Both fit, or both exceed target/NVENC limits. Choose based on smaller area.
+        # Both fit, or both exceed target/hardware limits. Choose based on smaller area.
         # If areas are very similar, side-by-side is often preferred visually for comparison.
         sbs_area = sbs_final_w * sbs_final_h
         tb_area = tb_final_w * tb_final_h
@@ -96,12 +99,45 @@ def determine_comparison_layout(original_w: int, original_h: int, upscaled_w: in
             chosen_layout, combined_w, combined_h = "top_bottom", tb_final_w, tb_final_h
         else: # sbs_area <= tb_area
             chosen_layout, combined_w, combined_h = "side_by_side", sbs_final_w, sbs_final_h
+    
+    # Check if the chosen layout still exceeds hardware limits
+    if combined_w > max_dimension or combined_h > max_dimension:
+        needs_downscaling = True
             
     # Ensure final dimensions are even numbers for video codecs
     combined_w = (combined_w // 2) * 2
     combined_h = (combined_h // 2) * 2
     
-    return chosen_layout, combined_w, combined_h
+    return chosen_layout, combined_w, combined_h, needs_downscaling
+
+
+def calculate_downscale_dimensions(width: int, height: int, max_dimension: int = 4096) -> Tuple[int, int, float]:
+    """
+    Calculate downscaled dimensions that fit within the maximum dimension constraint.
+    
+    Args:
+        width: Original width
+        height: Original height
+        max_dimension: Maximum allowed width or height
+        
+    Returns:
+        Tuple of (new_width, new_height, scale_factor)
+    """
+    if width <= max_dimension and height <= max_dimension:
+        return width, height, 1.0
+    
+    # Calculate scale factor to fit within constraints
+    scale_factor = min(max_dimension / width, max_dimension / height)
+    
+    # Apply scale factor
+    new_width = int(width * scale_factor)
+    new_height = int(height * scale_factor)
+    
+    # Ensure even dimensions for video codecs
+    new_width = (new_width // 2) * 2
+    new_height = (new_height // 2) * 2
+    
+    return new_width, new_height, scale_factor
 
 
 def create_comparison_video(
@@ -114,7 +150,7 @@ def create_comparison_video(
     logger: Optional[logging.Logger] = None
 ) -> bool:
     """
-    Create a comparison video combining original and upscaled videos.
+    Create a comparison video combining original and upscaled videos with robust error handling.
     
     Args:
         original_video_path: Path to the original video.
@@ -131,7 +167,12 @@ def create_comparison_video(
     
     if logger is None:
         logger = logging.getLogger(__name__) # Basic fallback logger
-        
+    
+    # Hardware encoder limitations
+    NVENC_MAX_DIMENSION = 4096  # NVENC maximum width or height
+    
+    attempts = []  # Track what we've tried for logging
+    
     try:
         # Get video resolutions (util_get_video_resolution returns Height, Width)
         orig_h, orig_w = util_get_video_resolution(original_video_path, logger=logger)
@@ -145,17 +186,22 @@ def create_comparison_video(
         logger.info(f"Upscaled video resolution (WxH): {upscaled_w}x{upscaled_h}")
         
         # Determine the best layout and the final dimensions of the *combined* video
-        layout_choice, combined_final_w, combined_final_h = determine_comparison_layout(
-            orig_w, orig_h, upscaled_w, upscaled_h
+        layout_choice, combined_final_w, combined_final_h, needs_downscaling = determine_comparison_layout(
+            orig_w, orig_h, upscaled_w, upscaled_h, NVENC_MAX_DIMENSION
         )
         
         logger.info(f"Chosen comparison layout: {layout_choice}, "
                     f"final combined video resolution (WxH): {combined_final_w}x{combined_final_h}")
         
+        # Handle downscaling if needed
+        downscale_factor = 1.0
+        if needs_downscaling:
+            combined_final_w, combined_final_h, downscale_factor = calculate_downscale_dimensions(
+                combined_final_w, combined_final_h, NVENC_MAX_DIMENSION
+            )
+            logger.warning(f"Video dimensions exceed hardware limits. Downscaling by {downscale_factor:.2f}x to: {combined_final_w}x{combined_final_h}")
+        
         # Prepare scaling parameters for individual videos within the combined frame
-        # These are the dimensions each video needs to be scaled to *before* stacking.
-        # FFmpeg scale filter format is scale=width:height
-
         scaled_orig_w_ffmpeg: int
         scaled_orig_h_ffmpeg: int
         scaled_upscaled_w_ffmpeg: int
@@ -163,7 +209,6 @@ def create_comparison_video(
 
         if layout_choice == "side_by_side":
             # For SBS, both videos are scaled to the height of the combined video.
-            # The width of each scaled video is calculated to maintain its aspect ratio.
             common_h_for_stacking = combined_final_h 
             
             scaled_orig_w_ffmpeg = int(round(orig_w * common_h_for_stacking / orig_h)) if orig_h > 0 else 0
@@ -184,7 +229,6 @@ def create_comparison_video(
             
         else:  # top_bottom
             # For TB, both videos are scaled to the width of the combined video.
-            # The height of each scaled video is calculated to maintain its aspect ratio.
             common_w_for_stacking = combined_final_w
             
             scaled_orig_w_ffmpeg = common_w_for_stacking
@@ -203,46 +247,144 @@ def create_comparison_video(
                 f"[top][bottom]vstack=inputs=2[output]"
             )
         
-        # NVENC has a maximum width limitation of 4096 pixels
-        NVENC_MAX_WIDTH = 4096
+        # Try different encoding approaches with fallbacks
+        encoding_attempts = []
         
-        # Check if NVENC width limit would be exceeded and fallback to CPU if needed
+        # Attempt 1: GPU encoding if requested and dimensions are within limits
         use_gpu_final = ffmpeg_use_gpu
-        if ffmpeg_use_gpu and combined_final_w > NVENC_MAX_WIDTH:
+        if ffmpeg_use_gpu and (combined_final_w > NVENC_MAX_DIMENSION or combined_final_h > NVENC_MAX_DIMENSION):
             use_gpu_final = False
-            logger.warning(f"Comparison video width ({combined_final_w}px) exceeds NVENC maximum ({NVENC_MAX_WIDTH}px). Falling back to CPU encoding (libx264).")
+            logger.warning(f"Comparison video dimensions ({combined_final_w}x{combined_final_h}) exceed NVENC maximum ({NVENC_MAX_DIMENSION}px). Falling back to CPU encoding (libx264).")
         
-        codec = "h264_nvenc" if use_gpu_final else "libx264"
-        quality_param = f"-cq {ffmpeg_quality}" if use_gpu_final else f"-crf {ffmpeg_quality}"
+        if use_gpu_final:
+            encoding_attempts.append({
+                'name': 'GPU (NVENC)',
+                'codec': 'h264_nvenc',
+                'quality_param': f'-cq {ffmpeg_quality}',
+                'use_gpu': True
+            })
         
-        # The -s {combined_final_w}x{combined_final_h} is not strictly necessary if the filter complex
-        # correctly produces the desired output dimensions. However, it can be added for explicitness.
-        # The hstack/vstack filters implicitly define the output size from their inputs.
-        ffmpeg_cmd = (
-            f'ffmpeg -y -i "{original_video_path}" -i "{upscaled_video_path}" '
-            f'-filter_complex "{video_filter}" -map "[output]" '
-            f'-map 0:a? -c:v {codec} {quality_param} -preset {ffmpeg_preset} '
-            f'-c:a copy "{output_path}"'
-            # Optional: f'-s {combined_final_w}x{combined_final_h} ' # To be explicit about output size
-        )
+        # Attempt 2: CPU encoding
+        encoding_attempts.append({
+            'name': 'CPU (libx264)',
+            'codec': 'libx264', 
+            'quality_param': f'-crf {ffmpeg_quality}',
+            'use_gpu': False
+        })
         
-        logger.info(f"FFmpeg command for comparison video: {ffmpeg_cmd}")
-        util_run_ffmpeg_command(ffmpeg_cmd, "Comparison Video Creation", logger=logger)
-        
-        if os.path.exists(output_path):
-            # Verify final resolution for debugging purposes
+        # Try each encoding approach
+        for attempt_idx, encoding_config in enumerate(encoding_attempts):
             try:
-                final_comp_h, final_comp_w = util_get_video_resolution(output_path, logger=logger)
-                logger.info(f"Comparison video created: {output_path} (Actual WxH: {final_comp_w}x{final_comp_h})")
-            except Exception as e_res_check:
-                 logger.info(f"Comparison video created: {output_path} (Could not verify final resolution via ffprobe: {e_res_check})")
-            return True
-        else:
-            logger.error("Comparison video creation failed - output file not found after ffmpeg command.")
-            return False
+                ffmpeg_cmd = (
+                    f'ffmpeg -y -i "{original_video_path}" -i "{upscaled_video_path}" '
+                    f'-filter_complex "{video_filter}" -map "[output]" '
+                    f'-map 0:a? -c:v {encoding_config["codec"]} {encoding_config["quality_param"]} -preset {ffmpeg_preset} '
+                    f'-c:a copy "{output_path}"'
+                )
+                
+                logger.info(f"Attempt {attempt_idx + 1}: {encoding_config['name']} encoding")
+                logger.info(f"FFmpeg command for comparison video: {ffmpeg_cmd}")
+                
+                attempts.append(f"{encoding_config['name']} encoding")
+                
+                # Try to run the command (don't raise error immediately, allow fallbacks)
+                cmd_success = util_run_ffmpeg_command(ffmpeg_cmd, f"Comparison Video Creation ({encoding_config['name']})", logger=logger, raise_on_error=False)
+                
+                if not cmd_success:
+                    logger.warning(f"❌ {encoding_config['name']} FFmpeg command failed")
+                    continue
+                
+                # Check if output was created successfully
+                if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                    # Verify final resolution for debugging purposes
+                    try:
+                        final_comp_h, final_comp_w = util_get_video_resolution(output_path, logger=logger)
+                        logger.info(f"✅ Comparison video created successfully with {encoding_config['name']}: {output_path} (Actual WxH: {final_comp_w}x{final_comp_h})")
+                        if downscale_factor < 1.0:
+                            logger.info(f"Note: Video was downscaled by {downscale_factor:.2f}x to fit hardware encoder limitations")
+                    except Exception as e_res_check:
+                        logger.info(f"✅ Comparison video created successfully with {encoding_config['name']}: {output_path} (Could not verify final resolution: {e_res_check})")
+                    return True
+                else:
+                    logger.warning(f"❌ {encoding_config['name']} encoding produced no output file")
+                    
+            except Exception as e_encoding:
+                logger.warning(f"❌ {encoding_config['name']} encoding failed: {str(e_encoding)}")
+                # Clean up any partial output file
+                if os.path.exists(output_path):
+                    try:
+                        os.remove(output_path)
+                    except:
+                        pass
+                continue
+        
+        # If all encoding attempts failed, try one last fallback with very conservative settings
+        try:
+            logger.warning("🔄 All standard encoding attempts failed. Trying conservative CPU fallback...")
+            
+            # Use smaller dimensions and basic settings
+            fallback_w, fallback_h, fallback_scale = calculate_downscale_dimensions(
+                combined_final_w, combined_final_h, max_dimension=2048  # Even more conservative
+            )
+            
+            # Recalculate filter with smaller dimensions
+            if layout_choice == "side_by_side":
+                fallback_orig_w = int(round(orig_w * fallback_h / orig_h)) if orig_h > 0 else 0
+                fallback_upscaled_w = int(round(upscaled_w * fallback_h / upscaled_h)) if upscaled_h > 0 else 0
+                
+                fallback_orig_w = (fallback_orig_w // 2) * 2
+                fallback_upscaled_w = (fallback_upscaled_w // 2) * 2
+                
+                fallback_filter = (
+                    f"[0:v]scale={fallback_orig_w}:{fallback_h},setsar=1[left];"
+                    f"[1:v]scale={fallback_upscaled_w}:{fallback_h},setsar=1[right];"
+                    f"[left][right]hstack=inputs=2[output]"
+                )
+            else:
+                fallback_orig_h = int(round(orig_h * fallback_w / orig_w)) if orig_w > 0 else 0
+                fallback_upscaled_h = int(round(upscaled_h * fallback_w / upscaled_w)) if upscaled_w > 0 else 0
+                
+                fallback_orig_h = (fallback_orig_h // 2) * 2
+                fallback_upscaled_h = (fallback_upscaled_h // 2) * 2
+                
+                fallback_filter = (
+                    f"[0:v]scale={fallback_w}:{fallback_orig_h},setsar=1[top];"
+                    f"[1:v]scale={fallback_w}:{fallback_upscaled_h},setsar=1[bottom];"
+                    f"[top][bottom]vstack=inputs=2[output]"
+                )
+            
+            # Conservative fallback command
+            fallback_cmd = (
+                f'ffmpeg -y -i "{original_video_path}" -i "{upscaled_video_path}" '
+                f'-filter_complex "{fallback_filter}" -map "[output]" '
+                f'-c:v libx264 -crf 28 -preset ultrafast -pix_fmt yuv420p '
+                f'"{output_path}"'
+            )
+            
+            logger.info(f"Conservative fallback command: {fallback_cmd}")
+            logger.info(f"Fallback dimensions: {fallback_w}x{fallback_h} (scale: {fallback_scale:.2f}x)")
+            
+            attempts.append("Conservative CPU fallback")
+            fallback_success = util_run_ffmpeg_command(fallback_cmd, "Comparison Video Creation (Conservative Fallback)", logger=logger, raise_on_error=False)
+            
+            if not fallback_success:
+                logger.error("❌ Conservative fallback FFmpeg command failed")
+                return False
+            
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                logger.info(f"✅ Comparison video created with conservative fallback: {output_path}")
+                logger.info(f"Note: Video was heavily downscaled to {fallback_w}x{fallback_h} for compatibility")
+                return True
+            
+        except Exception as e_fallback:
+            logger.error(f"❌ Even conservative fallback failed: {str(e_fallback)}")
+        
+        # If we reach here, everything failed
+        logger.error(f"❌ Comparison video creation failed after trying all methods: {', '.join(attempts)}")
+        return False
             
     except Exception as e:
-        logger.error(f"Unexpected error during comparison video creation: {e}", exc_info=True)
+        logger.error(f"❌ Unexpected error during comparison video creation: {e}", exc_info=True)
         return False
 
 
