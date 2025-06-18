@@ -2102,6 +2102,9 @@ This helps visualize the quality improvement from upscaling."""
                     save_frames=save_frames_val,
                     create_comparison=create_comparison_val,
                     preserve_audio=preserve_audio_val,
+                    ffmpeg_preset=ffmpeg_preset_dropdown.value if 'ffmpeg_preset_dropdown' in globals() else "medium",
+                    ffmpeg_quality=ffmpeg_quality_slider.value if 'ffmpeg_quality_slider' in globals() else 23,
+                    ffmpeg_use_gpu=ffmpeg_use_gpu_check.value if 'ffmpeg_use_gpu_check' in globals() else False,
                     progress_callback=progress_callback,
                     logger=logger
                 )
@@ -2166,6 +2169,9 @@ This helps visualize the quality improvement from upscaling."""
                         save_frames=save_frames_val,
                         create_comparison=create_comparison_val,
                         preserve_audio=preserve_audio_val,
+                        ffmpeg_preset=ffmpeg_preset_dropdown.value if 'ffmpeg_preset_dropdown' in globals() else "medium",
+                        ffmpeg_quality=ffmpeg_quality_slider.value if 'ffmpeg_quality_slider' in globals() else 23,
+                        ffmpeg_use_gpu=ffmpeg_use_gpu_check.value if 'ffmpeg_use_gpu_check' in globals() else False,
                         progress_callback=batch_progress_callback,
                         logger=logger
                     )

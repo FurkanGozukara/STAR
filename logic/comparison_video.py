@@ -59,22 +59,34 @@ def determine_comparison_layout(original_w: int, original_h: int, upscaled_w: in
 
     # --- Decision Logic ---
     TARGET_W, TARGET_H = 1920, 1080 # Target reference resolution
+    NVENC_MAX_WIDTH = 4096  # NVENC hardware encoder maximum width limitation
     
     sbs_exceeds_target = sbs_final_w > TARGET_W or sbs_final_h > TARGET_H
     tb_exceeds_target = tb_final_w > TARGET_W or tb_final_h > TARGET_H
+    
+    # Additional check for NVENC width limitations
+    sbs_exceeds_nvenc = sbs_final_w > NVENC_MAX_WIDTH
+    tb_exceeds_nvenc = tb_final_w > NVENC_MAX_WIDTH
     
     chosen_layout: str
     combined_w: int
     combined_h: int
 
-    if not sbs_exceeds_target and tb_exceeds_target:
+    # Prioritize avoiding NVENC width limits to prevent encoding failures
+    if sbs_exceeds_nvenc and not tb_exceeds_nvenc:
+        # SBS exceeds NVENC width limit, TB does not. Choose TB to avoid encoding issues.
+        chosen_layout, combined_w, combined_h = "top_bottom", tb_final_w, tb_final_h
+    elif not sbs_exceeds_nvenc and tb_exceeds_nvenc:
+        # TB exceeds NVENC width limit, SBS does not. Choose SBS.
+        chosen_layout, combined_w, combined_h = "side_by_side", sbs_final_w, sbs_final_h
+    elif not sbs_exceeds_target and tb_exceeds_target:
         # SBS fits within target, TB does not. Choose SBS.
         chosen_layout, combined_w, combined_h = "side_by_side", sbs_final_w, sbs_final_h
     elif sbs_exceeds_target and not tb_exceeds_target:
         # TB fits within target, SBS does not. Choose TB.
         chosen_layout, combined_w, combined_h = "top_bottom", tb_final_w, tb_final_h
     else:
-        # Both fit, or both exceed target. Choose based on smaller area.
+        # Both fit, or both exceed target/NVENC limits. Choose based on smaller area.
         # If areas are very similar, side-by-side is often preferred visually for comparison.
         sbs_area = sbs_final_w * sbs_final_h
         tb_area = tb_final_w * tb_final_h
@@ -191,8 +203,17 @@ def create_comparison_video(
                 f"[top][bottom]vstack=inputs=2[output]"
             )
         
-        codec = "h264_nvenc" if ffmpeg_use_gpu else "libx264"
-        quality_param = f"-cq {ffmpeg_quality}" if ffmpeg_use_gpu else f"-crf {ffmpeg_quality}"
+        # NVENC has a maximum width limitation of 4096 pixels
+        NVENC_MAX_WIDTH = 4096
+        
+        # Check if NVENC width limit would be exceeded and fallback to CPU if needed
+        use_gpu_final = ffmpeg_use_gpu
+        if ffmpeg_use_gpu and combined_final_w > NVENC_MAX_WIDTH:
+            use_gpu_final = False
+            logger.warning(f"Comparison video width ({combined_final_w}px) exceeds NVENC maximum ({NVENC_MAX_WIDTH}px). Falling back to CPU encoding (libx264).")
+        
+        codec = "h264_nvenc" if use_gpu_final else "libx264"
+        quality_param = f"-cq {ffmpeg_quality}" if use_gpu_final else f"-crf {ffmpeg_quality}"
         
         # The -s {combined_final_w}x{combined_final_h} is not strictly necessary if the filter complex
         # correctly produces the desired output dimensions. However, it can be added for explicitness.

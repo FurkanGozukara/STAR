@@ -768,6 +768,9 @@ def restore_video_frames(
     save_frames: bool = False,
     create_comparison: bool = True,
     preserve_audio: bool = True,
+    ffmpeg_preset: str = "medium",
+    ffmpeg_quality: int = 23,
+    ffmpeg_use_gpu: bool = False,
     progress_callback: Optional[Callable[[float, str], None]] = None,
     logger: Optional[logging.Logger] = None
 ) -> Dict[str, Any]:
@@ -785,6 +788,9 @@ def restore_video_frames(
         save_frames: Whether to save individual processed frames
         create_comparison: Whether to create before/after comparison video
         preserve_audio: Whether to preserve original audio track
+        ffmpeg_preset: FFmpeg encoding preset for comparison video
+        ffmpeg_quality: FFmpeg quality setting (CRF/CQ) for comparison video
+        ffmpeg_use_gpu: Whether to use GPU encoding for comparison video
         progress_callback: Optional callback for progress updates (progress, status)
         logger: Logger instance
         
@@ -915,6 +921,9 @@ def restore_video_frames(
                         original_video_path=video_path,
                         restored_video_path=output_video_path,
                         output_path=comparison_path,
+                        ffmpeg_preset=ffmpeg_preset,
+                        ffmpeg_quality=ffmpeg_quality,
+                        ffmpeg_use_gpu=ffmpeg_use_gpu,
                         logger=logger
                     )
                     
@@ -1170,15 +1179,22 @@ def _create_comparison_video(
     original_video_path: str,
     restored_video_path: str,
     output_path: str,
+    ffmpeg_preset: str = "medium",
+    ffmpeg_quality: int = 23,
+    ffmpeg_use_gpu: bool = False,
     logger: Optional[logging.Logger] = None
 ) -> Dict[str, Any]:
     """
-    Create a side-by-side comparison video.
+    Create a dynamic comparison video using the same logic as the main upscaling comparison.
+    Automatically chooses side-by-side or top-bottom layout and handles NVENC width limitations.
     
     Args:
         original_video_path: Path to original video
         restored_video_path: Path to face-restored video
         output_path: Path for comparison video output
+        ffmpeg_preset: FFmpeg encoding preset
+        ffmpeg_quality: FFmpeg quality setting (CRF/CQ)
+        ffmpeg_use_gpu: Whether to use GPU encoding
         logger: Logger instance
         
     Returns:
@@ -1202,32 +1218,30 @@ def _create_comparison_video(
             result['error'] = f"Restored video not found: {restored_video_path}"
             return result
         
-        # Create side-by-side comparison using ffmpeg
-        cmd = [
-            'ffmpeg',
-            '-i', original_video_path,
-            '-i', restored_video_path,
-            '-filter_complex', '[0:v]pad=iw*2:ih[int];[int][1:v]overlay=W/2:0[vid]',
-            '-map', '[vid]',
-            '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
-            '-y', output_path
-        ]
+        # Import the comparison video logic from the main module
+        from .comparison_video import create_comparison_video
         
-        process = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        # Use the same sophisticated comparison video creation logic as the main upscaling
+        comparison_success = create_comparison_video(
+            original_video_path=original_video_path,
+            upscaled_video_path=restored_video_path,  # Use restored video as "upscaled" for comparison
+            output_path=output_path,
+            ffmpeg_preset=ffmpeg_preset,
+            ffmpeg_quality=ffmpeg_quality,
+            ffmpeg_use_gpu=ffmpeg_use_gpu,
+            logger=logger
+        )
         
-        if process.returncode == 0:
+        if comparison_success:
             result['success'] = True
-            logger.info(f"Successfully created comparison video: {output_path}")
+            logger.info(f"Successfully created face restoration comparison video: {output_path}")
         else:
-            result['error'] = f"FFmpeg comparison failed: {process.stderr}"
-            logger.error(f"Comparison video creation failed: {process.stderr}")
+            result['error'] = "Failed to create comparison video using sophisticated comparison logic"
+            logger.error(f"Face restoration comparison video creation failed: {output_path}")
     
-    except subprocess.TimeoutExpired:
-        result['error'] = "Comparison video creation timed out"
-        logger.error("Comparison video creation timed out")
     except Exception as e:
         result['error'] = f"Unexpected error during comparison video creation: {e}"
-        logger.error(f"Comparison video error: {e}", exc_info=True)
+        logger.error(f"Face restoration comparison video error: {e}", exc_info=True)
     
     return result
 
