@@ -17,3 +17,4 @@ outputs
 split_videos
 a.mp4
 upscale_models
+weights

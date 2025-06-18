@@ -89,6 +89,61 @@ def scan_codeformer_models(pretrained_weight_dir: str, logger: logging.Logger) -
             'error': str(e)
         }
 
+def find_codeformer_model_path(model_path: Optional[str] = None, logger: Optional[logging.Logger] = None) -> Tuple[Optional[str], bool]:
+    """
+    Find the CodeFormer model path, checking pretrained_weight directory first.
+    
+    Args:
+        model_path: Optional specific model path provided by user
+        logger: Logger instance
+        
+    Returns:
+        Tuple of (model_path, needs_download) where:
+        - model_path: Path to the model file or None if not found
+        - needs_download: True if model needs to be downloaded to weights folder
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+    
+    # If specific model path provided and exists, use it
+    if model_path and os.path.exists(model_path):
+        logger.info(f"Using provided CodeFormer model: {model_path}")
+        return model_path, False
+    
+    # Try to find model in pretrained_weight directory first
+    try:
+        # Get the configured pretrained_weight directory
+        from . import config
+        pretrained_weight_dir = getattr(config, 'FACE_RESTORATION_MODELS_DIR', None)
+        
+        if pretrained_weight_dir and os.path.exists(pretrained_weight_dir):
+            # Look for CodeFormer models in pretrained_weight directory
+            potential_paths = [
+                os.path.join(pretrained_weight_dir, 'codeformer.pth'),
+                os.path.join(pretrained_weight_dir, 'CodeFormer', 'codeformer.pth'),
+                os.path.join(pretrained_weight_dir, 'CodeFormer_STAR', 'codeformer.pth')
+            ]
+            
+            for potential_path in potential_paths:
+                if os.path.exists(potential_path):
+                    logger.info(f"Found CodeFormer model in pretrained_weight directory: {potential_path}")
+                    return potential_path, False
+        
+        # Also check if model already exists in weights folder
+        weights_path = os.path.join('weights', 'CodeFormer', 'codeformer.pth')
+        if os.path.exists(weights_path):
+            logger.info(f"Found existing CodeFormer model in weights directory: {weights_path}")
+            return weights_path, False
+            
+        # Model not found locally, will need to download
+        logger.info("CodeFormer model not found locally, will download to weights/CodeFormer/")
+        return None, True
+        
+    except Exception as e:
+        logger.warning(f"Error checking for CodeFormer model: {e}")
+        # Fall back to download
+        return None, True
+
 def setup_codeformer_environment(codeformer_base_path: str, logger: logging.Logger) -> Dict[str, Any]:
     """
     Setup the CodeFormer environment by adding paths and importing necessary modules.
@@ -137,7 +192,7 @@ def setup_codeformer_environment(codeformer_base_path: str, logger: logging.Logg
             
             # Import basicsr components
             from basicsr.utils import imwrite, img2tensor, tensor2img
-            from basicsr.models import create_model
+            from basicsr.models import build_model
             from basicsr.utils.options import dict2str
             
             # Store imported modules
@@ -148,7 +203,7 @@ def setup_codeformer_environment(codeformer_base_path: str, logger: logging.Logg
                 'imwrite': imwrite,
                 'img2tensor': img2tensor,
                 'tensor2img': tensor2img,
-                'create_model': create_model,
+                'build_model': build_model,
                 'dict2str': dict2str
             }
             
@@ -183,12 +238,74 @@ def setup_codeformer_environment(codeformer_base_path: str, logger: logging.Logg
         
     return setup_result
 
+def ensure_codeformer_available(logger: Optional[logging.Logger] = None) -> bool:
+    """
+    Ensure CodeFormer environment is available, initializing if needed.
+    
+    Args:
+        logger: Logger instance for logging
+        
+    Returns:
+        bool: True if CodeFormer is available, False otherwise
+    """
+    global codeformer_available
+    
+    if logger is None:
+        logger = logging.getLogger(__name__)
+    
+    # If already available, return True
+    if codeformer_available:
+        return True
+    
+    # Try to initialize CodeFormer environment
+    try:
+        # Find CodeFormer_STAR directory
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        possible_codeformer_paths = [
+            os.path.join(current_dir, "..", "..", "CodeFormer_STAR"),
+            os.path.join(current_dir, "..", "CodeFormer_STAR"),
+            os.path.join(current_dir, "CodeFormer_STAR"),
+            os.path.join(os.path.dirname(current_dir), "CodeFormer_STAR"),
+        ]
+        
+        codeformer_base_path = None
+        for path in possible_codeformer_paths:
+            abs_path = os.path.abspath(path)
+            if os.path.exists(abs_path) and os.path.isdir(abs_path):
+                codeformer_base_path = abs_path
+                break
+        
+        if not codeformer_base_path:
+            logger.warning("CodeFormer_STAR directory not found. Face restoration will use subprocess approach.")
+            # Set to True anyway since we can still use subprocess approach
+            codeformer_available = True
+            return True
+        
+        # Try to setup environment (but don't fail if imports fail)
+        setup_result = setup_codeformer_environment(codeformer_base_path, logger)
+        if setup_result['success']:
+            logger.info("CodeFormer environment initialized successfully")
+            codeformer_available = True
+            return True
+        else:
+            logger.warning(f"CodeFormer environment setup failed: {setup_result.get('error', 'Unknown error')}. Using subprocess approach.")
+            # Set to True anyway since we can still use subprocess approach
+            codeformer_available = True
+            return True
+        
+    except Exception as e:
+        logger.warning(f"Failed to initialize CodeFormer environment: {e}. Using subprocess approach.")
+        # Set to True anyway since we can still use subprocess approach
+        codeformer_available = True
+        return True
+
 def restore_single_image(
     image_path: str,
     output_path: str,
     fidelity_weight: float = 0.7,
     enable_colorization: bool = False,
     model_path: Optional[str] = None,
+    suppress_individual_logging: bool = False,
     logger: Optional[logging.Logger] = None
 ) -> Dict[str, Any]:
     """
@@ -200,6 +317,7 @@ def restore_single_image(
         fidelity_weight: Fidelity weight (0.0-1.0), higher values preserve identity better
         enable_colorization: Whether to apply colorization for grayscale images
         model_path: Path to CodeFormer model (optional)
+        suppress_individual_logging: If True, suppress individual frame completion logging (for batch processing)
         logger: Logger instance
         
     Returns:
@@ -207,6 +325,16 @@ def restore_single_image(
     """
     if logger is None:
         logger = logging.getLogger(__name__)
+    
+    # Ensure CodeFormer is available before proceeding
+    if not ensure_codeformer_available(logger):
+        return {
+            'success': False,
+            'output_path': None,
+            'error': "CodeFormer environment not available",
+            'faces_detected': 0,
+            'processing_time': 0.0
+        }
         
     result = {
         'success': False,
@@ -240,7 +368,8 @@ def restore_single_image(
         is_grayscale = len(img.shape) == 2 or (len(img.shape) == 3 and np.allclose(img[:,:,0], img[:,:,1]) and np.allclose(img[:,:,1], img[:,:,2]))
         
         if is_grayscale and enable_colorization:
-            logger.info(f"Applying colorization to grayscale image: {os.path.basename(image_path)}")
+            if not suppress_individual_logging:
+                logger.info(f"Applying colorization to grayscale image: {os.path.basename(image_path)}")
             # Apply colorization first, then face restoration
             result = _apply_colorization(img, image_path, output_path, fidelity_weight, model_path, logger)
         else:
@@ -250,13 +379,22 @@ def restore_single_image(
         result['processing_time'] = time.time() - start_time
         
         if result['success']:
-            logger.info(f"Face restoration completed: {os.path.basename(image_path)} -> {os.path.basename(output_path)} ({result['processing_time']:.2f}s)")
+            if not suppress_individual_logging:
+                logger.info(f"Face restoration completed: {os.path.basename(image_path)} -> {os.path.basename(output_path)} ({result['processing_time']:.2f}s)")
+            else:
+                logger.debug(f"Face restoration completed: {os.path.basename(image_path)} -> {os.path.basename(output_path)} ({result['processing_time']:.2f}s)")
         else:
-            logger.warning(f"Face restoration failed for {os.path.basename(image_path)}: {result['error']}")
+            if not suppress_individual_logging:
+                logger.warning(f"Face restoration failed for {os.path.basename(image_path)}: {result['error']}")
+            else:
+                logger.debug(f"Face restoration failed for {os.path.basename(image_path)}: {result['error']}")
             
     except Exception as e:
         result['error'] = f"Unexpected error during face restoration: {e}"
-        logger.error(result['error'], exc_info=True)
+        if not suppress_individual_logging:
+            logger.error(result['error'], exc_info=True)
+        else:
+            logger.debug(result['error'], exc_info=True)
         
     return result
 
@@ -319,26 +457,25 @@ def _apply_face_restoration(
             input_path = image_path
             
         try:
-            # Build command
+            # Build command with correct arguments
             cmd = [
                 sys.executable,
                 codeformer_script,
-                '-w', str(fidelity_weight),
                 '--input_path', input_path,
-                '--output_path', os.path.dirname(output_path)
+                '--output_path', os.path.dirname(output_path),
+                '--fidelity_weight', str(fidelity_weight),
+                '--upscale', '1',  # Don't upscale, we just want face restoration
+                '--detection_model', 'retinaface_resnet50'
             ]
-            
-            if model_path:
-                cmd.extend(['--model_path', model_path])
                 
             # Run CodeFormer
             logger.debug(f"Running CodeFormer command: {' '.join(cmd)}")
             process = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
             
             if process.returncode == 0:
-                # Find the generated output file
-                # CodeFormer typically saves with a specific naming pattern
-                expected_output = os.path.join(os.path.dirname(output_path), f"restored_{os.path.basename(input_path)}")
+                # CodeFormer saves final results in 'final_results' subfolder
+                input_basename = os.path.splitext(os.path.basename(input_path))[0]
+                expected_output = os.path.join(os.path.dirname(output_path), 'final_results', f"{input_basename}.png")
                 
                 if os.path.exists(expected_output):
                     # Move to desired output location
@@ -347,19 +484,33 @@ def _apply_face_restoration(
                     result['output_path'] = output_path
                     result['faces_detected'] = 1  # Assume at least one face if successful
                 else:
-                    # Look for any output files in the output directory
-                    output_dir = os.path.dirname(output_path)
-                    output_files = glob.glob(os.path.join(output_dir, "*.png")) + glob.glob(os.path.join(output_dir, "*.jpg"))
-                    
-                    if output_files:
-                        # Use the most recent file
-                        latest_file = max(output_files, key=os.path.getctime)
-                        shutil.move(latest_file, output_path)
-                        result['success'] = True
-                        result['output_path'] = output_path
-                        result['faces_detected'] = 1
+                    # Look for any output files in the final_results directory
+                    final_results_dir = os.path.join(os.path.dirname(output_path), 'final_results')
+                    if os.path.exists(final_results_dir):
+                        output_files = glob.glob(os.path.join(final_results_dir, "*.png")) + glob.glob(os.path.join(final_results_dir, "*.jpg"))
+                        
+                        if output_files:
+                            # Use the most recent file
+                            latest_file = max(output_files, key=os.path.getctime)
+                            shutil.move(latest_file, output_path)
+                            result['success'] = True
+                            result['output_path'] = output_path
+                            result['faces_detected'] = 1
+                            
+                            # Clean up CodeFormer temporary folders
+                            try:
+                                output_base_dir = os.path.dirname(output_path)
+                                cleanup_dirs = ['final_results', 'cropped_faces', 'restored_faces']
+                                for cleanup_dir in cleanup_dirs:
+                                    cleanup_path = os.path.join(output_base_dir, cleanup_dir)
+                                    if os.path.exists(cleanup_path) and not os.listdir(cleanup_path):
+                                        os.rmdir(cleanup_path)
+                            except:
+                                pass
+                        else:
+                            result['error'] = "CodeFormer completed but no output file found in final_results"
                     else:
-                        result['error'] = "CodeFormer completed but no output file found"
+                        result['error'] = "CodeFormer completed but final_results directory not found"
             else:
                 result['error'] = f"CodeFormer failed: {process.stderr}"
                 
@@ -484,6 +635,7 @@ def restore_frames_batch(
     fidelity_weight: float = 0.7,
     enable_colorization: bool = False,
     model_path: Optional[str] = None,
+    batch_size: int = 4,
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
     logger: Optional[logging.Logger] = None
 ) -> Dict[str, Any]:
@@ -496,6 +648,7 @@ def restore_frames_batch(
         fidelity_weight: Fidelity weight for restoration
         enable_colorization: Whether to apply colorization
         model_path: Path to CodeFormer model
+        batch_size: Number of frames to process simultaneously
         progress_callback: Optional callback for progress updates (current, total, status)
         logger: Logger instance
         
@@ -519,52 +672,83 @@ def restore_frames_batch(
     start_time = time.time()
     
     try:
-        if not codeformer_available:
+        # Ensure CodeFormer is available before proceeding
+        if not ensure_codeformer_available(logger):
             result['errors'].append("CodeFormer environment not available")
             return result
             
         os.makedirs(output_dir, exist_ok=True)
         
-        for i, frame_path in enumerate(frame_paths):
+        # Process frames in batches
+        total_frames = len(frame_paths)
+        processed_frames = 0
+        
+        logger.info(f"Processing {total_frames} frames for face restoration with batch size: {batch_size}")
+        
+        # Split frames into batches
+        for batch_start in range(0, total_frames, batch_size):
+            batch_end = min(batch_start + batch_size, total_frames)
+            current_batch = frame_paths[batch_start:batch_end]
+            batch_num = (batch_start // batch_size) + 1
+            total_batches = (total_frames + batch_size - 1) // batch_size
+            
             if progress_callback:
-                progress_callback(i, len(frame_paths), f"Processing frame {i+1}/{len(frame_paths)}")
-                
-            try:
-                # Generate output path
-                frame_name = os.path.basename(frame_path)
-                name_without_ext = os.path.splitext(frame_name)[0]
-                output_path = os.path.join(output_dir, f"{name_without_ext}_restored.png")
-                
-                # Restore single frame
-                frame_result = restore_single_image(
-                    frame_path, output_path, fidelity_weight, 
-                    enable_colorization, model_path, logger
-                )
-                
-                if frame_result['success']:
-                    result['processed_count'] += 1
-                    result['output_paths'].append(frame_result['output_path'])
-                    result['faces_detected_total'] += frame_result['faces_detected']
-                    logger.debug(f"Successfully processed frame {i+1}/{len(frame_paths)}: {frame_name}")
-                else:
-                    result['failed_count'] += 1
-                    error_msg = f"Frame {frame_name}: {frame_result['error']}"
-                    result['errors'].append(error_msg)
-                    logger.warning(error_msg)
+                progress_callback(processed_frames, total_frames, f"Processing batch {batch_num}/{total_batches} ({len(current_batch)} frames)")
+            
+            logger.info(f"Processing batch {batch_num}/{total_batches}: frames {batch_start+1}-{batch_end} ({len(current_batch)} frames)")
+            batch_start_time = time.time()
+            
+            # Process all frames in current batch
+            batch_success_count = 0
+            batch_failed_count = 0
+            
+            for i, frame_path in enumerate(current_batch):
+                try:
+                    # Generate output path
+                    frame_name = os.path.basename(frame_path)
+                    name_without_ext = os.path.splitext(frame_name)[0]
+                    output_path = os.path.join(output_dir, f"{name_without_ext}_restored.png")
                     
-            except Exception as e:
-                result['failed_count'] += 1
-                error_msg = f"Unexpected error processing frame {frame_path}: {e}"
-                result['errors'].append(error_msg)
-                logger.error(error_msg)
-                
+                    # Restore single frame (suppress individual logging during batch processing)
+                    frame_result = restore_single_image(
+                        frame_path, output_path, fidelity_weight, 
+                        enable_colorization, model_path, True, logger
+                    )
+                    
+                    if frame_result['success']:
+                        result['processed_count'] += 1
+                        batch_success_count += 1
+                        result['output_paths'].append(frame_result['output_path'])
+                        result['faces_detected_total'] += frame_result['faces_detected']
+                        logger.debug(f"Successfully processed frame {processed_frames + i + 1}/{total_frames}: {frame_name}")
+                    else:
+                        result['failed_count'] += 1
+                        batch_failed_count += 1
+                        error_msg = f"Frame {frame_name}: {frame_result['error']}"
+                        result['errors'].append(error_msg)
+                        logger.warning(error_msg)
+                        
+                except Exception as e:
+                    result['failed_count'] += 1
+                    batch_failed_count += 1
+                    error_msg = f"Unexpected error processing frame {frame_path}: {e}"
+                    result['errors'].append(error_msg)
+                    logger.error(error_msg)
+            
+            batch_time = time.time() - batch_start_time
+            processed_frames += len(current_batch)
+            
+            # Calculate average time per frame in this batch
+            avg_time_per_frame = batch_time / len(current_batch) if len(current_batch) > 0 else 0
+            logger.info(f"Batch {batch_num}/{total_batches} completed: {batch_success_count} successful, {batch_failed_count} failed in {batch_time:.2f}s (avg {avg_time_per_frame:.2f}s/frame)")
+            
         result['total_processing_time'] = time.time() - start_time
         result['success'] = result['processed_count'] > 0
         
         if progress_callback:
-            progress_callback(len(frame_paths), len(frame_paths), "Batch processing completed")
+            progress_callback(total_frames, total_frames, "Batch processing completed")
             
-        logger.info(f"Batch face restoration completed: {result['processed_count']}/{result['total_count']} frames processed successfully")
+        logger.info(f"Batch face restoration completed: {result['processed_count']}/{result['total_count']} frames processed successfully in {result['total_processing_time']:.1f}s")
         
     except Exception as e:
         error_msg = f"Unexpected error during batch processing: {e}"
@@ -685,9 +869,9 @@ def restore_video_frames(
             if progress_callback:
                 progress_callback(overall_progress, f"Face restoration: {status}")
                 
-        batch_result = restore_frames_batch(
+        batch_result = restore_frames_batch_true(
             frame_files, restored_frames_dir, fidelity_weight,
-            enable_colorization, model_path, batch_progress_callback, logger
+            enable_colorization, model_path, batch_size, batch_progress_callback, logger
         )
         
         result['processed_frames'] = batch_result['processed_count']
@@ -832,6 +1016,51 @@ def _get_video_metadata(video_path: str, logger: logging.Logger) -> Dict[str, An
     
     return metadata
 
+def _check_video_has_audio(video_path: str, logger: Optional[logging.Logger] = None) -> bool:
+    """
+    Check if a video file has an audio stream.
+    
+    Args:
+        video_path: Path to video file
+        logger: Logger instance
+        
+    Returns:
+        True if video has audio stream, False otherwise
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+    
+    try:
+        cmd = [
+            'ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_streams',
+            '-select_streams', 'a', video_path
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        
+        if result.returncode == 0:
+            import json
+            probe_data = json.loads(result.stdout)
+            streams = probe_data.get('streams', [])
+            has_audio = len(streams) > 0
+            
+            if has_audio:
+                logger.debug(f"Video {video_path} has audio stream")
+            else:
+                logger.debug(f"Video {video_path} has no audio stream")
+                
+            return has_audio
+        else:
+            logger.warning(f"Failed to probe audio streams for {video_path}: {result.stderr}")
+            return False
+            
+    except subprocess.TimeoutExpired:
+        logger.warning(f"Timeout while probing audio streams for {video_path}")
+        return False
+    except Exception as e:
+        logger.warning(f"Error checking audio streams for {video_path}: {e}")
+        return False
+
 def _reassemble_video_from_frames(
     frame_paths: List[str],
     output_path: str,
@@ -884,14 +1113,26 @@ def _reassemble_video_from_frames(
         try:
             # Create video from frames
             if preserve_audio and original_video_path and os.path.exists(original_video_path):
-                # Create video with audio from original
-                cmd = [
-                    'ffmpeg', '-f', 'concat', '-safe', '0', '-i', temp_list_file,
-                    '-i', original_video_path,
-                    '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
-                    '-c:a', 'aac', '-map', '0:v:0', '-map', '1:a:0',
-                    '-r', str(fps), '-y', output_path
-                ]
+                # Check if original video has audio stream
+                has_audio = _check_video_has_audio(original_video_path, logger)
+                
+                if has_audio:
+                    # Create video with audio from original
+                    cmd = [
+                        'ffmpeg', '-f', 'concat', '-safe', '0', '-i', temp_list_file,
+                        '-i', original_video_path,
+                        '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+                        '-c:a', 'aac', '-map', '0:v:0', '-map', '1:a:0',
+                        '-r', str(fps), '-y', output_path
+                    ]
+                else:
+                    # Original video has no audio, create video without audio
+                    logger.info("Original video has no audio track, creating video without audio")
+                    cmd = [
+                        'ffmpeg', '-f', 'concat', '-safe', '0', '-i', temp_list_file,
+                        '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+                        '-r', str(fps), '-y', output_path
+                    ]
             else:
                 # Create video without audio
                 cmd = [
@@ -1061,9 +1302,9 @@ def apply_face_restoration_to_frames(
                 progress = current / total
                 progress_callback(progress, status)
         
-        batch_result = restore_frames_batch(
+        batch_result = restore_frames_batch_true(
             frame_files, output_frames_dir, fidelity_weight,
-            enable_colorization, model_path, batch_progress_callback, logger
+            enable_colorization, model_path, batch_size, batch_progress_callback, logger
         )
         
         result['processed_count'] = batch_result['processed_count']
@@ -1117,4 +1358,276 @@ def apply_face_restoration_to_scene_frames(
         batch_size=batch_size,
         progress_callback=progress_callback,
         logger=logger
-    ) 
+    )
+
+def restore_frames_batch_true(
+    frame_paths: List[str],
+    output_dir: str,
+    fidelity_weight: float = 0.7,
+    enable_colorization: bool = False,
+    model_path: Optional[str] = None,
+    batch_size: int = 4,
+    progress_callback: Optional[Callable[[int, int, str], None]] = None,
+    logger: Optional[logging.Logger] = None
+) -> Dict[str, Any]:
+    """
+    Process frames using TRUE batch processing with CodeFormer.
+    
+    This function processes multiple face restoration frames simultaneously in real batches,
+    maximizing GPU utilization and processing speed. Unlike the regular batch processing
+    which processes frames one by one, this processes multiple faces in a single forward pass.
+    
+    Args:
+        frame_paths: List of input frame file paths
+        output_dir: Directory to save processed frames
+        fidelity_weight: Fidelity weight (0.0-1.0), higher values preserve identity better
+        enable_colorization: Whether to apply colorization for grayscale images
+        model_path: Path to CodeFormer model (optional, uses default if None)
+        batch_size: Number of frames to process simultaneously 
+        progress_callback: Optional callback for progress updates (current, total, status)
+        logger: Logger instance
+        
+    Returns:
+        Dictionary containing processing results and statistics
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+    
+    start_time = time.time()
+    result = {
+        'success': False,
+        'processed_count': 0,
+        'failed_count': 0,
+        'faces_detected_total': 0,
+        'output_paths': [],
+        'total_processing_time': 0.0,
+        'average_time_per_frame': 0.0,
+        'errors': []
+    }
+    
+    try:
+        # Ensure CodeFormer is available before proceeding
+        if not ensure_codeformer_available(logger):
+            result['errors'].append("CodeFormer environment not available")
+            return result
+            
+        # Import required modules
+        import torch
+        import cv2
+        import numpy as np
+        from torchvision.transforms.functional import normalize
+        from basicsr.utils import img2tensor, tensor2img
+        from basicsr.utils.registry import ARCH_REGISTRY
+        from basicsr.utils.download_util import load_file_from_url
+        from basicsr.utils.misc import get_device
+        from facelib.utils.face_restoration_helper import FaceRestoreHelper
+        from facelib.utils.misc import is_gray
+        
+        device = get_device()
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Initialize CodeFormer network
+        logger.info("Initializing CodeFormer network for true batch processing...")
+        net = ARCH_REGISTRY.get('CodeFormer')(
+            dim_embd=512, codebook_size=1024, n_head=8, n_layers=9, 
+            connect_list=['32', '64', '128', '256']
+        ).to(device)
+        
+        # Load model weights - check local path first, then download if needed
+        ckpt_path, needs_download = find_codeformer_model_path(model_path, logger)
+        
+        if ckpt_path:
+            # Load the checkpoint
+            checkpoint = torch.load(ckpt_path)['params_ema']
+            net.load_state_dict(checkpoint)
+            net.eval()
+        else:
+            # Need to download the model
+            if needs_download:
+                logger.info("Downloading CodeFormer model to weights/CodeFormer/...")
+                pretrain_model_url = 'https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/codeformer.pth'
+                ckpt_path = load_file_from_url(
+                    url=pretrain_model_url, 
+                    model_dir='weights/CodeFormer', 
+                    progress=True, 
+                    file_name=None
+                )
+                checkpoint = torch.load(ckpt_path)['params_ema']
+                net.load_state_dict(checkpoint)
+                net.eval()
+            else:
+                result['errors'].append("CodeFormer model not found and download failed")
+                return result
+        
+        # Initialize face detection helper
+        face_helper = FaceRestoreHelper(
+            upscale_factor=1,
+            face_size=512,
+            crop_ratio=(1, 1),
+            det_model='retinaface_resnet50',
+            save_ext='png',
+            use_parse=True,
+            device=device
+        )
+        
+        logger.info(f"Processing {len(frame_paths)} frames with TRUE batch processing (batch_size: {batch_size})")
+        
+        # Step 1: Extract all faces from all frames
+        all_face_data = []  # List of (frame_path, face_idx, cropped_face, original_img)
+        
+        for frame_idx, frame_path in enumerate(frame_paths):
+            if progress_callback:
+                progress_callback(frame_idx, len(frame_paths), f"Extracting faces from frame {frame_idx+1}")
+                
+            try:
+                # Load image
+                img = cv2.imread(frame_path, cv2.IMREAD_COLOR)
+                if img is None:
+                    logger.warning(f"Failed to load frame: {frame_path}")
+                    result['failed_count'] += 1
+                    continue
+                    
+                # Clean face helper for new image
+                face_helper.clean_all()
+                face_helper.read_image(img)
+                
+                # Detect and align faces
+                num_det_faces = face_helper.get_face_landmarks_5(
+                    only_center_face=False, resize=640, eye_dist_threshold=5
+                )
+                
+                if num_det_faces > 0:
+                    face_helper.align_warp_face()
+                    
+                    # Store all detected faces
+                    for face_idx, cropped_face in enumerate(face_helper.cropped_faces):
+                        all_face_data.append({
+                            'frame_path': frame_path,
+                            'frame_idx': frame_idx,
+                            'face_idx': face_idx,
+                            'cropped_face': cropped_face,
+                            'original_img': img.copy(),
+                            'face_helper_state': {
+                                'input_img': face_helper.input_img.copy(),
+                                'all_landmarks_5': [lm.copy() for lm in face_helper.all_landmarks_5],
+                                'det_faces': [face.copy() for face in face_helper.det_faces],
+                                'affine_matrices': [mat.copy() for mat in face_helper.affine_matrices],
+                                'inverse_affine_matrices': [mat.copy() for mat in face_helper.inverse_affine_matrices]
+                            }
+                        })
+                        
+                result['faces_detected_total'] += num_det_faces
+                        
+            except Exception as e:
+                logger.error(f"Error processing frame {frame_path}: {e}")
+                result['failed_count'] += 1
+                continue
+        
+        if not all_face_data:
+            result['errors'].append("No faces detected in any frames")
+            return result
+            
+        logger.info(f"Extracted {len(all_face_data)} faces from {len(frame_paths)} frames")
+        
+        # Step 2: Process faces in true batches
+        total_faces = len(all_face_data)
+        processed_faces = 0
+        
+        for batch_start in range(0, total_faces, batch_size):
+            batch_end = min(batch_start + batch_size, total_faces)
+            current_batch = all_face_data[batch_start:batch_end]
+            batch_num = (batch_start // batch_size) + 1
+            total_batches = (total_faces + batch_size - 1) // batch_size
+            
+            logger.info(f"Processing TRUE batch {batch_num}/{total_batches}: {len(current_batch)} faces simultaneously")
+            
+            if progress_callback:
+                progress_callback(processed_faces, total_faces, f"Processing batch {batch_num}/{total_batches}")
+            
+            batch_start_time = time.time()
+            
+            try:
+                # Prepare batch tensor
+                batch_faces = []
+                for face_data in current_batch:
+                    cropped_face = face_data['cropped_face']
+                    # Convert to tensor
+                    cropped_face_t = img2tensor(cropped_face / 255., bgr2rgb=True, float32=True)
+                    normalize(cropped_face_t, (0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True)
+                    batch_faces.append(cropped_face_t)
+                
+                # Stack into batch tensor [batch_size, 3, 512, 512]
+                batch_tensor = torch.stack(batch_faces, dim=0).to(device)
+                
+                # TRUE BATCH PROCESSING - Process all faces at once!
+                with torch.no_grad():
+                    batch_outputs = net(batch_tensor, w=fidelity_weight, adain=True)[0]
+                    
+                # Convert batch outputs back to individual images
+                restored_faces = []
+                for i in range(batch_outputs.shape[0]):
+                    restored_face = tensor2img(batch_outputs[i], rgb2bgr=True, min_max=(-1, 1))
+                    restored_face = restored_face.astype('uint8')
+                    restored_faces.append(restored_face)
+                
+                # Clean up GPU memory
+                del batch_tensor, batch_outputs
+                torch.cuda.empty_cache()
+                
+                # Step 3: Paste restored faces back to original images and save
+                for face_data, restored_face in zip(current_batch, restored_faces):
+                    try:
+                        # Restore face helper state
+                        face_helper.clean_all()
+                        face_helper.input_img = face_data['face_helper_state']['input_img']
+                        face_helper.all_landmarks_5 = face_data['face_helper_state']['all_landmarks_5']
+                        face_helper.det_faces = face_data['face_helper_state']['det_faces']
+                        face_helper.affine_matrices = face_data['face_helper_state']['affine_matrices']
+                        face_helper.inverse_affine_matrices = face_data['face_helper_state']['inverse_affine_matrices']
+                        face_helper.cropped_faces = [face_data['cropped_face']]
+                        
+                        # Add restored face
+                        face_helper.add_restored_face(restored_face, face_data['cropped_face'])
+                        
+                        # Paste back to original image
+                        face_helper.get_inverse_affine(None)
+                        restored_img = face_helper.paste_faces_to_input_image(upsample_img=None, draw_box=False)
+                        
+                        # Save result
+                        frame_name = os.path.splitext(os.path.basename(face_data['frame_path']))[0]
+                        output_path = os.path.join(output_dir, f"{frame_name}_restored.png")
+                        cv2.imwrite(output_path, restored_img)
+                        
+                        result['output_paths'].append(output_path)
+                        result['processed_count'] += 1
+                        
+                    except Exception as e:
+                        logger.error(f"Error saving restored frame {face_data['frame_path']}: {e}")
+                        result['failed_count'] += 1
+                        result['errors'].append(f"Save error for {face_data['frame_path']}: {e}")
+                
+                batch_time = time.time() - batch_start_time
+                processed_faces += len(current_batch)
+                
+                avg_time_per_face = batch_time / len(current_batch) if len(current_batch) > 0 else 0
+                logger.info(f"TRUE batch {batch_num}/{total_batches} completed: {len(current_batch)} faces in {batch_time:.2f}s (avg {avg_time_per_face:.2f}s/face)")
+                
+            except Exception as e:
+                logger.error(f"Error processing batch {batch_num}: {e}")
+                result['failed_count'] += len(current_batch)
+                result['errors'].append(f"Batch {batch_num} error: {e}")
+                continue
+        
+        result['total_processing_time'] = time.time() - start_time
+        result['success'] = result['processed_count'] > 0
+        
+        if result['success']:
+            logger.info(f"TRUE batch processing completed: {result['processed_count']} frames processed, {result['failed_count']} failed in {result['total_processing_time']:.2f}s")
+        else:
+            logger.error(f"TRUE batch processing failed: {result['failed_count']} frames failed")
+            
+    except Exception as e:
+        result['error'] = f"Critical error in TRUE batch processing: {e}"
+        logger.error(result['error'], exc_info=True)
+        
+    return result 

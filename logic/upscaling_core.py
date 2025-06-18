@@ -40,7 +40,7 @@ from .comparison_video import create_comparison_video, get_comparison_output_pat
 from .rife_interpolation import apply_rife_to_chunks, apply_rife_to_scenes
 from .face_restoration_utils import (
     setup_codeformer_environment,
-    restore_frames_batch,
+    restore_frames_batch_true,
     restore_video_frames,
     apply_face_restoration_to_frames
 )

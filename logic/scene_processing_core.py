@@ -12,7 +12,7 @@ import numpy as np
 import gc # Added for garbage collection
 from .face_restoration_utils import (
     setup_codeformer_environment,
-    restore_frames_batch,
+    restore_frames_batch_true,
     restore_video_frames,
     apply_face_restoration_to_scene_frames
 )
