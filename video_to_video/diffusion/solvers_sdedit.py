@@ -51,6 +51,20 @@ def sample_heun(noise,
     
     x = noise * sigmas[0]
     for i in trange(len(sigmas) - 1, disable=not show_progress):
+        # Check for cancellation at the start of each diffusion step
+        try:
+            from logic.cancellation_manager import cancellation_manager
+            cancellation_manager.check_cancel()
+        except ImportError:
+            # If cancellation manager is not available, continue without cancellation
+            pass
+        except Exception as e:
+            # If there's a CancelledError or other cancellation exception, re-raise it
+            if "cancel" in str(e).lower() or "cancelled" in str(e).lower():
+                raise e
+            # For other exceptions, continue without cancellation
+            pass
+            
         gamma = 0.
         if s_tmin <= sigmas[i] <= s_tmax and sigmas[i] < float('inf'):
             gamma = min(s_churn / (len(sigmas) - 1), 2**0.5 - 1)
@@ -172,6 +186,20 @@ def sample_dpmpp_2m_sde(noise,
 
     total_steps_in_solver = len(sigmas) - 1
     for i in trange(total_steps_in_solver, disable=not show_progress, desc="Diffusion Steps"):
+        # Check for cancellation at the start of each diffusion step
+        try:
+            from logic.cancellation_manager import cancellation_manager
+            cancellation_manager.check_cancel()
+        except ImportError:
+            # If cancellation manager is not available, continue without cancellation
+            pass
+        except Exception as e:
+            # If there's a CancelledError or other cancellation exception, re-raise it
+            if "cancel" in str(e).lower() or "cancelled" in str(e).lower():
+                raise e
+            # For other exceptions, continue without cancellation
+            pass
+        
         current_step = i + 1
         # logger.info(f'Diffusion Step: {current_step}/{total_steps_in_solver}')
         if progress_callback:

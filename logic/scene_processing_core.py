@@ -551,6 +551,21 @@ def process_single_scene(
                 
                 def current_scene_context_diffusion_cb(step, total_steps):
                     nonlocal scene_context_diffusion_timer
+                    
+                    # Check for cancellation at each diffusion step callback  
+                    try:
+                        from .cancellation_manager import cancellation_manager
+                        cancellation_manager.check_cancel()
+                    except ImportError:
+                        # If cancellation manager is not available, continue without cancellation
+                        pass
+                    except Exception as e:
+                        # If there's a CancelledError or other cancellation exception, re-raise it
+                        if "cancel" in str(e).lower() or "cancelled" in str(e).lower():
+                            raise e
+                        # For other exceptions, continue without cancellation
+                        pass
+                    
                     current_time = time.time()
                     step_duration = current_time - scene_context_diffusion_timer['last_time']
                     scene_context_diffusion_timer['last_time'] = current_time
@@ -776,6 +791,21 @@ def process_single_scene(
                 
                 def current_scene_chunk_diffusion_cb(step, total_steps):
                     nonlocal scene_chunk_diffusion_timer
+                    
+                    # Check for cancellation at each diffusion step callback  
+                    try:
+                        from .cancellation_manager import cancellation_manager
+                        cancellation_manager.check_cancel()
+                    except ImportError:
+                        # If cancellation manager is not available, continue without cancellation
+                        pass
+                    except Exception as e:
+                        # If there's a CancelledError or other cancellation exception, re-raise it
+                        if "cancel" in str(e).lower() or "cancelled" in str(e).lower():
+                            raise e
+                        # For other exceptions, continue without cancellation
+                        pass
+                    
                     current_time = time.time()
                     step_duration = current_time - scene_chunk_diffusion_timer['last_time']
                     scene_chunk_diffusion_timer['last_time'] = current_time

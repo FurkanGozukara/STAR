@@ -1232,6 +1232,10 @@ def run_upscale (
                     chunk_diffusion_timer = {'last_time': time.time()}
                     def diffusion_callback_for_chunk(step=None, total_steps=None, step_cb=None, total_steps_cb=None):
                         nonlocal chunk_diffusion_timer
+                        
+                        # Check for cancellation at each diffusion step callback
+                        cancellation_manager.check_cancel()
+                        
                         # Handle both keyword and positional argument styles
                         current_step = step if step is not None else step_cb
                         current_total_steps = total_steps if total_steps is not None else total_steps_cb
@@ -1411,6 +1415,10 @@ def run_upscale (
                     
                     def diffusion_callback_for_chunk_direct(step=None, total_steps=None, total_steps_chunk=None):
                         nonlocal chunk_diffusion_timer_direct
+                        
+                        # Check for cancellation at each diffusion step callback
+                        cancellation_manager.check_cancel()
+                        
                         # Handle both keyword and positional argument styles
                         current_step = step if step is not None else 0
                         current_total_steps = total_steps if total_steps is not None else (total_steps_chunk if total_steps_chunk is not None else 1)
