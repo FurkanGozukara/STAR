@@ -115,6 +115,12 @@ format_temp_folder_size as util_format_temp_folder_size ,
 clear_temp_folder as util_clear_temp_folder
 )
 
+from logic .frame_folder_utils import (
+validate_frame_folder_input as util_validate_frame_folder_input,
+process_frame_folder_to_video as util_process_frame_folder_to_video,
+find_frame_folders_in_directory as util_find_frame_folders_in_directory
+)
+
 SELECTED_GPU_ID =0 
 
 parser =ArgumentParser (description ="Ultimate SECourses STAR Video Upscaler")
@@ -217,7 +223,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         sources =["upload"],
                         interactive =True ,height =512 
                         )
-                        
+                                                
                         # Integration status (hidden by default)
                         integration_status =gr .Textbox (
                         label ="Integration Status",
@@ -277,6 +283,26 @@ The total combined prompt length is limited to 77 tokens."""
                         value =app_config .DEFAULT_NEG_PROMPT ,
                         lines =2 ,
                         info ="Guides the model *away* from undesired aspects (e.g., bad quality, artifacts, specific styles). This does NOT count towards the 77 token limit for positive guidance."
+                        )
+                    # Frame Folder Input Feature
+                    with gr .Group ():
+                        enable_frame_folder_check =gr .Checkbox (
+                        label ="Process Input Frames Folder (instead of video)",
+                        value =False ,
+                        info ="Enable to process a folder of image frames instead of a video file. Supports jpg, png, tiff, jp2, dpx and other formats. Frames will be sorted naturally (2.png before 12.png)."
+                        )
+                        input_frames_folder =gr .Textbox (
+                        label ="Input Frames Folder Path",
+                        placeholder ="C:/path/to/frames/folder/",
+                        interactive =False ,
+                        info ="Path to folder containing image frames. Will be processed as a video sequence using global encoding settings."
+                        )
+                        frames_folder_status =gr .Textbox (
+                        label ="Frame Folder Status",
+                        interactive =False ,
+                        lines =2 ,
+                        visible =False ,
+                        value =""
                         )
                     open_output_folder_button =gr .Button ("Open Outputs Folder",icon ="icons/folder.png",variant ="primary")
 
@@ -652,6 +678,12 @@ The total combined prompt length is limited to 77 tokens."""
                             minimum =0 ,maximum =51 ,value =app_config .DEFAULT_FFMPEG_QUALITY_CPU ,step =1 ,
                             info ="For libx264 (CPU): Constant Rate Factor (CRF). Lower values mean higher quality (0 is lossless, 23 is default). For h264_nvenc (GPU): Constrained Quality (CQ). Lower values generally mean better quality. Typical range for NVENC CQ is 18-28."
                             )
+                        
+                        frame_folder_fps_slider =gr .Slider (
+                        label ="Frame Folder FPS",
+                        minimum =1.0 ,maximum =120.0 ,value =app_config .DEFAULT_FRAME_FOLDER_FPS ,step =0.001 ,
+                        info ="FPS to use when converting frame folders to videos. This setting only applies when processing input frame folders (not regular videos). Common values: 23.976, 24, 25, 29.97, 30, 60."
+                        )
 
                 with gr .Column (scale =1 ):
                     with gr .Accordion ("Output Options",open =True ):
@@ -735,6 +767,13 @@ This helps visualize the quality improvement from upscaling."""
                     label ="Output Folder",
                     placeholder ="Path to output folder for processed videos...",
                     info ="Folder where processed videos will be saved with organized structure."
+                    )
+                
+                with gr .Row ():
+                    enable_batch_frame_folders =gr .Checkbox (
+                    label ="Process Frame Folders in Batch",
+                    value =False ,
+                    info ="Enable to process subfolders containing frame sequences instead of video files. Each subfolder with images will be converted to video first."
                     )
 
                 with gr .Row ():
@@ -1240,6 +1279,40 @@ This helps visualize the quality improvement from upscaling."""
     outputs =context_overlap_num 
     )
 
+    # Frame folder controls
+    def update_frame_folder_controls(enable_frame_folder):
+        """Enable/disable frame folder controls based on checkbox state."""
+        return [
+            gr.update(interactive=enable_frame_folder),  # frames folder textbox
+            gr.update(visible=enable_frame_folder)       # status textbox
+        ]
+    
+    def validate_frame_folder_input_wrapper(frames_folder_path, enable_frame_folder):
+        """Validate frame folder input and show status."""
+        if not enable_frame_folder or not frames_folder_path:
+            return gr.update(visible=False, value="")
+        
+        is_valid, message, frame_count = util_validate_frame_folder_input(frames_folder_path, logger)
+        
+        if is_valid:
+            status_msg = f"✅ {message}"
+        else:
+            status_msg = f"❌ {message}"
+        
+        return gr.update(visible=True, value=status_msg)
+    
+    enable_frame_folder_check.change(
+        fn=update_frame_folder_controls,
+        inputs=enable_frame_folder_check,
+        outputs=[input_frames_folder, frames_folder_status]
+    )
+    
+    input_frames_folder.change(
+        fn=validate_frame_folder_input_wrapper,
+        inputs=[input_frames_folder, enable_frame_folder_check],
+        outputs=frames_folder_status
+    )
+
     # Image upscaler controls
     def update_image_upscaler_controls(enable_image_upscaler):
         """Enable/disable image upscaler controls based on checkbox state."""
@@ -1384,7 +1457,7 @@ This helps visualize the quality improvement from upscaling."""
     enable_tiling_check_val ,tile_size_num_val ,tile_overlap_num_val ,
     enable_context_window_check_val ,context_overlap_num_val ,
     enable_target_res_check_val ,target_h_num_val ,target_w_num_val ,target_res_mode_radio_val ,
-    ffmpeg_preset_dropdown_val ,ffmpeg_quality_slider_val ,ffmpeg_use_gpu_check_val ,
+    ffmpeg_preset_dropdown_val ,ffmpeg_quality_slider_val ,ffmpeg_use_gpu_check_val ,frame_folder_fps_slider ,
     save_frames_checkbox_val ,save_metadata_checkbox_val ,save_chunks_checkbox_val ,save_chunk_frames_checkbox_val ,
     create_comparison_video_check_val ,
     enable_scene_split_check_val ,scene_split_mode_radio_val ,scene_min_scene_len_num_val ,scene_drop_short_check_val ,scene_merge_last_check_val ,
@@ -1408,6 +1481,9 @@ This helps visualize the quality improvement from upscaling."""
     enable_face_restoration_val =False ,face_restoration_fidelity_val =0.7 ,enable_face_colorization_val =False ,
     face_restoration_when_val ="after" ,codeformer_model_val =None ,face_restoration_batch_size_val =4 ,
     
+    # Frame folder parameters
+    enable_frame_folder_val =False ,input_frames_folder_val ="", frame_folder_fps_slider_val =24.0,
+    
     progress =gr .Progress (track_tqdm =True )
     ):
 
@@ -1427,6 +1503,90 @@ This helps visualize the quality improvement from upscaling."""
         logger .info (f"In upscale_director_logic. Auto-caption first: {do_auto_caption_first_val}, User prompt: '{user_prompt_val[:50]}...'")
 
         actual_cogvlm_quant_for_captioning =get_quant_value_from_display (cogvlm_quant_radio_val )
+
+        # Handle frame folder input preprocessing
+        actual_input_video_path = input_video_val
+        if enable_frame_folder_val and input_frames_folder_val:
+            logger.info("Frame folder processing mode enabled")
+            progress(0, desc="Converting frame folder to video...")
+            
+            # Validate frame folder first
+            is_valid, validation_msg, frame_count = util_validate_frame_folder_input(input_frames_folder_val, logger)
+            
+            if not is_valid:
+                error_msg = f"Frame folder validation failed: {validation_msg}"
+                logger.error(error_msg)
+                log_accumulator_director.append(error_msg)
+                current_status_text_val = "\n".join(log_accumulator_director)
+                yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val),
+                       gr.update(value=current_user_prompt_val),
+                       gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val),
+                       gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val),
+                       gr.update(value=current_comparison_video_val))
+                return
+            
+            # Create temporary video from frames
+            import tempfile
+            temp_video_dir = tempfile.mkdtemp(prefix="frame_folder_")
+            frame_folder_name = os.path.basename(input_frames_folder_val.rstrip(os.sep))
+            temp_video_path = os.path.join(temp_video_dir, f"{frame_folder_name}_from_frames.mp4")
+            
+            conversion_msg = f"Converting {frame_count} frames to video using global encoding settings..."
+            log_accumulator_director.append(conversion_msg)
+            current_status_text_val = "\n".join(log_accumulator_director)
+            yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val),
+                   gr.update(value=current_user_prompt_val),
+                   gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val),
+                   gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val),
+                   gr.update(value=current_comparison_video_val))
+            
+            try:
+                # Use global encoding settings and configurable FPS for frame folder conversion
+                success, conv_msg = util_process_frame_folder_to_video(
+                    input_frames_folder_val, temp_video_path, fps=frame_folder_fps_slider_val,
+                    ffmpeg_preset=ffmpeg_preset_dropdown_val,
+                    ffmpeg_quality_value=ffmpeg_quality_slider_val,
+                    ffmpeg_use_gpu=ffmpeg_use_gpu_check_val,
+                    logger=logger
+                )
+                
+                if success:
+                    actual_input_video_path = temp_video_path
+                    success_msg = f"✅ Successfully converted frame folder to video: {conv_msg}"
+                    log_accumulator_director.append(success_msg)
+                    logger.info(f"Frame folder converted successfully. Using: {actual_input_video_path}")
+                else:
+                    error_msg = f"❌ Failed to convert frame folder: {conv_msg}"
+                    log_accumulator_director.append(error_msg)
+                    logger.error(error_msg)
+                    current_status_text_val = "\n".join(log_accumulator_director)
+                    yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val),
+                           gr.update(value=current_user_prompt_val),
+                           gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val),
+                           gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val),
+                           gr.update(value=current_comparison_video_val))
+                    return
+                    
+            except Exception as e:
+                error_msg = f"❌ Exception during frame folder conversion: {str(e)}"
+                log_accumulator_director.append(error_msg)
+                logger.error(error_msg, exc_info=True)
+                current_status_text_val = "\n".join(log_accumulator_director)
+                yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val),
+                       gr.update(value=current_user_prompt_val),
+                       gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val),
+                       gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val),
+                       gr.update(value=current_comparison_video_val))
+                return
+            
+            current_status_text_val = "\n".join(log_accumulator_director)
+            yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val),
+                   gr.update(value=current_user_prompt_val),
+                   gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val),
+                   gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val),
+                   gr.update(value=current_comparison_video_val))
+            
+            log_accumulator_director = []  # Reset for main processing
 
         should_auto_caption_entire_video =(do_auto_caption_first_val and 
         not enable_scene_split_check_val and 
@@ -1546,7 +1706,7 @@ This helps visualize the quality improvement from upscaling."""
             logger .info (f"Using provided seed: {actual_seed_to_use}")
 
         upscale_generator =core_run_upscale (
-        input_video_path =input_video_val ,user_prompt =current_user_prompt_val ,
+        input_video_path =actual_input_video_path ,user_prompt =current_user_prompt_val ,
         positive_prompt =pos_prompt_val ,negative_prompt =neg_prompt_val ,model_choice =model_selector_val ,
         upscale_factor_slider =upscale_factor_slider_val ,cfg_scale =cfg_slider_val ,steps =steps_slider_val ,solver_mode =solver_mode_radio_val ,
         max_chunk_len =max_chunk_len_slider_val ,enable_chunk_optimization =enable_chunk_optimization_check_val ,vae_chunk =vae_chunk_slider_val ,color_fix_method =color_fix_dropdown_val ,
@@ -1708,7 +1868,7 @@ This helps visualize the quality improvement from upscaling."""
     enable_tiling_check ,tile_size_num ,tile_overlap_num ,
     enable_context_window_check ,context_overlap_num ,
     enable_target_res_check ,target_h_num ,target_w_num ,target_res_mode_radio ,
-    ffmpeg_preset_dropdown ,ffmpeg_quality_slider ,ffmpeg_use_gpu_check ,
+    ffmpeg_preset_dropdown ,ffmpeg_quality_slider ,ffmpeg_use_gpu_check ,frame_folder_fps_slider ,
     save_frames_checkbox ,save_metadata_checkbox ,save_chunks_checkbox ,save_chunk_frames_checkbox ,
     create_comparison_video_check ,
     enable_scene_split_check ,scene_split_mode_radio ,scene_min_scene_len_num ,scene_drop_short_check ,scene_merge_last_check ,
@@ -1742,8 +1902,15 @@ This helps visualize the quality improvement from upscaling."""
         face_restoration_fidelity_slider ,
         enable_face_colorization_check ,
         face_restoration_when_radio ,
-        codeformer_model_dropdown ,
+        codeformer_model_dropdown,
         face_restoration_batch_size_slider 
+    ])
+    
+    # Add frame folder parameters
+    click_inputs .extend ([
+        enable_frame_folder_check ,
+        input_frames_folder,
+        frame_folder_fps_slider
     ])
 
     click_outputs_list .extend ([last_chunk_video ,chunk_status_text ])
@@ -1845,7 +2012,7 @@ This helps visualize the quality improvement from upscaling."""
     enable_tiling_check_val ,tile_size_num_val ,tile_overlap_num_val ,
     enable_context_window_check_val ,context_overlap_num_val ,
     enable_target_res_check_val ,target_h_num_val ,target_w_num_val ,target_res_mode_radio_val ,
-    ffmpeg_preset_dropdown_val ,ffmpeg_quality_slider_val ,ffmpeg_use_gpu_check_val ,
+    ffmpeg_preset_dropdown_val ,ffmpeg_quality_slider_val ,ffmpeg_use_gpu_check_val ,frame_folder_fps_slider_val ,
     save_frames_checkbox_val ,save_metadata_checkbox_val ,save_chunks_checkbox_val ,save_chunk_frames_checkbox_val ,
     create_comparison_video_check_val ,
 
@@ -1871,6 +2038,9 @@ This helps visualize the quality improvement from upscaling."""
     enable_face_restoration_val =False ,face_restoration_fidelity_val =0.7 ,enable_face_colorization_val =False ,
     face_restoration_timing_val ="after_upscale" ,face_restoration_when_val ="after" ,codeformer_model_val =None ,
     face_restoration_batch_size_val =4 ,
+    
+    # Frame folder parameters for batch
+    enable_batch_frame_folders_val =False ,
     
     progress =gr .Progress (track_tqdm =True )
     ):
@@ -1916,8 +2086,54 @@ This helps visualize the quality improvement from upscaling."""
         face_restoration_batch_size =face_restoration_batch_size_val 
         )
 
+        # Handle frame folder batch processing
+        actual_batch_input_folder = batch_input_folder_val
+        temp_video_conversions = []  # Track temporary videos created from frame folders
+        
+        if enable_batch_frame_folders_val:
+            logger.info("Batch frame folder processing mode enabled")
+            
+            # Find all frame folders in input directory
+            frame_folders = util_find_frame_folders_in_directory(batch_input_folder_val, logger)
+            
+            if not frame_folders:
+                return None, f"❌ No frame folders found in: {batch_input_folder_val}"
+            
+            # Create temporary directory for converted videos
+            import tempfile
+            temp_batch_dir = tempfile.mkdtemp(prefix="batch_frame_folders_")
+            actual_batch_input_folder = temp_batch_dir
+            
+            logger.info(f"Found {len(frame_folders)} frame folders to convert")
+            
+            # Convert each frame folder to video
+            for i, frame_folder in enumerate(frame_folders):
+                folder_name = os.path.basename(frame_folder.rstrip(os.sep))
+                temp_video_path = os.path.join(temp_batch_dir, f"{folder_name}.mp4")
+                
+                logger.info(f"Converting frame folder {i+1}/{len(frame_folders)}: {folder_name}")
+                
+                success, conv_msg = util_process_frame_folder_to_video(
+                    frame_folder, temp_video_path, fps=frame_folder_fps_slider_val,
+                    ffmpeg_preset=ffmpeg_preset_dropdown_val,
+                    ffmpeg_quality_value=ffmpeg_quality_slider_val,
+                    ffmpeg_use_gpu=ffmpeg_use_gpu_check_val,
+                    logger=logger
+                )
+                
+                if success:
+                    temp_video_conversions.append(temp_video_path)
+                    logger.info(f"✅ Converted {folder_name}: {conv_msg}")
+                else:
+                    logger.error(f"❌ Failed to convert {folder_name}: {conv_msg}")
+            
+            if not temp_video_conversions:
+                return None, f"❌ Failed to convert any frame folders to videos"
+            
+            logger.info(f"Successfully converted {len(temp_video_conversions)} frame folders to videos")
+
         return process_batch_videos (
-        batch_input_folder_val, batch_output_folder_val,
+        actual_batch_input_folder, batch_output_folder_val,
         user_prompt_val, pos_prompt_val, neg_prompt_val, model_selector_val,
         upscale_factor_slider_val, cfg_slider_val, steps_slider_val, solver_mode_radio_val,
         max_chunk_len_slider_val, enable_chunk_optimization_check_val, vae_chunk_slider_val, color_fix_dropdown_val,
@@ -1971,7 +2187,7 @@ This helps visualize the quality improvement from upscaling."""
     enable_tiling_check ,tile_size_num ,tile_overlap_num ,
     enable_context_window_check ,context_overlap_num ,
     enable_target_res_check ,target_h_num ,target_w_num ,target_res_mode_radio ,
-    ffmpeg_preset_dropdown ,ffmpeg_quality_slider ,ffmpeg_use_gpu_check ,
+    ffmpeg_preset_dropdown ,ffmpeg_quality_slider ,ffmpeg_use_gpu_check ,frame_folder_fps_slider ,
     save_frames_checkbox ,save_metadata_checkbox ,save_chunks_checkbox ,save_chunk_frames_checkbox ,
     create_comparison_video_check ,
     enable_scene_split_check ,scene_split_mode_radio ,scene_min_scene_len_num ,scene_drop_short_check ,scene_merge_last_check ,
@@ -2008,6 +2224,12 @@ This helps visualize the quality improvement from upscaling."""
         face_restoration_when_radio ,
         codeformer_model_dropdown ,
         face_restoration_batch_size_slider 
+    ])
+    
+    # Add frame folder parameters to batch processing
+    batch_process_inputs .extend ([
+        enable_batch_frame_folders,
+        frame_folder_fps_slider
     ])
 
     batch_process_button .click (

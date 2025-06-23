@@ -2,6 +2,8 @@ import os
 import subprocess
 import gradio as gr
 import cv2
+import re
+from .nvenc_utils import is_resolution_too_small_for_nvenc
 
 def run_ffmpeg_command(cmd, desc="ffmpeg command", logger=None, raise_on_error=True):
     """
@@ -79,7 +81,7 @@ def extract_frames(video_path, temp_dir, logger=None):
     cmd = f'ffmpeg -i "{video_path}" -vsync vfr -qscale:v 2 "{os.path.join(temp_dir, "frame_%06d.png")}"'
     run_ffmpeg_command(cmd, "Frame Extraction", logger)
 
-    frame_files = sorted([f for f in os.listdir(temp_dir) if f.startswith('frame_') and f.endswith('.png')])
+    frame_files = sorted([f for f in os.listdir(temp_dir) if f.startswith('frame_') and f.endswith('.png')], key=natural_sort_key)
     frame_count = len(frame_files)
     if logger:
         logger.info(f"Extracted {frame_count} frames.")
@@ -349,7 +351,7 @@ def create_video_from_frames(frame_dir, output_path, fps, ffmpeg_preset, ffmpeg_
     frame_width, frame_height = None, None
     if ffmpeg_use_gpu:
         # Find first frame to check resolution
-        frame_files = sorted([f for f in os.listdir(frame_dir) if f.startswith('frame_') and f.endswith('.png')])
+        frame_files = sorted([f for f in os.listdir(frame_dir) if f.startswith('frame_') and f.endswith('.png')], key=natural_sort_key)
         if frame_files:
             first_frame_path = os.path.join(frame_dir, frame_files[0])
             try:
@@ -385,7 +387,19 @@ def create_video_from_frames(frame_dir, output_path, fps, ffmpeg_preset, ffmpeg_
             logger.info(f"Using libx264 with preset {ffmpeg_preset} and CRF {ffmpeg_quality_value}.")
 
     cmd = f'ffmpeg -y -framerate {fps} -i "{input_pattern}" {video_codec_opts} "{output_path}"'
-    run_ffmpeg_command(cmd, "Video Reassembly (silent)", logger)
+    
+    try:
+        success = run_ffmpeg_command(cmd, "Video Reassembly (silent)", logger, raise_on_error=False)
+        if success and os.path.exists(output_path):
+            return True
+        else:
+            if logger:
+                logger.error(f"Video creation failed or output file not created: {output_path}")
+            return False
+    except Exception as e:
+        if logger:
+            logger.error(f"Exception during video creation: {e}")
+        return False
 
 def get_video_info(video_path, logger=None):
     """
@@ -577,3 +591,129 @@ def format_video_info_message(video_info, filename=None):
     )
     
     return message 
+
+def natural_sort_key(text):
+    """
+    Natural sorting key function to handle numeric sorting properly.
+    Converts '2.png' to come before '12.png' instead of lexicographic sorting.
+    """
+    def convert(text):
+        return int(text) if text.isdigit() else text.lower()
+    return [convert(c) for c in re.split(r'(\d+)', text)]
+
+def get_supported_image_extensions():
+    """Get list of supported image extensions."""
+    return ['.jpg', '.jpeg', '.png', '.tiff', '.tif', '.jp2', '.dpx', '.bmp', '.webp']
+
+def create_video_from_input_frames(
+    input_frames_dir, output_path, fps=30.0, 
+    ffmpeg_preset="medium", ffmpeg_quality_value=23, ffmpeg_use_gpu=False, logger=None
+):
+    """
+    Create video from input frame directory with natural sorting.
+    Supports multiple image formats: jpg, png, tiff, jp2, dpx, etc.
+    
+    Args:
+        input_frames_dir: Directory containing input frames
+        output_path: Path for output video file
+        fps: Target FPS for output video
+        ffmpeg_preset: FFmpeg encoding preset
+        ffmpeg_quality_value: Quality value for encoding
+        ffmpeg_use_gpu: Whether to use GPU encoding
+        logger: Logger instance
+    
+    Returns:
+        bool: Success status
+    """
+    if logger:
+        logger.info(f"Creating video from input frames in '{input_frames_dir}' to '{output_path}' at {fps} FPS")
+    
+    try:
+        # Get all supported image files
+        supported_extensions = get_supported_image_extensions()
+        frame_files = []
+        
+        for file in os.listdir(input_frames_dir):
+            if any(file.lower().endswith(ext) for ext in supported_extensions):
+                frame_files.append(file)
+        
+        if not frame_files:
+            if logger:
+                logger.error(f"No supported image files found in {input_frames_dir}")
+            return False
+        
+        # Apply natural sorting to fix 2.png vs 12.png issue
+        frame_files = sorted(frame_files, key=natural_sort_key)
+        
+        if logger:
+            logger.info(f"Found {len(frame_files)} frames: {frame_files[:5]}{'...' if len(frame_files) > 5 else ''}")
+        
+        # Create temporary symlinks with sequential naming for ffmpeg
+        import tempfile
+        import shutil
+        
+        # Create a temporary directory that we manage manually for better control
+        temp_dir = tempfile.mkdtemp(prefix="frame_conversion_")
+        
+        try:
+            # Create sequential frame links (1-based indexing to match FFmpeg pattern)
+            for i, frame_file in enumerate(frame_files):
+                src_path = os.path.join(input_frames_dir, frame_file)
+                dst_path = os.path.join(temp_dir, f"frame_{i+1:06d}.png")
+                
+                # Copy or convert to PNG if needed
+                if frame_file.lower().endswith('.png'):
+                    # For PNG files, always copy (symlinks can cause issues on Windows)
+                    try:
+                        shutil.copy2(src_path, dst_path)
+                    except Exception as e:
+                        if logger:
+                            logger.warning(f"Could not copy {frame_file}: {e}")
+                        continue
+                else:
+                    # Convert other formats to PNG using OpenCV
+                    try:
+                        img = cv2.imread(src_path, cv2.IMREAD_UNCHANGED)
+                        if img is not None:
+                            cv2.imwrite(dst_path, img)
+                        else:
+                            if logger:
+                                logger.warning(f"Could not read image: {frame_file}")
+                            continue
+                    except Exception as e:
+                        if logger:
+                            logger.warning(f"Could not convert {frame_file}: {e}")
+                        continue
+            
+            # Verify frames were copied
+            copied_frames = [f for f in os.listdir(temp_dir) if f.startswith('frame_') and f.endswith('.png')]
+            if logger:
+                logger.info(f"Copied {len(copied_frames)} frames to temporary directory")
+            
+            if len(copied_frames) == 0:
+                if logger:
+                    logger.error("No frames were successfully copied to temporary directory")
+                return False
+            
+            # Now use the existing create_video_from_frames function
+            result = create_video_from_frames(
+                temp_dir, output_path, fps, 
+                ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger
+            )
+            
+            return result
+            
+        finally:
+            # Clean up temporary directory
+            try:
+                shutil.rmtree(temp_dir)
+                if logger:
+                    logger.debug(f"Cleaned up temporary directory: {temp_dir}")
+            except Exception as e:
+                if logger:
+                    logger.warning(f"Could not clean up temporary directory {temp_dir}: {e}")
+            
+    except Exception as e:
+        if logger:
+            logger.error(f"Error creating video from input frames: {e}")
+        return False 

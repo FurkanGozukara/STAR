@@ -11,6 +11,7 @@ import logging
 import json
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Callable, Any
+from .ffmpeg_utils import natural_sort_key
 
 # Global variables to store CodeFormer components after import
 codeformer_available = False
@@ -853,7 +854,7 @@ def restore_video_frames(
             return result
             
         # Get list of extracted frames
-        frame_files = sorted(glob.glob(os.path.join(frames_dir, "frame_*.png")))
+        frame_files = sorted(glob.glob(os.path.join(frames_dir, "frame_*.png")), key=lambda x: natural_sort_key(os.path.basename(x)))
         result['extracted_frames'] = len(frame_files)
         
         if not frame_files:
