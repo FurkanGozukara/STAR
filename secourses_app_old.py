@@ -20,22 +20,15 @@ import re
 from pathlib import Path 
 from functools import partial 
 
-from logic.dataclasses import (
-    AppConfig, create_app_config,
-    UTIL_COG_VLM_AVAILABLE, UTIL_BITSANDBYTES_AVAILABLE,
-    get_cogvlm_quant_choices_map, get_default_cogvlm_quant_display,
-    PathConfig, PromptConfig, StarModelConfig, PerformanceConfig, ResolutionConfig,
-    ContextWindowConfig, TilingConfig, FfmpegConfig, FrameFolderConfig, SceneSplitConfig,
-    CogVLMConfig, OutputConfig, SeedConfig, RifeConfig, FpsDecreaseConfig, BatchConfig,
-    ImageUpscalerConfig, FaceRestorationConfig
-)
-from logic import metadata_handler
-from logic import config as app_config_module 
+from logic import config as app_config 
+from logic import metadata_handler 
 
 from logic .cogvlm_utils import (
 load_cogvlm_model as util_load_cogvlm_model ,
 unload_cogvlm_model as util_unload_cogvlm_model ,
 auto_caption as util_auto_caption ,
+COG_VLM_AVAILABLE as UTIL_COG_VLM_AVAILABLE ,
+BITSANDBYTES_AVAILABLE as UTIL_BITSANDBYTES_AVAILABLE 
 )
 
 from logic .common_utils import format_time 
@@ -184,17 +177,14 @@ if not found_stream_handler :
     logger .info ("Diagnostic: No StreamHandler found, added a new one with INFO level.")
 logger .info (f"Logger '{logger.name}' configured with level: {logging.getLevelName(logger.level)}. Handlers: {logger.handlers}")
 
-APP_CONFIG = create_app_config(base_path, args.outputs_folder, star_cfg)
+app_config .initialize_paths_and_prompts (base_path ,args .outputs_folder ,star_cfg )
 
-# Initialize the config module paths (needed for backward compatibility with core functions)
-app_config_module.initialize_paths_and_prompts(base_path, args.outputs_folder, star_cfg)
+os .makedirs (app_config .DEFAULT_OUTPUT_DIR ,exist_ok =True )
 
-os .makedirs (APP_CONFIG.paths.outputs_dir ,exist_ok =True )
-
-if not os .path .exists (APP_CONFIG.paths.light_deg_model_path ):
-     logger .error (f"FATAL: Light degradation model not found at {APP_CONFIG.paths.light_deg_model_path}.")
-if not os .path .exists (APP_CONFIG.paths.heavy_deg_model_path ):
-     logger .error (f"FATAL: Heavy degradation model not found at {APP_CONFIG.paths.heavy_deg_model_path}.")
+if not os .path .exists (app_config .LIGHT_DEG_MODEL_PATH ):
+     logger .error (f"FATAL: Light degradation model not found at {app_config.LIGHT_DEG_MODEL_PATH}.")
+if not os .path .exists (app_config .HEAVY_DEG_MODEL_PATH ):
+     logger .error (f"FATAL: Heavy degradation model not found at {app_config.HEAVY_DEG_MODEL_PATH}.")
 
 css ="""
 .gradio-container { font-family: 'IBM Plex Sans', sans-serif; }
@@ -215,7 +205,7 @@ progress =gr .Progress (track_tqdm =True )
     scene_frame_skip_num_val ,scene_threshold_num_val ,scene_min_content_val_num_val ,scene_frame_window_num_val ,
     scene_copy_streams_check_val ,scene_use_mkvmerge_check_val ,scene_rate_factor_num_val ,scene_preset_dropdown_val ,scene_quiet_ffmpeg_check_val ,
     scene_manual_split_type_radio_val ,scene_manual_split_value_num_val ,
-    APP_CONFIG.paths.outputs_dir ,
+    app_config .DEFAULT_OUTPUT_DIR ,
     logger ,
     progress =progress 
     )
@@ -234,6 +224,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         interactive =True ,height =512 
                         )
                                                 
+                        # Integration status (hidden by default)
                         integration_status =gr .Textbox (
                         label ="Integration Status",
                         interactive =False ,
@@ -251,7 +242,7 @@ Combined with the Positive Prompt below, the effective text length influencing t
 If CogVLM2 is available, you can use the button below to generate a caption automatically."""
                             )
                         with gr .Row ():
-                            auto_caption_then_upscale_check =gr .Checkbox (label ="Auto-caption then Upscale (Useful only for STAR Model)",value =APP_CONFIG.cogvlm.auto_caption_then_upscale ,info ="If checked, clicking 'Upscale Video' will first generate a caption and use it as the prompt.")
+                            auto_caption_then_upscale_check =gr .Checkbox (label ="Auto-caption then Upscale (Useful only for STAR Model)",value =app_config .DEFAULT_AUTO_CAPTION_THEN_UPSCALE ,info ="If checked, clicking 'Upscale Video' will first generate a caption and use it as the prompt.")
 
                             available_gpus =util_get_available_gpus ()
                             gpu_choices =["Auto"]+available_gpus if available_gpus else ["Auto","No CUDA GPUs detected"]
@@ -265,13 +256,14 @@ If CogVLM2 is available, you can use the button below to generate a caption auto
                             scale =1 
                             )
 
-                        if UTIL_COG_VLM_AVAILABLE :
+                        if app_config .UTIL_COG_VLM_AVAILABLE :
                             with gr .Row ():
                                 auto_caption_btn =gr .Button ("Generate Caption with CogVLM2 (No Upscale)",variant ="primary",icon ="icons/caption.png")
                                 rife_fps_button =gr .Button ("RIFE FPS Increase (No Upscale)",variant ="primary",icon ="icons/fps.png")
                             with gr .Row ():
                                 upscale_button =gr .Button ("Upscale Video",variant ="primary",icon ="icons/upscale.png")
 
+                            # Add Delete Temp Folder button directly under Upscale Video
                             with gr .Row ():
                                 initial_temp_size_label = util_format_temp_folder_size(logger)
                                 delete_temp_button = gr.Button(f"Delete Temp Folder ({initial_temp_size_label})", variant="stop")
@@ -281,21 +273,22 @@ If CogVLM2 is available, you can use the button below to generate a caption auto
                     with gr .Accordion ("Prompt Settings (Useful only for STAR Model)",open =True ):
                         pos_prompt =gr .Textbox (
                         label ="Default Positive Prompt (Appended)",
-                        value =APP_CONFIG.prompts.positive ,
+                        value =app_config .DEFAULT_POS_PROMPT ,
                         lines =2 ,
                         info ="""Appended to your 'Describe Video Content' prompt. Focuses on desired quality aspects (e.g., realism, detail).
 The total combined prompt length is limited to 77 tokens."""
                         )
                         neg_prompt =gr .Textbox (
                         label ="Default Negative Prompt (Appended)",
-                        value =APP_CONFIG.prompts.negative ,
+                        value =app_config .DEFAULT_NEG_PROMPT ,
                         lines =2 ,
                         info ="Guides the model *away* from undesired aspects (e.g., bad quality, artifacts, specific styles). This does NOT count towards the 77 token limit for positive guidance."
                         )
+                    # Frame Folder Input Feature
                     with gr .Group ():
                         enable_frame_folder_check =gr .Checkbox (
                         label ="Process Input Frames Folder (instead of video)",
-                        value =APP_CONFIG.frame_folder.enable ,
+                        value =False ,
                         info ="Enable to process a folder of image frames instead of a video file. Supports jpg, png, tiff, jp2, dpx and other formats. Frames will be sorted naturally (2.png before 12.png)."
                         )
                         input_frames_folder =gr .Textbox (
@@ -337,12 +330,12 @@ The total combined prompt length is limited to 77 tokens."""
                     with gr .Accordion ("Target Resolution - Maintains Your Input Video Aspect Ratio",open =True ):
                         enable_target_res_check =gr .Checkbox (
                         label ="Enable Max Target Resolution",
-                        value =APP_CONFIG.resolution.enable_target_res ,
+                        value =app_config .DEFAULT_ENABLE_TARGET_RES ,
                         info ="Check this to manually control the maximum output resolution instead of using the simple Upscale Factor."
                         )
                         target_res_mode_radio =gr .Radio (
                         label ="Target Resolution Mode",
-                        choices =['Ratio Upscale','Downscale then 4x'],value =APP_CONFIG.resolution.target_res_mode ,
+                        choices =['Ratio Upscale','Downscale then 4x'],value =app_config .DEFAULT_TARGET_RES_MODE ,
                         info ="""How to apply the target H/W limits.
 'Ratio Upscale': Upscales by the largest factor possible without exceeding Target H/W, preserving aspect ratio.
 'Downscale then 4x': If input is large, downscales it towards Target H/W divided by 4, THEN applies a 4x upscale. Can clean noisy high-res input before upscaling."""
@@ -350,7 +343,7 @@ The total combined prompt length is limited to 77 tokens."""
                         with gr .Row ():
                             target_h_num =gr .Slider (
                             label ="Max Target Height (px)",
-                            value =APP_CONFIG.resolution.target_h ,minimum =128 ,maximum =4096 ,step =16 ,
+                            value =app_config .DEFAULT_TARGET_H ,minimum =128 ,maximum =4096 ,step =16 ,
                             info ="""Maximum allowed height for the output video. Overrides Upscale Factor if enabled.
 - VRAM Impact: Very High (Lower value = Less VRAM).
 - Quality Impact: Direct (Lower value = Less detail).
@@ -358,7 +351,7 @@ The total combined prompt length is limited to 77 tokens."""
                             )
                             target_w_num =gr .Slider (
                             label ="Max Target Width (px)",
-                            value =APP_CONFIG.resolution.target_w ,minimum =128 ,maximum =4096 ,step =16 ,
+                            value =app_config .DEFAULT_TARGET_W ,minimum =128 ,maximum =4096 ,step =16 ,
                             info ="""Maximum allowed width for the output video. Overrides Upscale Factor if enabled.
 - VRAM Impact: Very High (Lower value = Less VRAM).
 - Quality Impact: Direct (Lower value = Less detail).
@@ -369,7 +362,7 @@ The total combined prompt length is limited to 77 tokens."""
                     with gr .Accordion ("Scene Splitting",open =True ):
                         enable_scene_split_check =gr .Checkbox (
                         label ="Enable Scene Splitting",
-                        value =APP_CONFIG.scene_split.enable ,
+                        value =app_config .DEFAULT_ENABLE_SCENE_SPLIT ,
                         info ="""Split video into scenes and process each scene individually. This can improve quality and speed by processing similar content together.
 - Quality Impact: Better temporal consistency within scenes, improved auto-captioning per scene.
 - Speed Impact: Can be faster for long videos with distinct scenes.
@@ -378,36 +371,36 @@ The total combined prompt length is limited to 77 tokens."""
                         with gr .Row ():
                             scene_split_mode_radio =gr .Radio (
                             label ="Split Mode",
-                            choices =['automatic','manual'],value =APP_CONFIG.scene_split.mode ,
+                            choices =['automatic','manual'],value =app_config .DEFAULT_SCENE_SPLIT_MODE ,
                             info ="""'automatic': Uses scene detection algorithms to find natural scene boundaries.
 'manual': Splits video at fixed intervals (duration or frame count)."""
                             )
                         with gr .Group ():
                             gr .Markdown ("**Automatic Scene Detection Settings**")
                             with gr .Row ():
-                                scene_min_scene_len_num =gr .Number (label ="Min Scene Length (seconds)",value =APP_CONFIG.scene_split.min_scene_len ,minimum =0.1 ,step =0.1 ,info ="Minimum duration for a scene. Shorter scenes will be merged or dropped.")
-                                scene_threshold_num =gr .Number (label ="Detection Threshold",value =APP_CONFIG.scene_split.threshold ,minimum =0.1 ,maximum =10.0 ,step =0.1 ,info ="Sensitivity of scene detection. Lower values detect more scenes.")
+                                scene_min_scene_len_num =gr .Number (label ="Min Scene Length (seconds)",value =app_config .DEFAULT_SCENE_MIN_SCENE_LEN ,minimum =0.1 ,step =0.1 ,info ="Minimum duration for a scene. Shorter scenes will be merged or dropped.")
+                                scene_threshold_num =gr .Number (label ="Detection Threshold",value =app_config .DEFAULT_SCENE_THRESHOLD ,minimum =0.1 ,maximum =10.0 ,step =0.1 ,info ="Sensitivity of scene detection. Lower values detect more scenes.")
                             with gr .Row ():
-                                scene_drop_short_check =gr .Checkbox (label ="Drop Short Scenes",value =APP_CONFIG.scene_split.drop_short ,info ="If enabled, scenes shorter than minimum length are dropped instead of merged.")
-                                scene_merge_last_check =gr .Checkbox (label ="Merge Last Scene",value =APP_CONFIG.scene_split.merge_last ,info ="If the last scene is too short, merge it with the previous scene.")
+                                scene_drop_short_check =gr .Checkbox (label ="Drop Short Scenes",value =app_config .DEFAULT_SCENE_DROP_SHORT ,info ="If enabled, scenes shorter than minimum length are dropped instead of merged.")
+                                scene_merge_last_check =gr .Checkbox (label ="Merge Last Scene",value =app_config .DEFAULT_SCENE_MERGE_LAST ,info ="If the last scene is too short, merge it with the previous scene.")
                             with gr .Row ():
-                                scene_frame_skip_num =gr .Number (label ="Frame Skip",value =APP_CONFIG.scene_split.frame_skip ,minimum =0 ,step =1 ,info ="Skip frames during detection to speed up processing. 0 = analyze every frame.")
-                                scene_min_content_val_num =gr .Number (label ="Min Content Value",value =APP_CONFIG.scene_split.min_content_val ,minimum =0.0 ,step =1.0 ,info ="Minimum content change required to detect a scene boundary.")
-                                scene_frame_window_num =gr .Number (label ="Frame Window",value =APP_CONFIG.scene_split.frame_window ,minimum =1 ,step =1 ,info ="Number of frames to analyze for scene detection.")
+                                scene_frame_skip_num =gr .Number (label ="Frame Skip",value =app_config .DEFAULT_SCENE_FRAME_SKIP ,minimum =0 ,step =1 ,info ="Skip frames during detection to speed up processing. 0 = analyze every frame.")
+                                scene_min_content_val_num =gr .Number (label ="Min Content Value",value =app_config .DEFAULT_SCENE_MIN_CONTENT_VAL ,minimum =0.0 ,step =1.0 ,info ="Minimum content change required to detect a scene boundary.")
+                                scene_frame_window_num =gr .Number (label ="Frame Window",value =app_config .DEFAULT_SCENE_FRAME_WINDOW ,minimum =1 ,step =1 ,info ="Number of frames to analyze for scene detection.")
                         with gr .Group ():
                             gr .Markdown ("**Manual Split Settings**")
                             with gr .Row ():
-                                scene_manual_split_type_radio =gr .Radio (label ="Manual Split Type",choices =['duration','frame_count'],value =APP_CONFIG.scene_split.manual_split_type ,info ="'duration': Split every N seconds.\n'frame_count': Split every N frames.")
-                                scene_manual_split_value_num =gr .Number (label ="Split Value",value =APP_CONFIG.scene_split.manual_split_value ,minimum =1.0 ,step =1.0 ,info ="Duration in seconds or number of frames for manual splitting.")
+                                scene_manual_split_type_radio =gr .Radio (label ="Manual Split Type",choices =['duration','frame_count'],value =app_config .DEFAULT_SCENE_MANUAL_SPLIT_TYPE ,info ="'duration': Split every N seconds.\n'frame_count': Split every N frames.")
+                                scene_manual_split_value_num =gr .Number (label ="Split Value",value =app_config .DEFAULT_SCENE_MANUAL_SPLIT_VALUE ,minimum =1.0 ,step =1.0 ,info ="Duration in seconds or number of frames for manual splitting.")
                         with gr .Group ():
                             gr .Markdown ("**Encoding Settings (for scene segments)**")
                             with gr .Row ():
-                                scene_copy_streams_check =gr .Checkbox (label ="Copy Streams",value =APP_CONFIG.scene_split.copy_streams ,info ="Copy video/audio streams without re-encoding during scene splitting (faster) but can generate inaccurate splits.")
-                                scene_use_mkvmerge_check =gr .Checkbox (label ="Use MKVMerge",value =APP_CONFIG.scene_split.use_mkvmerge ,info ="Use mkvmerge instead of ffmpeg for splitting (if available).")
+                                scene_copy_streams_check =gr .Checkbox (label ="Copy Streams",value =app_config .DEFAULT_SCENE_COPY_STREAMS ,info ="Copy video/audio streams without re-encoding during scene splitting (faster) but can generate inaccurate splits.")
+                                scene_use_mkvmerge_check =gr .Checkbox (label ="Use MKVMerge",value =app_config .DEFAULT_SCENE_USE_MKVMERGE ,info ="Use mkvmerge instead of ffmpeg for splitting (if available).")
                             with gr .Row ():
-                                scene_rate_factor_num =gr .Number (label ="Rate Factor (CRF)",value =APP_CONFIG.scene_split.rate_factor ,minimum =0 ,maximum =51 ,step =1 ,info ="Quality setting for re-encoding (lower = better quality). Only used if Copy Streams is disabled.")
-                                scene_preset_dropdown =gr .Dropdown (label ="Encoding Preset",choices =['ultrafast','superfast','veryfast','faster','fast','medium','slow','slower','veryslow'],value =APP_CONFIG.scene_split.encoding_preset ,info ="Encoding speed vs quality trade-off. Only used if Copy Streams is disabled.")
-                            scene_quiet_ffmpeg_check =gr .Checkbox (label ="Quiet FFmpeg",value =APP_CONFIG.scene_split.quiet_ffmpeg ,info ="Suppress ffmpeg output during scene splitting.")
+                                scene_rate_factor_num =gr .Number (label ="Rate Factor (CRF)",value =app_config .DEFAULT_SCENE_RATE_FACTOR ,minimum =0 ,maximum =51 ,step =1 ,info ="Quality setting for re-encoding (lower = better quality). Only used if Copy Streams is disabled.")
+                                scene_preset_dropdown =gr .Dropdown (label ="Encoding Preset",choices =['ultrafast','superfast','veryfast','faster','fast','medium','slow','slower','veryslow'],value =app_config .DEFAULT_SCENE_ENCODING_PRESET ,info ="Encoding speed vs quality trade-off. Only used if Copy Streams is disabled.")
+                            scene_quiet_ffmpeg_check =gr .Checkbox (label ="Quiet FFmpeg",value =app_config .DEFAULT_SCENE_QUIET_FFMPEG ,info ="Suppress ffmpeg output during scene splitting.")
 
         with gr .Tab ("Core Settings",id ="core_tab"):
             with gr .Row ():
@@ -417,38 +410,38 @@ The total combined prompt length is limited to 77 tokens."""
                         model_selector =gr .Dropdown (
                         label ="STAR Model",
                         choices =["Light Degradation","Heavy Degradation"],
-                        value =APP_CONFIG.star_model.model_choice ,
+                        value =app_config .DEFAULT_MODEL_CHOICE ,
                         info ="""Choose the model based on input video quality.
 'Light Degradation': Better for relatively clean inputs (e.g., downloaded web videos).
 'Heavy Degradation': Better for inputs with significant compression artifacts, noise, or blur."""
                         )
                         upscale_factor_slider =gr .Slider (
                         label ="Upscale Factor (if Target Res disabled)",
-                        minimum =1.0 ,maximum =8.0 ,value =APP_CONFIG.resolution.upscale_factor ,step =0.1 ,
+                        minimum =1.0 ,maximum =8.0 ,value =app_config .DEFAULT_UPSCALE_FACTOR ,step =0.1 ,
                         info ="Simple multiplication factor for output resolution if 'Enable Max Target Resolution' is OFF. E.g., 4.0 means 4x height and 4x width."
                         )
                         cfg_slider =gr .Slider (
                         label ="Guidance Scale (CFG)",
-                        minimum =1.0 ,maximum =15.0 ,value =APP_CONFIG.star_model.cfg_scale ,step =0.5 ,
+                        minimum =1.0 ,maximum =15.0 ,value =app_config .DEFAULT_CFG_SCALE ,step =0.5 ,
                         info ="Controls how strongly the model follows your combined text prompt. Higher values mean stricter adherence, lower values allow more creativity. Typical values: 5.0-10.0."
                         )
                         with gr .Row ():
                             solver_mode_radio =gr .Radio (
                             label ="Solver Mode",
-                            choices =['fast','normal'],value =APP_CONFIG.star_model.solver_mode ,
+                            choices =['fast','normal'],value =app_config .DEFAULT_SOLVER_MODE ,
                             info ="""Diffusion solver type.
 'fast': Fewer steps (default ~15), much faster, good quality usually.
 'normal': More steps (default ~50), slower, potentially slightly better detail/coherence."""
                             )
                             steps_slider =gr .Slider (
                             label ="Diffusion Steps",
-                            minimum =5 ,maximum =100 ,value =APP_CONFIG.star_model.steps ,step =1 ,
+                            minimum =5 ,maximum =100 ,value =app_config .DEFAULT_DIFFUSION_STEPS_FAST ,step =1 ,
                             info ="Number of denoising steps. 'Fast' mode uses a fixed ~15 steps. 'Normal' mode uses the value set here.",
                             interactive =False 
                             )
                         color_fix_dropdown =gr .Dropdown (
                         label ="Color Correction",
-                        choices =['AdaIN','Wavelet','None'],value =APP_CONFIG.star_model.color_fix_method ,
+                        choices =['AdaIN','Wavelet','None'],value =app_config .DEFAULT_COLOR_FIX_METHOD ,
                         info ="""Attempts to match the color tone of the output to the input video. Helps prevent color shifts.
 'AdaIN' / 'Wavelet': Different algorithms for color matching. AdaIN is often a good default.
 'None': Disables color correction."""
@@ -457,7 +450,7 @@ The total combined prompt length is limited to 77 tokens."""
                     with gr .Accordion ("Performance & VRAM Optimization (Only for STAR Model)",open =True ):
                         max_chunk_len_slider =gr .Slider (
                         label ="Max Frames per Chunk (VRAM)",
-                        minimum =4 ,maximum =96 ,value =APP_CONFIG.performance.max_chunk_len ,step =4 ,
+                        minimum =4 ,maximum =96 ,value =app_config .DEFAULT_MAX_CHUNK_LEN ,step =4 ,
                         info ="""IMPORTANT for VRAM. This is the standard way the application manages VRAM. It divides the entire sequence of video frames into sequential, non-overlapping chunks.
 - Mechanism: The STAR model processes one complete chunk (of this many frames) at a time.
 - VRAM Impact: High Reduction (Lower value = Less VRAM).
@@ -467,7 +460,7 @@ The total combined prompt length is limited to 77 tokens."""
                         )
                         enable_chunk_optimization_check =gr .Checkbox (
                         label ="Optimize Last Chunk Quality",
-                        value =APP_CONFIG.performance.enable_chunk_optimization ,
+                        value =app_config .DEFAULT_ENABLE_CHUNK_OPTIMIZATION ,
                         info ="""Process extra frames for small last chunks to improve quality. When the last chunk has fewer frames than target size (causing quality drops), this processes additional frames but only keeps the necessary output.
 - Example: For 70 frames with 32-frame chunks, instead of processing only 6 frames for the last chunk (poor quality), it processes 23 frames (48-70) but keeps only the last 6 (65-70).
 - Quality Impact: Significantly improves quality for small last chunks.
@@ -476,7 +469,7 @@ The total combined prompt length is limited to 77 tokens."""
                         )
                         vae_chunk_slider =gr .Slider (
                         label ="VAE Decode Chunk (VRAM)",
-                        minimum =1 ,maximum =16 ,value =APP_CONFIG.performance.vae_chunk ,step =1 ,
+                        minimum =1 ,maximum =16 ,value =app_config .DEFAULT_VAE_CHUNK ,step =1 ,
                         info ="""Controls max latent frames decoded back to pixels by VAE simultaneously.
 - VRAM Impact: High Reduction (Lower value = Less VRAM during decode stage).
 - Quality Impact: Minimal / Negligible. Safe to lower.
@@ -484,11 +477,12 @@ The total combined prompt length is limited to 77 tokens."""
                         )
 
                 with gr .Column (scale =1 ):
+                    # Image Upscaler Panel
                     with gr .Group ():
                         gr .Markdown ("### Image-Based Upscaler (Alternative to STAR)")
                         enable_image_upscaler_check =gr .Checkbox (
                         label ="Enable Image-Based Upscaling (Disables STAR Model)",
-                        value =APP_CONFIG.image_upscaler.enable ,
+                        value =app_config .DEFAULT_ENABLE_IMAGE_UPSCALER ,
                         info ="""Use deterministic image upscaler models instead of STAR. When enabled:
 - Processes frames individually using spandrel-compatible models
 - Ignores prompts, auto-caption, context window, and tiling settings
@@ -498,9 +492,11 @@ The total combined prompt length is limited to 77 tokens."""
 - Lower quality compared to high Max Frames per Chunk STAR model upscale"""
                         )
                         
+                        # Scan for available models
                         try:
-                            available_model_files = util_scan_for_models(APP_CONFIG.paths.upscale_models_dir, logger)
+                            available_model_files = util_scan_for_models(app_config.UPSCALE_MODELS_DIR, logger)
                             if available_model_files:
+                                # For initial load, just show filenames to avoid slow startup
                                 model_choices = available_model_files
                                 default_model_choice = model_choices[0]
                             else:
@@ -516,24 +512,25 @@ The total combined prompt length is limited to 77 tokens."""
                         choices =model_choices ,
                         value =default_model_choice ,
                         info ="Select the image upscaler model. Models should be placed in the 'upscale_models/' directory.",
-                        interactive =False 
+                        interactive =False  # Will be enabled when checkbox is checked
                         )
                         
                         image_upscaler_batch_size_slider =gr .Slider (
                         label ="Batch Size",
-                        minimum =1 ,
-                        maximum =1000 ,
-                        value =APP_CONFIG.image_upscaler.batch_size ,
+                        minimum =app_config .DEFAULT_IMAGE_UPSCALER_MIN_BATCH_SIZE ,
+                        maximum =app_config .DEFAULT_IMAGE_UPSCALER_MAX_BATCH_SIZE ,
+                        value =app_config .DEFAULT_IMAGE_UPSCALER_BATCH_SIZE ,
                         step =1 ,
                         info ="Number of frames to process simultaneously. Higher values = faster processing but more VRAM usage. Adjust based on your GPU memory.",
-                        interactive =False 
+                        interactive =False  # Will be enabled when checkbox is checked
                         )
                     
+                    # Face Restoration Panel
                     with gr .Group ():
                         gr .Markdown ("### Face Restoration (CodeFormer)")
                         enable_face_restoration_check =gr .Checkbox (
                         label ="Enable Face Restoration",
-                        value =APP_CONFIG.face_restoration.enable ,
+                        value =app_config .DEFAULT_ENABLE_FACE_RESTORATION ,
                         info ="""Enhance faces in the video using CodeFormer. Works with both STAR and image-based upscaling.
 - Detects and restores faces automatically
 - Can be applied before or after upscaling
@@ -545,35 +542,39 @@ The total combined prompt length is limited to 77 tokens."""
                         label ="Fidelity Weight",
                         minimum =0.0 ,
                         maximum =1.0 ,
-                        value =APP_CONFIG.face_restoration.fidelity_weight ,
+                        value =app_config .DEFAULT_FACE_RESTORATION_FIDELITY ,
                         step =0.1 ,
                         info ="""Balance between quality and identity preservation:
 - 0.0-0.3: Prioritize quality/detail (may change facial features)
 - 0.4-0.6: Balanced approach
 - 0.7-1.0: Prioritize identity preservation (may reduce enhancement)""",
-                        interactive =False 
+                        interactive =False  # Will be enabled when checkbox is checked
                         )
                         
                         with gr .Row ():
                             enable_face_colorization_check =gr .Checkbox (
                             label ="Enable Colorization",
-                            value =APP_CONFIG.face_restoration.enable_colorization ,
+                            value =app_config .DEFAULT_ENABLE_FACE_COLORIZATION ,
                             info ="Apply colorization to grayscale faces (experimental feature)",
-                            interactive =False 
+                            interactive =False  # Will be enabled when checkbox is checked
                             )
                             
                             face_restoration_when_radio =gr .Radio (
                             label ="Apply Timing",
                             choices =['before','after'],
-                            value =APP_CONFIG.face_restoration.when ,
+                            value =app_config .DEFAULT_FACE_RESTORATION_WHEN ,
                             info ="""When to apply face restoration:
 'before': Apply before upscaling (may be enhanced further)
 'after': Apply after upscaling (final enhancement)""",
-                            interactive =False 
+                            interactive =False  # Will be enabled when checkbox is checked
                             )
                         
+
+                        
                         with gr .Row ():
+                            # CodeFormer Model Selection
                             with gr .Row ():
+                                # Since CodeFormer models are always available, use a simple dropdown
                                 model_choices = ["Auto (Default)", "codeformer.pth (359.2MB)"]
                                 default_model_choice = "Auto (Default)"
                                 
@@ -582,24 +583,24 @@ The total combined prompt length is limited to 77 tokens."""
                                 choices =model_choices ,
                                 value =default_model_choice ,
                                 info ="Select the CodeFormer model. 'Auto' uses the default model. Models should be in pretrained_weight/ directory.",
-                                interactive =False 
+                                interactive =False   # Will be enabled when checkbox is checked
                                 )
                         
                         face_restoration_batch_size_slider =gr .Slider (
                         label ="Face Restoration Batch Size",
-                        minimum =1 ,
-                        maximum =32 ,
-                        value =APP_CONFIG.face_restoration.batch_size ,
+                        minimum =app_config .DEFAULT_FACE_RESTORATION_MIN_BATCH_SIZE ,
+                        maximum =app_config .DEFAULT_FACE_RESTORATION_MAX_BATCH_SIZE ,
+                        value =app_config .DEFAULT_FACE_RESTORATION_BATCH_SIZE ,
                         step =1 ,
                         info ="Number of frames to process simultaneously for face restoration. Higher values = faster processing but more VRAM usage.",
-                        interactive =False 
+                        interactive =False  # Will be enabled when checkbox is checked
                         )
 
-                    if UTIL_COG_VLM_AVAILABLE :
+                    if app_config .UTIL_COG_VLM_AVAILABLE :
                         with gr .Accordion ("Auto-Captioning Settings (CogVLM2) (Only for STAR Model)",open =True ):
-                            cogvlm_quant_choices_map =get_cogvlm_quant_choices_map (torch .cuda .is_available (),UTIL_BITSANDBYTES_AVAILABLE )
+                            cogvlm_quant_choices_map =app_config .get_cogvlm_quant_choices_map (torch .cuda .is_available (),app_config .UTIL_BITSANDBYTES_AVAILABLE )
                             cogvlm_quant_radio_choices_display =list (cogvlm_quant_choices_map .values ())
-                            default_quant_display_val =get_default_cogvlm_quant_display (cogvlm_quant_choices_map )
+                            default_quant_display_val =app_config .get_default_cogvlm_quant_display (cogvlm_quant_choices_map )
 
                             with gr .Row ():
                                 cogvlm_quant_radio =gr .Radio (
@@ -611,7 +612,7 @@ The total combined prompt length is limited to 77 tokens."""
                                 )
                                 cogvlm_unload_radio =gr .Radio (
                                 label ="CogVLM2 After-Use",
-                                choices =['full','cpu'],value =APP_CONFIG.cogvlm.unload_after_use ,
+                                choices =['full','cpu'],value =app_config .DEFAULT_COGVLM_UNLOAD_AFTER_USE ,
                                 info ="""Memory management after captioning.
 'full': Unload model completely from VRAM/RAM (frees most memory).
 'cpu': Move model to RAM (faster next time, uses RAM, not for quantized models)."""
@@ -622,7 +623,7 @@ The total combined prompt length is limited to 77 tokens."""
                     with gr .Accordion ("Context Window - Previous Frames for Better Consistency (Only for STAR Model)",open =True ):
                         enable_context_window_check =gr .Checkbox (
                         label ="Enable Context Window",
-                        value =APP_CONFIG.context_window.enable ,
+                        value =app_config .DEFAULT_ENABLE_CONTEXT_WINDOW ,
                         info ="""Include previous frames as context when processing each chunk (except the first). Similar to "Optimize Last Chunk Quality" but applied to all chunks.
 - Mechanism: Each chunk (except first) includes N previous frames as context, but only outputs new frames. Provides temporal consistency without complex overlap logic.
 - Quality Impact: Better temporal consistency and reduced flickering between chunks. More context = better consistency.
@@ -631,14 +632,14 @@ The total combined prompt length is limited to 77 tokens."""
                         )
                         context_overlap_num =gr .Slider (
                         label ="Context Overlap (frames)",
-                        value =APP_CONFIG.context_window.overlap ,minimum =0 ,maximum =31 ,step =1 ,
+                        value =app_config .DEFAULT_CONTEXT_OVERLAP ,minimum =0 ,maximum =31 ,step =1 ,
                         info ="Number of previous frames to include as context for each chunk (except first). 0 = disabled (same as normal chunking). Higher values = better consistency but more VRAM and slower processing. Recommend: 25-50% of Max Frames per Chunk."
                         )
 
                     with gr .Accordion ("Advanced: Tiling (Very High Res / Low VRAM)",open =True, visible=False ):
                         enable_tiling_check =gr .Checkbox (
                         label ="Enable Tiled Upscaling",
-                        value =APP_CONFIG.tiling.enable ,
+                        value =app_config .DEFAULT_ENABLE_TILING ,
                         info ="""Processes each frame in small spatial patches (tiles). Use ONLY if necessary for extreme resolutions or very low VRAM.
 - VRAM Impact: Very High Reduction.
 - Quality Impact: High risk of tile seams/artifacts. Can harm global coherence and severely reduce temporal consistency.
@@ -647,12 +648,12 @@ The total combined prompt length is limited to 77 tokens."""
                         with gr .Row ():
                             tile_size_num =gr .Number (
                             label ="Tile Size (px, input res)",
-                            value =APP_CONFIG.tiling.tile_size ,minimum =64 ,step =32 ,
+                            value =app_config .DEFAULT_TILE_SIZE ,minimum =64 ,step =32 ,
                             info ="Size of the square patches (in input resolution pixels) to process. Smaller = less VRAM per tile but more tiles = slower."
                             )
                             tile_overlap_num =gr .Number (
                             label ="Tile Overlap (px, input res)",
-                            value =APP_CONFIG.tiling.tile_overlap ,minimum =0 ,step =16 ,
+                            value =app_config .DEFAULT_TILE_OVERLAP ,minimum =0 ,step =16 ,
                             info ="How much the tiles overlap (in input resolution pixels). Higher overlap helps reduce seams but increases processing time. Recommend 1/4 to 1/2 of Tile Size."
                             )
 
@@ -662,25 +663,25 @@ The total combined prompt length is limited to 77 tokens."""
                     with gr .Accordion ("FFmpeg Encoding Settings",open =True ):
                         ffmpeg_use_gpu_check =gr .Checkbox (
                         label ="Use NVIDIA GPU for FFmpeg (h264_nvenc)",
-                        value =APP_CONFIG.ffmpeg.use_gpu ,
+                        value =app_config .DEFAULT_FFMPEG_USE_GPU ,
                         info ="If checked, uses NVIDIA's NVENC for FFmpeg video encoding (downscaling and final video creation). Requires NVIDIA GPU and correctly configured FFmpeg with NVENC support."
                         )
                         with gr .Row ():
                             ffmpeg_preset_dropdown =gr .Dropdown (
                             label ="FFmpeg Preset",
                             choices =['ultrafast','superfast','veryfast','faster','fast','medium','slow','slower','veryslow'],
-                            value =APP_CONFIG.ffmpeg.preset ,
+                            value =app_config .DEFAULT_FFMPEG_PRESET ,
                             info ="Controls encoding speed vs. compression efficiency. 'ultrafast' is fastest with lowest quality/compression, 'veryslow' is slowest with highest quality/compression. Note: NVENC presets behave differently (e.g. p1-p7 or specific names like 'slow', 'medium', 'fast')."
                             )
                             ffmpeg_quality_slider =gr .Slider (
                             label ="FFmpeg Quality (CRF for libx264 / CQ for NVENC)",
-                            minimum =0 ,maximum =51 ,value =APP_CONFIG.ffmpeg.quality ,step =1 ,
+                            minimum =0 ,maximum =51 ,value =app_config .DEFAULT_FFMPEG_QUALITY_CPU ,step =1 ,
                             info ="For libx264 (CPU): Constant Rate Factor (CRF). Lower values mean higher quality (0 is lossless, 23 is default). For h264_nvenc (GPU): Constrained Quality (CQ). Lower values generally mean better quality. Typical range for NVENC CQ is 18-28."
                             )
                         
                         frame_folder_fps_slider =gr .Slider (
                         label ="Frame Folder FPS",
-                        minimum =1.0 ,maximum =120.0 ,value =APP_CONFIG.frame_folder.fps ,step =0.001 ,
+                        minimum =1.0 ,maximum =120.0 ,value =app_config .DEFAULT_FRAME_FOLDER_FPS ,step =0.001 ,
                         info ="FPS to use when converting frame folders to videos. This setting only applies when processing input frame folders (not regular videos). Common values: 23.976, 24, 25, 29.97, 30, 60."
                         )
 
@@ -688,30 +689,30 @@ The total combined prompt length is limited to 77 tokens."""
                     with gr .Accordion ("Output Options",open =True ):
                         create_comparison_video_check =gr .Checkbox (
                         label ="Generate Comparison Video",
-                        value =APP_CONFIG.outputs.create_comparison_video ,
+                        value =app_config .DEFAULT_CREATE_COMPARISON_VIDEO ,
                         info ="""Create a side-by-side or top-bottom comparison video showing original vs upscaled quality.
 The layout is automatically chosen based on aspect ratio to stay within 1920x1080 bounds when possible.
 This helps visualize the quality improvement from upscaling."""
                         )
-                        save_frames_checkbox =gr .Checkbox (label ="Save Input and Processed Frames",value =APP_CONFIG.outputs.save_frames ,info ="If checked, saves the extracted input frames and the upscaled output frames into a subfolder named after the output video (e.g., '0001/input_frames' and '0001/processed_frames').")
-                        save_metadata_checkbox =gr .Checkbox (label ="Save Processing Metadata",value =APP_CONFIG.outputs.save_metadata ,info ="If checked, saves a .txt file (e.g., '0001.txt') in the main output folder, containing all processing parameters and total processing time.")
-                        save_chunks_checkbox =gr .Checkbox (label ="Save Processed Chunks",value =APP_CONFIG.outputs.save_chunks ,info ="If checked, saves each processed chunk as a video file in a 'chunks' subfolder (e.g., '0001/chunks/chunk_0001.mp4'). Uses the same FFmpeg settings as the final video.")
-                        save_chunk_frames_checkbox =gr .Checkbox (label ="Save Chunk Input Frames (Debug)",value =APP_CONFIG.outputs.save_chunk_frames ,info ="If checked, saves the input frames for each chunk before processing into a 'chunk_frames' subfolder (e.g., '0001/chunk_frames/chunk_01_frame_012.png'). Useful for debugging which frames are processed in each chunk.")
+                        save_frames_checkbox =gr .Checkbox (label ="Save Input and Processed Frames",value =app_config .DEFAULT_SAVE_FRAMES ,info ="If checked, saves the extracted input frames and the upscaled output frames into a subfolder named after the output video (e.g., '0001/input_frames' and '0001/processed_frames').")
+                        save_metadata_checkbox =gr .Checkbox (label ="Save Processing Metadata",value =app_config .DEFAULT_SAVE_METADATA ,info ="If checked, saves a .txt file (e.g., '0001.txt') in the main output folder, containing all processing parameters and total processing time.")
+                        save_chunks_checkbox =gr .Checkbox (label ="Save Processed Chunks",value =app_config .DEFAULT_SAVE_CHUNKS ,info ="If checked, saves each processed chunk as a video file in a 'chunks' subfolder (e.g., '0001/chunks/chunk_0001.mp4'). Uses the same FFmpeg settings as the final video.")
+                        save_chunk_frames_checkbox =gr .Checkbox (label ="Save Chunk Input Frames (Debug)",value =app_config .DEFAULT_SAVE_CHUNK_FRAMES ,info ="If checked, saves the input frames for each chunk before processing into a 'chunk_frames' subfolder (e.g., '0001/chunk_frames/chunk_01_frame_012.png'). Useful for debugging which frames are processed in each chunk.")
 
                     with gr .Accordion ("Advanced: Seeding (Reproducibility)",open =True ):
                         with gr .Row ():
                             seed_num =gr .Number (
                             label ="Seed",
-                            value =APP_CONFIG.seed.seed ,
+                            value =app_config .DEFAULT_SEED ,
                             minimum =-1 ,
                             maximum =2 **32 -1 ,
                             step =1 ,
                             info ="Seed for random number generation. Used for reproducibility. Set to -1 or check 'Random Seed' for a random seed. Value is ignored if 'Random Seed' is checked.",
-                            interactive =not APP_CONFIG.seed.use_random 
+                            interactive =not app_config .DEFAULT_RANDOM_SEED 
                             )
                             random_seed_check =gr .Checkbox (
                             label ="Random Seed",
-                            value =APP_CONFIG.seed.use_random ,
+                            value =app_config .DEFAULT_RANDOM_SEED ,
                             info ="If checked, a random seed will be generated and used, ignoring the 'Seed' value."
                             )
 
@@ -779,23 +780,23 @@ This helps visualize the quality improvement from upscaling."""
 
                     batch_skip_existing =gr .Checkbox (
                     label ="Skip Existing Outputs",
-                    value =APP_CONFIG.batch.skip_existing ,
+                    value =app_config .DEFAULT_BATCH_SKIP_EXISTING ,
                     info ="Skip processing if the output file already exists. Useful for resuming interrupted batch jobs."
                     )
 
                     batch_use_prompt_files =gr .Checkbox (
                     label ="Use Prompt Files (filename.txt)",
-                    value =APP_CONFIG.batch.use_prompt_files ,
+                    value =app_config .DEFAULT_BATCH_USE_PROMPT_FILES ,
                     info ="Look for text files with same name as video (e.g., video.txt) to use as custom prompts. Takes priority over user prompt and auto-caption."
                     )
 
                     batch_save_captions =gr .Checkbox (
                     label ="Save Auto-Generated Captions",
-                    value =APP_CONFIG.batch.save_captions ,
+                    value =app_config .DEFAULT_BATCH_SAVE_CAPTIONS ,
                     info ="Save auto-generated captions as filename.txt in the input folder for future reuse. Never overwrites existing prompt files."
                     )
 
-                if UTIL_COG_VLM_AVAILABLE :
+                if app_config .UTIL_COG_VLM_AVAILABLE :
                     with gr .Row ():
                         batch_enable_auto_caption =gr .Checkbox (
                         label ="Enable Auto-Caption for Batch",
@@ -809,6 +810,7 @@ This helps visualize the quality improvement from upscaling."""
             with gr .Row ():
                 batch_process_button =gr .Button ("Start Batch Upscaling",variant ="primary",icon ="icons/split.png")
 
+            # Add the help content at the bottom in 3 columns
             create_batch_processing_help()
 
         with gr .Tab ("FPS Increase - Decrease",id ="fps_tab"):
@@ -820,7 +822,7 @@ This helps visualize the quality improvement from upscaling."""
 
                         enable_rife_interpolation =gr .Checkbox (
                         label ="Enable RIFE Interpolation",
-                        value =APP_CONFIG.rife.enable ,
+                        value =app_config .DEFAULT_RIFE_ENABLE_INTERPOLATION ,
                         info ="Enable AI-powered frame interpolation to increase video FPS. When enabled, RIFE will be applied to the final upscaled video and can optionally be applied to intermediate chunks and scenes."
                         )
 
@@ -828,31 +830,31 @@ This helps visualize the quality improvement from upscaling."""
                             rife_multiplier =gr .Radio (
                             label ="FPS Multiplier",
                             choices =[2 ,4 ],
-                            value =APP_CONFIG.rife.multiplier ,
+                            value =app_config .DEFAULT_RIFE_MULTIPLIER ,
                             info ="Choose how much to increase the frame rate. 2x doubles FPS (e.g., 24→48), 4x quadruples FPS (e.g., 24→96)."
                             )
 
                         with gr .Row ():
                             rife_fp16 =gr .Checkbox (
                             label ="Use FP16 Precision",
-                            value =APP_CONFIG.rife.fp16 ,
+                            value =app_config .DEFAULT_RIFE_FP16 ,
                             info ="Use half-precision floating point for faster processing and lower VRAM usage. Recommended for most users."
                             )
                             rife_uhd =gr .Checkbox (
                             label ="UHD Mode",
-                            value =APP_CONFIG.rife.uhd ,
+                            value =app_config .DEFAULT_RIFE_UHD ,
                             info ="Enable UHD mode for 4K+ videos. May improve quality for very high resolution content but requires more VRAM."
                             )
 
                         rife_scale =gr .Slider (
                         label ="Scale Factor",
-                        minimum =0.25 ,maximum =2.0 ,value =APP_CONFIG.rife.scale ,step =0.25 ,
+                        minimum =0.25 ,maximum =2.0 ,value =app_config .DEFAULT_RIFE_SCALE ,step =0.25 ,
                         info ="Scale factor for RIFE processing. 1.0 = original size. Lower values use less VRAM but may reduce quality. Higher values may improve quality but use more VRAM."
                         )
 
                         rife_skip_static =gr .Checkbox (
                         label ="Skip Static Frames",
-                        value =APP_CONFIG.rife.skip_static ,
+                        value =app_config .DEFAULT_RIFE_SKIP_STATIC ,
                         info ="Automatically detect and skip interpolating static (non-moving) frames to save processing time and avoid unnecessary interpolation."
                         )
 
@@ -860,12 +862,12 @@ This helps visualize the quality improvement from upscaling."""
                         gr .Markdown ("**Apply RIFE to intermediate videos (recommended)**")
                         rife_apply_to_chunks =gr .Checkbox (
                         label ="Apply to Chunks",
-                        value =APP_CONFIG.rife.apply_to_chunks ,
+                        value =app_config .DEFAULT_RIFE_APPLY_TO_CHUNKS ,
                         info ="Apply RIFE interpolation to individual video chunks during processing. Enabled by default for smoother intermediate results."
                         )
                         rife_apply_to_scenes =gr .Checkbox (
                         label ="Apply to Scenes",
-                        value =APP_CONFIG.rife.apply_to_scenes ,
+                        value =app_config .DEFAULT_RIFE_APPLY_TO_SCENES ,
                         info ="Apply RIFE interpolation to individual scene videos when scene splitting is enabled. Enabled by default for consistent results."
                         )
 
@@ -878,14 +880,14 @@ This helps visualize the quality improvement from upscaling."""
 
                         enable_fps_decrease =gr .Checkbox (
                         label ="Enable FPS Decrease",
-                        value =APP_CONFIG.fps_decrease.enable ,
+                        value =app_config .DEFAULT_ENABLE_FPS_DECREASE ,
                         info ="Reduce video FPS before upscaling to speed up processing. Fewer frames = faster upscaling and lower VRAM usage."
                         )
 
                         fps_decrease_mode =gr .Radio (
                         label ="FPS Reduction Mode",
                         choices =["multiplier","fixed"],
-                        value =APP_CONFIG.fps_decrease.mode ,
+                        value =app_config .DEFAULT_FPS_DECREASE_MODE ,
                         info ="Multiplier: Reduce by fraction (1/2x, 1/4x). Fixed: Set specific FPS value. Multiplier is recommended for automatic adaptation to input video."
                         )
 
@@ -899,7 +901,7 @@ This helps visualize the quality improvement from upscaling."""
                                 )
                                 fps_multiplier_custom =gr .Number (
                                 label ="Custom Multiplier",
-                                value =APP_CONFIG.fps_decrease.multiplier_custom ,
+                                value =app_config .DEFAULT_FPS_MULTIPLIER ,
                                 minimum =0.1 ,
                                 maximum =1.0 ,
                                 step =0.05 ,
@@ -913,7 +915,7 @@ This helps visualize the quality improvement from upscaling."""
                             label ="Target FPS",
                             minimum =1.0 ,
                             maximum =60.0 ,
-                            value =APP_CONFIG.fps_decrease.target_fps ,
+                            value =app_config .DEFAULT_TARGET_FPS ,
                             step =0.001 ,
                             info ="Target FPS for the reduced video. Lower FPS = faster upscaling. Common choices: 12-15 FPS for fast processing, 24 FPS for cinema standard. Supports precise values like 23.976."
                             )
@@ -921,7 +923,7 @@ This helps visualize the quality improvement from upscaling."""
                         fps_interpolation_method =gr .Radio (
                         label ="Frame Reduction Method",
                         choices =["drop","blend"],
-                        value =APP_CONFIG.fps_decrease.interpolation_method ,
+                        value =app_config .DEFAULT_FPS_INTERPOLATION_METHOD ,
                         info ="Drop: Faster, simply removes frames. Blend: Smoother, blends frames together (slower but may preserve motion better)."
                         )
 
@@ -935,26 +937,26 @@ This helps visualize the quality improvement from upscaling."""
                     with gr .Accordion ("FPS Limiting & Output Control",open =True ):
                         rife_enable_fps_limit =gr .Checkbox (
                         label ="Enable FPS Limiting",
-                        value =APP_CONFIG.rife.enable_fps_limit ,
+                        value =app_config .DEFAULT_RIFE_ENABLE_FPS_LIMIT ,
                         info ="Limit the output FPS to specific common values instead of unlimited interpolation. Useful for compatibility with displays and media players."
                         )
 
                         rife_max_fps_limit =gr .Radio (
                         label ="Max FPS Limit",
                         choices =[23.976 ,24 ,25 ,29.970 ,30 ,47.952 ,48 ,50 ,59.940 ,60 ,75 ,90 ,100 ,119.880 ,120 ,144 ,165 ,180 ,240 ,360 ],
-                        value =APP_CONFIG.rife.max_fps_limit ,
+                        value =app_config .DEFAULT_RIFE_MAX_FPS_LIMIT ,
                         info ="Maximum FPS when limiting is enabled. NTSC rates: 23.976/29.970/59.940 (film/TV), Standard: 24/25/30/50/60, Gaming: 120/144/240+. Choose based on your target format and display."
                         )
 
                         with gr .Row ():
                             rife_keep_original =gr .Checkbox (
                             label ="Keep Original Files",
-                            value =APP_CONFIG.rife.keep_original ,
+                            value =app_config .DEFAULT_RIFE_KEEP_ORIGINAL ,
                             info ="Keep the original (non-interpolated) video files alongside the RIFE-processed versions. Recommended to compare results."
                             )
                             rife_overwrite_original =gr .Checkbox (
                             label ="Overwrite Original",
-                            value =APP_CONFIG.rife.overwrite_original ,
+                            value =app_config .DEFAULT_RIFE_OVERWRITE_ORIGINAL ,
                             info ="Replace the original upscaled video with the RIFE version as the primary output. When disabled, both versions are available."
                             )
 
@@ -964,6 +966,7 @@ This helps visualize the quality improvement from upscaling."""
             
             with gr .Row ():
                 with gr .Column (scale =1 ):
+                    # Video Upload Section
                     with gr .Group ():
                         input_video_edit =gr .Video (
                         label ="Input Video for Editing",
@@ -972,6 +975,7 @@ This helps visualize the quality improvement from upscaling."""
                         height =300 
                         )
                         
+                        # Video Information Display
                         video_info_display =gr .Textbox (
                         label ="Video Information",
                         interactive =False ,
@@ -980,10 +984,12 @@ This helps visualize the quality improvement from upscaling."""
                         value ="📹 Upload a video to see detailed information"
                         )
 
+                    # Action Buttons
                     with gr .Row ():
                         cut_and_save_btn =gr .Button ("Cut and Save",variant ="primary",icon ="icons/cut_paste.png")
                         cut_and_upscale_btn =gr .Button ("Cut and Move to Upscale",variant ="primary",icon ="icons/move_icon.png")
                     
+                    # Cutting Mode Selection
                     with gr .Accordion ("Cutting Settings",open =True ):
                         cutting_mode =gr .Radio (
                         label ="Cutting Mode",
@@ -992,6 +998,7 @@ This helps visualize the quality improvement from upscaling."""
                         info ="Choose between time-based or frame-based cutting"
                         )
                         
+                        # Time Range Inputs (visible when time_ranges selected)
                         with gr .Group ()as time_range_controls :
                             time_ranges_input =gr .Textbox (
                             label ="Time Ranges (seconds)",
@@ -1000,6 +1007,7 @@ This helps visualize the quality improvement from upscaling."""
                             lines =2 
                             )
                         
+                        # Frame Range Inputs (hidden when time_ranges selected)
                         with gr .Group (visible =False )as frame_range_controls :
                             frame_ranges_input =gr .Textbox (
                             label ="Frame Ranges",
@@ -1008,6 +1016,7 @@ This helps visualize the quality improvement from upscaling."""
                             lines =2 
                             )
                         
+                        # Cut Information Display
                         cut_info_display =gr .Textbox (
                         label ="Cut Analysis",
                         interactive =False ,
@@ -1016,6 +1025,7 @@ This helps visualize the quality improvement from upscaling."""
                         value ="✏️ Enter ranges above to see cut analysis"
                         )
                     
+                    # Precision and Preview Options
                     with gr .Accordion ("Options",open =True ):
                         precise_cutting_mode =gr .Radio (
                         label ="Cutting Precision",
@@ -1030,6 +1040,7 @@ This helps visualize the quality improvement from upscaling."""
                         info ="Create a preview video of the first cut segment for verification"
                         )
                         
+                        # Processing Time Estimate
                         processing_estimate =gr .Textbox (
                         label ="Processing Time Estimate",
                         interactive =False ,
@@ -1040,6 +1051,7 @@ This helps visualize the quality improvement from upscaling."""
 
                     
                 with gr .Column (scale =1 ):
+                    # Output Video Display
                     with gr .Group ():
                         output_video_edit =gr .Video (
                         label ="Cut Video Output",
@@ -1047,12 +1059,14 @@ This helps visualize the quality improvement from upscaling."""
                         height =400 
                         )
                         
+                        # Preview Video (for first segment)
                         preview_video_edit =gr .Video (
                         label ="Preview (First Segment)",
                         interactive =False ,
                         height =300 
                         )
                     
+                    # Status and Progress
                     with gr .Group ():
                         edit_status_textbox =gr .Textbox (
                         label ="Edit Status & Log",
@@ -1062,6 +1076,7 @@ This helps visualize the quality improvement from upscaling."""
                         value ="🎞️ Ready to edit videos. Upload a video and specify cut ranges to begin."
                         )
                     
+                    # Quick Help
                     with gr .Accordion ("Quick Help & Examples",open =False ):
                         gr .Markdown ("""
 **Time Range Examples:**
@@ -1089,6 +1104,7 @@ This helps visualize the quality improvement from upscaling."""
             
             with gr .Row ():
                 with gr .Column (scale =1 ):
+                    # Video Upload Section
                     with gr .Group ():
                         input_video_face_restoration =gr .Video (
                         label ="Input Video for Face Restoration",
@@ -1097,6 +1113,7 @@ This helps visualize the quality improvement from upscaling."""
                         height =400 
                         )
                         
+                        # Face Restoration Mode Selection
                         face_restoration_mode =gr .Radio (
                         label ="Processing Mode",
                         choices =["Single Video","Batch Folder"],
@@ -1104,6 +1121,7 @@ This helps visualize the quality improvement from upscaling."""
                         info ="Choose between processing a single video or batch processing a folder of videos"
                         )
                         
+                        # Batch folder inputs (hidden by default)
                         with gr .Group (visible =False )as batch_folder_controls :
                             batch_input_folder_face =gr .Textbox (
                             label ="Input Folder Path",
@@ -1116,10 +1134,12 @@ This helps visualize the quality improvement from upscaling."""
                             info ="Folder where face-restored videos will be saved"
                             )
 
+                    # Processing Controls
                     with gr .Row ():
                         face_restoration_process_btn =gr .Button ("Process Face Restoration",variant ="primary",icon ="icons/face_restoration.png")
                         face_restoration_stop_btn =gr .Button ("Stop Processing",variant ="stop")
 
+                    # Face Restoration Settings
                     with gr .Accordion ("Face Restoration Settings",open =True ):
                         standalone_enable_face_restoration =gr .Checkbox (
                         label ="Enable Face Restoration",
@@ -1140,6 +1160,7 @@ This helps visualize the quality improvement from upscaling."""
                         )
                         
                         with gr .Row ():
+                            # Since CodeFormer models are always available, use a simple dropdown
                             standalone_model_choices = ["Auto (Default)", "codeformer.pth (359.2MB)"]
                             standalone_default_model_choice = "Auto (Default)"
                             
@@ -1158,6 +1179,7 @@ This helps visualize the quality improvement from upscaling."""
 
 
                     
+                    # Processing Options
                     with gr .Accordion ("Advanced Options",open =False ):
                         standalone_save_frames =gr .Checkbox (
                         label ="Save Individual Frames",
@@ -1178,6 +1200,7 @@ This helps visualize the quality improvement from upscaling."""
                         )
 
                 with gr .Column (scale =1 ):
+                    # Output Video Display
                     with gr .Group ():
                         output_video_face_restoration =gr .Video (
                         label ="Face Restored Video",
@@ -1185,6 +1208,7 @@ This helps visualize the quality improvement from upscaling."""
                         height =400 
                         )
                         
+                        # Comparison Video (if enabled)
                         comparison_video_face_restoration =gr .Video (
                         label ="Before/After Comparison",
                         interactive =False ,
@@ -1192,6 +1216,7 @@ This helps visualize the quality improvement from upscaling."""
                         visible =True 
                         )
                     
+                    # Status and Progress
                     with gr .Group ():
                         face_restoration_status =gr .Textbox (
                         label ="Face Restoration Status & Log",
@@ -1201,6 +1226,7 @@ This helps visualize the quality improvement from upscaling."""
                         value ="🎭 Ready for face restoration processing. Upload a video and configure settings to begin."
                         )
                     
+                    # Processing Statistics
                     with gr .Accordion ("Processing Statistics",open =True ):
                         face_restoration_stats =gr .Textbox (
                         label ="Processing Stats",
@@ -1209,6 +1235,7 @@ This helps visualize the quality improvement from upscaling."""
                         value ="📊 Processing statistics will appear here during face restoration."
                         )
                     
+                    # Quick Help
                     with gr .Accordion ("Face Restoration Help",open =False ):
                         gr .Markdown ("""
 **Face Restoration Tips:**
@@ -1231,10 +1258,9 @@ This helps visualize the quality improvement from upscaling."""
 
     def update_steps_display (mode ):
         if mode =='fast':
-            return gr .update (value =APP_CONFIG.star_model.steps ,interactive =False )
+            return gr .update (value =app_config .DEFAULT_DIFFUSION_STEPS_FAST ,interactive =False )
         else :
-            from logic.dataclasses import DEFAULT_DIFFUSION_STEPS_NORMAL
-            return gr .update (value =DEFAULT_DIFFUSION_STEPS_NORMAL ,interactive =True )
+            return gr .update (value =app_config .DEFAULT_DIFFUSION_STEPS_NORMAL ,interactive =True )
     solver_mode_radio .change (update_steps_display ,solver_mode_radio ,steps_slider )
 
     enable_target_res_check .change (
@@ -1253,13 +1279,16 @@ This helps visualize the quality improvement from upscaling."""
     outputs =context_overlap_num 
     )
 
+    # Frame folder controls
     def update_frame_folder_controls(enable_frame_folder):
+        """Enable/disable frame folder controls based on checkbox state."""
         return [
-            gr.update(interactive=enable_frame_folder),
-            gr.update(visible=enable_frame_folder)
+            gr.update(interactive=enable_frame_folder),  # frames folder textbox
+            gr.update(visible=enable_frame_folder)       # status textbox
         ]
     
     def validate_frame_folder_input_wrapper(frames_folder_path, enable_frame_folder):
+        """Validate frame folder input and show status."""
         if not enable_frame_folder or not frames_folder_path:
             return gr.update(visible=False, value="")
         
@@ -1284,10 +1313,12 @@ This helps visualize the quality improvement from upscaling."""
         outputs=frames_folder_status
     )
 
+    # Image upscaler controls
     def update_image_upscaler_controls(enable_image_upscaler):
+        """Enable/disable image upscaler controls based on checkbox state."""
         return [
-            gr.update(interactive=enable_image_upscaler),
-            gr.update(interactive=enable_image_upscaler)
+            gr.update(interactive=enable_image_upscaler),  # model dropdown
+            gr.update(interactive=enable_image_upscaler)   # batch size slider
         ]
     
     enable_image_upscaler_check.change(
@@ -1296,13 +1327,15 @@ This helps visualize the quality improvement from upscaling."""
         outputs=[image_upscaler_model_dropdown, image_upscaler_batch_size_slider]
     )
     
+    # Face restoration controls
     def update_face_restoration_controls(enable_face_restoration):
+        """Enable/disable face restoration controls based on checkbox state."""
         return [
-            gr.update(interactive=enable_face_restoration),
-            gr.update(interactive=enable_face_restoration),
-            gr.update(interactive=enable_face_restoration),
-            gr.update(interactive=enable_face_restoration),
-            gr.update(interactive=enable_face_restoration)
+            gr.update(interactive=enable_face_restoration),  # fidelity slider
+            gr.update(interactive=enable_face_restoration),  # colorization checkbox
+            gr.update(interactive=enable_face_restoration),  # timing radio
+            gr.update(interactive=enable_face_restoration),  # model dropdown
+            gr.update(interactive=enable_face_restoration)   # batch size slider
         ]
     
     enable_face_restoration_check.change(
@@ -1317,7 +1350,11 @@ This helps visualize the quality improvement from upscaling."""
         ]
     )
     
+
+    
+    # Standalone face restoration controls
     def update_face_restoration_mode_controls(mode):
+        """Show/hide batch folder controls based on processing mode."""
         if mode == "Batch Folder":
             return gr.update(visible=True)
         else:
@@ -1329,10 +1366,14 @@ This helps visualize the quality improvement from upscaling."""
         outputs=batch_folder_controls
     )
     
+
+    
     def refresh_upscaler_models():
+        """Refresh the list of available upscaler models."""
         try:
-            available_model_files = util_scan_for_models(APP_CONFIG.paths.upscale_models_dir, logger)
+            available_model_files = util_scan_for_models(app_config.UPSCALE_MODELS_DIR, logger)
             if available_model_files:
+                # Just show filenames for faster refresh
                 model_choices = available_model_files
                 default_choice = model_choices[0]
             else:
@@ -1344,7 +1385,10 @@ This helps visualize the quality improvement from upscaling."""
             return gr.update(choices=["Error scanning models - check upscale_models/ directory"], 
                            value="Error scanning models - check upscale_models/ directory")
     
+
+
     def update_context_overlap_max (max_chunk_len ):
+        """Update the maximum value of context overlap based on max_chunk_len"""
         new_max =max (0 ,int (max_chunk_len )-1 )
         return gr .update (maximum =new_max )
 
@@ -1366,11 +1410,10 @@ This helps visualize the quality improvement from upscaling."""
     )
 
     def update_ffmpeg_quality_settings (use_gpu_ffmpeg ):
-        from logic.dataclasses import DEFAULT_FFMPEG_QUALITY_GPU, DEFAULT_FFMPEG_QUALITY_CPU
         if use_gpu_ffmpeg :
-            return gr .Slider (label ="FFmpeg Quality (CQ for NVENC)",value =DEFAULT_FFMPEG_QUALITY_GPU ,info ="For h24_nvenc (GPU): Constrained Quality (CQ). Lower values generally mean better quality. Typical range for NVENC CQ is 18-28.")
+            return gr .Slider (label ="FFmpeg Quality (CQ for NVENC)",value =app_config .DEFAULT_FFMPEG_QUALITY_GPU ,info ="For h264_nvenc (GPU): Constrained Quality (CQ). Lower values generally mean better quality. Typical range for NVENC CQ is 18-28.")
         else :
-            return gr .Slider (label ="FFmpeg Quality (CRF for libx264)",value =DEFAULT_FFMPEG_QUALITY_CPU ,info ="For libx264 (CPU): Constant Rate Factor (CRF). Lower values mean higher quality (0 is lossless, 23 is default).")
+            return gr .Slider (label ="FFmpeg Quality (CRF for libx264)",value =app_config .DEFAULT_FFMPEG_QUALITY_CPU ,info ="For libx264 (CPU): Constant Rate Factor (CRF). Lower values mean higher quality (0 is lossless, 23 is default).")
 
     ffmpeg_use_gpu_check .change (
     fn =update_ffmpeg_quality_settings ,
@@ -1379,14 +1422,14 @@ This helps visualize the quality improvement from upscaling."""
     )
 
     open_output_folder_button .click (
-    fn =lambda :util_open_folder (APP_CONFIG.paths.outputs_dir ,logger =logger ),
+    fn =lambda :util_open_folder (app_config .DEFAULT_OUTPUT_DIR ,logger =logger ),
     inputs =[],
     outputs =[]
     )
 
     cogvlm_display_to_quant_val_map_global ={}
-    if UTIL_COG_VLM_AVAILABLE :
-        _temp_map =get_cogvlm_quant_choices_map (torch .cuda .is_available (),UTIL_BITSANDBYTES_AVAILABLE )
+    if app_config .UTIL_COG_VLM_AVAILABLE :
+        _temp_map =app_config .get_cogvlm_quant_choices_map (torch .cuda .is_available (),app_config .UTIL_BITSANDBYTES_AVAILABLE )
         cogvlm_display_to_quant_val_map_global ={v :k for k ,v in _temp_map .items ()}
 
     def get_quant_value_from_display (display_val ):
@@ -1395,176 +1438,58 @@ This helps visualize the quality improvement from upscaling."""
         return cogvlm_display_to_quant_val_map_global .get (display_val ,0 )
     
     def extract_codeformer_model_path_from_dropdown(dropdown_choice):
+        """Extract the actual model path from the dropdown choice."""
         if not dropdown_choice or dropdown_choice.startswith("No CodeFormer") or dropdown_choice.startswith("Error"):
             return None
         if dropdown_choice == "Auto (Default)":
-            return None
+            return None  # Use default model
         
+        # For the specific codeformer.pth model, return the known path
         if dropdown_choice.startswith("codeformer.pth"):
-            return os.path.join(APP_CONFIG.paths.face_restoration_models_dir, "CodeFormer", "codeformer.pth")
+            return os.path.join(app_config.FACE_RESTORATION_MODELS_DIR, "CodeFormer", "codeformer.pth")
         
         return None
 
-    def build_app_config_from_ui(*args):
-        # This function takes all UI component values and builds an AppConfig object
-        (
-            input_video_val, user_prompt_val, pos_prompt_val, neg_prompt_val, model_selector_val,
-            upscale_factor_slider_val, cfg_slider_val, steps_slider_val, solver_mode_radio_val,
-            max_chunk_len_slider_val, enable_chunk_optimization_check_val, vae_chunk_slider_val, color_fix_dropdown_val,
-            enable_tiling_check_val, tile_size_num_val, tile_overlap_num_val,
-            enable_context_window_check_val, context_overlap_num_val,
-            enable_target_res_check_val, target_h_num_val, target_w_num_val, target_res_mode_radio_val,
-            ffmpeg_preset_dropdown_val, ffmpeg_quality_slider_val, ffmpeg_use_gpu_check_val,
-            save_frames_checkbox_val, save_metadata_checkbox_val, save_chunks_checkbox_val, save_chunk_frames_checkbox_val,
-            create_comparison_video_check_val,
-            enable_scene_split_check_val, scene_split_mode_radio_val, scene_min_scene_len_num_val, scene_drop_short_check_val, scene_merge_last_check_val,
-            scene_frame_skip_num_val, scene_threshold_num_val, scene_min_content_val_num_val, scene_frame_window_num_val,
-            scene_copy_streams_check_val, scene_use_mkvmerge_check_val, scene_rate_factor_num_val, scene_preset_dropdown_val, scene_quiet_ffmpeg_check_val,
-            scene_manual_split_type_radio_val, scene_manual_split_value_num_val,
-            enable_fps_decrease_val, fps_decrease_mode_val, fps_multiplier_preset_val, fps_multiplier_custom_val, target_fps_val, fps_interpolation_method_val,
-            enable_rife_interpolation_val, rife_multiplier_val, rife_fp16_val, rife_uhd_val, rife_scale_val,
-            rife_skip_static_val, rife_enable_fps_limit_val, rife_max_fps_limit_val,
-            rife_apply_to_chunks_val, rife_apply_to_scenes_val, rife_keep_original_val, rife_overwrite_original_val,
-            cogvlm_quant_radio_val, cogvlm_unload_radio_val, do_auto_caption_first_val,
-            seed_num_val, random_seed_check_val,
-            enable_image_upscaler_val, image_upscaler_model_val, image_upscaler_batch_size_val,
-            enable_face_restoration_val, face_restoration_fidelity_val, enable_face_colorization_val,
-            face_restoration_when_val, codeformer_model_val, face_restoration_batch_size_val,
-            enable_frame_folder_val, input_frames_folder_val, frame_folder_fps_slider_val
-        ) = args
+    def upscale_director_logic (
+    input_video_val ,user_prompt_val ,pos_prompt_val ,neg_prompt_val ,model_selector_val ,
+    upscale_factor_slider_val ,cfg_slider_val ,steps_slider_val ,solver_mode_radio_val ,
+    max_chunk_len_slider_val ,enable_chunk_optimization_check_val ,vae_chunk_slider_val ,color_fix_dropdown_val ,
+    enable_tiling_check_val ,tile_size_num_val ,tile_overlap_num_val ,
+    enable_context_window_check_val ,context_overlap_num_val ,
+    enable_target_res_check_val ,target_h_num_val ,target_w_num_val ,target_res_mode_radio_val ,
+    ffmpeg_preset_dropdown_val ,ffmpeg_quality_slider_val ,ffmpeg_use_gpu_check_val ,frame_folder_fps_slider ,
+    save_frames_checkbox_val ,save_metadata_checkbox_val ,save_chunks_checkbox_val ,save_chunk_frames_checkbox_val ,
+    create_comparison_video_check_val ,
+    enable_scene_split_check_val ,scene_split_mode_radio_val ,scene_min_scene_len_num_val ,scene_drop_short_check_val ,scene_merge_last_check_val ,
+    scene_frame_skip_num_val ,scene_threshold_num_val ,scene_min_content_val_num_val ,scene_frame_window_num_val ,
+    scene_copy_streams_check_val ,scene_use_mkvmerge_check_val ,scene_rate_factor_num_val ,scene_preset_dropdown_val ,scene_quiet_ffmpeg_check_val ,
+    scene_manual_split_type_radio_val ,scene_manual_split_value_num_val ,
 
-        config = AppConfig(
-            input_video_path=input_video_val,
-            paths=APP_CONFIG.paths, # Use globally initialized paths
-            prompts=PromptConfig(
-                user=user_prompt_val,
-                positive=pos_prompt_val,
-                negative=neg_prompt_val
-            ),
-            star_model=StarModelConfig(
-                model_choice=model_selector_val,
-                cfg_scale=cfg_slider_val,
-                solver_mode=solver_mode_radio_val,
-                steps=steps_slider_val,
-                color_fix_method=color_fix_dropdown_val
-            ),
-            performance=PerformanceConfig(
-                max_chunk_len=max_chunk_len_slider_val,
-                vae_chunk=vae_chunk_slider_val,
-                enable_chunk_optimization=enable_chunk_optimization_check_val
-            ),
-            resolution=ResolutionConfig(
-                enable_target_res=enable_target_res_check_val,
-                target_res_mode=target_res_mode_radio_val,
-                target_h=target_h_num_val,
-                target_w=target_w_num_val,
-                upscale_factor=upscale_factor_slider_val
-            ),
-            context_window=ContextWindowConfig(
-                enable=enable_context_window_check_val,
-                overlap=context_overlap_num_val
-            ),
-            tiling=TilingConfig(
-                enable=enable_tiling_check_val,
-                tile_size=tile_size_num_val,
-                tile_overlap=tile_overlap_num_val
-            ),
-            ffmpeg=FfmpegConfig(
-                use_gpu=ffmpeg_use_gpu_check_val,
-                preset=ffmpeg_preset_dropdown_val,
-                quality=ffmpeg_quality_slider_val
-            ),
-            frame_folder=FrameFolderConfig(
-                enable=enable_frame_folder_val,
-                input_path=input_frames_folder_val,
-                fps=frame_folder_fps_slider_val
-            ),
-            scene_split=SceneSplitConfig(
-                enable=enable_scene_split_check_val,
-                mode=scene_split_mode_radio_val,
-                min_scene_len=scene_min_scene_len_num_val,
-                threshold=scene_threshold_num_val,
-                drop_short=scene_drop_short_check_val,
-                merge_last=scene_merge_last_check_val,
-                frame_skip=scene_frame_skip_num_val,
-                min_content_val=scene_min_content_val_num_val,
-                frame_window=scene_frame_window_num_val,
-                manual_split_type=scene_manual_split_type_radio_val,
-                manual_split_value=scene_manual_split_value_num_val,
-                copy_streams=scene_copy_streams_check_val,
-                use_mkvmerge=scene_use_mkvmerge_check_val,
-                rate_factor=scene_rate_factor_num_val,
-                encoding_preset=scene_preset_dropdown_val,
-                quiet_ffmpeg=scene_quiet_ffmpeg_check_val
-            ),
-            cogvlm=CogVLMConfig(
-                quant_display=cogvlm_quant_radio_val,
-                unload_after_use=cogvlm_unload_radio_val,
-                auto_caption_then_upscale=do_auto_caption_first_val,
-                quant_value=get_quant_value_from_display(cogvlm_quant_radio_val)
-            ),
-            outputs=OutputConfig(
-                save_frames=save_frames_checkbox_val,
-                save_metadata=save_metadata_checkbox_val,
-                save_chunks=save_chunks_checkbox_val,
-                save_chunk_frames=save_chunk_frames_checkbox_val,
-                create_comparison_video=create_comparison_video_check_val
-            ),
-            seed=SeedConfig(
-                seed=seed_num_val,
-                use_random=random_seed_check_val
-            ),
-            rife=RifeConfig(
-                enable=enable_rife_interpolation_val,
-                multiplier=rife_multiplier_val,
-                fp16=rife_fp16_val,
-                uhd=rife_uhd_val,
-                scale=rife_scale_val,
-                skip_static=rife_skip_static_val,
-                enable_fps_limit=rife_enable_fps_limit_val,
-                max_fps_limit=rife_max_fps_limit_val,
-                apply_to_chunks=rife_apply_to_chunks_val,
-                apply_to_scenes=rife_apply_to_scenes_val,
-                keep_original=rife_keep_original_val,
-                overwrite_original=rife_overwrite_original_val
-            ),
-            fps_decrease=FpsDecreaseConfig(
-                enable=enable_fps_decrease_val,
-                mode=fps_decrease_mode_val,
-                multiplier_preset=fps_multiplier_preset_val,
-                multiplier_custom=fps_multiplier_custom_val,
-                target_fps=target_fps_val,
-                interpolation_method=fps_interpolation_method_val
-            ),
-            batch=BatchConfig(
-                input_folder="",
-                output_folder="",
-                skip_existing=True,
-                save_captions=True,
-                use_prompt_files=True,
-                enable_auto_caption=False,
-                enable_frame_folders=False
-            ),
-            image_upscaler=ImageUpscalerConfig(
-                enable=enable_image_upscaler_val,
-                model=image_upscaler_model_val,
-                batch_size=image_upscaler_batch_size_val
-            ),
-            face_restoration=FaceRestorationConfig(
-                enable=enable_face_restoration_val,
-                fidelity_weight=face_restoration_fidelity_val,
-                enable_colorization=enable_face_colorization_val,
-                when=face_restoration_when_val,
-                model=extract_codeformer_model_path_from_dropdown(codeformer_model_val),
-                batch_size=face_restoration_batch_size_val
-            )
-        )
-        return config
+    enable_fps_decrease_val =False ,fps_decrease_mode_val ="multiplier",fps_multiplier_preset_val ="1/2x (Half FPS)",fps_multiplier_custom_val =0.5 ,target_fps_val =24.0 ,fps_interpolation_method_val ="drop",
 
-    def upscale_director_logic (app_config: AppConfig, progress =gr .Progress (track_tqdm =True )):
+    enable_rife_interpolation_val =False ,rife_multiplier_val =2 ,rife_fp16_val =True ,rife_uhd_val =False ,rife_scale_val =1.0 ,
+    rife_skip_static_val =False ,rife_enable_fps_limit_val =False ,rife_max_fps_limit_val =60 ,
+    rife_apply_to_chunks_val =True ,rife_apply_to_scenes_val =True ,rife_keep_original_val =True ,rife_overwrite_original_val =False ,
+    cogvlm_quant_radio_val =None ,cogvlm_unload_radio_val =None ,
+    do_auto_caption_first_val =False ,
+    seed_num_val =99 ,random_seed_check_val =False ,
+    
+    # Image upscaler parameters
+    enable_image_upscaler_val =False ,image_upscaler_model_val =None ,image_upscaler_batch_size_val =4 ,
+    
+    # Face restoration parameters
+    enable_face_restoration_val =False ,face_restoration_fidelity_val =0.7 ,enable_face_colorization_val =False ,
+    face_restoration_when_val ="after" ,codeformer_model_val =None ,face_restoration_batch_size_val =4 ,
+    
+    # Frame folder parameters
+    enable_frame_folder_val =False ,input_frames_folder_val ="", frame_folder_fps_slider_val =24.0,
+    
+    progress =gr .Progress (track_tqdm =True )
+    ):
+
         current_output_video_val =None 
         current_status_text_val =""
-        current_user_prompt_val =app_config.prompts.user
+        current_user_prompt_val =user_prompt_val 
         current_caption_status_text_val =""
         current_caption_status_visible_val =False 
         current_last_chunk_video_val =None 
@@ -1575,14 +1500,18 @@ This helps visualize the quality improvement from upscaling."""
 
         log_accumulator_director =[]
 
-        logger .info (f"In upscale_director_logic. Auto-caption first: {app_config.cogvlm.auto_caption_then_upscale}, User prompt: '{app_config.prompts.user[:50]}...'")
+        logger .info (f"In upscale_director_logic. Auto-caption first: {do_auto_caption_first_val}, User prompt: '{user_prompt_val[:50]}...'")
 
-        actual_input_video_path = app_config.input_video_path
-        if app_config.frame_folder.enable and app_config.frame_folder.input_path:
+        actual_cogvlm_quant_for_captioning =get_quant_value_from_display (cogvlm_quant_radio_val )
+
+        # Handle frame folder input preprocessing
+        actual_input_video_path = input_video_val
+        if enable_frame_folder_val and input_frames_folder_val:
             logger.info("Frame folder processing mode enabled")
             progress(0, desc="Converting frame folder to video...")
             
-            is_valid, validation_msg, frame_count = util_validate_frame_folder_input(app_config.frame_folder.input_path, logger)
+            # Validate frame folder first
+            is_valid, validation_msg, frame_count = util_validate_frame_folder_input(input_frames_folder_val, logger)
             
             if not is_valid:
                 error_msg = f"Frame folder validation failed: {validation_msg}"
@@ -1596,8 +1525,10 @@ This helps visualize the quality improvement from upscaling."""
                        gr.update(value=current_comparison_video_val))
                 return
             
+            # Create temporary video from frames
+            import tempfile
             temp_video_dir = tempfile.mkdtemp(prefix="frame_folder_")
-            frame_folder_name = os.path.basename(app_config.frame_folder.input_path.rstrip(os.sep))
+            frame_folder_name = os.path.basename(input_frames_folder_val.rstrip(os.sep))
             temp_video_path = os.path.join(temp_video_dir, f"{frame_folder_name}_from_frames.mp4")
             
             conversion_msg = f"Converting {frame_count} frames to video using global encoding settings..."
@@ -1610,17 +1541,17 @@ This helps visualize the quality improvement from upscaling."""
                    gr.update(value=current_comparison_video_val))
             
             try:
+                # Use global encoding settings and configurable FPS for frame folder conversion
                 success, conv_msg = util_process_frame_folder_to_video(
-                    app_config.frame_folder.input_path, temp_video_path, fps=app_config.frame_folder.fps,
-                    ffmpeg_preset=app_config.ffmpeg.preset,
-                    ffmpeg_quality_value=app_config.ffmpeg.quality,
-                    ffmpeg_use_gpu=app_config.ffmpeg.use_gpu,
+                    input_frames_folder_val, temp_video_path, fps=frame_folder_fps_slider_val,
+                    ffmpeg_preset=ffmpeg_preset_dropdown_val,
+                    ffmpeg_quality_value=ffmpeg_quality_slider_val,
+                    ffmpeg_use_gpu=ffmpeg_use_gpu_check_val,
                     logger=logger
                 )
                 
                 if success:
                     actual_input_video_path = temp_video_path
-                    app_config.input_video_path = actual_input_video_path
                     success_msg = f"✅ Successfully converted frame folder to video: {conv_msg}"
                     log_accumulator_director.append(success_msg)
                     logger.info(f"Frame folder converted successfully. Using: {actual_input_video_path}")
@@ -1655,19 +1586,19 @@ This helps visualize the quality improvement from upscaling."""
                    gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val),
                    gr.update(value=current_comparison_video_val))
             
-            log_accumulator_director = []
+            log_accumulator_director = []  # Reset for main processing
 
-        should_auto_caption_entire_video =(app_config.cogvlm.auto_caption_then_upscale and 
-        not app_config.scene_split.enable and 
-        not app_config.image_upscaler.enable and 
-        UTIL_COG_VLM_AVAILABLE )
+        should_auto_caption_entire_video =(do_auto_caption_first_val and 
+        not enable_scene_split_check_val and 
+        not enable_image_upscaler_val and 
+        app_config .UTIL_COG_VLM_AVAILABLE )
 
         if should_auto_caption_entire_video :
             logger .info ("Attempting auto-captioning entire video before upscale (scene splitting disabled).")
             progress (0 ,desc ="Starting auto-captioning before upscale...")
 
             current_status_text_val ="Starting auto-captioning..."
-            if UTIL_COG_VLM_AVAILABLE :
+            if app_config .UTIL_COG_VLM_AVAILABLE :
                 current_caption_status_text_val ="Starting auto-captioning..."
                 current_caption_status_visible_val =True 
 
@@ -1679,14 +1610,13 @@ This helps visualize the quality improvement from upscaling."""
 
             try :
                 caption_text ,caption_stat_msg =util_auto_caption (
-                app_config.input_video_path ,app_config.cogvlm.quant_value ,app_config.cogvlm.unload_after_use ,
-                app_config.paths.cogvlm_model_path ,logger =logger ,progress =progress 
+                input_video_val ,actual_cogvlm_quant_for_captioning ,cogvlm_unload_radio_val ,
+                app_config .COG_VLM_MODEL_PATH ,logger =logger ,progress =progress 
                 )
                 log_accumulator_director .append (f"Auto-caption status: {caption_stat_msg}")
 
                 if not caption_text .startswith ("Error:"):
                     current_user_prompt_val =caption_text 
-                    app_config.prompts.user = caption_text
                     auto_caption_completed_successfully =True 
                     log_accumulator_director .append (f"Using generated caption as prompt: '{caption_text[:50]}...'")
                     logger .info (f"Auto-caption successful. Updated current_user_prompt_val to: '{current_user_prompt_val[:100]}...'")
@@ -1695,7 +1625,7 @@ This helps visualize the quality improvement from upscaling."""
                     logger .warning (f"Auto-caption failed. Keeping original prompt: '{current_user_prompt_val[:100]}...'")
 
                 current_status_text_val ="\n".join (log_accumulator_director )
-                if UTIL_COG_VLM_AVAILABLE :
+                if app_config .UTIL_COG_VLM_AVAILABLE :
                     current_caption_status_text_val =caption_stat_msg 
 
                 logger .info (f"About to yield auto-caption result. current_user_prompt_val: '{current_user_prompt_val[:100]}...'")
@@ -1706,14 +1636,14 @@ This helps visualize the quality improvement from upscaling."""
                 gr .update (value =current_comparison_video_val ))
                 logger .info ("Auto-caption yield completed.")
 
-                if UTIL_COG_VLM_AVAILABLE :
+                if app_config .UTIL_COG_VLM_AVAILABLE :
                     current_caption_status_visible_val =False 
 
             except Exception as e_ac :
                 logger .error (f"Exception during auto-caption call or its setup: {e_ac}",exc_info =True )
                 log_accumulator_director .append (f"Error during auto-caption pre-step: {e_ac}")
                 current_status_text_val ="\n".join (log_accumulator_director )
-                if UTIL_COG_VLM_AVAILABLE :
+                if app_config .UTIL_COG_VLM_AVAILABLE :
                     current_caption_status_text_val =str (e_ac )
                     yield (gr .update (value =current_output_video_val ),gr .update (value =current_status_text_val ),
                     gr .update (value =current_user_prompt_val ),
@@ -1729,7 +1659,7 @@ This helps visualize the quality improvement from upscaling."""
                     gr .update (value =current_comparison_video_val ))
             log_accumulator_director =[]
 
-        elif app_config.cogvlm.auto_caption_then_upscale and app_config.scene_split.enable and not app_config.image_upscaler.enable and UTIL_COG_VLM_AVAILABLE :
+        elif do_auto_caption_first_val and enable_scene_split_check_val and not enable_image_upscaler_val and app_config .UTIL_COG_VLM_AVAILABLE :
             msg ="Scene splitting enabled: Auto-captioning will be done per scene during upscaling."
             logger .info (msg )
             log_accumulator_director .append (msg )
@@ -1741,7 +1671,7 @@ This helps visualize the quality improvement from upscaling."""
             gr .update (value =current_last_chunk_video_val ),gr .update (value =current_chunk_status_text_val ),
             gr .update (value =current_comparison_video_val ))
 
-        elif app_config.cogvlm.auto_caption_then_upscale and app_config.image_upscaler.enable :
+        elif do_auto_caption_first_val and enable_image_upscaler_val :
             msg ="Image-based upscaling is enabled. Auto-captioning is disabled as image upscalers don't use prompts."
             logger .info (msg )
             log_accumulator_director .append (msg )
@@ -1753,7 +1683,7 @@ This helps visualize the quality improvement from upscaling."""
             gr .update (value =current_last_chunk_video_val ),gr .update (value =current_chunk_status_text_val ),
             gr .update (value =current_comparison_video_val ))
 
-        elif app_config.cogvlm.auto_caption_then_upscale and not UTIL_COG_VLM_AVAILABLE :
+        elif do_auto_caption_first_val and not app_config .UTIL_COG_VLM_AVAILABLE :
             msg ="Auto-captioning requested but CogVLM2 is not available. Using original prompt."
             logger .warning (msg )
             log_accumulator_director .append (msg )
@@ -1765,52 +1695,50 @@ This helps visualize the quality improvement from upscaling."""
             gr .update (value =current_last_chunk_video_val ),gr .update (value =current_chunk_status_text_val ),
             gr .update (value =current_comparison_video_val ))
 
-        actual_seed_to_use =app_config.seed.seed 
-        if app_config.seed.use_random :
+        actual_seed_to_use =seed_num_val 
+        if random_seed_check_val :
             actual_seed_to_use =np .random .randint (0 ,2 **31 )
             logger .info (f"Random seed checkbox is checked. Using generated seed: {actual_seed_to_use}")
-        elif app_config.seed.seed ==-1 :
+        elif seed_num_val ==-1 :
             actual_seed_to_use =np .random .randint (0 ,2 **31 )
             logger .info (f"Seed input is -1. Using generated seed: {actual_seed_to_use}")
         else :
             logger .info (f"Using provided seed: {actual_seed_to_use}")
-        
-        app_config.seed.seed = actual_seed_to_use
 
         upscale_generator =core_run_upscale (
-        input_video_path =actual_input_video_path ,user_prompt =app_config.prompts.user ,
-        positive_prompt =app_config.prompts.positive ,negative_prompt =app_config.prompts.negative ,model_choice =app_config.star_model.model_choice ,
-        upscale_factor_slider =app_config.resolution.upscale_factor ,cfg_scale =app_config.star_model.cfg_scale ,steps =app_config.star_model.steps ,solver_mode =app_config.star_model.solver_mode ,
-        max_chunk_len =app_config.performance.max_chunk_len ,enable_chunk_optimization =app_config.performance.enable_chunk_optimization ,vae_chunk =app_config.performance.vae_chunk ,color_fix_method =app_config.star_model.color_fix_method ,
-        enable_tiling =app_config.tiling.enable ,tile_size =app_config.tiling.tile_size ,tile_overlap =app_config.tiling.tile_overlap ,
-        enable_context_window =app_config.context_window.enable ,context_overlap =app_config.context_window.overlap ,
-        enable_target_res =app_config.resolution.enable_target_res ,target_h =app_config.resolution.target_h ,target_w =app_config.resolution.target_w ,target_res_mode =app_config.resolution.target_res_mode ,
-        ffmpeg_preset =app_config.ffmpeg.preset ,ffmpeg_quality_value =app_config.ffmpeg.quality ,ffmpeg_use_gpu =app_config.ffmpeg.use_gpu ,
-        save_frames =app_config.outputs.save_frames ,save_metadata =app_config.outputs.save_metadata ,save_chunks =app_config.outputs.save_chunks ,save_chunk_frames =app_config.outputs.save_chunk_frames ,
+        input_video_path =actual_input_video_path ,user_prompt =current_user_prompt_val ,
+        positive_prompt =pos_prompt_val ,negative_prompt =neg_prompt_val ,model_choice =model_selector_val ,
+        upscale_factor_slider =upscale_factor_slider_val ,cfg_scale =cfg_slider_val ,steps =steps_slider_val ,solver_mode =solver_mode_radio_val ,
+        max_chunk_len =max_chunk_len_slider_val ,enable_chunk_optimization =enable_chunk_optimization_check_val ,vae_chunk =vae_chunk_slider_val ,color_fix_method =color_fix_dropdown_val ,
+        enable_tiling =enable_tiling_check_val ,tile_size =tile_size_num_val ,tile_overlap =tile_overlap_num_val ,
+        enable_context_window =enable_context_window_check_val ,context_overlap =context_overlap_num_val ,
+        enable_target_res =enable_target_res_check_val ,target_h =target_h_num_val ,target_w =target_w_num_val ,target_res_mode =target_res_mode_radio_val ,
+        ffmpeg_preset =ffmpeg_preset_dropdown_val ,ffmpeg_quality_value =ffmpeg_quality_slider_val ,ffmpeg_use_gpu =ffmpeg_use_gpu_check_val ,
+        save_frames =save_frames_checkbox_val ,save_metadata =save_metadata_checkbox_val ,save_chunks =save_chunks_checkbox_val ,save_chunk_frames =save_chunk_frames_checkbox_val ,
 
-        enable_scene_split =app_config.scene_split.enable ,scene_split_mode =app_config.scene_split.mode ,scene_min_scene_len =app_config.scene_split.min_scene_len ,scene_drop_short =app_config.scene_split.drop_short ,scene_merge_last =app_config.scene_split.merge_last ,
-        scene_frame_skip =app_config.scene_split.frame_skip ,scene_threshold =app_config.scene_split.threshold ,scene_min_content_val =app_config.scene_split.min_content_val ,scene_frame_window =app_config.scene_split.frame_window ,
-        scene_copy_streams =app_config.scene_split.copy_streams ,scene_use_mkvmerge =app_config.scene_split.use_mkvmerge ,scene_rate_factor =app_config.scene_split.rate_factor ,scene_preset =app_config.scene_split.encoding_preset ,scene_quiet_ffmpeg =app_config.scene_split.quiet_ffmpeg ,
-        scene_manual_split_type =app_config.scene_split.manual_split_type ,scene_manual_split_value =app_config.scene_split.manual_split_value ,
+        enable_scene_split =enable_scene_split_check_val ,scene_split_mode =scene_split_mode_radio_val ,scene_min_scene_len =scene_min_scene_len_num_val ,scene_drop_short =scene_drop_short_check_val ,scene_merge_last =scene_merge_last_check_val ,
+        scene_frame_skip =scene_frame_skip_num_val ,scene_threshold =scene_threshold_num_val ,scene_min_content_val =scene_min_content_val_num_val ,scene_frame_window =scene_frame_window_num_val ,
+        scene_copy_streams =scene_copy_streams_check_val ,scene_use_mkvmerge =scene_use_mkvmerge_check_val ,scene_rate_factor =scene_rate_factor_num_val ,scene_preset =scene_preset_dropdown_val ,scene_quiet_ffmpeg =scene_quiet_ffmpeg_check_val ,
+        scene_manual_split_type =scene_manual_split_type_radio_val ,scene_manual_split_value =scene_manual_split_value_num_val ,
 
-        create_comparison_video_enabled =app_config.outputs.create_comparison_video ,
+        create_comparison_video_enabled =create_comparison_video_check_val ,
 
-        enable_fps_decrease =app_config.fps_decrease.enable ,fps_decrease_mode =app_config.fps_decrease.mode ,
-        fps_multiplier_preset =app_config.fps_decrease.multiplier_preset ,fps_multiplier_custom =app_config.fps_decrease.multiplier_custom ,
-        target_fps =app_config.fps_decrease.target_fps ,fps_interpolation_method =app_config.fps_decrease.interpolation_method ,
+        enable_fps_decrease =enable_fps_decrease_val ,fps_decrease_mode =fps_decrease_mode_val ,
+        fps_multiplier_preset =fps_multiplier_preset_val ,fps_multiplier_custom =fps_multiplier_custom_val ,
+        target_fps =target_fps_val ,fps_interpolation_method =fps_interpolation_method_val ,
 
-        enable_rife_interpolation =app_config.rife.enable ,rife_multiplier =app_config.rife.multiplier ,rife_fp16 =app_config.rife.fp16 ,rife_uhd =app_config.rife.uhd ,rife_scale =app_config.rife.scale ,
-        rife_skip_static =app_config.rife.skip_static ,rife_enable_fps_limit =app_config.rife.enable_fps_limit ,rife_max_fps_limit =app_config.rife.max_fps_limit ,
-        rife_apply_to_chunks =app_config.rife.apply_to_chunks ,rife_apply_to_scenes =app_config.rife.apply_to_scenes ,rife_keep_original =app_config.rife.keep_original ,rife_overwrite_original =app_config.rife.overwrite_original ,
+        enable_rife_interpolation =enable_rife_interpolation_val ,rife_multiplier =rife_multiplier_val ,rife_fp16 =rife_fp16_val ,rife_uhd =rife_uhd_val ,rife_scale =rife_scale_val ,
+        rife_skip_static =rife_skip_static_val ,rife_enable_fps_limit =rife_enable_fps_limit_val ,rife_max_fps_limit =rife_max_fps_limit_val ,
+        rife_apply_to_chunks =rife_apply_to_chunks_val ,rife_apply_to_scenes =rife_apply_to_scenes_val ,rife_keep_original =rife_keep_original_val ,rife_overwrite_original =rife_overwrite_original_val ,
 
         is_batch_mode =False ,batch_output_dir =None ,original_filename =None ,
 
-        enable_auto_caption_per_scene =(app_config.cogvlm.auto_caption_then_upscale and app_config.scene_split.enable and not app_config.image_upscaler.enable and UTIL_COG_VLM_AVAILABLE ),
-        cogvlm_quant =app_config.cogvlm.quant_value ,
-        cogvlm_unload =app_config.cogvlm.unload_after_use if app_config.cogvlm.unload_after_use else 'full',
+        enable_auto_caption_per_scene =(do_auto_caption_first_val and enable_scene_split_check_val and not enable_image_upscaler_val and app_config .UTIL_COG_VLM_AVAILABLE ),
+        cogvlm_quant =actual_cogvlm_quant_for_captioning ,
+        cogvlm_unload =cogvlm_unload_radio_val if cogvlm_unload_radio_val else 'full',
 
         logger =logger ,
-        app_config_module =app_config_module ,
+        app_config_module =app_config ,
         metadata_handler_module =metadata_handler ,
         VideoToVideo_sr_class =VideoToVideo_sr ,
         setup_seed_func =setup_seed ,
@@ -1825,18 +1753,18 @@ This helps visualize the quality improvement from upscaling."""
         current_seed =actual_seed_to_use ,
         
         # Image upscaler parameters
-        enable_image_upscaler =app_config.image_upscaler.enable ,
-        image_upscaler_model =app_config.image_upscaler.model ,
-        image_upscaler_batch_size =app_config.image_upscaler.batch_size ,
+        enable_image_upscaler =enable_image_upscaler_val ,
+        image_upscaler_model =image_upscaler_model_val ,
+        image_upscaler_batch_size =image_upscaler_batch_size_val ,
         
         # Face restoration parameters
-        enable_face_restoration =app_config.face_restoration.enable ,
-        face_restoration_fidelity =app_config.face_restoration.fidelity_weight ,
-        enable_face_colorization =app_config.face_restoration.enable_colorization ,
+        enable_face_restoration =enable_face_restoration_val ,
+        face_restoration_fidelity =face_restoration_fidelity_val ,
+        enable_face_colorization =enable_face_colorization_val ,
         face_restoration_timing ="after_upscale" ,  # Fixed timing mode for single video processing
-        face_restoration_when =app_config.face_restoration.when ,
-        codeformer_model =app_config.face_restoration.model ,
-        face_restoration_batch_size =app_config.face_restoration.batch_size 
+        face_restoration_when =face_restoration_when_val ,
+        codeformer_model =extract_codeformer_model_path_from_dropdown(codeformer_model_val) ,
+        face_restoration_batch_size =face_restoration_batch_size_val 
         )
 
         for yielded_output_video ,yielded_status_log ,yielded_chunk_video ,yielded_chunk_status ,yielded_comparison_video in upscale_generator :
@@ -1934,64 +1862,75 @@ This helps visualize the quality improvement from upscaling."""
         )
 
     click_inputs =[
-        input_video, user_prompt, pos_prompt, neg_prompt, model_selector,
-        upscale_factor_slider, cfg_slider, steps_slider, solver_mode_radio,
-        max_chunk_len_slider, enable_chunk_optimization_check, vae_chunk_slider, color_fix_dropdown,
-        enable_tiling_check, tile_size_num, tile_overlap_num,
-        enable_context_window_check, context_overlap_num,
-        enable_target_res_check, target_h_num, target_w_num, target_res_mode_radio,
-        ffmpeg_preset_dropdown, ffmpeg_quality_slider, ffmpeg_use_gpu_check,
-        save_frames_checkbox, save_metadata_checkbox, save_chunks_checkbox, save_chunk_frames_checkbox,
-        create_comparison_video_check,
-        enable_scene_split_check, scene_split_mode_radio, scene_min_scene_len_num, scene_drop_short_check, scene_merge_last_check,
-        scene_frame_skip_num, scene_threshold_num, scene_min_content_val_num, scene_frame_window_num,
-        scene_copy_streams_check, scene_use_mkvmerge_check, scene_rate_factor_num, scene_preset_dropdown, scene_quiet_ffmpeg_check,
-        scene_manual_split_type_radio, scene_manual_split_value_num,
-        enable_fps_decrease, fps_decrease_mode, fps_multiplier_preset, fps_multiplier_custom, target_fps, fps_interpolation_method,
-        enable_rife_interpolation, rife_multiplier, rife_fp16, rife_uhd, rife_scale,
-        rife_skip_static, rife_enable_fps_limit, rife_max_fps_limit,
-        rife_apply_to_chunks, rife_apply_to_scenes, rife_keep_original, rife_overwrite_original
+    input_video ,user_prompt ,pos_prompt ,neg_prompt ,model_selector ,
+    upscale_factor_slider ,cfg_slider ,steps_slider ,solver_mode_radio ,
+    max_chunk_len_slider ,enable_chunk_optimization_check ,vae_chunk_slider ,color_fix_dropdown ,
+    enable_tiling_check ,tile_size_num ,tile_overlap_num ,
+    enable_context_window_check ,context_overlap_num ,
+    enable_target_res_check ,target_h_num ,target_w_num ,target_res_mode_radio ,
+    ffmpeg_preset_dropdown ,ffmpeg_quality_slider ,ffmpeg_use_gpu_check ,frame_folder_fps_slider ,
+    save_frames_checkbox ,save_metadata_checkbox ,save_chunks_checkbox ,save_chunk_frames_checkbox ,
+    create_comparison_video_check ,
+    enable_scene_split_check ,scene_split_mode_radio ,scene_min_scene_len_num ,scene_drop_short_check ,scene_merge_last_check ,
+    scene_frame_skip_num ,scene_threshold_num ,scene_min_content_val_num ,scene_frame_window_num ,
+    scene_copy_streams_check ,scene_use_mkvmerge_check ,scene_rate_factor_num ,scene_preset_dropdown ,scene_quiet_ffmpeg_check ,
+    scene_manual_split_type_radio ,scene_manual_split_value_num ,
+
+    enable_fps_decrease ,fps_decrease_mode ,fps_multiplier_preset ,fps_multiplier_custom ,target_fps ,fps_interpolation_method ,
+
+    enable_rife_interpolation ,rife_multiplier ,rife_fp16 ,rife_uhd ,rife_scale ,
+    rife_skip_static ,rife_enable_fps_limit ,rife_max_fps_limit ,
+    rife_apply_to_chunks ,rife_apply_to_scenes ,rife_keep_original ,rife_overwrite_original 
     ]
 
-    if UTIL_COG_VLM_AVAILABLE:
-        click_inputs.extend([cogvlm_quant_radio, cogvlm_unload_radio, auto_caption_then_upscale_check])
-    else:
-        click_inputs.extend([gr.State(None), gr.State(None), gr.State(False)])
-
-    click_inputs.extend([
-        seed_num, random_seed_check,
-        enable_image_upscaler_check, image_upscaler_model_dropdown, image_upscaler_batch_size_slider,
-        enable_face_restoration_check, face_restoration_fidelity_slider, enable_face_colorization_check,
-        face_restoration_when_radio, codeformer_model_dropdown, face_restoration_batch_size_slider,
-        enable_frame_folder_check, input_frames_folder, frame_folder_fps_slider
-    ])
-
     click_outputs_list =[output_video ,status_textbox ,user_prompt ]
-    if UTIL_COG_VLM_AVAILABLE :
+    if app_config .UTIL_COG_VLM_AVAILABLE :
         click_outputs_list .append (caption_status )
+        click_inputs .extend ([cogvlm_quant_radio ,cogvlm_unload_radio ,auto_caption_then_upscale_check ])
     else :
         click_outputs_list .append (gr .State (None ))
+        click_inputs .extend ([gr .State (None ),gr .State (None ),gr .State (False )])
 
-    click_outputs_list .extend ([last_chunk_video ,chunk_status_text, comparison_video])
+    click_inputs .extend ([seed_num ,random_seed_check ])
+    
+    # Add image upscaler parameters
+    click_inputs .extend ([enable_image_upscaler_check ,image_upscaler_model_dropdown ,image_upscaler_batch_size_slider ])
+    
+    # Add face restoration parameters
+    click_inputs .extend ([
+        enable_face_restoration_check ,
+        face_restoration_fidelity_slider ,
+        enable_face_colorization_check ,
+        face_restoration_when_radio ,
+        codeformer_model_dropdown,
+        face_restoration_batch_size_slider 
+    ])
+    
+    # Add frame folder parameters
+    click_inputs .extend ([
+        enable_frame_folder_check ,
+        input_frames_folder,
+        frame_folder_fps_slider
+    ])
 
-    def upscale_wrapper(*args):
-        for result in upscale_director_logic(build_app_config_from_ui(*args)):
-            yield result
+    click_outputs_list .extend ([last_chunk_video ,chunk_status_text ])
+
+    click_outputs_list .append (comparison_video )
 
     upscale_button .click (
-    fn =upscale_wrapper,
+    fn =upscale_director_logic ,
     inputs =click_inputs ,
     outputs =click_outputs_list ,
     show_progress_on =[output_video ]
     )
 
-    if UTIL_COG_VLM_AVAILABLE :
+    if app_config .UTIL_COG_VLM_AVAILABLE :
         def auto_caption_wrapper (vid ,quant_display ,unload_strat ,progress =gr .Progress (track_tqdm =True )):
             caption_text ,caption_stat_msg =util_auto_caption (
             vid ,
             get_quant_value_from_display (quant_display ),
             unload_strat ,
-            APP_CONFIG.paths.cogvlm_model_path ,
+            app_config .COG_VLM_MODEL_PATH ,
             logger =logger ,
             progress =progress 
             )
@@ -2028,7 +1967,7 @@ This helps visualize the quality improvement from upscaling."""
             ffmpeg_use_gpu_check_val =ffmpeg_use_gpu_check_val ,
             seed_num_val =seed_num_val ,
             random_seed_check_val =random_seed_check_val ,
-            output_dir =APP_CONFIG.paths.outputs_dir ,
+            output_dir =app_config .DEFAULT_OUTPUT_DIR ,
             logger =logger ,
             progress =progress 
             )
@@ -2065,50 +2004,109 @@ This helps visualize the quality improvement from upscaling."""
     show_progress_on =[output_video ]
     )
 
-    def process_batch_videos_wrapper (app_config: AppConfig, progress =gr .Progress (track_tqdm =True )):
-        actual_seed_for_batch = app_config.seed.seed
-        if app_config.seed.use_random:
+    def process_batch_videos_wrapper (
+    batch_input_folder_val ,batch_output_folder_val ,
+    user_prompt_val ,pos_prompt_val ,neg_prompt_val ,model_selector_val ,
+    upscale_factor_slider_val ,cfg_slider_val ,steps_slider_val ,solver_mode_radio_val ,
+    max_chunk_len_slider_val ,enable_chunk_optimization_check_val ,vae_chunk_slider_val ,color_fix_dropdown_val ,
+    enable_tiling_check_val ,tile_size_num_val ,tile_overlap_num_val ,
+    enable_context_window_check_val ,context_overlap_num_val ,
+    enable_target_res_check_val ,target_h_num_val ,target_w_num_val ,target_res_mode_radio_val ,
+    ffmpeg_preset_dropdown_val ,ffmpeg_quality_slider_val ,ffmpeg_use_gpu_check_val ,frame_folder_fps_slider_val ,
+    save_frames_checkbox_val ,save_metadata_checkbox_val ,save_chunks_checkbox_val ,save_chunk_frames_checkbox_val ,
+    create_comparison_video_check_val ,
+
+    enable_scene_split_check_val ,scene_split_mode_radio_val ,scene_min_scene_len_num_val ,scene_drop_short_check_val ,scene_merge_last_check_val ,
+    scene_frame_skip_num_val ,scene_threshold_num_val ,scene_min_content_val_num_val ,scene_frame_window_num_val ,
+    scene_copy_streams_check_val ,scene_use_mkvmerge_check_val ,scene_rate_factor_num_val ,scene_preset_dropdown_val ,scene_quiet_ffmpeg_check_val ,
+    scene_manual_split_type_radio_val ,scene_manual_split_value_num_val ,
+
+    enable_fps_decrease_val =False ,fps_decrease_mode_val ="multiplier",fps_multiplier_preset_val ="1/2x (Half FPS)",fps_multiplier_custom_val =0.5 ,target_fps_val =24.0 ,fps_interpolation_method_val ="drop",
+
+    enable_rife_interpolation_val =False ,rife_multiplier_val =2 ,rife_fp16_val =True ,rife_uhd_val =False ,rife_scale_val =1.0 ,
+    rife_skip_static_val =False ,rife_enable_fps_limit_val =False ,rife_max_fps_limit_val =60 ,
+    rife_apply_to_chunks_val =True ,rife_apply_to_scenes_val =True ,rife_keep_original_val =True ,rife_overwrite_original_val =False ,
+
+    batch_skip_existing_val =True ,batch_use_prompt_files_val =True ,batch_save_captions_val =True ,
+    batch_enable_auto_caption_val =False ,cogvlm_quant_radio_val =None ,cogvlm_unload_radio_val =None ,
+    seed_num_val =99 ,random_seed_check_val =False ,
+    
+    # Image upscaler parameters for batch
+    enable_image_upscaler_val =False ,image_upscaler_model_val =None ,image_upscaler_batch_size_val =4 ,
+    
+    # Face restoration parameters for batch
+    enable_face_restoration_val =False ,face_restoration_fidelity_val =0.7 ,enable_face_colorization_val =False ,
+    face_restoration_timing_val ="after_upscale" ,face_restoration_when_val ="after" ,codeformer_model_val =None ,
+    face_restoration_batch_size_val =4 ,
+    
+    # Frame folder parameters for batch
+    enable_batch_frame_folders_val =False ,
+    
+    progress =gr .Progress (track_tqdm =True )
+    ):
+
+        actual_seed_for_batch = seed_num_val
+        if random_seed_check_val:
             actual_seed_for_batch = np.random.randint(0, 2**31)
             logger.info(f"Batch: Random seed checked. Using generated seed: {actual_seed_for_batch}")
-        elif app_config.seed.seed == -1:
+        elif seed_num_val == -1:
             actual_seed_for_batch = np.random.randint(0, 2**31)
             logger.info(f"Batch: Seed input is -1. Using generated seed: {actual_seed_for_batch}")
         else:
+            actual_seed_for_batch = seed_num_val
             logger.info(f"Batch: Using provided seed: {actual_seed_for_batch}")
-        
-        app_config.seed.seed = actual_seed_for_batch
 
         partial_run_upscale_for_batch =partial (core_run_upscale ,
-            logger =logger ,
-            app_config_module=None, # Deprecated
-            metadata_handler_module =metadata_handler ,
-            VideoToVideo_sr_class =VideoToVideo_sr ,
-            setup_seed_func =setup_seed ,
-            EasyDict_class =EasyDict ,
-            preprocess_func =preprocess ,
-            collate_fn_func =collate_fn ,
-            tensor2vid_func =tensor2vid ,
-            ImageSpliterTh_class =ImageSpliterTh ,
-            adain_color_fix_func =adain_color_fix ,
-            wavelet_color_fix_func =wavelet_color_fix
+        logger =logger ,
+        app_config_module =app_config ,
+        metadata_handler_module =metadata_handler ,
+        VideoToVideo_sr_class =VideoToVideo_sr ,
+        setup_seed_func =setup_seed ,
+        EasyDict_class =EasyDict ,
+        preprocess_func =preprocess ,
+        collate_fn_func =collate_fn ,
+        tensor2vid_func =tensor2vid ,
+        ImageSpliterTh_class =ImageSpliterTh ,
+        adain_color_fix_func =adain_color_fix ,
+        wavelet_color_fix_func =wavelet_color_fix ,
+        current_seed =actual_seed_for_batch ,
+        
+        # Image upscaler parameters
+        enable_image_upscaler =enable_image_upscaler_val ,
+        image_upscaler_model =image_upscaler_model_val ,
+        image_upscaler_batch_size =image_upscaler_batch_size_val ,
+        
+        # Face restoration parameters
+        enable_face_restoration =enable_face_restoration_val ,
+        face_restoration_fidelity =face_restoration_fidelity_val ,
+        enable_face_colorization =enable_face_colorization_val ,
+        face_restoration_timing =face_restoration_timing_val ,
+        face_restoration_when =face_restoration_when_val ,
+        codeformer_model =extract_codeformer_model_path_from_dropdown(codeformer_model_val) ,
+        face_restoration_batch_size =face_restoration_batch_size_val 
         )
 
-        actual_batch_input_folder = app_config.batch.input_folder
-        temp_video_conversions = []
+        # Handle frame folder batch processing
+        actual_batch_input_folder = batch_input_folder_val
+        temp_video_conversions = []  # Track temporary videos created from frame folders
         
-        if app_config.batch.enable_frame_folders:
+        if enable_batch_frame_folders_val:
             logger.info("Batch frame folder processing mode enabled")
             
-            frame_folders = util_find_frame_folders_in_directory(app_config.batch.input_folder, logger)
+            # Find all frame folders in input directory
+            frame_folders = util_find_frame_folders_in_directory(batch_input_folder_val, logger)
             
             if not frame_folders:
-                return None, f"❌ No frame folders found in: {app_config.batch.input_folder}"
+                return None, f"❌ No frame folders found in: {batch_input_folder_val}"
             
+            # Create temporary directory for converted videos
+            import tempfile
             temp_batch_dir = tempfile.mkdtemp(prefix="batch_frame_folders_")
             actual_batch_input_folder = temp_batch_dir
             
             logger.info(f"Found {len(frame_folders)} frame folders to convert")
             
+            # Convert each frame folder to video
             for i, frame_folder in enumerate(frame_folders):
                 folder_name = os.path.basename(frame_folder.rstrip(os.sep))
                 temp_video_path = os.path.join(temp_batch_dir, f"{folder_name}.mp4")
@@ -2116,10 +2114,10 @@ This helps visualize the quality improvement from upscaling."""
                 logger.info(f"Converting frame folder {i+1}/{len(frame_folders)}: {folder_name}")
                 
                 success, conv_msg = util_process_frame_folder_to_video(
-                    frame_folder, temp_video_path, fps=app_config.frame_folder.fps,
-                    ffmpeg_preset=app_config.ffmpeg.preset,
-                    ffmpeg_quality_value=app_config.ffmpeg.quality,
-                    ffmpeg_use_gpu=app_config.ffmpeg.use_gpu,
+                    frame_folder, temp_video_path, fps=frame_folder_fps_slider_val,
+                    ffmpeg_preset=ffmpeg_preset_dropdown_val,
+                    ffmpeg_quality_value=ffmpeg_quality_slider_val,
+                    ffmpeg_use_gpu=ffmpeg_use_gpu_check_val,
                     logger=logger
                 )
                 
@@ -2133,186 +2131,110 @@ This helps visualize the quality improvement from upscaling."""
                 return None, f"❌ Failed to convert any frame folders to videos"
             
             logger.info(f"Successfully converted {len(temp_video_conversions)} frame folders to videos")
-            app_config.batch.input_folder = actual_batch_input_folder
 
         return process_batch_videos (
-            app_config=app_config,
-            run_upscale_func=partial_run_upscale_for_batch,
-            logger=logger,
-            progress=progress
-        )
+        actual_batch_input_folder, batch_output_folder_val,
+        user_prompt_val, pos_prompt_val, neg_prompt_val, model_selector_val,
+        upscale_factor_slider_val, cfg_slider_val, steps_slider_val, solver_mode_radio_val,
+        max_chunk_len_slider_val, enable_chunk_optimization_check_val, vae_chunk_slider_val, color_fix_dropdown_val,
+        enable_tiling_check_val, tile_size_num_val, tile_overlap_num_val,
+        enable_context_window_check_val, context_overlap_num_val,
+        enable_target_res_check_val, target_h_num_val, target_w_num_val, target_res_mode_radio_val,
+        ffmpeg_preset_dropdown_val, ffmpeg_quality_slider_val, ffmpeg_use_gpu_check_val,
+        save_frames_checkbox_val, save_metadata_checkbox_val, save_chunks_checkbox_val, save_chunk_frames_checkbox_val,
+        create_comparison_video_check_val,
 
-    def build_batch_app_config_from_ui(*args):
-        # Build AppConfig with all the needed parameters for batch processing
-        (
-            input_video_val, user_prompt_val, pos_prompt_val, neg_prompt_val, model_selector_val,
-            upscale_factor_slider_val, cfg_slider_val, steps_slider_val, solver_mode_radio_val,
-            max_chunk_len_slider_val, enable_chunk_optimization_check_val, vae_chunk_slider_val, color_fix_dropdown_val,
-            enable_tiling_check_val, tile_size_num_val, tile_overlap_num_val,
-            enable_context_window_check_val, context_overlap_num_val,
-            enable_target_res_check_val, target_h_num_val, target_w_num_val, target_res_mode_radio_val,
-            ffmpeg_preset_dropdown_val, ffmpeg_quality_slider_val, ffmpeg_use_gpu_check_val,
-            save_frames_checkbox_val, save_metadata_checkbox_val, save_chunks_checkbox_val, save_chunk_frames_checkbox_val,
-            create_comparison_video_check_val,
-            enable_scene_split_check_val, scene_split_mode_radio_val, scene_min_scene_len_num_val, scene_drop_short_check_val, scene_merge_last_check_val,
-            scene_frame_skip_num_val, scene_threshold_num_val, scene_min_content_val_num_val, scene_frame_window_num_val,
-            scene_copy_streams_check_val, scene_use_mkvmerge_check_val, scene_rate_factor_num_val, scene_preset_dropdown_val, scene_quiet_ffmpeg_check_val,
-            scene_manual_split_type_radio_val, scene_manual_split_value_num_val,
-            enable_fps_decrease_val, fps_decrease_mode_val, fps_multiplier_preset_val, fps_multiplier_custom_val, target_fps_val, fps_interpolation_method_val,
-            enable_rife_interpolation_val, rife_multiplier_val, rife_fp16_val, rife_uhd_val, rife_scale_val,
-            rife_skip_static_val, rife_enable_fps_limit_val, rife_max_fps_limit_val,
-            rife_apply_to_chunks_val, rife_apply_to_scenes_val, rife_keep_original_val, rife_overwrite_original_val,
-            cogvlm_quant_radio_val, cogvlm_unload_radio_val, do_auto_caption_first_val,
-            seed_num_val, random_seed_check_val,
-            enable_image_upscaler_val, image_upscaler_model_val, image_upscaler_batch_size_val,
-            enable_face_restoration_val, face_restoration_fidelity_val, enable_face_colorization_val,
-            face_restoration_when_val, codeformer_model_val, face_restoration_batch_size_val,
-            enable_frame_folder_val, input_frames_folder_val, frame_folder_fps_slider_val,
-            batch_input_folder_val, batch_output_folder_val, enable_batch_frame_folders_val,
-            batch_skip_existing_val, batch_use_prompt_files_val, batch_save_captions_val, batch_enable_auto_caption_val
-        ) = args
+        enable_scene_split_check_val, scene_split_mode_radio_val, scene_min_scene_len_num_val, scene_drop_short_check_val, scene_merge_last_check_val,
+        scene_frame_skip_num_val, scene_threshold_num_val, scene_min_content_val_num_val, scene_frame_window_num_val,
+        scene_copy_streams_check_val, scene_use_mkvmerge_check_val, scene_rate_factor_num_val, scene_preset_dropdown_val, scene_quiet_ffmpeg_check_val,
+        scene_manual_split_type_radio_val, scene_manual_split_value_num_val,
+
+        enable_fps_decrease_val, target_fps_val, fps_interpolation_method_val,
+
+        enable_rife_interpolation_val, rife_multiplier_val, rife_fp16_val, rife_uhd_val, rife_scale_val,
+        rife_skip_static_val, rife_enable_fps_limit_val, rife_max_fps_limit_val,
+        rife_apply_to_chunks_val, rife_apply_to_scenes_val, rife_keep_original_val, rife_overwrite_original_val,
+
+        partial_run_upscale_for_batch,  # run_upscale_func (positional)
+        logger,                         # logger (positional)
+
+        batch_skip_existing_val=batch_skip_existing_val,
+        batch_use_prompt_files_val=batch_use_prompt_files_val,
+        batch_save_captions_val=batch_save_captions_val,
+        batch_enable_auto_caption_val=batch_enable_auto_caption_val,
+        batch_cogvlm_quant_val=get_quant_value_from_display(cogvlm_quant_radio_val) if batch_enable_auto_caption_val else None,
+        batch_cogvlm_unload_val=cogvlm_unload_radio_val if batch_enable_auto_caption_val else 'full',
+
+        current_seed=actual_seed_for_batch,
         
-        config = AppConfig(
-            input_video_path=input_video_val,
-            paths=APP_CONFIG.paths,
-            prompts=PromptConfig(
-                user=user_prompt_val,
-                positive=pos_prompt_val,
-                negative=neg_prompt_val
-            ),
-            star_model=StarModelConfig(
-                model_choice=model_selector_val,
-                cfg_scale=cfg_slider_val,
-                solver_mode=solver_mode_radio_val,
-                steps=steps_slider_val,
-                color_fix_method=color_fix_dropdown_val
-            ),
-            performance=PerformanceConfig(
-                max_chunk_len=max_chunk_len_slider_val,
-                vae_chunk=vae_chunk_slider_val,
-                enable_chunk_optimization=enable_chunk_optimization_check_val
-            ),
-            resolution=ResolutionConfig(
-                enable_target_res=enable_target_res_check_val,
-                target_res_mode=target_res_mode_radio_val,
-                target_h=target_h_num_val,
-                target_w=target_w_num_val,
-                upscale_factor=upscale_factor_slider_val
-            ),
-            context_window=ContextWindowConfig(
-                enable=enable_context_window_check_val,
-                overlap=context_overlap_num_val
-            ),
-            tiling=TilingConfig(
-                enable=enable_tiling_check_val,
-                tile_size=tile_size_num_val,
-                tile_overlap=tile_overlap_num_val
-            ),
-            ffmpeg=FfmpegConfig(
-                use_gpu=ffmpeg_use_gpu_check_val,
-                preset=ffmpeg_preset_dropdown_val,
-                quality=ffmpeg_quality_slider_val
-            ),
-            frame_folder=FrameFolderConfig(
-                enable=enable_frame_folder_val,
-                input_path=input_frames_folder_val,
-                fps=frame_folder_fps_slider_val
-            ),
-            scene_split=SceneSplitConfig(
-                enable=enable_scene_split_check_val,
-                mode=scene_split_mode_radio_val,
-                min_scene_len=scene_min_scene_len_num_val,
-                threshold=scene_threshold_num_val,
-                drop_short=scene_drop_short_check_val,
-                merge_last=scene_merge_last_check_val,
-                frame_skip=scene_frame_skip_num_val,
-                min_content_val=scene_min_content_val_num_val,
-                frame_window=scene_frame_window_num_val,
-                manual_split_type=scene_manual_split_type_radio_val,
-                manual_split_value=scene_manual_split_value_num_val,
-                copy_streams=scene_copy_streams_check_val,
-                use_mkvmerge=scene_use_mkvmerge_check_val,
-                rate_factor=scene_rate_factor_num_val,
-                encoding_preset=scene_preset_dropdown_val,
-                quiet_ffmpeg=scene_quiet_ffmpeg_check_val
-            ),
-            cogvlm=CogVLMConfig(
-                quant_display=cogvlm_quant_radio_val,
-                unload_after_use=cogvlm_unload_radio_val,
-                auto_caption_then_upscale=do_auto_caption_first_val,
-                quant_value=get_quant_value_from_display(cogvlm_quant_radio_val)
-            ),
-            outputs=OutputConfig(
-                save_frames=save_frames_checkbox_val,
-                save_metadata=save_metadata_checkbox_val,
-                save_chunks=save_chunks_checkbox_val,
-                save_chunk_frames=save_chunk_frames_checkbox_val,
-                create_comparison_video=create_comparison_video_check_val
-            ),
-            seed=SeedConfig(
-                seed=seed_num_val,
-                use_random=random_seed_check_val
-            ),
-            rife=RifeConfig(
-                enable=enable_rife_interpolation_val,
-                multiplier=rife_multiplier_val,
-                fp16=rife_fp16_val,
-                uhd=rife_uhd_val,
-                scale=rife_scale_val,
-                skip_static=rife_skip_static_val,
-                enable_fps_limit=rife_enable_fps_limit_val,
-                max_fps_limit=rife_max_fps_limit_val,
-                apply_to_chunks=rife_apply_to_chunks_val,
-                apply_to_scenes=rife_apply_to_scenes_val,
-                keep_original=rife_keep_original_val,
-                overwrite_original=rife_overwrite_original_val
-            ),
-            fps_decrease=FpsDecreaseConfig(
-                enable=enable_fps_decrease_val,
-                mode=fps_decrease_mode_val,
-                multiplier_preset=fps_multiplier_preset_val,
-                multiplier_custom=fps_multiplier_custom_val,
-                target_fps=target_fps_val,
-                interpolation_method=fps_interpolation_method_val
-            ),
-            batch=BatchConfig(
-                input_folder=batch_input_folder_val,
-                output_folder=batch_output_folder_val,
-                skip_existing=batch_skip_existing_val,
-                save_captions=batch_save_captions_val,
-                use_prompt_files=batch_use_prompt_files_val,
-                enable_auto_caption=batch_enable_auto_caption_val,
-                enable_frame_folders=enable_batch_frame_folders_val
-            ),
-            image_upscaler=ImageUpscalerConfig(
-                enable=enable_image_upscaler_val,
-                model=image_upscaler_model_val,
-                batch_size=image_upscaler_batch_size_val
-            ),
-            face_restoration=FaceRestorationConfig(
-                enable=enable_face_restoration_val,
-                fidelity_weight=face_restoration_fidelity_val,
-                enable_colorization=enable_face_colorization_val,
-                when=face_restoration_when_val,
-                model=extract_codeformer_model_path_from_dropdown(codeformer_model_val),
-                batch_size=face_restoration_batch_size_val
-            )
+        # Face restoration parameters for batch processing
+        enable_face_restoration_val=enable_face_restoration_val,
+        face_restoration_fidelity_val=face_restoration_fidelity_val,
+        enable_face_colorization_val=enable_face_colorization_val,
+        face_restoration_timing_val=face_restoration_timing_val,
+        face_restoration_when_val=face_restoration_when_val,
+        codeformer_model_val=codeformer_model_val,
+        face_restoration_batch_size_val=face_restoration_batch_size_val,
+        
+        progress=progress
         )
-        return config
 
-    def batch_wrapper(*args):
-        result = process_batch_videos_wrapper(build_batch_app_config_from_ui(*args))
-        return result
+    batch_process_inputs =[
+    batch_input_folder ,batch_output_folder ,
+    user_prompt ,pos_prompt ,neg_prompt ,model_selector ,
+    upscale_factor_slider ,cfg_slider ,steps_slider ,solver_mode_radio ,
+    max_chunk_len_slider ,enable_chunk_optimization_check ,vae_chunk_slider ,color_fix_dropdown ,
+    enable_tiling_check ,tile_size_num ,tile_overlap_num ,
+    enable_context_window_check ,context_overlap_num ,
+    enable_target_res_check ,target_h_num ,target_w_num ,target_res_mode_radio ,
+    ffmpeg_preset_dropdown ,ffmpeg_quality_slider ,ffmpeg_use_gpu_check ,frame_folder_fps_slider ,
+    save_frames_checkbox ,save_metadata_checkbox ,save_chunks_checkbox ,save_chunk_frames_checkbox ,
+    create_comparison_video_check ,
+    enable_scene_split_check ,scene_split_mode_radio ,scene_min_scene_len_num ,scene_drop_short_check ,scene_merge_last_check ,
+    scene_frame_skip_num ,scene_threshold_num ,scene_min_content_val_num ,scene_frame_window_num ,
+    scene_copy_streams_check ,scene_use_mkvmerge_check ,scene_rate_factor_num ,scene_preset_dropdown ,scene_quiet_ffmpeg_check ,
+    scene_manual_split_type_radio ,scene_manual_split_value_num ,
 
-    # Create batch inputs list that includes batch-specific parameters
-    batch_click_inputs = click_inputs + [
-        batch_input_folder, batch_output_folder, enable_batch_frame_folders,
-        batch_skip_existing, batch_use_prompt_files, batch_save_captions, batch_enable_auto_caption
+    enable_fps_decrease ,fps_decrease_mode ,fps_multiplier_preset ,fps_multiplier_custom ,target_fps ,fps_interpolation_method ,
+
+    enable_rife_interpolation ,rife_multiplier ,rife_fp16 ,rife_uhd ,rife_scale ,
+    rife_skip_static ,rife_enable_fps_limit ,rife_max_fps_limit ,
+    rife_apply_to_chunks ,rife_apply_to_scenes ,rife_keep_original ,rife_overwrite_original ,
+
+    batch_skip_existing ,batch_use_prompt_files ,batch_save_captions ,
+    batch_enable_auto_caption 
     ]
+    
+    if app_config .UTIL_COG_VLM_AVAILABLE :
+        batch_process_inputs .extend ([cogvlm_quant_radio ,cogvlm_unload_radio ])
+    else :
+        batch_process_inputs .extend ([gr .State (None ),gr .State (None )])
+
+    batch_process_inputs .extend ([seed_num ,random_seed_check ])
+    
+    # Add image upscaler parameters to batch processing
+    batch_process_inputs .extend ([enable_image_upscaler_check ,image_upscaler_model_dropdown ,image_upscaler_batch_size_slider ])
+    
+    # Add face restoration parameters to batch processing
+    batch_process_inputs .extend ([
+        enable_face_restoration_check ,
+        face_restoration_fidelity_slider ,
+        enable_face_colorization_check ,
+        gr.State("after_upscale"),  # face_restoration_timing (fixed for batch)
+        face_restoration_when_radio ,
+        codeformer_model_dropdown ,
+        face_restoration_batch_size_slider 
+    ])
+    
+    # Add frame folder parameters to batch processing
+    batch_process_inputs .extend ([
+        enable_batch_frame_folders,
+        frame_folder_fps_slider
+    ])
 
     batch_process_button .click (
-    fn =batch_wrapper,
-    inputs =batch_click_inputs,
+    fn =process_batch_videos_wrapper ,
+    inputs =batch_process_inputs ,
     outputs =[output_video ,status_textbox ],
     show_progress_on =[output_video ]
     )
@@ -2340,18 +2262,25 @@ This helps visualize the quality improvement from upscaling."""
         random_seed_check_val=False,
         progress=gr.Progress(track_tqdm=True)
     ):
+        """
+        Standalone face restoration processing wrapper for Gradio interface.
+        Handles both single video and batch folder processing modes.
+        """
         try:
+            # Import required modules
             from logic.face_restoration_utils import restore_video_frames, scan_codeformer_models
             import os
             import time
             import random
             
+            # Generate seed
             if random_seed_check_val:
                 actual_seed = random.randint(0, 2**32 - 1)
                 logger.info(f"Generated random seed: {actual_seed}")
             else:
                 actual_seed = seed_num_val if seed_num_val >= 0 else 99
             
+            # Validate inputs
             if not enable_face_restoration_val:
                 return None, None, "⚠️ Face restoration is disabled. Please enable it to process videos.", "❌ Processing disabled"
             
@@ -2359,9 +2288,9 @@ This helps visualize the quality improvement from upscaling."""
                 if not input_video_val:
                     return None, None, "⚠️ Please upload a video file to process.", "❌ No input video"
                 input_path = input_video_val
-                output_dir = APP_CONFIG.paths.outputs_dir
+                output_dir = app_config.DEFAULT_OUTPUT_DIR
                 processing_mode = "single"
-            else:
+            else:  # Batch Folder
                 if not batch_input_folder_val or not batch_output_folder_val:
                     return None, None, "⚠️ Please specify both input and output folder paths for batch processing.", "❌ Missing folder paths"
                 if not os.path.exists(batch_input_folder_val):
@@ -2370,15 +2299,20 @@ This helps visualize the quality improvement from upscaling."""
                 output_dir = batch_output_folder_val
                 processing_mode = "batch"
             
+            # Extract model path from dropdown
             actual_model_path = extract_codeformer_model_path_from_dropdown(codeformer_model_val)
             
+            # Progress tracking
             progress(0.0, "🎭 Starting face restoration processing...")
             start_time = time.time()
             
+            # Process video(s)
             if processing_mode == "single":
+                # Single video processing
                 progress(0.1, "📹 Processing single video...")
                 
                 def progress_callback(current_progress, status_msg):
+                    # Map progress to 0.1-0.9 range for processing
                     mapped_progress = 0.1 + (current_progress * 0.8)
                     progress(mapped_progress, f"🎭 {status_msg}")
                 
@@ -2403,6 +2337,7 @@ This helps visualize the quality improvement from upscaling."""
                     output_video = result['output_video_path']
                     comparison_video = result.get('comparison_video_path', None)
                     
+                    # Processing statistics
                     processing_time = time.time() - start_time
                     stats_msg = f"""📊 Processing Complete!
 ⏱️ Total Time: {processing_time:.1f} seconds
@@ -2417,9 +2352,10 @@ This helps visualize the quality improvement from upscaling."""
                 else:
                     return None, None, f"❌ Processing failed: {result['message']}", "❌ Processing failed"
             
-            else:
+            else:  # Batch processing
                 progress(0.1, "📁 Starting batch face restoration...")
                 
+                # Find video files in input folder
                 video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv']
                 video_files = []
                 for file in os.listdir(input_path):
@@ -2429,6 +2365,7 @@ This helps visualize the quality improvement from upscaling."""
                 if not video_files:
                     return None, None, f"⚠️ No video files found in input folder: {input_path}", "❌ No videos found"
                 
+                # Process each video
                 processed_count = 0
                 failed_count = 0
                 total_files = len(video_files)
@@ -2441,6 +2378,7 @@ This helps visualize the quality improvement from upscaling."""
                     progress(base_progress, f"🎭 Processing {video_name} ({i+1}/{total_files})...")
                     
                     def batch_progress_callback(current_progress, status_msg):
+                        # Map individual file progress within the overall batch progress
                         file_progress_range = 0.8 / total_files
                         mapped_progress = base_progress + (current_progress * file_progress_range)
                         progress(mapped_progress, f"🎭 [{i+1}/{total_files}] {video_name}: {status_msg}")
@@ -2469,6 +2407,7 @@ This helps visualize the quality improvement from upscaling."""
                         failed_count += 1
                         logger.error(f"Failed to process {video_name}: {result['message']}")
                 
+                # Batch processing statistics
                 processing_time = time.time() - start_time
                 stats_msg = f"""📊 Batch Processing Complete!
 ⏱️ Total Time: {processing_time:.1f} seconds
@@ -2523,7 +2462,7 @@ This helps visualize the quality improvement from upscaling."""
             ffmpeg_preset =ffmpeg_preset_dropdown_val ,
             ffmpeg_quality =ffmpeg_quality_slider_val ,
             ffmpeg_use_gpu =ffmpeg_use_gpu_check_val ,
-            output_dir =APP_CONFIG.paths.outputs_dir ,
+            output_dir =app_config .DEFAULT_OUTPUT_DIR ,
             seed_value =current_seed ,
             logger =logger ,
             progress =progress 
@@ -2685,16 +2624,20 @@ This helps visualize the quality improvement from upscaling."""
     )
 
     def display_video_info(video_path):
+        """Display video information when a video is uploaded."""
         if video_path is None:
             return ""
         
         try:
+            # Get video information
             video_info = util_get_video_info(video_path, logger)
             
             if video_info:
+                # Format the message
                 filename = os.path.basename(video_path) if video_path else None
                 info_message = util_format_video_info_message(video_info, filename)
                 
+                # Log the information
                 logger.info(f"Video uploaded: {filename}")
                 logger.info(f"Video details: {video_info['frames']} frames, {video_info['fps']:.2f} FPS, {video_info['duration']:.2f}s, {video_info['width']}x{video_info['height']}")
                 
@@ -2709,6 +2652,7 @@ This helps visualize the quality improvement from upscaling."""
             logger.error(f"Exception in display_video_info: {e}")
             return error_msg
 
+    # Add video info display when video is uploaded
     input_video.change(
         fn=display_video_info,
         inputs=input_video,
@@ -2722,6 +2666,9 @@ This helps visualize the quality improvement from upscaling."""
         outputs =fps_calculation_info 
         )
 
+    # NOTE: Duplicate Temp folder cleanup button definition removed. The button is already created earlier under the Upscale Video section.
+
+    # --- Button callback
     def clear_temp_folder_wrapper(progress: gr.Progress = gr.Progress(track_tqdm=True)):
         logger.info("Temp cleanup requested via UI button")
         before_bytes = util_calculate_temp_folder_size(logger)
@@ -2742,26 +2689,31 @@ This helps visualize the quality improvement from upscaling."""
 
         return gr.update(value=status_message), gr.update(value=f"Delete Temp Folder ({after_label})")
 
+    # Attach callback to the original button (defined earlier)
     delete_temp_button.click(
         fn=clear_temp_folder_wrapper,
         inputs=[],
         outputs=[status_textbox, delete_temp_button],
         show_progress_on=[status_textbox]
     )
+
+    # ==================== VIDEO EDITOR EVENT HANDLERS ====================
     
     def update_cutting_mode_controls(cutting_mode_val):
+        """Show/hide inputs based on cutting mode selection."""
         if cutting_mode_val == "time_ranges":
             return [
-                gr.update(visible=True),
-                gr.update(visible=False)
+                gr.update(visible=True),   # time_range_controls
+                gr.update(visible=False)   # frame_range_controls
             ]
         else:
             return [
-                gr.update(visible=False),
-                gr.update(visible=True)
+                gr.update(visible=False),  # time_range_controls
+                gr.update(visible=True)    # frame_range_controls
             ]
     
     def display_detailed_video_info_edit(video_path):
+        """Display detailed video information for the editor tab."""
         if video_path is None:
             return "📹 Upload a video to see detailed information"
         
@@ -2782,6 +2734,7 @@ This helps visualize the quality improvement from upscaling."""
             return error_msg
     
     def validate_and_analyze_cuts(ranges_input, cutting_mode_val, video_path):
+        """Validate cut ranges and provide analysis."""
         if video_path is None:
             return "✏️ Upload a video first", "📊 Upload video and enter ranges to see time estimate"
         
@@ -2789,10 +2742,12 @@ This helps visualize the quality improvement from upscaling."""
             return "✏️ Enter ranges above to see cut analysis", "📊 Upload video and enter ranges to see time estimate"
         
         try:
+            # Get video info
             video_info = util_get_video_detailed_info(video_path, logger)
             if not video_info:
                 return "❌ Could not read video information", "❌ Cannot estimate without video info"
             
+            # Parse ranges based on mode
             if cutting_mode_val == "time_ranges":
                 duration = video_info.get("accurate_duration", video_info.get("duration", 0))
                 ranges = util_parse_time_ranges(ranges_input, duration)
@@ -2804,14 +2759,17 @@ This helps visualize the quality improvement from upscaling."""
                 max_value = total_frames
                 range_type = "frame"
             
+            # Validate ranges
             validation_result = util_validate_ranges(ranges, max_value, range_type)
             
+            # Get FFmpeg settings for time estimate
             ffmpeg_settings = {
                 "use_gpu": ffmpeg_use_gpu_check.value if 'ffmpeg_use_gpu_check' in globals() else False,
                 "preset": ffmpeg_preset_dropdown.value if 'ffmpeg_preset_dropdown' in globals() else "medium",
                 "quality": ffmpeg_quality_slider.value if 'ffmpeg_quality_slider' in globals() else 23
             }
             
+            # Estimate processing time
             time_estimate = util_estimate_processing_time(ranges, video_info, ffmpeg_settings)
             
             return validation_result["analysis_text"], time_estimate.get("time_estimate_text", "Could not estimate time")
@@ -2823,13 +2781,15 @@ This helps visualize the quality improvement from upscaling."""
             return f"❌ Error: {str(e)}", "❌ Error during analysis"
     
     def get_current_ffmpeg_settings():
+        """Extract current FFmpeg settings from main app state."""
         try:
             return {
                 "use_gpu": ffmpeg_use_gpu_check.value if 'ffmpeg_use_gpu_check' in globals() else False,
-                "preset": ffmpeg_preset_dropdown.value if 'ffmpeg_preset_dropdown' in globals() else "medium", 
+                "preset": ffmpeg_preset_dropdown.value if 'ffmpeg_preset_dropdown' in globals() else "medium",
                 "quality": ffmpeg_quality_slider.value if 'ffmpeg_quality_slider' in globals() else 23
             }
         except:
+            # Fallback settings
             return {
                 "use_gpu": False,
                 "preset": "medium", 
@@ -2841,6 +2801,7 @@ This helps visualize the quality improvement from upscaling."""
         preview_first_segment_val, seed_num_val=99, random_seed_check_val=False, 
         progress=gr.Progress(track_tqdm=True)
     ):
+        """Main function to process video cuts."""
         if input_video_val is None:
             return None, None, "❌ Please upload a video first"
         
@@ -2850,10 +2811,12 @@ This helps visualize the quality improvement from upscaling."""
         try:
             progress(0, desc="Analyzing video and ranges...")
             
+            # Get video info
             video_info = util_get_video_detailed_info(input_video_val, logger)
             if not video_info:
                 return None, None, "❌ Could not read video information"
             
+            # Parse ranges
             if cutting_mode_val == "time_ranges":
                 duration = video_info.get("accurate_duration", video_info.get("duration", 0))
                 ranges = util_parse_time_ranges(ranges_input, duration)
@@ -2865,21 +2828,25 @@ This helps visualize the quality improvement from upscaling."""
                 range_type = "frame"
                 max_value = total_frames
             
+            # Validate ranges
             validation_result = util_validate_ranges(ranges, max_value, range_type)
             logger.info(f"Video editor: Validated {len(ranges)} ranges: {validation_result['analysis_text']}")
             
+            # Get FFmpeg settings
             ffmpeg_settings = get_current_ffmpeg_settings()
             
+            # Adjust settings based on precision mode
             if precise_cutting_mode_val == "fast":
                 ffmpeg_settings["stream_copy"] = True
             
             progress(0.1, desc="Starting video cutting...")
             
+            # Cut video segments
             result = util_cut_video_segments(
                 video_path=input_video_val,
                 ranges=ranges,
                 range_type=range_type,
-                output_dir=APP_CONFIG.paths.outputs_dir,
+                output_dir=app_config.DEFAULT_OUTPUT_DIR,
                 ffmpeg_settings=ffmpeg_settings,
                 logger=logger,
                 progress=progress,
@@ -2889,6 +2856,7 @@ This helps visualize the quality improvement from upscaling."""
             if not result["success"]:
                 return None, None, f"❌ Cutting failed: {result.get('error', 'Unknown error')}"
             
+            # Create preview if requested
             preview_path = None
             if preview_first_segment_val and ranges:
                 progress(0.95, desc="Creating preview...")
@@ -2896,13 +2864,14 @@ This helps visualize the quality improvement from upscaling."""
                     video_path=input_video_val,
                     first_range=ranges[0],
                     range_type=range_type,
-                    output_dir=APP_CONFIG.paths.outputs_dir,
+                    output_dir=app_config.DEFAULT_OUTPUT_DIR,
                     ffmpeg_settings=ffmpeg_settings,
                     logger=logger
                 )
             
             progress(1.0, desc="Video cutting completed!")
             
+            # Generate status message
             status_msg = f"""✅ Video cutting completed successfully!
             
 📁 Output: {result['final_output']}
@@ -2928,6 +2897,8 @@ This helps visualize the quality improvement from upscaling."""
         preview_first_segment_val, seed_num_val=99, random_seed_check_val=False, 
         progress=gr.Progress(track_tqdm=True)
     ):
+        """Cut video and prepare for upscaling."""
+        # First cut the video
         final_output, preview_path, status_msg = cut_video_wrapper(
             input_video_val, ranges_input, cutting_mode_val, precise_cutting_mode_val,
             preview_first_segment_val, seed_num_val, random_seed_check_val, progress
@@ -2936,6 +2907,7 @@ This helps visualize the quality improvement from upscaling."""
         if final_output is None:
             return None, None, status_msg, gr.update(), gr.update(visible=False)
         
+        # Enhanced integration message
         integration_msg = f"""🎬✅ Video cutting completed successfully!
 
 📁 Cut Video: {os.path.basename(final_output)}
@@ -2951,12 +2923,13 @@ This helps visualize the quality improvement from upscaling."""
         
         logger.info(f"Video editor: Cut completed, updating main tab input: {final_output}")
         
+        # Return updates for video editor tab + main tab integration
         return (
-            final_output,
-            preview_path,
-            integration_msg,
-            gr.update(value=final_output),
-            gr.update(visible=True, value=f"✅ Cut video loaded from Edit Videos tab: {os.path.basename(final_output)}")
+            final_output,              # output_video_edit
+            preview_path,              # preview_video_edit  
+            integration_msg,           # edit_status_textbox
+            gr.update(value=final_output),  # Update main tab input_video
+            gr.update(visible=True, value=f"✅ Cut video loaded from Edit Videos tab: {os.path.basename(final_output)}")  # integration_status
         )
     
     def enhanced_cut_and_move_to_upscale(
@@ -2964,6 +2937,8 @@ This helps visualize the quality improvement from upscaling."""
         precise_cutting_mode_val, preview_first_segment_val, seed_num_val=99, 
         random_seed_check_val=False, progress=gr.Progress(track_tqdm=True)
     ):
+        """Enhanced wrapper for cut and move to upscale with proper main tab integration."""
+        # Select the appropriate ranges input based on mode
         ranges_input = time_ranges_val if cutting_mode_val == "time_ranges" else frame_ranges_val
         
         return cut_and_move_to_upscale(
@@ -2972,6 +2947,7 @@ This helps visualize the quality improvement from upscaling."""
             seed_num_val, random_seed_check_val, progress
         )
 
+    # Video Editor Event Handlers
     cutting_mode.change(
         fn=update_cutting_mode_controls,
         inputs=cutting_mode,
@@ -2984,7 +2960,9 @@ This helps visualize the quality improvement from upscaling."""
         outputs=video_info_display
     )
     
+    # Real-time validation for range inputs (handles both time and frame ranges)
     def validate_ranges_wrapper(time_ranges_val, frame_ranges_val, cutting_mode_val, video_path):
+        """Wrapper to handle validation for both input types."""
         ranges_input = time_ranges_val if cutting_mode_val == "time_ranges" else frame_ranges_val
         return validate_and_analyze_cuts(ranges_input, cutting_mode_val, video_path)
     
@@ -2995,6 +2973,7 @@ This helps visualize the quality improvement from upscaling."""
             outputs=[cut_info_display, processing_estimate]
         )
     
+    # Enhanced button actions with proper integration
     cut_and_save_btn.click(
         fn=lambda input_video_val, time_ranges_val, frame_ranges_val, cutting_mode_val, precise_cutting_mode_val, preview_first_segment_val, seed_num_val, random_seed_check_val: cut_video_wrapper(
             input_video_val, 
@@ -3023,10 +3002,13 @@ This helps visualize the quality improvement from upscaling."""
         show_progress_on=[output_video_edit]
     )
     
+    # Integration status handler - show/hide integration status when main input video changes
     def handle_main_input_change(video_path):
+        """Handle changes to main input video - hide integration status if user uploads new video"""
         if video_path is None:
             return gr.update(visible=False, value="")
         else:
+            # Check if this is from integration (video path contains logic/)
             if video_path and "logic/" in video_path:
                 return gr.update(visible=True, value=f"✅ Cut video from Edit Videos tab: {os.path.basename(video_path)}")
             else:
@@ -3038,6 +3020,7 @@ This helps visualize the quality improvement from upscaling."""
         outputs=integration_status
     )
     
+    # Face Restoration Tab Event Handlers
     face_restoration_process_btn.click(
         fn=standalone_face_restoration_wrapper,
         inputs=[
@@ -3066,11 +3049,11 @@ This helps visualize the quality improvement from upscaling."""
     )
 
 if __name__ =="__main__":
-    os .makedirs (APP_CONFIG.paths.outputs_dir ,exist_ok =True )
-    logger .info (f"Gradio App Starting. Default output to: {os.path.abspath(APP_CONFIG.paths.outputs_dir)}")
-    logger .info (f"STAR Models expected at: {APP_CONFIG.paths.light_deg_model_path}, {APP_CONFIG.paths.heavy_deg_model_path}")
-    if UTIL_COG_VLM_AVAILABLE :
-        logger .info (f"CogVLM2 Model expected at: {APP_CONFIG.paths.cogvlm_model_path}")
+    os .makedirs (app_config .DEFAULT_OUTPUT_DIR ,exist_ok =True )
+    logger .info (f"Gradio App Starting. Default output to: {os.path.abspath(app_config.DEFAULT_OUTPUT_DIR)}")
+    logger .info (f"STAR Models expected at: {app_config.LIGHT_DEG_MODEL_PATH}, {app_config.HEAVY_DEG_MODEL_PATH}")
+    if app_config .UTIL_COG_VLM_AVAILABLE :
+        logger .info (f"CogVLM2 Model expected at: {app_config.COG_VLM_MODEL_PATH}")
 
     available_gpus_main =util_get_available_gpus ()
     if available_gpus_main :
@@ -3082,7 +3065,7 @@ if __name__ =="__main__":
         logger .info ("No CUDA GPUs detected, attempting to set to 'Auto' (CPU or default).")
         util_set_gpu_device ("Auto",logger =logger )
 
-    effective_allowed_paths =util_get_available_drives (APP_CONFIG.paths.outputs_dir ,base_path ,logger =logger )
+    effective_allowed_paths =util_get_available_drives (app_config .DEFAULT_OUTPUT_DIR ,base_path ,logger =logger )
 
     demo .queue ().launch (
     debug =True ,
