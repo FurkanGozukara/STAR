@@ -103,6 +103,9 @@ def run_upscale (
     progress =gr .Progress (track_tqdm =True ),
     current_seed =99 # Added current_seed parameter with a default
 ):
+    # Check for cancellation at the very start of the upscaling process
+    cancellation_manager.check_cancel()
+    
     if not input_video_path or not os .path .exists (input_video_path ):
         raise gr .Error ("Please select a valid input video file.")
 
@@ -113,6 +116,9 @@ def run_upscale (
     setup_seed_func (current_seed) # Use the passed seed
     overall_process_start_time =time .time ()
     logger .info ("Overall upscaling process started.")
+
+    # Check for cancellation after initial setup
+    cancellation_manager.check_cancel()
 
     current_overall_progress =0.0
 
@@ -199,6 +205,9 @@ def run_upscale (
         else: # no stages
              pass
 
+    # Check for cancellation after metadata setup
+    cancellation_manager.check_cancel()
+
     if is_batch_mode and batch_output_dir and original_filename :
         base_output_filename_no_ext ,output_video_path ,batch_main_dir =util_get_batch_filename (batch_output_dir ,original_filename )
         main_output_dir =batch_main_dir
@@ -251,6 +260,9 @@ def run_upscale (
     current_input_video_for_frames =input_video_path
     downscaled_temp_video =None
     status_log =["Process started..."]
+
+    # Check for cancellation after directory setup
+    cancellation_manager.check_cancel()
 
     def save_chunk_input_frames(chunk_idx, chunk_start_frame, chunk_end_frame, frame_files, input_frames_dir, chunk_frames_save_path, logger, chunk_type="", total_chunks=0):
         """Save input frames for a specific chunk for debugging purposes"""
@@ -1902,6 +1914,12 @@ def run_upscale (
 
         yield final_return_path ,"\n".join (status_log ),last_chunk_video_path ,"Processing complete!",None
 
+    except CancelledError as e_cancel:
+        logger.info("Upscaling process cancelled by user")
+        status_log.append("⚠️ Process cancelled by user")
+        current_overall_progress = min(current_overall_progress + 0.01, 1.0)
+        progress(current_overall_progress, desc="Process cancelled by user")
+        yield None, "\n".join(status_log), last_chunk_video_path, "Process cancelled by user", None
     except gr .Error as e :
         logger .error (f"A Gradio UI Error occurred: {e}",exc_info =True )
         status_log .append (f"Error: {e}")

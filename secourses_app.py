@@ -1697,21 +1697,28 @@ This helps visualize the quality improvement from upscaling."""
             gr .update (value =current_comparison_video_val ))
 
             try :
+                # Check for cancellation before auto-captioning
+                cancellation_manager.check_cancel()
+                
                 caption_text ,caption_stat_msg =util_auto_caption (
                 app_config.input_video_path ,app_config.cogvlm.quant_value ,app_config.cogvlm.unload_after_use ,
                 app_config.paths.cogvlm_model_path ,logger =logger ,progress =progress 
                 )
+                
+                # Check for cancellation after auto-captioning
+                cancellation_manager.check_cancel()
+                
                 log_accumulator_director .append (f"Auto-caption status: {caption_stat_msg}")
 
-                if not caption_text .startswith ("Error:"):
+                if not caption_text .startswith ("Error:") and not caption_text.startswith("Caption generation cancelled"):
                     current_user_prompt_val =caption_text 
                     app_config.prompts.user = caption_text
                     auto_caption_completed_successfully =True 
                     log_accumulator_director .append (f"Using generated caption as prompt: '{caption_text[:50]}...'")
                     logger .info (f"Auto-caption successful. Updated current_user_prompt_val to: '{current_user_prompt_val[:100]}...'")
                 else :
-                    log_accumulator_director .append ("Caption generation failed. Using original prompt.")
-                    logger .warning (f"Auto-caption failed. Keeping original prompt: '{current_user_prompt_val[:100]}...'")
+                    log_accumulator_director .append ("Caption generation failed or was cancelled. Using original prompt.")
+                    logger .warning (f"Auto-caption failed or cancelled. Keeping original prompt: '{current_user_prompt_val[:100]}...'")
 
                 current_status_text_val ="\n".join (log_accumulator_director )
                 if UTIL_COG_VLM_AVAILABLE :
@@ -1728,6 +1735,19 @@ This helps visualize the quality improvement from upscaling."""
                 if UTIL_COG_VLM_AVAILABLE :
                     current_caption_status_visible_val =False 
 
+            except CancelledError as e_cancel:
+                logger.info("Auto-captioning cancelled by user - stopping process")
+                log_accumulator_director.append("⚠️ Process cancelled by user during auto-captioning")
+                current_status_text_val = "\n".join(log_accumulator_director)
+                if UTIL_COG_VLM_AVAILABLE:
+                    current_caption_status_text_val = "Auto-captioning cancelled by user"
+                    current_caption_status_visible_val = False
+                yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val),
+                       gr.update(value=current_user_prompt_val),
+                       gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val),
+                       gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val),
+                       gr.update(value=current_comparison_video_val))
+                return
             except Exception as e_ac :
                 logger .error (f"Exception during auto-caption call or its setup: {e_ac}",exc_info =True )
                 log_accumulator_director .append (f"Error during auto-caption pre-step: {e_ac}")
@@ -1775,14 +1795,20 @@ This helps visualize the quality improvement from upscaling."""
         elif app_config.cogvlm.auto_caption_then_upscale and not UTIL_COG_VLM_AVAILABLE :
             msg ="Auto-captioning requested but CogVLM2 is not available. Using original prompt."
             logger .warning (msg )
-            log_accumulator_director .append (msg )
-            current_status_text_val ="\n".join (log_accumulator_director )
 
-            yield (gr .update (value =current_output_video_val ),gr .update (value =current_status_text_val ),
-            gr .update (value =current_user_prompt_val ),
-            gr .update (value =current_caption_status_text_val ,visible =current_caption_status_visible_val ),
-            gr .update (value =current_last_chunk_video_val ),gr .update (value =current_chunk_status_text_val ),
-            gr .update (value =current_comparison_video_val ))
+        # Check for cancellation before proceeding to the main upscaling step
+        try:
+            cancellation_manager.check_cancel()
+        except CancelledError:
+            logger.info("Process cancelled before main upscaling - stopping")
+            log_accumulator_director.append("⚠️ Process cancelled by user")
+            current_status_text_val = "\n".join(log_accumulator_director)
+            yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val),
+                   gr.update(value=current_user_prompt_val),
+                   gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val),
+                   gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val),
+                   gr.update(value=current_comparison_video_val))
+            return
 
         actual_seed_to_use =app_config.seed.seed 
         if app_config.seed.use_random :

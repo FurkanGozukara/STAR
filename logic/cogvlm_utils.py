@@ -7,6 +7,7 @@ import numpy as np
 import gradio as gr
 import logging
 from .gpu_utils import get_gpu_device
+from .cancellation_manager import cancellation_manager, CancelledError
 
 # CogVLM availability flags
 COG_VLM_AVAILABLE = False
@@ -35,6 +36,9 @@ def load_cogvlm_model(quantization, device, cog_vlm_model_path, logger=None):
     if logger:
         logger.info(f"Attempting to load CogVLM2 model with quantization: {quantization} on device: {device}")
 
+    # Check for cancellation before starting model loading
+    cancellation_manager.check_cancel()
+
     with cogvlm_lock:
         if cogvlm_model_state["model"] is not None and cogvlm_model_state["quant"] == quantization and cogvlm_model_state["device"] == device:
             if logger:
@@ -45,10 +49,16 @@ def load_cogvlm_model(quantization, device, cog_vlm_model_path, logger=None):
                 logger.info("Different CogVLM2 model/settings currently loaded, unloading before loading new one.")
             unload_cogvlm_model('full', logger)
 
+        # Check for cancellation after unloading
+        cancellation_manager.check_cancel()
+
         try:
             if logger:
                 logger.info(f"Loading tokenizer from: {cog_vlm_model_path}")
             tokenizer = AutoTokenizer.from_pretrained(cog_vlm_model_path, trust_remote_code=True)
+
+            # Check for cancellation after tokenizer loading
+            cancellation_manager.check_cancel()
 
             if logger:
                 logger.info("Tokenizer loaded successfully.")
@@ -75,6 +85,9 @@ def load_cogvlm_model(quantization, device, cog_vlm_model_path, logger=None):
             if logger:
                 logger.info(f"Preparing to load model from: {cog_vlm_model_path} with quant: {quantization}, dtype: {model_dtype}, device: {device}, device_map: {current_device_map}, low_cpu_mem: {effective_low_cpu_mem_usage}")
 
+            # Check for cancellation before model loading (this is the longest operation)  
+            cancellation_manager.check_cancel()
+
             model = AutoModelForCausalLM.from_pretrained(
                 cog_vlm_model_path,
                 torch_dtype=model_dtype if device == 'cuda' else torch.float32,
@@ -83,6 +96,9 @@ def load_cogvlm_model(quantization, device, cog_vlm_model_path, logger=None):
                 low_cpu_mem_usage=effective_low_cpu_mem_usage,
                 device_map=current_device_map
             )
+
+            # Check for cancellation after model loading
+            cancellation_manager.check_cancel()
 
             if not bnb_config and current_device_map is None:
                 if logger:
@@ -120,6 +136,21 @@ def load_cogvlm_model(quantization, device, cog_vlm_model_path, logger=None):
             if logger:
                 logger.info(f"CogVLM2 model loaded (Quant: {quantization}, Requested Device: {device}, Final Device(s): {final_device_str}, Dtype: {final_dtype_str}).")
             return model, tokenizer
+        except CancelledError:
+            # Handle cancellation gracefully during model loading
+            if logger:
+                logger.info("CogVLM2 model loading cancelled by user.")
+            # Clean up partial state
+            _model_ref = cogvlm_model_state.pop("model", None)
+            _tokenizer_ref = cogvlm_model_state.pop("tokenizer", None)
+            if _model_ref:
+                del _model_ref
+            if _tokenizer_ref:
+                del _tokenizer_ref
+            cogvlm_model_state.update({"model": None, "tokenizer": None, "device": None, "quant": None})
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            raise  # Re-raise the CancelledError
         except Exception as e:
             if logger:
                 logger.error(f"Failed to load CogVLM2 model from path: {cog_vlm_model_path}")
@@ -207,6 +238,9 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
     if not video_path or not os.path.exists(video_path):
         raise gr.Error("Please provide a valid video file for captioning.")
 
+    # Check for cancellation at the start
+    cancellation_manager.check_cancel()
+
     cogvlm_device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     if quantization in [4, 8] and cogvlm_device == 'cpu':
@@ -223,6 +257,9 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
     try:
         progress(0.1, desc="Loading CogVLM2 for captioning...")
         local_model_ref, local_tokenizer_ref = load_cogvlm_model(quantization, cogvlm_device, cog_vlm_model_path, logger)
+
+        # Check for cancellation after model loading
+        cancellation_manager.check_cancel()
 
         model_compute_device = cogvlm_device
         model_actual_dtype = torch.float32
@@ -253,6 +290,9 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
             logger.info(f"CogVLM2 for captioning. Inputs will target device: {model_compute_device}, dtype: {model_actual_dtype}")
 
         progress(0.3, desc="Preparing video for CogVLM2...")
+        # Check for cancellation before video processing
+        cancellation_manager.check_cancel()
+        
         bridge.set_bridge('torch')
         with open(video_path, 'rb') as f:
             video_bytes = f.read()
@@ -263,6 +303,9 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
 
         if total_frames_decord == 0:
             raise gr.Error("Video has no frames or could not be read by decord.")
+
+        # Check for cancellation after video loading
+        cancellation_manager.check_cancel()
 
         timestamps = decord_vr.get_frame_timestamp(np.arange(total_frames_decord))
         timestamps = [ts[0] for ts in timestamps]
@@ -300,6 +343,10 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
 
         if logger:
             logger.info(f"CogVLM2 using frame indices: {frame_id_list}")
+        
+        # Check for cancellation before frame extraction
+        cancellation_manager.check_cancel()
+        
         video_data_cog = decord_vr.get_batch(frame_id_list).permute(3, 0, 1, 2)
 
         query = "Please describe this video in detail."
@@ -317,6 +364,9 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
         gen_kwargs = {"max_new_tokens": 256, "pad_token_id": local_tokenizer_ref.eos_token_id or 128002, "top_k": 5, "do_sample": True, "top_p": 0.8, "temperature": 0.8}
 
         progress(0.6, desc="Generating caption with CogVLM2...")
+        # Check for cancellation before generation
+        cancellation_manager.check_cancel()
+        
         with torch.no_grad():
             outputs_tensor = local_model_ref.generate(**inputs_on_device, **gen_kwargs)
         outputs_tensor = outputs_tensor[:, inputs_on_device['input_ids'].shape[1]:]
@@ -325,6 +375,11 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
             logger.info(f"Generated Caption: {caption}")
         progress(0.9, desc="Caption generated.")
 
+    except CancelledError:
+        if logger:
+            logger.info("CogVLM2 caption generation cancelled by user.")
+        caption = "Caption generation cancelled by user."
+        # Clean up will happen in finally block
     except Exception as e:
         if logger:
             logger.error(f"Error during auto-captioning: {e}", exc_info=True)
@@ -346,4 +401,4 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
             del local_tokenizer_ref
 
         unload_cogvlm_model(unload_strategy, logger)
-    return caption, f"Captioning status: {'Success' if not caption.startswith('Error') else caption}" 
+    return caption, f"Captioning status: {'Success' if not caption.startswith('Error') and not caption.startswith('Caption generation cancelled') else caption}" 

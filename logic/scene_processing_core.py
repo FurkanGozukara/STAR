@@ -10,6 +10,7 @@ import cv2
 import torch
 import numpy as np
 import gc # Added for garbage collection
+from .cancellation_manager import cancellation_manager, CancelledError
 from .face_restoration_utils import (
     setup_codeformer_environment,
     restore_frames_batch_true,
@@ -140,11 +141,18 @@ def process_single_scene(
     model_device = None # Initialize for later use
     
     try:
+        # Check for cancellation at the start of scene processing
+        cancellation_manager.check_cancel()
+        
         # Only load STAR model if not using image upscaler
         if not enable_image_upscaler:
             # Model loading moved inside
             if logger: logger.info(f"Scene {scene_index + 1}: Initializing STAR model for this scene.")
             model_load_start_time = time.time()
+            
+            # Check for cancellation before model loading
+            cancellation_manager.check_cancel()
+            
             # Use the passed app_config_module_param and util_get_gpu_device_param
             # Ensure app_config_module_param has the necessary attributes like LIGHT_DEG_MODEL_PATH etc.
             # Determine model_file_path based on a passed parameter or a heuristic if not directly available
@@ -175,7 +183,15 @@ def process_single_scene(
             
             # Use the passed util_get_gpu_device_param
             model_device = torch.device(util_get_gpu_device_param(logger=logger)) if torch.cuda.is_available() else torch.device('cpu')
+            
+            # Check for cancellation before loading the STAR model
+            cancellation_manager.check_cancel()
+            
             star_model_instance = VideoToVideo_sr_class(model_cfg, device=model_device)
+            
+            # Check for cancellation after model loading
+            cancellation_manager.check_cancel()
+            
             if logger: logger.info(f"Scene {scene_index + 1}: STAR model loaded on {model_device}. Load time: {format_time(time.time() - model_load_start_time)}")
         else:
             if logger: logger.info(f"Scene {scene_index + 1}: Skipping STAR model loading (using image upscaler)")
@@ -1104,6 +1120,9 @@ def process_single_scene(
 
         yield "scene_complete", final_scene_video, scene_frame_count, scene_fps, generated_scene_caption
 
+    except CancelledError as e_cancel:
+        logger.info(f"Scene {scene_index + 1} processing cancelled by user")
+        yield "error", "Scene processing cancelled by user", None, None, None
     except Exception as e:
         logger.error(f"Error processing scene {scene_index + 1}: {e}", exc_info=True)
         yield "error", str(e), None, None, None
