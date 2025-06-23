@@ -37,7 +37,7 @@ def load_cogvlm_model(quantization, device, cog_vlm_model_path, logger=None):
         logger.info(f"Attempting to load CogVLM2 model with quantization: {quantization} on device: {device}")
 
     # Check for cancellation before starting model loading
-    cancellation_manager.check_cancel()
+    cancellation_manager.check_cancel("model loading start")
 
     with cogvlm_lock:
         if cogvlm_model_state["model"] is not None and cogvlm_model_state["quant"] == quantization and cogvlm_model_state["device"] == device:
@@ -50,7 +50,7 @@ def load_cogvlm_model(quantization, device, cog_vlm_model_path, logger=None):
             unload_cogvlm_model('full', logger)
 
         # Check for cancellation after unloading
-        cancellation_manager.check_cancel()
+        cancellation_manager.check_cancel("after model unloading")
 
         try:
             if logger:
@@ -58,7 +58,7 @@ def load_cogvlm_model(quantization, device, cog_vlm_model_path, logger=None):
             tokenizer = AutoTokenizer.from_pretrained(cog_vlm_model_path, trust_remote_code=True)
 
             # Check for cancellation after tokenizer loading
-            cancellation_manager.check_cancel()
+            cancellation_manager.check_cancel("after tokenizer loading")
 
             if logger:
                 logger.info("Tokenizer loaded successfully.")
@@ -85,20 +85,81 @@ def load_cogvlm_model(quantization, device, cog_vlm_model_path, logger=None):
             if logger:
                 logger.info(f"Preparing to load model from: {cog_vlm_model_path} with quant: {quantization}, dtype: {model_dtype}, device: {device}, device_map: {current_device_map}, low_cpu_mem: {effective_low_cpu_mem_usage}")
 
-            # Check for cancellation before model loading (this is the longest operation)  
-            cancellation_manager.check_cancel()
+            # Final check for cancellation before model loading (this is the longest operation)  
+            cancellation_manager.check_cancel("before model loading")
+            
+            # Note to user that model loading cannot be interrupted once started
+            if logger:
+                logger.info("Starting model loading - this operation cannot be interrupted once started")
 
-            model = AutoModelForCausalLM.from_pretrained(
-                cog_vlm_model_path,
-                torch_dtype=model_dtype if device == 'cuda' else torch.float32,
-                trust_remote_code=True,
-                quantization_config=bnb_config,
-                low_cpu_mem_usage=effective_low_cpu_mem_usage,
-                device_map=current_device_map
-            )
-
-            # Check for cancellation after model loading
-            cancellation_manager.check_cancel()
+            # Use a separate thread for model loading with periodic cancellation checks
+            model_loading_result = {"model": None, "error": None, "cancelled_before_start": False}
+            model_loading_complete = threading.Event()
+            
+            def load_model_thread():
+                try:
+                    # One final check right before starting the loading
+                    if cancellation_manager.is_cancelled():
+                        model_loading_result["cancelled_before_start"] = True
+                        model_loading_complete.set()
+                        return
+                    
+                    model = AutoModelForCausalLM.from_pretrained(
+                        cog_vlm_model_path,
+                        torch_dtype=model_dtype if device == 'cuda' else torch.float32,
+                        trust_remote_code=True,
+                        quantization_config=bnb_config,
+                        low_cpu_mem_usage=effective_low_cpu_mem_usage,
+                        device_map=current_device_map
+                    )
+                    model_loading_result["model"] = model
+                except Exception as e:
+                    model_loading_result["error"] = e
+                finally:
+                    model_loading_complete.set()
+            
+            # Start model loading in separate thread
+            loading_thread = threading.Thread(target=load_model_thread, daemon=True)
+            loading_thread.start()
+            
+            # Wait for loading to complete or cancellation, checking periodically
+            while not model_loading_complete.is_set():
+                # Check for cancellation every 0.5 seconds during model loading
+                if model_loading_complete.wait(timeout=0.5):
+                    break
+                # If user cancels during loading, we can't stop the loading process
+                # but we can detect it and handle it appropriately
+                if cancellation_manager.is_cancelled():
+                    if logger:
+                        logger.warning("Cancellation requested during model loading - waiting for loading to complete before cleanup")
+            
+            # Wait for thread to complete
+            loading_thread.join(timeout=30)  # Give it 30 seconds to complete
+            
+            # Check if cancellation was requested before loading started
+            if model_loading_result["cancelled_before_start"]:
+                if logger:
+                    logger.info("Model loading cancelled before it started")
+                raise CancelledError("Model loading was cancelled by the user.")
+            
+            # Check for loading errors
+            if model_loading_result["error"]:
+                raise model_loading_result["error"]
+            
+            model = model_loading_result["model"]
+            if model is None:
+                raise RuntimeError("Model loading thread completed but no model was returned")
+            
+            # Check for cancellation after model loading completes
+            # If user cancelled during loading, we cleanup and raise error
+            if cancellation_manager.is_cancelled():
+                if logger:
+                    logger.info("Cancellation detected after model loading completed - cleaning up loaded model")
+                # Clean up the loaded model since it was cancelled
+                del model
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                raise CancelledError("Model loading was cancelled by the user.")
 
             if not bnb_config and current_device_map is None:
                 if logger:
@@ -239,7 +300,7 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
         raise gr.Error("Please provide a valid video file for captioning.")
 
     # Check for cancellation at the start
-    cancellation_manager.check_cancel()
+    cancellation_manager.check_cancel("auto_caption start")
 
     cogvlm_device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -259,7 +320,7 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
         local_model_ref, local_tokenizer_ref = load_cogvlm_model(quantization, cogvlm_device, cog_vlm_model_path, logger)
 
         # Check for cancellation after model loading
-        cancellation_manager.check_cancel()
+        cancellation_manager.check_cancel("after model loading in auto_caption")
 
         model_compute_device = cogvlm_device
         model_actual_dtype = torch.float32
@@ -291,7 +352,7 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
 
         progress(0.3, desc="Preparing video for CogVLM2...")
         # Check for cancellation before video processing
-        cancellation_manager.check_cancel()
+        cancellation_manager.check_cancel("before video processing")
         
         bridge.set_bridge('torch')
         with open(video_path, 'rb') as f:
@@ -305,7 +366,7 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
             raise gr.Error("Video has no frames or could not be read by decord.")
 
         # Check for cancellation after video loading
-        cancellation_manager.check_cancel()
+        cancellation_manager.check_cancel("after video loading")
 
         timestamps = decord_vr.get_frame_timestamp(np.arange(total_frames_decord))
         timestamps = [ts[0] for ts in timestamps]
@@ -345,7 +406,7 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
             logger.info(f"CogVLM2 using frame indices: {frame_id_list}")
         
         # Check for cancellation before frame extraction
-        cancellation_manager.check_cancel()
+        cancellation_manager.check_cancel("before frame extraction")
         
         video_data_cog = decord_vr.get_batch(frame_id_list).permute(3, 0, 1, 2)
 
@@ -365,7 +426,7 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
 
         progress(0.6, desc="Generating caption with CogVLM2...")
         # Check for cancellation before generation
-        cancellation_manager.check_cancel()
+        cancellation_manager.check_cancel("before caption generation")
         
         with torch.no_grad():
             outputs_tensor = local_model_ref.generate(**inputs_on_device, **gen_kwargs)

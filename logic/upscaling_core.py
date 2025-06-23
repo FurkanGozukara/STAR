@@ -834,11 +834,14 @@ def run_upscale (
                 logger .info ("Auto-captioning first scene to update main prompt before processing...")
                 progress (current_overall_progress ,desc ="Generating caption for first scene...")
                 try :
+                    # Check for cancellation before auto-captioning first scene
+                    cancellation_manager.check_cancel("before first scene auto-captioning")
+                    
                     first_scene_caption_result ,_ =util_auto_caption (
                     scene_video_paths [0 ],actual_cogvlm_quant_val ,cogvlm_unload ,
                     app_config_module .COG_VLM_MODEL_PATH ,logger =logger ,progress =progress
                     )
-                    if not first_scene_caption_result .startswith ("Error:"):
+                    if not first_scene_caption_result .startswith ("Error:") and not first_scene_caption_result.startswith("Caption generation cancelled"):
                         first_scene_caption =first_scene_caption_result
                         logger .info (f"First scene caption generated for main prompt: '{first_scene_caption[:100]}...'")
                         caption_update_msg =f"First scene caption generated [FIRST_SCENE_CAPTION:{first_scene_caption}]"
@@ -846,11 +849,20 @@ def run_upscale (
                         logger .info (f"Yielding first scene caption for immediate prompt update")
                         yield None ,"\n".join (status_log ),last_chunk_video_path ,last_chunk_status,None
                     else :
-                        logger .warning ("First scene auto-captioning failed, using original prompt")
+                        if first_scene_caption_result.startswith("Caption generation cancelled"):
+                            logger .info ("First scene auto-captioning cancelled by user")
+                        else:
+                            logger .warning ("First scene auto-captioning failed, using original prompt")
+                except CancelledError:
+                    logger .info ("First scene auto-captioning cancelled by user - stopping scene processing")
+                    raise  # Re-raise to stop the whole process
                 except Exception as e :
                     logger .error (f"Error auto-captioning first scene: {e}", exc_info=True)
 
             for scene_idx ,scene_video_path_item in enumerate (scene_video_paths ):
+                # Check for cancellation before processing each scene
+                cancellation_manager.check_cancel(f"before processing scene {scene_idx + 1}")
+                
                 scene_progress_start_abs =upscaling_loop_progress_start +(scene_idx /total_scenes )*stage_weights ["upscaling_loop"]
                 def scene_upscale_progress_callback (progress_val_rel ,desc_scene ):
                     current_scene_overall_progress =scene_progress_start_abs +(progress_val_rel /total_scenes )*stage_weights ["upscaling_loop"]

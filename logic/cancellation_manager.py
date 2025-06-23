@@ -45,18 +45,33 @@ class CancellationManager:
         """Check if cancellation has been requested."""
         return self._cancel_event.is_set()
 
-    def check_cancel(self):
+    def check_cancel(self, context: str = ""):
         """Check for cancellation and raise CancelledError if requested."""
         if self.is_cancelled():
-            self._logger.info("Cancellation check triggered - raising CancelledError")
+            msg = f"Cancellation check triggered{' in ' + context if context else ''} - raising CancelledError"
+            self._logger.info(msg)
+            raise CancelledError("Processing was cancelled by the user.")
+
+    def check_cancel_with_timeout(self, timeout_seconds: float = 0.1, context: str = ""):
+        """
+        Check for cancellation with a small timeout to allow more responsive cancellation
+        during long-running operations that can't be directly interrupted.
+        """
+        if self._cancel_event.wait(timeout_seconds):
+            msg = f"Cancellation detected{' in ' + context if context else ''} - raising CancelledError"
+            self._logger.info(msg)
             raise CancelledError("Processing was cancelled by the user.")
 
     def reset(self):
         """Reset the cancellation state for a new operation."""
-        self._logger.debug("Resetting cancellation manager state")
+        was_cancelled = self._cancel_event.is_set()
         self._cancel_event.clear()
         with self._lock:
             self._active_process = None
+        if was_cancelled:
+            self._logger.info("Cancellation manager state reset (was previously cancelled)")
+        else:
+            self._logger.debug("Cancellation manager state reset")
 
     def set_active_process(self, process: subprocess.Popen):
         """Store the currently running subprocess."""

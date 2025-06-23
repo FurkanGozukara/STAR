@@ -286,18 +286,28 @@ def process_single_scene(
             if progress_callback:
                 progress_callback(0.15, f"Scene {scene_index + 1}: Generating caption...")
             try:
+                # Check for cancellation before auto-captioning scene
+                cancellation_manager.check_cancel(f"before scene {scene_index + 1} auto-captioning")
+                
                 scene_caption, _ = util_auto_caption(
                     scene_video_path, cogvlm_quant, cogvlm_unload,
                     app_config_module_param.COG_VLM_MODEL_PATH, logger=logger, progress=progress
                 )
-                if not scene_caption.startswith("Error:"):
+                if not scene_caption.startswith("Error:") and not scene_caption.startswith("Caption generation cancelled"):
                     scene_prompt = scene_caption
                     generated_scene_caption = scene_caption
                     logger.info(f"Scene {scene_index + 1} auto-caption: {scene_caption[:100]}...")
                     if scene_index == 0:
                         logger.info(f"FIRST_SCENE_CAPTION_IMMEDIATE_UPDATE: {scene_caption}")
                 else:
-                    logger.warning(f"Scene {scene_index + 1} auto-caption failed, using original prompt")
+                    if scene_caption.startswith("Caption generation cancelled"):
+                        logger.info(f"Scene {scene_index + 1} auto-captioning cancelled by user")
+                        raise CancelledError("Scene auto-captioning was cancelled by the user.")
+                    else:
+                        logger.warning(f"Scene {scene_index + 1} auto-caption failed, using original prompt")
+            except CancelledError:
+                logger.info(f"Scene {scene_index + 1} processing cancelled by user")
+                raise  # Re-raise to stop scene processing
             except Exception as e:
                 logger.error(f"Error auto-captioning scene {scene_index + 1}: {e}")
 

@@ -1577,8 +1577,9 @@ This helps visualize the quality improvement from upscaling."""
         return config
 
     def upscale_director_logic (app_config: AppConfig, progress =gr .Progress (track_tqdm =True )):
-        # Reset cancellation state at the beginning of new processing
+        # Reset cancellation state at the very beginning of new processing
         cancellation_manager.reset()
+        logger.info("Starting new upscale process - cancellation state reset")
         
         current_output_video_val =None 
         current_status_text_val =""
@@ -1682,6 +1683,11 @@ This helps visualize the quality improvement from upscaling."""
         UTIL_COG_VLM_AVAILABLE )
 
         if should_auto_caption_entire_video :
+            # Don't auto-caption if user prompt contains previous cancellation messages
+            if "cancelled" in current_user_prompt_val.lower() or "error" in current_user_prompt_val.lower():
+                logger.info("Skipping auto-caption because prompt contains error/cancelled text from previous run")
+                current_user_prompt_val = "..."  # Reset to default prompt
+                app_config.prompts.user = current_user_prompt_val
             logger .info ("Attempting auto-captioning entire video before upscale (scene splitting disabled).")
             progress (0 ,desc ="Starting auto-captioning before upscale...")
 
@@ -1717,8 +1723,10 @@ This helps visualize the quality improvement from upscaling."""
                     log_accumulator_director .append (f"Using generated caption as prompt: '{caption_text[:50]}...'")
                     logger .info (f"Auto-caption successful. Updated current_user_prompt_val to: '{current_user_prompt_val[:100]}...'")
                 else :
+                    # Keep the original prompt if auto-captioning failed/cancelled
                     log_accumulator_director .append ("Caption generation failed or was cancelled. Using original prompt.")
                     logger .warning (f"Auto-caption failed or cancelled. Keeping original prompt: '{current_user_prompt_val[:100]}...'")
+                    # Don't update current_user_prompt_val with error text - keep original
 
                 current_status_text_val ="\n".join (log_accumulator_director )
                 if UTIL_COG_VLM_AVAILABLE :
