@@ -355,15 +355,34 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
         cancellation_manager.check_cancel("before video processing")
         
         bridge.set_bridge('torch')
-        with open(video_path, 'rb') as f:
-            video_bytes = f.read()
+        try:
+            with open(video_path, 'rb') as f:
+                video_bytes = f.read()
 
-        decord_vr = VideoReader(io.BytesIO(video_bytes), ctx=cpu(0))
-        num_frames_cog = 24
-        total_frames_decord = len(decord_vr)
+            if len(video_bytes) == 0:
+                raise gr.Error("Video file is empty or could not be read.")
 
-        if total_frames_decord == 0:
-            raise gr.Error("Video has no frames or could not be read by decord.")
+            decord_vr = VideoReader(io.BytesIO(video_bytes), ctx=cpu(0))
+            num_frames_cog = 24
+            total_frames_decord = len(decord_vr)
+
+            if total_frames_decord == 0:
+                raise gr.Error("Video has no frames or could not be read by decord.")
+            
+            # Validate video reader properties
+            try:
+                # Try to get basic video info to ensure the reader is working
+                fps = decord_vr.get_avg_fps()
+                if logger:
+                    logger.info(f"Video loaded: {total_frames_decord} frames, {fps:.2f} FPS")
+            except Exception as info_error:
+                if logger:
+                    logger.warning(f"Could not get video info, but proceeding: {info_error}")
+                    
+        except Exception as video_load_error:
+            if logger:
+                logger.error(f"Failed to load video with decord: {video_load_error}")
+            raise gr.Error(f"Could not load video for captioning: {video_load_error}")
 
         # Check for cancellation after video loading
         cancellation_manager.check_cancel("after video loading")
@@ -401,6 +420,33 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
             if logger:
                 logger.warning("Frame ID list is empty, using first N frames or all if less than N.")
             frame_id_list = list(range(min(num_frames_cog, total_frames_decord)))
+        
+        # Ensure all frame indices are within valid bounds
+        frame_id_list = [max(0, min(idx, total_frames_decord - 1)) for idx in frame_id_list]
+        
+        # Remove duplicates while preserving order and ensure we have enough frames
+        seen = set()
+        unique_frame_list = []
+        for idx in frame_id_list:
+            if idx not in seen:
+                seen.add(idx)
+                unique_frame_list.append(idx)
+        
+        # If we still don't have enough unique frames, fill with evenly spaced frames
+        if len(unique_frame_list) < num_frames_cog:
+            if logger:
+                logger.warning(f"Only {len(unique_frame_list)} unique frames available, filling with evenly spaced frames.")
+            # Create evenly spaced frame indices
+            if total_frames_decord > 0:
+                step = max(1, total_frames_decord // num_frames_cog)
+                evenly_spaced = [min(i * step, total_frames_decord - 1) for i in range(num_frames_cog)]
+                # Merge with existing unique frames
+                all_frames = list(set(unique_frame_list + evenly_spaced))
+                frame_id_list = sorted(all_frames)[:num_frames_cog]
+            else:
+                frame_id_list = [0] * num_frames_cog
+        else:
+            frame_id_list = unique_frame_list[:num_frames_cog]
 
         if logger:
             logger.info(f"CogVLM2 using frame indices: {frame_id_list}")
@@ -408,7 +454,106 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
         # Check for cancellation before frame extraction
         cancellation_manager.check_cancel("before frame extraction")
         
-        video_data_cog = decord_vr.get_batch(frame_id_list).permute(3, 0, 1, 2)
+        # Robust frame extraction with fallback for DECORD errors
+        video_data_cog = None
+        try:
+            # First attempt: try to get batch of frames
+            video_data_cog = decord_vr.get_batch(frame_id_list).permute(3, 0, 1, 2)
+            
+            # Convert RGBA to RGB if necessary (CogVLM expects 3 channels)
+            if video_data_cog.shape[0] == 4:  # RGBA
+                if logger:
+                    logger.info("Converting RGBA frames to RGB (removing alpha channel)")
+                video_data_cog = video_data_cog[:3, :, :, :]  # Keep only RGB channels
+        except Exception as decord_error:
+            if logger:
+                logger.warning(f"DECORD batch extraction failed: {decord_error}")
+                logger.info("Attempting frame-by-frame extraction as fallback...")
+            
+            # Fallback: extract frames one by one and handle size mismatches
+            try:
+                frames_list = []
+                target_shape = None
+                
+                for frame_idx in frame_id_list:
+                    try:
+                        # Clamp frame index to valid range
+                        safe_frame_idx = max(0, min(frame_idx, total_frames_decord - 1))
+                        frame = decord_vr[safe_frame_idx]  # Get single frame
+                        
+                        # Check if this is the first valid frame to establish target shape
+                        if target_shape is None:
+                            target_shape = frame.shape
+                            if logger:
+                                logger.info(f"Established target frame shape: {target_shape}")
+                        
+                        # Ensure all frames have the same shape
+                        if frame.shape != target_shape:
+                            if logger:
+                                logger.warning(f"Frame {safe_frame_idx} has different shape {frame.shape}, expected {target_shape}")
+                            # Resize frame to match target shape if needed
+                            # For now, skip this frame and use the previous valid frame
+                            if frames_list:
+                                frame = frames_list[-1].clone()
+                            else:
+                                continue
+                        
+                        frames_list.append(frame)
+                        
+                    except Exception as frame_error:
+                        if logger:
+                            logger.warning(f"Could not extract frame {frame_idx}: {frame_error}")
+                        # Use previous frame if available, otherwise skip
+                        if frames_list:
+                            frames_list.append(frames_list[-1].clone())
+                
+                if not frames_list:
+                    raise gr.Error("Could not extract any valid frames from video for captioning.")
+                
+                # Pad or truncate to exactly num_frames_cog frames
+                while len(frames_list) < num_frames_cog:
+                    frames_list.append(frames_list[-1].clone())
+                frames_list = frames_list[:num_frames_cog]
+                
+                # Stack frames and permute dimensions
+                video_data_cog = torch.stack(frames_list, dim=0).permute(3, 0, 1, 2)
+                
+                # Convert RGBA to RGB if necessary (CogVLM expects 3 channels)
+                if video_data_cog.shape[0] == 4:  # RGBA
+                    if logger:
+                        logger.info("Converting RGBA frames to RGB (removing alpha channel)")
+                    video_data_cog = video_data_cog[:3, :, :, :]  # Keep only RGB channels
+                
+                if logger:
+                    logger.info(f"Successfully extracted {len(frames_list)} frames using fallback method")
+                    logger.info(f"Final video tensor shape for CogVLM: {video_data_cog.shape}")
+                    
+            except Exception as fallback_error:
+                if logger:
+                    logger.error(f"Frame-by-frame extraction also failed: {fallback_error}")
+                raise gr.Error(f"Could not extract video frames for captioning: {fallback_error}")
+        
+        if video_data_cog is None:
+            raise gr.Error("Failed to extract video data for captioning.")
+        
+        # Final validation: Ensure video tensor has correct shape for CogVLM
+        expected_channels = 3  # RGB
+        if video_data_cog.shape[0] != expected_channels:
+            if logger:
+                logger.warning(f"Unexpected video tensor shape: {video_data_cog.shape}. Expected {expected_channels} channels.")
+            if video_data_cog.shape[0] == 4:  # RGBA, convert to RGB
+                if logger:
+                    logger.info("Final conversion: RGBA to RGB")
+                video_data_cog = video_data_cog[:3, :, :, :]
+            elif video_data_cog.shape[0] == 1:  # Grayscale, convert to RGB
+                if logger:
+                    logger.info("Final conversion: Grayscale to RGB by repeating channel")
+                video_data_cog = video_data_cog.repeat(3, 1, 1, 1)
+            else:
+                raise gr.Error(f"Unsupported video format: {video_data_cog.shape[0]} channels. CogVLM requires RGB (3 channels).")
+        
+        if logger:
+            logger.info(f"Final video tensor shape for CogVLM processing: {video_data_cog.shape}")
 
         query = "Please describe this video in detail."
         inputs = local_model_ref.build_conversation_input_ids(
