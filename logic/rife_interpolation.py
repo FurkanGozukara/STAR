@@ -9,6 +9,7 @@ import gradio as gr
 from pathlib import Path
 import re
 import numpy as np
+from .cancellation_manager import cancellation_manager, CancelledError
 
 from .ffmpeg_utils import run_ffmpeg_command
 from .file_utils import (
@@ -98,6 +99,9 @@ def increase_fps_single(video_path, output_path=None, multiplier=2, fp16=True, u
                        overwrite_original=False, keep_original=True, output_dir=None,
                        seed=99, logger=None, progress=None):
     """Process a single video with RIFE to increase FPS with enhanced file management."""
+    
+    # Check for cancellation at the start of RIFE processing
+    cancellation_manager.check_cancel()
     
     if logger:
         logger.info(f"Starting RIFE processing for: {os.path.basename(video_path)}")

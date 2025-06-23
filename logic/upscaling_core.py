@@ -13,6 +13,7 @@ import torch
 # from easydict import EasyDict # This will be passed as EasyDict_class
 
 # Imports from the 'logic' package
+from .cancellation_manager import cancellation_manager, CancelledError
 from .cogvlm_utils import auto_caption as util_auto_caption
 from .common_utils import format_time
 from .ffmpeg_utils import (
@@ -1180,6 +1181,9 @@ def run_upscale (
                 total_chunks_to_process = len(context_chunks)
 
                 for chunk_idx, chunk_info in enumerate(context_chunks):
+                    # Check for cancellation at the start of each chunk
+                    cancellation_manager.check_cancel()
+                    
                     # Get chunk processing frames
                     processing_frames, output_frames_indices = get_chunk_frame_indices(
                         chunk_info
@@ -1363,6 +1367,9 @@ def run_upscale (
                         })
                 
                 for chunk_info in chunk_boundaries:
+                    # Check for cancellation at the start of each chunk
+                    cancellation_manager.check_cancel()
+                    
                     chunk_idx_direct = chunk_info['chunk_idx']
                     start_idx_direct = chunk_info['start_idx']
                     end_idx_direct = chunk_info['end_idx']
@@ -1670,7 +1677,7 @@ def run_upscale (
             status_log .append (silent_video_msg )
             logger .info (silent_video_msg )
             yield None ,"\n".join (status_log ),last_chunk_video_path ,silent_video_msg,None
-        else: # Video already merged from scenes (is silent_upscaled_video_path)
+        else : # Video already merged from scenes (is silent_upscaled_video_path)
             silent_video_msg ="Scene-merged video ready. Merging audio..."
             status_log .append (silent_video_msg )
             logger .info (silent_video_msg )

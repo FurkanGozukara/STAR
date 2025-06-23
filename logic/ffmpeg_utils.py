@@ -4,10 +4,12 @@ import gradio as gr
 import cv2
 import re
 from .nvenc_utils import is_resolution_too_small_for_nvenc
+from .cancellation_manager import cancellation_manager
 
 def run_ffmpeg_command(cmd, desc="ffmpeg command", logger=None, raise_on_error=True):
     """
     Run an FFmpeg command with error handling and optional graceful failure.
+    Supports cancellation via the global cancellation manager.
     
     Args:
         cmd: FFmpeg command to run
@@ -24,13 +26,40 @@ def run_ffmpeg_command(cmd, desc="ffmpeg command", logger=None, raise_on_error=T
     if logger:
         logger.info(f"Running {desc}: {cmd}")
     try:
-        process = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
-        if process.stdout and logger:
-            logger.info(f"{desc} stdout: {process.stdout.strip()}")
+        # Use Popen for better process control and cancellation support
+        process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
+                                 text=True, encoding='utf-8', errors='ignore')
+        
+        # Register the process with the cancellation manager
+        cancellation_manager.set_active_process(process)
+        
+        try:
+            stdout, stderr = process.communicate()
+            returncode = process.returncode
+        except Exception:
+            # If communication is interrupted (e.g., by cancellation), clean up
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+            raise
+        finally:
+            # Clear the active process
+            cancellation_manager.clear_active_process()
+            
+        if stdout and logger:
+            logger.info(f"{desc} stdout: {stdout.strip()}")
 
-        if process.returncode != 0 or (process.stderr and ('error' in process.stderr.lower() or 'warning' in process.stderr.lower())):
-            if process.stderr and logger:
-                logger.info(f"{desc} stderr: {process.stderr.strip()}")
+        if returncode != 0:
+            if stderr and logger:
+                logger.error(f"{desc} stderr: {stderr.strip()}")
+            raise subprocess.CalledProcessError(returncode, cmd, stdout, stderr)
+        elif stderr and ('error' in stderr.lower() or 'warning' in stderr.lower()):
+            if logger:
+                logger.info(f"{desc} stderr: {stderr.strip()}")
+                
         return True
     except subprocess.CalledProcessError as e:
         if logger:

@@ -6,6 +6,7 @@ Handles processing multiple videos in sequence.
 import os
 import gradio as gr
 from pathlib import Path
+from .cancellation_manager import cancellation_manager, CancelledError
 
 
 def get_prompt_file_path(video_file_path):
@@ -177,6 +178,9 @@ def process_batch_videos(
 
         for i, video_file in enumerate(video_files):
             try:
+                # Check for cancellation at the start of each video
+                cancellation_manager.check_cancel()
+                
                 video_name = Path(video_file).name
                 progress((i / len(video_files)) * 0.9, desc=f"Processing {i + 1}/{len(video_files)}: {video_name}")
 

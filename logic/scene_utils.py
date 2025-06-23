@@ -8,6 +8,7 @@ from pathlib import Path
 from .ffmpeg_utils import run_ffmpeg_command, is_resolution_too_small_for_nvenc
 from .file_utils import get_next_filename, cleanup_temp_dir
 from .cogvlm_utils import auto_caption, COG_VLM_AVAILABLE
+from .cancellation_manager import cancellation_manager, CancelledError
 
 def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, progress_callback=None, logger=None):
     """Split video into scenes using PySceneDetect."""
@@ -36,6 +37,9 @@ def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, prog
         scene_manager = SceneManager(stats_manager=stats_manager)
 
         if scene_split_params['split_mode'] == 'automatic':
+            # Check for cancellation at start of automatic detection
+            cancellation_manager.check_cancel()
+            
             # Automatic scene detection
             detector_weights = ContentDetector.Components(
                 delta_hue=scene_split_params['weights'][0],
@@ -73,6 +77,9 @@ def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, prog
 
             if scene_list:
                 for i, (start, end) in enumerate(scene_list):
+                    # Check for cancellation during scene filtering
+                    cancellation_manager.check_cancel()
+                    
                     current_scene_duration = end - start
                     if current_scene_duration < global_min_scene_len_ft:
                         if scene_split_params['drop_short_scenes']:
@@ -95,6 +102,9 @@ def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, prog
                         prev_start, _ = scene_list[-2]
                         scene_list = scene_list[:-2] + [(prev_start, last_end)]
         else:
+            # Check for cancellation at start of manual splitting
+            cancellation_manager.check_cancel()
+            
             # Manual scene splitting
             if progress_callback:
                 progress_callback(0.3, "Calculating manual split points...")
@@ -220,7 +230,15 @@ def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, prog
             del video
 
 def merge_scene_videos(scene_video_paths, output_path, temp_dir, ffmpeg_preset="medium", ffmpeg_quality=23, use_gpu=False, logger=None):
-    """Merge scene videos back into a single video."""
+    """Merge multiple scene videos into a single output video."""
+    # Check for cancellation at start of merge process
+    cancellation_manager.check_cancel()
+    
+    if not scene_video_paths:
+        if logger:
+            logger.warning("No scene videos to merge")
+        return False
+
     try:
         if logger:
             logger.info(f"Merging {len(scene_video_paths)} scene videos into: {output_path}")

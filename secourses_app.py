@@ -99,6 +99,8 @@ from logic .rife_interpolation import (
 rife_fps_only_wrapper as util_rife_fps_only_wrapper 
 )
 
+from logic.cancellation_manager import cancellation_manager, CancelledError
+
 from logic .image_upscaler_utils import (
 scan_for_models as util_scan_for_models,
 get_model_info as util_get_model_info
@@ -271,6 +273,19 @@ If CogVLM2 is available, you can use the button below to generate a caption auto
                                 rife_fps_button =gr .Button ("RIFE FPS Increase (No Upscale)",variant ="primary",icon ="icons/fps.png")
                             with gr .Row ():
                                 upscale_button =gr .Button ("Upscale Video",variant ="primary",icon ="icons/upscale.png")
+                                cancel_button =gr .Button ("Cancel",variant ="stop",visible =True, interactive=False)
+
+                            with gr .Row ():
+                                initial_temp_size_label = util_format_temp_folder_size(logger)
+                                delete_temp_button = gr.Button(f"Delete Temp Folder ({initial_temp_size_label})", variant="stop")
+
+                            caption_status =gr .Textbox (label ="Captioning Status",interactive =False ,visible =False )
+                        else:
+                            with gr .Row ():
+                                rife_fps_button =gr .Button ("RIFE FPS Increase (No Upscale)",variant ="primary",icon ="icons/fps.png")
+                            with gr .Row ():
+                                upscale_button =gr .Button ("Upscale Video",variant ="primary",icon ="icons/upscale.png")
+                                cancel_button =gr .Button ("Cancel",variant ="stop",visible =True, interactive=False)
 
                             with gr .Row ():
                                 initial_temp_size_label = util_format_temp_folder_size(logger)
@@ -1562,6 +1577,9 @@ This helps visualize the quality improvement from upscaling."""
         return config
 
     def upscale_director_logic (app_config: AppConfig, progress =gr .Progress (track_tqdm =True )):
+        # Reset cancellation state at the beginning of new processing
+        cancellation_manager.reset()
+        
         current_output_video_val =None 
         current_status_text_val =""
         current_user_prompt_val =app_config.prompts.user
@@ -1578,6 +1596,7 @@ This helps visualize the quality improvement from upscaling."""
         logger .info (f"In upscale_director_logic. Auto-caption first: {app_config.cogvlm.auto_caption_then_upscale}, User prompt: '{app_config.prompts.user[:50]}...'")
 
         actual_input_video_path = app_config.input_video_path
+
         if app_config.frame_folder.enable and app_config.frame_folder.input_path:
             logger.info("Frame folder processing mode enabled")
             progress(0, desc="Converting frame folder to video...")
@@ -1777,161 +1796,191 @@ This helps visualize the quality improvement from upscaling."""
         
         app_config.seed.seed = actual_seed_to_use
 
-        upscale_generator =core_run_upscale (
-        input_video_path =actual_input_video_path ,user_prompt =app_config.prompts.user ,
-        positive_prompt =app_config.prompts.positive ,negative_prompt =app_config.prompts.negative ,model_choice =app_config.star_model.model_choice ,
-        upscale_factor_slider =app_config.resolution.upscale_factor ,cfg_scale =app_config.star_model.cfg_scale ,steps =app_config.star_model.steps ,solver_mode =app_config.star_model.solver_mode ,
-        max_chunk_len =app_config.performance.max_chunk_len ,enable_chunk_optimization =app_config.performance.enable_chunk_optimization ,vae_chunk =app_config.performance.vae_chunk ,color_fix_method =app_config.star_model.color_fix_method ,
-        enable_tiling =app_config.tiling.enable ,tile_size =app_config.tiling.tile_size ,tile_overlap =app_config.tiling.tile_overlap ,
-        enable_context_window =app_config.context_window.enable ,context_overlap =app_config.context_window.overlap ,
-        enable_target_res =app_config.resolution.enable_target_res ,target_h =app_config.resolution.target_h ,target_w =app_config.resolution.target_w ,target_res_mode =app_config.resolution.target_res_mode ,
-        ffmpeg_preset =app_config.ffmpeg.preset ,ffmpeg_quality_value =app_config.ffmpeg.quality ,ffmpeg_use_gpu =app_config.ffmpeg.use_gpu ,
-        save_frames =app_config.outputs.save_frames ,save_metadata =app_config.outputs.save_metadata ,save_chunks =app_config.outputs.save_chunks ,save_chunk_frames =app_config.outputs.save_chunk_frames ,
+        try:
+            upscale_generator =core_run_upscale (
+            input_video_path =actual_input_video_path ,user_prompt =app_config.prompts.user ,
+            positive_prompt =app_config.prompts.positive ,negative_prompt =app_config.prompts.negative ,model_choice =app_config.star_model.model_choice ,
+            upscale_factor_slider =app_config.resolution.upscale_factor ,cfg_scale =app_config.star_model.cfg_scale ,steps =app_config.star_model.steps ,solver_mode =app_config.star_model.solver_mode ,
+            max_chunk_len =app_config.performance.max_chunk_len ,enable_chunk_optimization =app_config.performance.enable_chunk_optimization ,vae_chunk =app_config.performance.vae_chunk ,color_fix_method =app_config.star_model.color_fix_method ,
+            enable_tiling =app_config.tiling.enable ,tile_size =app_config.tiling.tile_size ,tile_overlap =app_config.tiling.tile_overlap ,
+            enable_context_window =app_config.context_window.enable ,context_overlap =app_config.context_window.overlap ,
+            enable_target_res =app_config.resolution.enable_target_res ,target_h =app_config.resolution.target_h ,target_w =app_config.resolution.target_w ,target_res_mode =app_config.resolution.target_res_mode ,
+            ffmpeg_preset =app_config.ffmpeg.preset ,ffmpeg_quality_value =app_config.ffmpeg.quality ,ffmpeg_use_gpu =app_config.ffmpeg.use_gpu ,
+            save_frames =app_config.outputs.save_frames ,save_metadata =app_config.outputs.save_metadata ,save_chunks =app_config.outputs.save_chunks ,save_chunk_frames =app_config.outputs.save_chunk_frames ,
 
-        enable_scene_split =app_config.scene_split.enable ,scene_split_mode =app_config.scene_split.mode ,scene_min_scene_len =app_config.scene_split.min_scene_len ,scene_drop_short =app_config.scene_split.drop_short ,scene_merge_last =app_config.scene_split.merge_last ,
-        scene_frame_skip =app_config.scene_split.frame_skip ,scene_threshold =app_config.scene_split.threshold ,scene_min_content_val =app_config.scene_split.min_content_val ,scene_frame_window =app_config.scene_split.frame_window ,
-        scene_copy_streams =app_config.scene_split.copy_streams ,scene_use_mkvmerge =app_config.scene_split.use_mkvmerge ,scene_rate_factor =app_config.scene_split.rate_factor ,scene_preset =app_config.scene_split.encoding_preset ,scene_quiet_ffmpeg =app_config.scene_split.quiet_ffmpeg ,
-        scene_manual_split_type =app_config.scene_split.manual_split_type ,scene_manual_split_value =app_config.scene_split.manual_split_value ,
+            enable_scene_split =app_config.scene_split.enable ,scene_split_mode =app_config.scene_split.mode ,scene_min_scene_len =app_config.scene_split.min_scene_len ,scene_drop_short =app_config.scene_split.drop_short ,scene_merge_last =app_config.scene_split.merge_last ,
+            scene_frame_skip =app_config.scene_split.frame_skip ,scene_threshold =app_config.scene_split.threshold ,scene_min_content_val =app_config.scene_split.min_content_val ,scene_frame_window =app_config.scene_split.frame_window ,
+            scene_copy_streams =app_config.scene_split.copy_streams ,scene_use_mkvmerge =app_config.scene_split.use_mkvmerge ,scene_rate_factor =app_config.scene_split.rate_factor ,scene_preset =app_config.scene_split.encoding_preset ,scene_quiet_ffmpeg =app_config.scene_split.quiet_ffmpeg ,
+            scene_manual_split_type =app_config.scene_split.manual_split_type ,scene_manual_split_value =app_config.scene_split.manual_split_value ,
 
-        create_comparison_video_enabled =app_config.outputs.create_comparison_video ,
+            create_comparison_video_enabled =app_config.outputs.create_comparison_video ,
 
-        enable_fps_decrease =app_config.fps_decrease.enable ,fps_decrease_mode =app_config.fps_decrease.mode ,
-        fps_multiplier_preset =app_config.fps_decrease.multiplier_preset ,fps_multiplier_custom =app_config.fps_decrease.multiplier_custom ,
-        target_fps =app_config.fps_decrease.target_fps ,fps_interpolation_method =app_config.fps_decrease.interpolation_method ,
+            enable_fps_decrease =app_config.fps_decrease.enable ,fps_decrease_mode =app_config.fps_decrease.mode ,
+            fps_multiplier_preset =app_config.fps_decrease.multiplier_preset ,fps_multiplier_custom =app_config.fps_decrease.multiplier_custom ,
+            target_fps =app_config.fps_decrease.target_fps ,fps_interpolation_method =app_config.fps_decrease.interpolation_method ,
 
-        enable_rife_interpolation =app_config.rife.enable ,rife_multiplier =app_config.rife.multiplier ,rife_fp16 =app_config.rife.fp16 ,rife_uhd =app_config.rife.uhd ,rife_scale =app_config.rife.scale ,
-        rife_skip_static =app_config.rife.skip_static ,rife_enable_fps_limit =app_config.rife.enable_fps_limit ,rife_max_fps_limit =app_config.rife.max_fps_limit ,
-        rife_apply_to_chunks =app_config.rife.apply_to_chunks ,rife_apply_to_scenes =app_config.rife.apply_to_scenes ,rife_keep_original =app_config.rife.keep_original ,rife_overwrite_original =app_config.rife.overwrite_original ,
+            enable_rife_interpolation =app_config.rife.enable ,rife_multiplier =app_config.rife.multiplier ,rife_fp16 =app_config.rife.fp16 ,rife_uhd =app_config.rife.uhd ,rife_scale =app_config.rife.scale ,
+            rife_skip_static =app_config.rife.skip_static ,rife_enable_fps_limit =app_config.rife.enable_fps_limit ,rife_max_fps_limit =app_config.rife.max_fps_limit ,
+            rife_apply_to_chunks =app_config.rife.apply_to_chunks ,rife_apply_to_scenes =app_config.rife.apply_to_scenes ,rife_keep_original =app_config.rife.keep_original ,rife_overwrite_original =app_config.rife.overwrite_original ,
 
-        is_batch_mode =False ,batch_output_dir =None ,original_filename =None ,
+            is_batch_mode =False ,batch_output_dir =None ,original_filename =None ,
 
-        enable_auto_caption_per_scene =(app_config.cogvlm.auto_caption_then_upscale and app_config.scene_split.enable and not app_config.image_upscaler.enable and UTIL_COG_VLM_AVAILABLE ),
-        cogvlm_quant =app_config.cogvlm.quant_value ,
-        cogvlm_unload =app_config.cogvlm.unload_after_use if app_config.cogvlm.unload_after_use else 'full',
+            enable_auto_caption_per_scene =(app_config.cogvlm.auto_caption_then_upscale and app_config.scene_split.enable and not app_config.image_upscaler.enable and UTIL_COG_VLM_AVAILABLE ),
+            cogvlm_quant =app_config.cogvlm.quant_value ,
+            cogvlm_unload =app_config.cogvlm.unload_after_use if app_config.cogvlm.unload_after_use else 'full',
 
-        logger =logger ,
-        app_config_module =app_config_module ,
-        metadata_handler_module =metadata_handler ,
-        VideoToVideo_sr_class =VideoToVideo_sr ,
-        setup_seed_func =setup_seed ,
-        EasyDict_class =EasyDict ,
-        preprocess_func =preprocess ,
-        collate_fn_func =collate_fn ,
-        tensor2vid_func =tensor2vid ,
-        ImageSpliterTh_class =ImageSpliterTh ,
-        adain_color_fix_func =adain_color_fix ,
-        wavelet_color_fix_func =wavelet_color_fix ,
-        progress =progress ,
-        current_seed =actual_seed_to_use ,
-        
-        # Image upscaler parameters
-        enable_image_upscaler =app_config.image_upscaler.enable ,
-        image_upscaler_model =app_config.image_upscaler.model ,
-        image_upscaler_batch_size =app_config.image_upscaler.batch_size ,
-        
-        # Face restoration parameters
-        enable_face_restoration =app_config.face_restoration.enable ,
-        face_restoration_fidelity =app_config.face_restoration.fidelity_weight ,
-        enable_face_colorization =app_config.face_restoration.enable_colorization ,
-        face_restoration_timing ="after_upscale" ,  # Fixed timing mode for single video processing
-        face_restoration_when =app_config.face_restoration.when ,
-        codeformer_model =app_config.face_restoration.model ,
-        face_restoration_batch_size =app_config.face_restoration.batch_size 
-        )
-
-        for yielded_output_video ,yielded_status_log ,yielded_chunk_video ,yielded_chunk_status ,yielded_comparison_video in upscale_generator :
-
-            output_video_update =gr .update ()
-            if yielded_output_video is not None :
-                current_output_video_val =yielded_output_video 
-                output_video_update =gr .update (value =current_output_video_val )
-            elif current_output_video_val is None :
-                output_video_update =gr .update (value =None )
-            else :
-                output_video_update =gr .update (value =current_output_video_val )
-
-            combined_log_director =""
-            if log_accumulator_director :
-                combined_log_director ="\n".join (log_accumulator_director )+"\n"
-                log_accumulator_director =[]
-            if yielded_status_log :
-                combined_log_director +=yielded_status_log 
-            current_status_text_val =combined_log_director .strip ()
-            status_text_update =gr .update (value =current_status_text_val )
-
-            if yielded_status_log and "[FIRST_SCENE_CAPTION:"in yielded_status_log and not auto_caption_completed_successfully :
-                try :
-                    caption_start =yielded_status_log .find ("[FIRST_SCENE_CAPTION:")+len ("[FIRST_SCENE_CAPTION:")
-                    caption_end =yielded_status_log .find ("]",caption_start )
-                    if caption_start >len ("[FIRST_SCENE_CAPTION:")and caption_end >caption_start :
-                        extracted_caption =yielded_status_log [caption_start :caption_end ]
-                        current_user_prompt_val =extracted_caption 
-                        auto_caption_completed_successfully =True 
-                        logger .info (f"Updated main prompt from first scene caption: '{extracted_caption[:100]}...'")
-
-                        log_accumulator_director .append (f"Main prompt updated with first scene caption: '{extracted_caption[:50]}...'")
-                        current_status_text_val =(combined_log_director +"\n"+"\n".join (log_accumulator_director )).strip ()
-                        status_text_update =gr .update (value =current_status_text_val )
-                except Exception as e :
-                    logger .error (f"Error extracting first scene caption: {e}")
-
-            elif yielded_status_log and "FIRST_SCENE_CAPTION_IMMEDIATE_UPDATE:"in yielded_status_log and not auto_caption_completed_successfully :
-                try :
-                    caption_start =yielded_status_log .find ("FIRST_SCENE_CAPTION_IMMEDIATE_UPDATE:")+len ("FIRST_SCENE_CAPTION_IMMEDIATE_UPDATE:")
-                    extracted_caption =yielded_status_log [caption_start :].strip ()
-                    if extracted_caption :
-                        current_user_prompt_val =extracted_caption 
-                        auto_caption_completed_successfully =True 
-                        logger .info (f"Updated main prompt from immediate first scene caption: '{extracted_caption[:100]}...'")
-                        log_accumulator_director .append (f"Main prompt updated with first scene caption: '{extracted_caption[:50]}...'")
-                        current_status_text_val =(combined_log_director +"\n"+"\n".join (log_accumulator_director )).strip ()
-                        status_text_update =gr .update (value =current_status_text_val )
-                except Exception as e :
-                    logger .error (f"Error extracting immediate first scene caption: {e}")
-
-            user_prompt_update =gr .update (value =current_user_prompt_val )
-
-            caption_status_update =gr .update (value =current_caption_status_text_val ,visible =current_caption_status_visible_val )
-
-            chunk_video_update =gr .update ()
-            if yielded_chunk_video is not None :
-                current_last_chunk_video_val =yielded_chunk_video 
-                chunk_video_update =gr .update (value =current_last_chunk_video_val )
-            elif current_last_chunk_video_val is None :
-                chunk_video_update =gr .update (value =None )
-            else :
-                chunk_video_update =gr .update (value =current_last_chunk_video_val )
-
-            if yielded_chunk_status is not None :
-                current_chunk_status_text_val =yielded_chunk_status 
-            chunk_status_text_update =gr .update (value =current_chunk_status_text_val )
-
-            comparison_video_update =gr .update ()
-            if yielded_comparison_video is not None :
-                current_comparison_video_val =yielded_comparison_video 
-                comparison_video_update =gr .update (value =current_comparison_video_val )
-            elif current_comparison_video_val is None :
-                comparison_video_update =gr .update (value =None )
-            else :
-                comparison_video_update =gr .update (value =current_comparison_video_val )
-
-            yield (
-            output_video_update ,status_text_update ,user_prompt_update ,
-            caption_status_update ,
-            chunk_video_update ,chunk_status_text_update ,
-            comparison_video_update 
+            logger =logger ,
+            app_config_module =app_config_module ,
+            metadata_handler_module =metadata_handler ,
+            VideoToVideo_sr_class =VideoToVideo_sr ,
+            setup_seed_func =setup_seed ,
+            EasyDict_class =EasyDict ,
+            preprocess_func =preprocess ,
+            collate_fn_func =collate_fn ,
+            tensor2vid_func =tensor2vid ,
+            ImageSpliterTh_class =ImageSpliterTh ,
+            adain_color_fix_func =adain_color_fix ,
+            wavelet_color_fix_func =wavelet_color_fix ,
+            progress =progress ,
+            current_seed =actual_seed_to_use ,
+            
+            # Image upscaler parameters
+            enable_image_upscaler =app_config.image_upscaler.enable ,
+            image_upscaler_model =app_config.image_upscaler.model ,
+            image_upscaler_batch_size =app_config.image_upscaler.batch_size ,
+            
+            # Face restoration parameters
+            enable_face_restoration =app_config.face_restoration.enable ,
+            face_restoration_fidelity =app_config.face_restoration.fidelity_weight ,
+            enable_face_colorization =app_config.face_restoration.enable_colorization ,
+            face_restoration_timing ="after_upscale" ,  # Fixed timing mode for single video processing
+            face_restoration_when =app_config.face_restoration.when ,
+            codeformer_model =app_config.face_restoration.model ,
+            face_restoration_batch_size =app_config.face_restoration.batch_size 
             )
 
-        logger .info (f"Final yield: current_user_prompt_val = '{current_user_prompt_val[:100]}...', auto_caption_completed = {auto_caption_completed_successfully}")
-        yield (
-        gr .update (value =current_output_video_val ),
-        gr .update (value =current_status_text_val ),
-        gr .update (value =current_user_prompt_val ),
-        gr .update (value =current_caption_status_text_val ,visible =current_caption_status_visible_val ),
-        gr .update (value =current_last_chunk_video_val ),
-        gr .update (value =current_chunk_status_text_val ),
-        gr .update (value =current_comparison_video_val )
-        )
+            for yielded_output_video ,yielded_status_log ,yielded_chunk_video ,yielded_chunk_status ,yielded_comparison_video in upscale_generator :
+
+                output_video_update =gr .update ()
+                if yielded_output_video is not None :
+                    current_output_video_val =yielded_output_video 
+                    output_video_update =gr .update (value =current_output_video_val )
+                elif current_output_video_val is None :
+                    output_video_update =gr .update (value =None )
+                else :
+                    output_video_update =gr .update (value =current_output_video_val )
+
+                combined_log_director =""
+                if log_accumulator_director :
+                    combined_log_director ="\n".join (log_accumulator_director )+"\n"
+                    log_accumulator_director =[]
+                if yielded_status_log :
+                    combined_log_director +=yielded_status_log 
+                current_status_text_val =combined_log_director .strip ()
+                status_text_update =gr .update (value =current_status_text_val )
+
+                if yielded_status_log and "[FIRST_SCENE_CAPTION:"in yielded_status_log and not auto_caption_completed_successfully :
+                    try :
+                        caption_start =yielded_status_log .find ("[FIRST_SCENE_CAPTION:")+len ("[FIRST_SCENE_CAPTION:")
+                        caption_end =yielded_status_log .find ("]",caption_start )
+                        if caption_start >len ("[FIRST_SCENE_CAPTION:")and caption_end >caption_start :
+                            extracted_caption =yielded_status_log [caption_start :caption_end ]
+                            current_user_prompt_val =extracted_caption 
+                            auto_caption_completed_successfully =True 
+                            logger .info (f"Updated main prompt from first scene caption: '{extracted_caption[:100]}...'")
+
+                            log_accumulator_director .append (f"Main prompt updated with first scene caption: '{extracted_caption[:50]}...'")
+                            current_status_text_val =(combined_log_director +"\n"+"\n".join (log_accumulator_director )).strip ()
+                            status_text_update =gr .update (value =current_status_text_val )
+                    except Exception as e :
+                        logger .error (f"Error extracting first scene caption: {e}")
+
+                elif yielded_status_log and "FIRST_SCENE_CAPTION_IMMEDIATE_UPDATE:"in yielded_status_log and not auto_caption_completed_successfully :
+                    try :
+                        caption_start =yielded_status_log .find ("FIRST_SCENE_CAPTION_IMMEDIATE_UPDATE:")+len ("FIRST_SCENE_CAPTION_IMMEDIATE_UPDATE:")
+                        extracted_caption =yielded_status_log [caption_start :].strip ()
+                        if extracted_caption :
+                            current_user_prompt_val =extracted_caption 
+                            auto_caption_completed_successfully =True 
+                            logger .info (f"Updated main prompt from immediate first scene caption: '{extracted_caption[:100]}...'")
+                            log_accumulator_director .append (f"Main prompt updated with first scene caption: '{extracted_caption[:50]}...'")
+                            current_status_text_val =(combined_log_director +"\n"+"\n".join (log_accumulator_director )).strip ()
+                            status_text_update =gr .update (value =current_status_text_val )
+                    except Exception as e :
+                        logger .error (f"Error extracting immediate first scene caption: {e}")
+
+                user_prompt_update =gr .update (value =current_user_prompt_val )
+
+                caption_status_update =gr .update (value =current_caption_status_text_val ,visible =current_caption_status_visible_val )
+
+                chunk_video_update =gr .update ()
+                if yielded_chunk_video is not None :
+                    current_last_chunk_video_val =yielded_chunk_video 
+                    chunk_video_update =gr .update (value =current_last_chunk_video_val )
+                elif current_last_chunk_video_val is None :
+                    chunk_video_update =gr .update (value =None )
+                else :
+                    chunk_video_update =gr .update (value =current_last_chunk_video_val )
+
+                if yielded_chunk_status is not None :
+                    current_chunk_status_text_val =yielded_chunk_status 
+                chunk_status_text_update =gr .update (value =current_chunk_status_text_val )
+
+                comparison_video_update =gr .update ()
+                if yielded_comparison_video is not None :
+                    current_comparison_video_val =yielded_comparison_video 
+                    comparison_video_update =gr .update (value =current_comparison_video_val )
+                elif current_comparison_video_val is None :
+                    comparison_video_update =gr .update (value =None )
+                else :
+                    comparison_video_update =gr .update (value =current_comparison_video_val )
+
+                yield (
+                output_video_update ,status_text_update ,user_prompt_update ,
+                caption_status_update ,
+                chunk_video_update ,chunk_status_text_update ,
+                comparison_video_update 
+                )
+
+                logger .info (f"Final yield: current_user_prompt_val = '{current_user_prompt_val[:100]}...', auto_caption_completed = {auto_caption_completed_successfully}")
+                yield (
+                    gr .update (value =current_output_video_val ),
+                    gr .update (value =current_status_text_val ),
+                    gr .update (value =current_user_prompt_val ),
+                    gr .update (value =current_caption_status_text_val ,visible =current_caption_status_visible_val ),
+                    gr .update (value =current_last_chunk_video_val ),
+                    gr .update (value =current_chunk_status_text_val ),
+                    gr .update (value =current_comparison_video_val )
+                )
+
+        except CancelledError:
+            logger.warning("Processing was cancelled by user.")
+            current_status_text_val = "❌ Processing cancelled by user."
+            yield (
+                gr.update(value=current_output_video_val),
+                gr.update(value=current_status_text_val),
+                gr.update(value=current_user_prompt_val),
+                gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val),
+                gr.update(value=current_last_chunk_video_val),
+                gr.update(value=current_chunk_status_text_val),
+                gr.update(value=current_comparison_video_val)
+            )
+        except Exception as e:
+            logger.error(f"Error during processing: {e}", exc_info=True)
+            current_status_text_val = f"❌ Error during processing: {str(e)}"
+            yield (
+                gr.update(value=current_output_video_val),
+                gr.update(value=current_status_text_val),
+                gr.update(value=current_user_prompt_val),
+                gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val),
+                gr.update(value=current_last_chunk_video_val),
+                gr.update(value=current_chunk_status_text_val),
+                gr.update(value=current_comparison_video_val)
+            )
+        finally:
+            # Reset cancellation state and ensure UI is ready for next operation
+            cancellation_manager.reset()
+            logger.info("Processing completed - UI state reset")
 
     click_inputs =[
         input_video, user_prompt, pos_prompt, neg_prompt, model_selector,
@@ -1972,17 +2021,61 @@ This helps visualize the quality improvement from upscaling."""
     else :
         click_outputs_list .append (gr .State (None ))
 
-    click_outputs_list .extend ([last_chunk_video ,chunk_status_text, comparison_video])
+    click_outputs_list .extend ([last_chunk_video ,chunk_status_text, comparison_video, cancel_button])
 
     def upscale_wrapper(*args):
-        for result in upscale_director_logic(build_app_config_from_ui(*args)):
-            yield result
+        # Show cancel button when processing starts
+        first_result = None
+        processing_started = False
+        
+        try:
+            for result in upscale_director_logic(build_app_config_from_ui(*args)):
+                if not processing_started:
+                    # First yield: enable cancel button and yield first result
+                    processing_started = True
+                    if isinstance(result, tuple):
+                        yield result + (gr.update(interactive=True),)
+                    else:
+                        yield (result, gr.update(interactive=True))
+                else:
+                    # Subsequent yields: maintain cancel button enabled
+                    if isinstance(result, tuple):
+                        yield result + (gr.update(interactive=True),)
+                    else:
+                        yield (result, gr.update(interactive=True))
+        except Exception as e:
+            # Disable cancel button on any error
+            logger.error(f"Error in upscale_wrapper: {e}")
+            if processing_started:
+                yield (gr.update(), gr.update(value=f"Error: {e}"), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(interactive=False))
+            else:
+                yield (gr.update(), gr.update(value=f"Error: {e}"), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(interactive=False))
+        finally:
+            # Always disable cancel button when processing completes
+            yield (gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(interactive=False))
 
     upscale_button .click (
     fn =upscale_wrapper,
     inputs =click_inputs ,
     outputs =click_outputs_list ,
     show_progress_on =[output_video ]
+    )
+
+    # Cancel button click handler
+    def cancel_processing():
+        """Handle cancel button click - request cancellation via the global manager."""
+        logger.warning("🚨 CANCEL button clicked by user. Requesting cancellation.")
+        success = cancellation_manager.request_cancellation()
+        
+        if success:
+            return "🚨 CANCELLATION REQUESTED: Processing will stop safely at the next checkpoint. Please wait for current operation to complete..."
+        else:
+            return "⚠️ No active processing to cancel or cancellation already requested."
+
+    cancel_button.click(
+        fn=cancel_processing,
+        inputs=[],
+        outputs=[status_textbox]
     )
 
     if UTIL_COG_VLM_AVAILABLE :
