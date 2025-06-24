@@ -2011,6 +2011,9 @@ def run_upscale (
     except CancelledError as e_cancel:
         logger.info("Upscaling process cancelled by user")
         
+        # Set flag to prevent further yields from overwriting partial video
+        processing_was_cancelled = True
+        
         # Try to compose partial video from processed content
         partial_video_path = None
         partial_success_msg = "Process cancelled by user"
@@ -2225,6 +2228,9 @@ def run_upscale (
         
         # Yield the partial video if available, otherwise None
         yield partial_video_path, "\n".join(status_log), last_chunk_video_path, partial_success_msg, None
+        
+        # Return early to prevent further yields that could overwrite the partial video
+        return
     except gr .Error as e :
         logger .error (f"A Gradio UI Error occurred: {e}",exc_info =True )
         status_log .append (f"Error: {e}")
@@ -2272,6 +2278,12 @@ def run_upscale (
     total_processing_time = time.time() - overall_process_start_time
     params_for_metadata["total_processing_time"] = total_processing_time
     logger.info(f"STAR upscaling process finished and cleaned up. Total processing time: {format_time(total_processing_time)}")
+
+    # Check if processing was cancelled - if so, skip final yields to preserve partial video
+    processing_was_cancelled = 'processing_was_cancelled' in locals() and processing_was_cancelled
+    if processing_was_cancelled:
+        logger.info("Skipping final yields because processing was cancelled - preserving partial video result")
+        return
 
     if save_metadata and main_output_dir and base_output_filename_no_ext:
         status_info_for_final_meta = {"processing_time_total": total_processing_time}

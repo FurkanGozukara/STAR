@@ -201,6 +201,9 @@ if not os .path .exists (APP_CONFIG.paths.heavy_deg_model_path ):
 css ="""
 .gradio-container { font-family: 'IBM Plex Sans', sans-serif; }
 .gr-button { color: white; border-color: black; background: black; }
+#row1, #row2, #row3, #row4 {
+    margin-bottom: 20px !important;
+}
 input[type='range'] { accent-color: black; }
 .dark input[type='range'] { accent-color: #dfdfdf; }
 """
@@ -267,17 +270,21 @@ If CogVLM2 is available, you can use the button below to generate a caption auto
                             scale =1 
                             )
 
-                        if UTIL_COG_VLM_AVAILABLE :
-                            with gr .Row ():
-                                auto_caption_btn =gr .Button ("Generate Caption with CogVLM2 (No Upscale)",variant ="primary",icon ="icons/caption.png")
-                                rife_fps_button =gr .Button ("RIFE FPS Increase (No Upscale)",variant ="primary",icon ="icons/fps.png")
-                            with gr .Row ():
-                                upscale_button =gr .Button ("Upscale Video",variant ="primary",icon ="icons/upscale.png")
-                                cancel_button =gr .Button ("Cancel",variant ="stop",visible =True, interactive=False)
-
-                            with gr .Row ():
+                        if UTIL_COG_VLM_AVAILABLE:
+                            with gr.Row(elem_id="row1"):
+                                auto_caption_btn = gr.Button("Generate Caption with CogVLM2 (No Upscale)", variant="primary", icon="icons/caption.png")
+                                rife_fps_button = gr.Button("RIFE FPS Increase (No Upscale)", variant="primary", icon="icons/fps.png")
+    
+                            with gr.Row(elem_id="row2"):
+                                upscale_button = gr.Button("Upscale Video", variant="primary", icon="icons/upscale.png")
+    
+                            with gr.Row(elem_id="row3"):
+                                cancel_button = gr.Button("Cancel Upscaling", variant="stop", visible=True, interactive=False, icon="icons/cancel.png")
+    
+                            with gr.Row(elem_id="row4"):
                                 initial_temp_size_label = util_format_temp_folder_size(logger)
                                 delete_temp_button = gr.Button(f"Delete Temp Folder ({initial_temp_size_label})", variant="stop")
+
 
                             caption_status =gr .Textbox (label ="Captioning Status",interactive =False ,visible =False )
                         else:
@@ -1893,17 +1900,37 @@ This helps visualize the quality improvement from upscaling."""
             face_restoration_batch_size =app_config.face_restoration.batch_size 
             )
 
+            cancellation_detected = False
             for yielded_output_video ,yielded_status_log ,yielded_chunk_video ,yielded_chunk_status ,yielded_comparison_video in upscale_generator :
 
-                output_video_update =gr .update ()
-                if yielded_output_video is not None :
-                    current_output_video_val =yielded_output_video 
-                    output_video_update =gr .update (value =current_output_video_val )
-                    logger.info(f"Updated output video from generator: {os.path.basename(yielded_output_video) if yielded_output_video else 'None'}")
-                elif current_output_video_val is None :
-                    output_video_update =gr .update (value =None )
-                else :
-                    output_video_update =gr .update (value =current_output_video_val )
+                # Check if this is a partial video result after cancellation
+                is_partial_video = yielded_output_video and "partial_cancelled" in yielded_output_video
+                
+                # If we already detected cancellation and have a partial video, don't overwrite it
+                if cancellation_detected and current_output_video_val and "partial_cancelled" in current_output_video_val:
+                    if not is_partial_video:
+                        logger.info(f"Skipping output video update to preserve partial video: {os.path.basename(current_output_video_val)}")
+                        output_video_update = gr.update(value=current_output_video_val)
+                    else:
+                        # Allow partial video updates
+                        current_output_video_val = yielded_output_video
+                        output_video_update = gr.update(value=current_output_video_val)
+                        logger.info(f"Updated partial video from generator: {os.path.basename(yielded_output_video)}")
+                else:
+                    output_video_update =gr .update ()
+                    if yielded_output_video is not None :
+                        current_output_video_val =yielded_output_video 
+                        output_video_update =gr .update (value =current_output_video_val )
+                        logger.info(f"Updated output video from generator: {os.path.basename(yielded_output_video) if yielded_output_video else 'None'}")
+                        
+                        # Detect if this is a partial video (indicates cancellation occurred)
+                        if is_partial_video:
+                            cancellation_detected = True
+                            logger.info("Detected partial video - cancellation mode activated")
+                    elif current_output_video_val is None :
+                        output_video_update =gr .update (value =None )
+                    else :
+                        output_video_update =gr .update (value =current_output_video_val )
 
                 combined_log_director =""
                 if log_accumulator_director :
@@ -1992,9 +2019,13 @@ This helps visualize the quality improvement from upscaling."""
             logger.warning("Processing was cancelled by user.")
             logger.info(f"Current output video value at cancellation: {current_output_video_val}")
             
-            # Check if a partial video was generated during cancellation
-            partial_video_found = False
-            if current_output_video_val is None:
+            # Check if we already have a partial video from the generator
+            if current_output_video_val and "partial_cancelled" in current_output_video_val:
+                logger.info(f"Partial video already set from generator: {current_output_video_val}")
+                current_status_text_val = f"⚠️ Processing cancelled by user. Partial video saved: {os.path.basename(current_output_video_val)}"
+            else:
+                # Check if a partial video was generated during cancellation
+                partial_video_found = False
                 # Look for partial video in outputs directory
                 import glob
                 partial_pattern = os.path.join(APP_CONFIG.paths.outputs_dir, "*_partial_cancelled.mp4")
@@ -2007,14 +2038,11 @@ This helps visualize the quality improvement from upscaling."""
                     current_output_video_val = latest_partial
                     partial_video_found = True
                     logger.info(f"Found partial video after cancellation: {latest_partial}")
-            elif current_output_video_val and "partial_cancelled" in current_output_video_val:
-                partial_video_found = True
-                logger.info(f"Partial video already set: {current_output_video_val}")
-            
-            if partial_video_found:
-                current_status_text_val = f"⚠️ Processing cancelled by user. Partial video saved: {os.path.basename(current_output_video_val)}"
-            else:
-                current_status_text_val = "❌ Processing cancelled by user."
+                
+                if partial_video_found:
+                    current_status_text_val = f"⚠️ Processing cancelled by user. Partial video saved: {os.path.basename(current_output_video_val)}"
+                else:
+                    current_status_text_val = "❌ Processing cancelled by user."
             
             logger.info(f"Final cancellation yield - output video: {current_output_video_val}, status: {current_status_text_val}")
             yield (
