@@ -375,23 +375,18 @@ The total combined prompt length is limited to 77 tokens."""
                     status_textbox =gr .Textbox (label ="Log",interactive =False ,lines =8 ,max_lines =15 )
                     
                     with gr.Accordion("Save/Load Presets", open=True):
-                        preset_status = gr.Textbox(label="Preset Status", interactive=False, lines=1, placeholder="...")
                         with gr.Row():
                             preset_dropdown = gr.Dropdown(
-                                label="Select Preset",
+                                label="Select or Create Preset",
                                 choices=preset_handler.get_preset_list(),
                                 value=preset_handler.get_last_used_preset_name() or "Default",
-                                scale=3
+                                allow_custom_value=True,
+                                scale=3,
+                                info="Select a preset to auto-load, or type a new name and click Save."
                             )
                             refresh_presets_btn = gr.Button("🔄", scale=1, variant="secondary")
-                            load_preset_btn = gr.Button("Load Preset", variant="secondary", scale=1)
-                        with gr.Row():
-                            save_preset_name_textbox = gr.Textbox(
-                                label="New Preset Name",
-                                placeholder="Enter a name for the current settings...",
-                                scale=3
-                            )
-                            save_preset_btn = gr.Button("Save Preset", variant="primary", scale=2)
+                            save_preset_btn = gr.Button("Save", variant="primary", scale=1)
+                        preset_status = gr.Textbox(label="Preset Status", show_label=False, interactive=False, lines=1, placeholder="...")
 
                     with gr .Accordion ("Last Processed Chunk",open =True ):
                         last_chunk_video =gr .Video (
@@ -3419,11 +3414,11 @@ This helps visualize the quality improvement from upscaling."""
 
     save_preset_btn.click(
         fn=save_preset_wrapper,
-        inputs=[save_preset_name_textbox] + click_inputs,
+        inputs=[preset_dropdown] + click_inputs,
         outputs=[preset_status, preset_dropdown]
     )
 
-    load_preset_btn.click(
+    preset_dropdown.change(
         fn=load_preset_wrapper,
         inputs=[preset_dropdown],
         outputs=[preset_status] + preset_components
