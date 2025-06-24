@@ -859,6 +859,9 @@ def run_upscale (
                 except Exception as e :
                     logger .error (f"Error auto-captioning first scene: {e}", exc_info=True)
 
+            # Flag to track if processing was cancelled
+            processing_cancelled = False
+            
             for scene_idx ,scene_video_path_item in enumerate (scene_video_paths ):
                 # Check for cancellation before processing each scene
                 cancellation_manager.check_cancel(f"before processing scene {scene_idx + 1}")
@@ -947,21 +950,63 @@ def run_upscale (
                             logger .error (f"Error from scene_processor_generator: {error_message}")
                             status_log .append (f"Error processing scene {scene_idx + 1}: {error_message}")
                             yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Scene {scene_idx + 1} processing failed: {error_message}",None
-                            if not is_batch_mode: # Only raise error if not in batch, to allow batch to continue
+                            
+                            # Check if the error is a cancellation - handle differently for graceful partial output
+                            if "cancelled" in error_message.lower() or "cancellation" in error_message.lower():
+                                logger.info(f"Scene {scene_idx + 1} was cancelled - checking for partial scene video")
+                                processing_cancelled = True
+                                # Don't break immediately - continue to process any subsequent yields (like scene_complete with partial video)
+                                # The scene processor may yield a partial scene video after the cancellation error
+                                continue  # Continue to process next yield instead of breaking
+                            elif not is_batch_mode: # Only raise error if not in batch, to allow batch to continue
                                 raise gr.Error(f"Scene {scene_idx + 1} processing failed: {error_message}")
                             else:
                                 logger.error(f"BATCH MODE: Scene {scene_idx + 1} processing failed: {error_message}. Skipping this scene for merging.")
                                 # Continue to next scene in batch context
+                        elif yield_type == "scene_complete":
+                            # Handle both normal and partial scene completion
+                            processed_scene_video_path_final = data[0]
+                            if len(data) > 1:
+                                scene_frame_count = data[1]
+                            if len(data) > 2:
+                                scene_fps = data[2]
+                            # Break out of the yield processing loop to add the scene to processed list
+                            break
                     if processed_scene_video_path_final :
                          processed_scene_videos .append (processed_scene_video_path_final )
-                    else :
+                         logger.info(f"Scene {scene_idx + 1}: Added processed scene video to merge list: {processed_scene_video_path_final}")
+                    elif not processing_cancelled:
+                        # Only raise error if it wasn't cancelled - cancellation is handled gracefully
                         logger .error (f"Scene {scene_idx+1} finished processing but no final video path was yielded by process_single_scene.")
                         raise gr .Error (f"Scene {scene_idx+1} did not complete correctly.")
+                    
+                    # If processing was cancelled, break from the scene loop after processing all yields
+                    if processing_cancelled:
+                        logger.info(f"Scene {scene_idx + 1} processing cancelled - stopping scene loop for partial output generation")
+                        status_log.append(f"Scene {scene_idx + 1} processing cancelled - generating partial output")
+                        yield None, "\n".join(status_log), last_chunk_video_path, f"Scene {scene_idx + 1} cancelled - creating partial output", None
+                        break
+                except CancelledError as e_cancel:
+                    logger.info(f"Scene {scene_idx + 1} processing cancelled by user - proceeding with partial scene merge")
+                    status_log.append(f"Scene {scene_idx + 1} processing cancelled - generating partial output")
+                    yield None, "\n".join(status_log), last_chunk_video_path, f"Scene {scene_idx + 1} cancelled - creating partial output", None
+                    processing_cancelled = True
+                    # Break the loop to proceed with merging any completed scenes for partial output
+                    break
                 except Exception as e :
+                    # Check if this is a cancellation-related error wrapped in another exception
+                    error_str = str(e).lower()
+                    is_cancellation_error = "cancelled" in error_str or "cancellation" in error_str
+                    
                     logger .error (f"Error processing scene {scene_idx + 1} in run_upscale: {e}",exc_info =True )
                     status_log .append (f"Error processing scene {scene_idx + 1}: {e}")
                     yield None ,"\n".join (status_log ),last_chunk_video_path ,f"Scene {scene_idx + 1} processing failed: {e}",None
-                    if not is_batch_mode: # Only raise error if not in batch, to allow batch to continue
+                    
+                    if is_cancellation_error:
+                        logger.info(f"Scene {scene_idx + 1} error was cancellation-related - proceeding with partial scene merge")
+                        processing_cancelled = True
+                        break  # Exit the scene processing loop to generate partial output
+                    elif not is_batch_mode: # Only raise error if not in batch, to allow batch to continue
                         raise gr.Error(f"Scene {scene_idx + 1} processing failed: {e}")
                     else:
                         logger.error(f"BATCH MODE: Scene {scene_idx + 1} processing failed: {e}. Skipping this scene for merging.")
@@ -969,20 +1014,49 @@ def run_upscale (
 
             current_overall_progress =upscaling_loop_progress_start +stage_weights ["upscaling_loop"]
             scene_merge_progress_start =current_overall_progress
-            progress (current_overall_progress ,desc ="Merging processed scenes...")
-            status_log .append ("Merging processed scenes...")
-            yield None ,"\n".join (status_log ),last_chunk_video_path ,"Merging Scenes...",None
+            
+            # Handle partial scene processing (from cancellation or errors)
+            if processed_scene_videos:
+                progress (current_overall_progress ,desc ="Merging processed scenes...")
+                if len(processed_scene_videos) < total_scenes:
+                    partial_msg = f"Merging {len(processed_scene_videos)}/{total_scenes} processed scenes (partial output)..."
+                    status_log.append(partial_msg)
+                    logger.info(partial_msg)
+                else:
+                    status_log.append("Merging processed scenes...")
+                yield None ,"\n".join (status_log ),last_chunk_video_path ,"Merging Scenes...",None
 
-            silent_upscaled_video_path =os .path .join (temp_dir ,"silent_upscaled_video.mp4")
-            util_merge_scene_videos (processed_scene_videos ,silent_upscaled_video_path ,temp_dir ,
-            ffmpeg_preset ,ffmpeg_quality_value ,ffmpeg_use_gpu ,logger =logger )
+                silent_upscaled_video_path =os .path .join (temp_dir ,"silent_upscaled_video.mp4")
+                # Allow partial merge when processing was cancelled but we have some completed scenes
+                allow_partial = processing_cancelled if 'processing_cancelled' in locals() else False
+                util_merge_scene_videos (processed_scene_videos ,silent_upscaled_video_path ,temp_dir ,
+                ffmpeg_preset ,ffmpeg_quality_value ,ffmpeg_use_gpu ,logger =logger, allow_partial_merge=allow_partial )
 
-            current_overall_progress =scene_merge_progress_start +stage_weights ["scene_merge"]
-            progress (current_overall_progress ,desc ="Scene merging complete")
-            scene_merge_msg =f"Successfully merged {len(processed_scene_videos)} processed scenes"
-            status_log .append (scene_merge_msg )
-            logger .info (scene_merge_msg )
-            yield None ,"\n".join (status_log ),last_chunk_video_path ,scene_merge_msg,None
+                current_overall_progress =scene_merge_progress_start +stage_weights ["scene_merge"]
+                progress (current_overall_progress ,desc ="Scene merging complete")
+                if len(processed_scene_videos) < total_scenes:
+                    scene_merge_msg = f"Successfully merged {len(processed_scene_videos)}/{total_scenes} processed scenes (partial output)"
+                else:
+                    scene_merge_msg = f"Successfully merged {len(processed_scene_videos)} processed scenes"
+                status_log .append (scene_merge_msg )
+                logger .info (scene_merge_msg )
+                yield None ,"\n".join (status_log ),last_chunk_video_path ,scene_merge_msg,None
+            else:
+                # No scenes were processed due to cancellation or errors
+                if processing_cancelled:
+                    logger.info("No scenes were processed due to user cancellation - creating empty output for audio transfer")
+                    status_log.append("🚨 Processing cancelled - preparing audio transfer from original video")
+                    yield None, "\n".join(status_log), last_chunk_video_path, "Cancelled - preparing audio transfer", None
+                    # Create a placeholder/empty video for audio transfer to work
+                    silent_upscaled_video_path =os .path .join (temp_dir ,"silent_upscaled_video.mp4")
+                    # Copy the original video as a fallback for audio transfer
+                    shutil.copy2(input_video_path, silent_upscaled_video_path)
+                    logger.info("Using original video as fallback for audio transfer due to cancellation")
+                else:
+                    logger.warning("No scenes were processed successfully")
+                    status_log.append("⚠️ No scenes were processed successfully - cannot create output video")
+                    yield None, "\n".join(status_log), last_chunk_video_path, "No scenes processed", None
+                    raise gr.Error("No scenes were processed successfully")
         else : # No scene splitting (direct upscale)
             # This is the start of the block that was mis-indented.
             # It should be an 'else' to the 'if enable_scene_split:'
@@ -1936,10 +2010,221 @@ def run_upscale (
 
     except CancelledError as e_cancel:
         logger.info("Upscaling process cancelled by user")
-        status_log.append("⚠️ Process cancelled by user")
+        
+        # Try to compose partial video from processed content
+        partial_video_path = None
+        partial_success_msg = "Process cancelled by user"
+        
+        try:
+            # Check if we're in scene-split mode and have processed scene videos or a merged scene video available
+            if 'enable_scene_split' in locals() and enable_scene_split:
+                # First check if we have a merged scene video (scene merging completed)
+                if 'silent_upscaled_video_path' in locals() and silent_upscaled_video_path and os.path.exists(silent_upscaled_video_path):
+                    logger.info("🔄 Using merged scenes video for partial output after cancellation...")
+                    status_log.append("🔄 Creating partial video from processed scenes...")
+                    progress(current_overall_progress, desc="Creating partial video...")
+                    
+                    # Create partial video filename
+                    partial_video_name = f"{base_output_filename_no_ext}_partial_cancelled.mp4"
+                    partial_video_path = os.path.join(main_output_dir, partial_video_name)
+                    
+                    # Use the already-merged scene video as the base
+                    silent_partial_path = silent_upscaled_video_path
+                    video_creation_success = True  # Video already exists from scene merging
+                    
+                    # Get video properties for audio trimming
+                    try:
+                        import subprocess
+                        # Get duration of the partial video
+                        duration_cmd = f'ffprobe -v error -show_entries format=duration -of csv=p=0 "{silent_partial_path}"'
+                        result = subprocess.run(duration_cmd, shell=True, capture_output=True, text=True, check=True)
+                        partial_duration_seconds = float(result.stdout.strip())
+                        logger.info(f"Partial video duration from merged scenes: {partial_duration_seconds:.2f} seconds")
+                    except Exception as e_duration:
+                        logger.warning(f"Could not determine partial video duration: {e_duration}")
+                        partial_duration_seconds = None
+                        
+                # If no merged video, check if we have individual processed scene videos to merge
+                elif 'processed_scene_videos' in locals() and processed_scene_videos:
+                    logger.info(f"🔄 Merging {len(processed_scene_videos)} processed scene videos for partial output after cancellation...")
+                    status_log.append(f"🔄 Merging {len(processed_scene_videos)} processed scene videos for partial output...")
+                    progress(current_overall_progress, desc="Merging partial scenes...")
+                    
+                    # Create partial video filename
+                    partial_video_name = f"{base_output_filename_no_ext}_partial_cancelled.mp4"
+                    partial_video_path = os.path.join(main_output_dir, partial_video_name)
+                    
+                    # Create silent partial video by merging processed scenes
+                    silent_partial_path = os.path.join(temp_dir, "silent_partial_from_scenes.mp4")
+                    
+                    try:
+                        # Import scene merging utility
+                        from .scene_utils import merge_scene_videos as util_merge_scene_videos
+                        
+                        # Merge the processed scene videos
+                        util_merge_scene_videos(
+                            processed_scene_videos, silent_partial_path, temp_dir,
+                            ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu,
+                            logger=logger, allow_partial_merge=True
+                        )
+                        
+                        if os.path.exists(silent_partial_path):
+                            video_creation_success = True
+                            logger.info(f"Successfully merged {len(processed_scene_videos)} scene videos for partial output")
+                            
+                            # Get video properties for audio trimming
+                            try:
+                                import subprocess
+                                duration_cmd = f'ffprobe -v error -show_entries format=duration -of csv=p=0 "{silent_partial_path}"'
+                                result = subprocess.run(duration_cmd, shell=True, capture_output=True, text=True, check=True)
+                                partial_duration_seconds = float(result.stdout.strip())
+                                logger.info(f"Partial video duration from scene merging: {partial_duration_seconds:.2f} seconds")
+                            except Exception as e_duration:
+                                logger.warning(f"Could not determine partial video duration: {e_duration}")
+                                partial_duration_seconds = None
+                        else:
+                            logger.warning("Failed to merge scene videos for partial output")
+                            video_creation_success = False
+                            
+                    except Exception as e_merge:
+                        logger.error(f"Error merging scene videos for partial output: {e_merge}")
+                        video_creation_success = False
+                else:
+                    logger.info("Scene split mode enabled but no processed scene videos found for partial output")
+                    video_creation_success = False
+                    
+            # Fallback: Check if we have any processed frames to work with (non-scene-split mode)
+            elif 'output_frames_dir' in locals() and output_frames_dir and os.path.exists(output_frames_dir):
+                frame_files = sorted([f for f in os.listdir(output_frames_dir) 
+                                     if f.lower().endswith(('.png', '.jpg', '.jpeg'))])
+                
+                if frame_files:
+                    num_processed_frames = len(frame_files)
+                    logger.info(f"🔄 Composing partial video from {num_processed_frames} processed frames after cancellation...")
+                    status_log.append(f"🔄 Composing partial video from {num_processed_frames} processed frames...")
+                    progress(current_overall_progress, desc="Composing partial video...")
+                    
+                    # Create partial video filename
+                    partial_video_name = f"{base_output_filename_no_ext}_partial_cancelled.mp4"
+                    partial_video_path = os.path.join(main_output_dir, partial_video_name)
+                    
+                    # Create video from processed frames (without audio first)
+                    silent_partial_path = os.path.join(temp_dir, "silent_partial_video.mp4")
+                    
+                    logger.info(f"Creating silent partial video from {num_processed_frames} frames...")
+                    video_creation_success = util_create_video_from_frames(
+                        output_frames_dir, silent_partial_path, input_fps_val if 'input_fps_val' in locals() else 30.0,
+                        ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger
+                    )
+                    
+                    if video_creation_success:
+                        # Calculate duration of partial video from frames
+                        fps_to_use = input_fps_val if 'input_fps_val' in locals() else 30.0
+                        partial_duration_seconds = num_processed_frames / fps_to_use
+                        logger.info(f"Partial video duration: {partial_duration_seconds:.2f} seconds ({num_processed_frames} frames at {fps_to_use} FPS)")
+                else:
+                    video_creation_success = False
+            else:
+                logger.info("No processed content found for partial video creation")
+                video_creation_success = False
+            
+            # If we have a valid silent video, add audio
+            if video_creation_success and 'silent_partial_path' in locals() and os.path.exists(silent_partial_path):
+                # Extract and trim audio from original video to match partial video length
+                audio_added = False
+                if 'input_video_path' in locals() and os.path.exists(input_video_path):
+                    try:
+                        logger.info("Extracting and trimming audio to match partial video length...")
+                        
+                        # Check if original video has audio
+                        probe_audio_cmd = f'ffprobe -v error -select_streams a:0 -count_packets -show_entries stream=nb_read_packets -csv=p=0 "{input_video_path}"'
+                        import subprocess
+                        try:
+                            result = subprocess.run(probe_audio_cmd, shell=True, capture_output=True, text=True, check=True)
+                            has_audio = result.stdout.strip() and int(result.stdout.strip()) > 0
+                        except:
+                            has_audio = False
+                        
+                        if has_audio and 'partial_duration_seconds' in locals() and partial_duration_seconds:
+                            # Create final video with trimmed audio
+                            trim_audio_cmd = (
+                                f'ffmpeg -y -i "{silent_partial_path}" -i "{input_video_path}" '
+                                f'-t {partial_duration_seconds:.3f} -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 '
+                                f'-avoid_negative_ts make_zero "{partial_video_path}"'
+                            )
+                            
+                            audio_success = util_run_ffmpeg_command(
+                                trim_audio_cmd, "Partial Video Audio Addition", logger, raise_on_error=False
+                            )
+                            
+                            if audio_success and os.path.exists(partial_video_path):
+                                audio_added = True
+                                logger.info("Successfully added trimmed audio to partial video")
+                            else:
+                                logger.warning("Failed to add audio, using silent video")
+                        else:
+                            logger.info("Original video has no audio stream or duration not available")
+                            
+                    except Exception as e_audio:
+                        logger.warning(f"Error processing audio for partial video: {e_audio}")
+                
+                # If audio addition failed or wasn't needed, copy the silent video
+                if not audio_added:
+                    try:
+                        import shutil
+                        shutil.copy2(silent_partial_path, partial_video_path)
+                        logger.info("Using silent partial video (no audio)")
+                    except Exception as e_copy:
+                        logger.error(f"Failed to copy silent partial video: {e_copy}")
+                        partial_video_path = None
+                
+                # Verify final partial video exists
+                if partial_video_path and os.path.exists(partial_video_path):
+                    # Update metadata for partial video
+                    if 'save_metadata' in locals() and save_metadata and 'params_for_metadata' in locals() and 'metadata_handler_module' in locals() and metadata_handler_module:
+                        try:
+                            partial_metadata = params_for_metadata.copy()
+                            partial_metadata["final_output_path"] = partial_video_path
+                            partial_metadata["partial_processing"] = True
+                            partial_metadata["cancellation_reason"] = "User requested cancellation"
+                            if 'partial_duration_seconds' in locals() and partial_duration_seconds:
+                                partial_metadata["partial_duration_seconds"] = partial_duration_seconds
+                            
+                            # Save metadata for partial video
+                            partial_base_name = os.path.splitext(partial_video_name)[0]
+                            success, message = metadata_handler_module.save_metadata(
+                                save_flag=True, output_dir=main_output_dir, 
+                                base_filename_no_ext=partial_base_name,
+                                params_dict=partial_metadata, status_info={}, logger=logger
+                            )
+                            if success:
+                                logger.info(f"Partial video metadata saved: {message}")
+                            else:
+                                logger.warning(f"Failed to save partial video metadata: {message}")
+                        except Exception as e_meta:
+                            logger.warning(f"Error saving partial video metadata: {e_meta}")
+                    
+                    duration_str = f" ({partial_duration_seconds:.1f}s)" if 'partial_duration_seconds' in locals() and partial_duration_seconds else ""
+                    partial_success_msg = f"⚠️ Partial video created from processed scenes{duration_str}: {partial_video_path}"
+                    logger.info(f"Cancellation handled - partial video saved: {partial_video_path}")
+                else:
+                    logger.warning("Failed to create partial video file")
+                    partial_success_msg = "⚠️ Process cancelled by user - failed to create partial video"
+            else:
+                logger.info("No processed content found for partial video creation")
+                partial_success_msg = "⚠️ Process cancelled by user - no processed content available"
+        
+        except Exception as e_partial:
+            logger.error(f"Error during partial video creation: {e_partial}", exc_info=True)
+            partial_success_msg = "⚠️ Process cancelled by user - error creating partial video"
+        
+        # Add cancellation message to status log
+        status_log.append(partial_success_msg)
         current_overall_progress = min(current_overall_progress + 0.01, 1.0)
-        progress(current_overall_progress, desc="Process cancelled by user")
-        yield None, "\n".join(status_log), last_chunk_video_path, "Process cancelled by user", None
+        progress(current_overall_progress, desc="Process cancelled")
+        
+        # Yield the partial video if available, otherwise None
+        yield partial_video_path, "\n".join(status_log), last_chunk_video_path, partial_success_msg, None
     except gr .Error as e :
         logger .error (f"A Gradio UI Error occurred: {e}",exc_info =True )
         status_log .append (f"Error: {e}")

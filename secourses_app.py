@@ -1899,6 +1899,7 @@ This helps visualize the quality improvement from upscaling."""
                 if yielded_output_video is not None :
                     current_output_video_val =yielded_output_video 
                     output_video_update =gr .update (value =current_output_video_val )
+                    logger.info(f"Updated output video from generator: {os.path.basename(yielded_output_video) if yielded_output_video else 'None'}")
                 elif current_output_video_val is None :
                     output_video_update =gr .update (value =None )
                 else :
@@ -1989,7 +1990,33 @@ This helps visualize the quality improvement from upscaling."""
 
         except CancelledError:
             logger.warning("Processing was cancelled by user.")
-            current_status_text_val = "❌ Processing cancelled by user."
+            logger.info(f"Current output video value at cancellation: {current_output_video_val}")
+            
+            # Check if a partial video was generated during cancellation
+            partial_video_found = False
+            if current_output_video_val is None:
+                # Look for partial video in outputs directory
+                import glob
+                partial_pattern = os.path.join(APP_CONFIG.paths.outputs_dir, "*_partial_cancelled.mp4")
+                partial_files = glob.glob(partial_pattern)
+                logger.info(f"Searching for partial videos with pattern: {partial_pattern}")
+                logger.info(f"Found partial files: {partial_files}")
+                if partial_files:
+                    # Get the most recent partial file
+                    latest_partial = max(partial_files, key=os.path.getctime)
+                    current_output_video_val = latest_partial
+                    partial_video_found = True
+                    logger.info(f"Found partial video after cancellation: {latest_partial}")
+            elif current_output_video_val and "partial_cancelled" in current_output_video_val:
+                partial_video_found = True
+                logger.info(f"Partial video already set: {current_output_video_val}")
+            
+            if partial_video_found:
+                current_status_text_val = f"⚠️ Processing cancelled by user. Partial video saved: {os.path.basename(current_output_video_val)}"
+            else:
+                current_status_text_val = "❌ Processing cancelled by user."
+            
+            logger.info(f"Final cancellation yield - output video: {current_output_video_val}, status: {current_status_text_val}")
             yield (
                 gr.update(value=current_output_video_val),
                 gr.update(value=current_status_text_val),
@@ -2061,9 +2088,11 @@ This helps visualize the quality improvement from upscaling."""
         # Show cancel button when processing starts
         first_result = None
         processing_started = False
+        last_valid_result = None
         
         try:
             for result in upscale_director_logic(build_app_config_from_ui(*args)):
+                last_valid_result = result  # Keep track of the last valid result
                 if not processing_started:
                     # First yield: enable cancel button and yield first result
                     processing_started = True
@@ -2080,13 +2109,19 @@ This helps visualize the quality improvement from upscaling."""
         except Exception as e:
             # Disable cancel button on any error
             logger.error(f"Error in upscale_wrapper: {e}")
-            if processing_started:
-                yield (gr.update(), gr.update(value=f"Error: {e}"), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(interactive=False))
+            if processing_started and last_valid_result:
+                # Try to preserve the last valid result when an error occurs
+                if isinstance(last_valid_result, tuple):
+                    yield last_valid_result + (gr.update(interactive=False),)
+                else:
+                    yield (last_valid_result, gr.update(interactive=False))
             else:
                 yield (gr.update(), gr.update(value=f"Error: {e}"), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(interactive=False))
         finally:
             # Always disable cancel button when processing completes
-            yield (gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(interactive=False))
+            # Don't override the last valid result if we have one
+            if not last_valid_result:
+                yield (gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(interactive=False))
 
     upscale_button .click (
     fn =upscale_wrapper,

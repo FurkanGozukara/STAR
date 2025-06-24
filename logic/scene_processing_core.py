@@ -1162,6 +1162,57 @@ def process_single_scene(
 
     except CancelledError as e_cancel:
         logger.info(f"Scene {scene_index + 1} processing cancelled by user")
+        
+        # Check if we have any completed chunks that can be merged into a partial scene video
+        partial_scene_video = None
+        try:
+            if save_chunks and scene_output_dir:
+                # Compute the actual chunks directory where chunks are saved
+                scene_name = f"scene_{scene_index+1:04d}"
+                actual_chunks_directory = os.path.join(scene_output_dir, "scenes", scene_name, "chunks")
+                
+                # Look for completed chunk videos in the actual chunks directory
+                chunk_videos = []
+                if os.path.exists(actual_chunks_directory):
+                    for chunk_file in os.listdir(actual_chunks_directory):
+                        if chunk_file.startswith("chunk_") and chunk_file.endswith(".mp4"):
+                            chunk_path = os.path.join(actual_chunks_directory, chunk_file)
+                            if os.path.exists(chunk_path) and os.path.getsize(chunk_path) > 0:
+                                chunk_videos.append(chunk_path)
+                else:
+                    logger.info(f"Scene {scene_index + 1}: Chunks directory does not exist: {actual_chunks_directory}")
+                
+                if chunk_videos:
+                    # Sort chunk videos to ensure proper order
+                    chunk_videos.sort()
+                    logger.info(f"Scene {scene_index + 1}: Found {len(chunk_videos)} completed chunks for partial scene creation")
+                    
+                    # Create partial scene video path
+                    partial_scene_video = os.path.join(temp_dir, f"{scene_name}_partial.mp4")
+                    
+                    # Use scene merging utility to combine chunks
+                    from .scene_utils import merge_scene_videos
+                    merge_success = merge_scene_videos(
+                        chunk_videos, partial_scene_video, temp_dir,
+                        ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger, allow_partial_merge=True
+                    )
+                    
+                    if merge_success and os.path.exists(partial_scene_video):
+                        logger.info(f"Scene {scene_index + 1}: Successfully created partial scene video from {len(chunk_videos)} chunks: {partial_scene_video}")
+                        yield "scene_complete", partial_scene_video, None, None, None
+                        return
+                    else:
+                        logger.warning(f"Scene {scene_index + 1}: Failed to merge chunks into partial scene video")
+                        partial_scene_video = None
+                else:
+                    logger.info(f"Scene {scene_index + 1}: No completed chunks found for partial scene creation")
+            else:
+                logger.info(f"Scene {scene_index + 1}: Chunk saving not enabled or scene_output_dir not available, cannot create partial scene video")
+        except Exception as e_partial:
+            logger.error(f"Scene {scene_index + 1}: Error creating partial scene video: {e_partial}", exc_info=True)
+            partial_scene_video = None
+        
+        # If we couldn't create a partial scene video, yield the cancellation error
         yield "error", "Scene processing cancelled by user", None, None, None
     except Exception as e:
         logger.error(f"Error processing scene {scene_index + 1}: {e}", exc_info=True)

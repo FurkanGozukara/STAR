@@ -229,10 +229,11 @@ def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, prog
         if 'video' in locals():
             del video
 
-def merge_scene_videos(scene_video_paths, output_path, temp_dir, ffmpeg_preset="medium", ffmpeg_quality=23, use_gpu=False, logger=None):
+def merge_scene_videos(scene_video_paths, output_path, temp_dir, ffmpeg_preset="medium", ffmpeg_quality=23, use_gpu=False, logger=None, allow_partial_merge=False):
     """Merge multiple scene videos into a single output video."""
-    # Check for cancellation at start of merge process
-    cancellation_manager.check_cancel()
+    # Check for cancellation at start of merge process, but allow partial merges to proceed
+    if not allow_partial_merge:
+        cancellation_manager.check_cancel()
     
     if not scene_video_paths:
         if logger:
