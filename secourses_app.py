@@ -1,3 +1,5 @@
+# secourses_app.py
+
 import gradio as gr 
 import os 
 import platform 
@@ -31,6 +33,7 @@ from logic.dataclasses import (
 )
 from logic import metadata_handler
 from logic import config as app_config_module 
+from logic import preset_handler
 
 from logic .cogvlm_utils import (
 load_cogvlm_model as util_load_cogvlm_model ,
@@ -208,6 +211,37 @@ input[type='range'] { accent-color: black; }
 .dark input[type='range'] { accent-color: #dfdfdf; }
 """
 
+def load_initial_preset():
+    """Loads the last used preset, or the 'Default' preset, or returns a fresh config."""
+    base_config = create_app_config(base_path, args.outputs_folder, star_cfg)
+    
+    preset_to_load = preset_handler.get_last_used_preset_name()
+    if preset_to_load:
+        logger.info(f"Found last used preset: '{preset_to_load}'. Attempting to load.")
+    else:
+        logger.info("No last used preset found. Looking for 'Default' preset.")
+        preset_to_load = "Default"
+
+    config_dict, message = preset_handler.load_preset(preset_to_load)
+    
+    if config_dict:
+        logger.info(f"Successfully loaded initial preset '{preset_to_load}'.")
+        # Robustly update the base_config with loaded values
+        for section_name, section_data in config_dict.items():
+            if hasattr(base_config, section_name):
+                section_obj = getattr(base_config, section_name)
+                for key, value in section_data.items():
+                    if hasattr(section_obj, key):
+                        setattr(section_obj, key, value)
+        return base_config
+    else:
+        logger.warning(f"Could not load initial preset '{preset_to_load}'. Reason: {message}. Starting with application defaults.")
+        return base_config
+
+# Load initial settings from presets or defaults
+INITIAL_APP_CONFIG = load_initial_preset()
+
+
 def wrapper_split_video_only_for_gradio (
 input_video_val ,scene_split_mode_radio_val ,scene_min_scene_len_num_val ,scene_drop_short_check_val ,scene_merge_last_check_val ,
 scene_frame_skip_num_val ,scene_threshold_num_val ,scene_min_content_val_num_val ,scene_frame_window_num_val ,
@@ -251,12 +285,13 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             label ="Describe the Video Content (Prompt) (Useful only for STAR Model)",
                             lines =3 ,
                             placeholder ="e.g., A panda playing guitar by a lake at sunset.",
+                            value=INITIAL_APP_CONFIG.prompts.user,
                             info ="""Describe the main subject and action in the video. This guides the upscaling process.
 Combined with the Positive Prompt below, the effective text length influencing the model is limited to 77 tokens.
 If CogVLM2 is available, you can use the button below to generate a caption automatically."""
                             )
                         with gr .Row ():
-                            auto_caption_then_upscale_check =gr .Checkbox (label ="Auto-caption then Upscale (Useful only for STAR Model)",value =APP_CONFIG.cogvlm.auto_caption_then_upscale ,info ="If checked, clicking 'Upscale Video' will first generate a caption and use it as the prompt.")
+                            auto_caption_then_upscale_check =gr .Checkbox (label ="Auto-caption then Upscale (Useful only for STAR Model)",value =INITIAL_APP_CONFIG.cogvlm.auto_caption_then_upscale ,info ="If checked, clicking 'Upscale Video' will first generate a caption and use it as the prompt.")
 
                             available_gpus =util_get_available_gpus ()
                             gpu_choices =["Auto"]+available_gpus if available_gpus else ["Auto","No CUDA GPUs detected"]
@@ -303,21 +338,21 @@ If CogVLM2 is available, you can use the button below to generate a caption auto
                     with gr .Accordion ("Prompt Settings (Useful only for STAR Model)",open =True ):
                         pos_prompt =gr .Textbox (
                         label ="Default Positive Prompt (Appended)",
-                        value =APP_CONFIG.prompts.positive ,
+                        value =INITIAL_APP_CONFIG.prompts.positive ,
                         lines =2 ,
                         info ="""Appended to your 'Describe Video Content' prompt. Focuses on desired quality aspects (e.g., realism, detail).
 The total combined prompt length is limited to 77 tokens."""
                         )
                         neg_prompt =gr .Textbox (
                         label ="Default Negative Prompt (Appended)",
-                        value =APP_CONFIG.prompts.negative ,
+                        value =INITIAL_APP_CONFIG.prompts.negative ,
                         lines =2 ,
                         info ="Guides the model *away* from undesired aspects (e.g., bad quality, artifacts, specific styles). This does NOT count towards the 77 token limit for positive guidance."
                         )
                     with gr .Group ():
                         enable_frame_folder_check =gr .Checkbox (
                         label ="Process Input Frames Folder (instead of video)",
-                        value =APP_CONFIG.frame_folder.enable ,
+                        value =INITIAL_APP_CONFIG.frame_folder.enable ,
                         info ="Enable to process a folder of image frames instead of a video file. Supports jpg, png, tiff, jp2, dpx and other formats. Frames will be sorted naturally (2.png before 12.png)."
                         )
                         input_frames_folder =gr .Textbox (
@@ -338,6 +373,25 @@ The total combined prompt length is limited to 77 tokens."""
                 with gr .Column (scale =1 ):
                     output_video =gr .Video (label ="Upscaled Video",interactive =False ,height =512 )
                     status_textbox =gr .Textbox (label ="Log",interactive =False ,lines =8 ,max_lines =15 )
+                    
+                    with gr.Accordion("Save/Load Presets", open=True):
+                        preset_status = gr.Textbox(label="Preset Status", interactive=False, lines=1, placeholder="...")
+                        with gr.Row():
+                            preset_dropdown = gr.Dropdown(
+                                label="Select Preset",
+                                choices=preset_handler.get_preset_list(),
+                                value=preset_handler.get_last_used_preset_name() or "Default",
+                                scale=3
+                            )
+                            refresh_presets_btn = gr.Button("🔄", scale=1, variant="secondary")
+                            load_preset_btn = gr.Button("Load Preset", variant="secondary", scale=1)
+                        with gr.Row():
+                            save_preset_name_textbox = gr.Textbox(
+                                label="New Preset Name",
+                                placeholder="Enter a name for the current settings...",
+                                scale=3
+                            )
+                            save_preset_btn = gr.Button("Save Preset", variant="primary", scale=2)
 
                     with gr .Accordion ("Last Processed Chunk",open =True ):
                         last_chunk_video =gr .Video (
@@ -359,12 +413,12 @@ The total combined prompt length is limited to 77 tokens."""
                     with gr .Accordion ("Target Resolution - Maintains Your Input Video Aspect Ratio",open =True ):
                         enable_target_res_check =gr .Checkbox (
                         label ="Enable Max Target Resolution",
-                        value =APP_CONFIG.resolution.enable_target_res ,
+                        value =INITIAL_APP_CONFIG.resolution.enable_target_res ,
                         info ="Check this to manually control the maximum output resolution instead of using the simple Upscale Factor."
                         )
                         target_res_mode_radio =gr .Radio (
                         label ="Target Resolution Mode",
-                        choices =['Ratio Upscale','Downscale then 4x'],value =APP_CONFIG.resolution.target_res_mode ,
+                        choices =['Ratio Upscale','Downscale then 4x'],value =INITIAL_APP_CONFIG.resolution.target_res_mode ,
                         info ="""How to apply the target H/W limits.
 'Ratio Upscale': Upscales by the largest factor possible without exceeding Target H/W, preserving aspect ratio.
 'Downscale then 4x': If input is large, downscales it towards Target H/W divided by 4, THEN applies a 4x upscale. Can clean noisy high-res input before upscaling."""
@@ -372,7 +426,7 @@ The total combined prompt length is limited to 77 tokens."""
                         with gr .Row ():
                             target_h_num =gr .Slider (
                             label ="Max Target Height (px)",
-                            value =APP_CONFIG.resolution.target_h ,minimum =128 ,maximum =4096 ,step =16 ,
+                            value =INITIAL_APP_CONFIG.resolution.target_h ,minimum =128 ,maximum =4096 ,step =16 ,
                             info ="""Maximum allowed height for the output video. Overrides Upscale Factor if enabled.
 - VRAM Impact: Very High (Lower value = Less VRAM).
 - Quality Impact: Direct (Lower value = Less detail).
@@ -380,7 +434,7 @@ The total combined prompt length is limited to 77 tokens."""
                             )
                             target_w_num =gr .Slider (
                             label ="Max Target Width (px)",
-                            value =APP_CONFIG.resolution.target_w ,minimum =128 ,maximum =4096 ,step =16 ,
+                            value =INITIAL_APP_CONFIG.resolution.target_w ,minimum =128 ,maximum =4096 ,step =16 ,
                             info ="""Maximum allowed width for the output video. Overrides Upscale Factor if enabled.
 - VRAM Impact: Very High (Lower value = Less VRAM).
 - Quality Impact: Direct (Lower value = Less detail).
@@ -391,7 +445,7 @@ The total combined prompt length is limited to 77 tokens."""
                     with gr .Accordion ("Scene Splitting",open =True ):
                         enable_scene_split_check =gr .Checkbox (
                         label ="Enable Scene Splitting",
-                        value =APP_CONFIG.scene_split.enable ,
+                        value =INITIAL_APP_CONFIG.scene_split.enable ,
                         info ="""Split video into scenes and process each scene individually. This can improve quality and speed by processing similar content together.
 - Quality Impact: Better temporal consistency within scenes, improved auto-captioning per scene.
 - Speed Impact: Can be faster for long videos with distinct scenes.
@@ -400,36 +454,36 @@ The total combined prompt length is limited to 77 tokens."""
                         with gr .Row ():
                             scene_split_mode_radio =gr .Radio (
                             label ="Split Mode",
-                            choices =['automatic','manual'],value =APP_CONFIG.scene_split.mode ,
+                            choices =['automatic','manual'],value =INITIAL_APP_CONFIG.scene_split.mode ,
                             info ="""'automatic': Uses scene detection algorithms to find natural scene boundaries.
 'manual': Splits video at fixed intervals (duration or frame count)."""
                             )
                         with gr .Group ():
                             gr .Markdown ("**Automatic Scene Detection Settings**")
                             with gr .Row ():
-                                scene_min_scene_len_num =gr .Number (label ="Min Scene Length (seconds)",value =APP_CONFIG.scene_split.min_scene_len ,minimum =0.1 ,step =0.1 ,info ="Minimum duration for a scene. Shorter scenes will be merged or dropped.")
-                                scene_threshold_num =gr .Number (label ="Detection Threshold",value =APP_CONFIG.scene_split.threshold ,minimum =0.1 ,maximum =10.0 ,step =0.1 ,info ="Sensitivity of scene detection. Lower values detect more scenes.")
+                                scene_min_scene_len_num =gr .Number (label ="Min Scene Length (seconds)",value =INITIAL_APP_CONFIG.scene_split.min_scene_len ,minimum =0.1 ,step =0.1 ,info ="Minimum duration for a scene. Shorter scenes will be merged or dropped.")
+                                scene_threshold_num =gr .Number (label ="Detection Threshold",value =INITIAL_APP_CONFIG.scene_split.threshold ,minimum =0.1 ,maximum =10.0 ,step =0.1 ,info ="Sensitivity of scene detection. Lower values detect more scenes.")
                             with gr .Row ():
-                                scene_drop_short_check =gr .Checkbox (label ="Drop Short Scenes",value =APP_CONFIG.scene_split.drop_short ,info ="If enabled, scenes shorter than minimum length are dropped instead of merged.")
-                                scene_merge_last_check =gr .Checkbox (label ="Merge Last Scene",value =APP_CONFIG.scene_split.merge_last ,info ="If the last scene is too short, merge it with the previous scene.")
+                                scene_drop_short_check =gr .Checkbox (label ="Drop Short Scenes",value =INITIAL_APP_CONFIG.scene_split.drop_short ,info ="If enabled, scenes shorter than minimum length are dropped instead of merged.")
+                                scene_merge_last_check =gr .Checkbox (label ="Merge Last Scene",value =INITIAL_APP_CONFIG.scene_split.merge_last ,info ="If the last scene is too short, merge it with the previous scene.")
                             with gr .Row ():
-                                scene_frame_skip_num =gr .Number (label ="Frame Skip",value =APP_CONFIG.scene_split.frame_skip ,minimum =0 ,step =1 ,info ="Skip frames during detection to speed up processing. 0 = analyze every frame.")
-                                scene_min_content_val_num =gr .Number (label ="Min Content Value",value =APP_CONFIG.scene_split.min_content_val ,minimum =0.0 ,step =1.0 ,info ="Minimum content change required to detect a scene boundary.")
-                                scene_frame_window_num =gr .Number (label ="Frame Window",value =APP_CONFIG.scene_split.frame_window ,minimum =1 ,step =1 ,info ="Number of frames to analyze for scene detection.")
+                                scene_frame_skip_num =gr .Number (label ="Frame Skip",value =INITIAL_APP_CONFIG.scene_split.frame_skip ,minimum =0 ,step =1 ,info ="Skip frames during detection to speed up processing. 0 = analyze every frame.")
+                                scene_min_content_val_num =gr .Number (label ="Min Content Value",value =INITIAL_APP_CONFIG.scene_split.min_content_val ,minimum =0.0 ,step =1.0 ,info ="Minimum content change required to detect a scene boundary.")
+                                scene_frame_window_num =gr .Number (label ="Frame Window",value =INITIAL_APP_CONFIG.scene_split.frame_window ,minimum =1 ,step =1 ,info ="Number of frames to analyze for scene detection.")
                         with gr .Group ():
                             gr .Markdown ("**Manual Split Settings**")
                             with gr .Row ():
-                                scene_manual_split_type_radio =gr .Radio (label ="Manual Split Type",choices =['duration','frame_count'],value =APP_CONFIG.scene_split.manual_split_type ,info ="'duration': Split every N seconds.\n'frame_count': Split every N frames.")
-                                scene_manual_split_value_num =gr .Number (label ="Split Value",value =APP_CONFIG.scene_split.manual_split_value ,minimum =1.0 ,step =1.0 ,info ="Duration in seconds or number of frames for manual splitting.")
+                                scene_manual_split_type_radio =gr .Radio (label ="Manual Split Type",choices =['duration','frame_count'],value =INITIAL_APP_CONFIG.scene_split.manual_split_type ,info ="'duration': Split every N seconds.\n'frame_count': Split every N frames.")
+                                scene_manual_split_value_num =gr .Number (label ="Split Value",value =INITIAL_APP_CONFIG.scene_split.manual_split_value ,minimum =1.0 ,step =1.0 ,info ="Duration in seconds or number of frames for manual splitting.")
                         with gr .Group ():
                             gr .Markdown ("**Encoding Settings (for scene segments)**")
                             with gr .Row ():
-                                scene_copy_streams_check =gr .Checkbox (label ="Copy Streams",value =APP_CONFIG.scene_split.copy_streams ,info ="Copy video/audio streams without re-encoding during scene splitting (faster) but can generate inaccurate splits.")
-                                scene_use_mkvmerge_check =gr .Checkbox (label ="Use MKVMerge",value =APP_CONFIG.scene_split.use_mkvmerge ,info ="Use mkvmerge instead of ffmpeg for splitting (if available).")
+                                scene_copy_streams_check =gr .Checkbox (label ="Copy Streams",value =INITIAL_APP_CONFIG.scene_split.copy_streams ,info ="Copy video/audio streams without re-encoding during scene splitting (faster) but can generate inaccurate splits.")
+                                scene_use_mkvmerge_check =gr .Checkbox (label ="Use MKVMerge",value =INITIAL_APP_CONFIG.scene_split.use_mkvmerge ,info ="Use mkvmerge instead of ffmpeg for splitting (if available).")
                             with gr .Row ():
-                                scene_rate_factor_num =gr .Number (label ="Rate Factor (CRF)",value =APP_CONFIG.scene_split.rate_factor ,minimum =0 ,maximum =51 ,step =1 ,info ="Quality setting for re-encoding (lower = better quality). Only used if Copy Streams is disabled.")
-                                scene_preset_dropdown =gr .Dropdown (label ="Encoding Preset",choices =['ultrafast','superfast','veryfast','faster','fast','medium','slow','slower','veryslow'],value =APP_CONFIG.scene_split.encoding_preset ,info ="Encoding speed vs quality trade-off. Only used if Copy Streams is disabled.")
-                            scene_quiet_ffmpeg_check =gr .Checkbox (label ="Quiet FFmpeg",value =APP_CONFIG.scene_split.quiet_ffmpeg ,info ="Suppress ffmpeg output during scene splitting.")
+                                scene_rate_factor_num =gr .Number (label ="Rate Factor (CRF)",value =INITIAL_APP_CONFIG.scene_split.rate_factor ,minimum =0 ,maximum =51 ,step =1 ,info ="Quality setting for re-encoding (lower = better quality). Only used if Copy Streams is disabled.")
+                                scene_preset_dropdown =gr .Dropdown (label ="Encoding Preset",choices =['ultrafast','superfast','veryfast','faster','fast','medium','slow','slower','veryslow'],value =INITIAL_APP_CONFIG.scene_split.encoding_preset ,info ="Encoding speed vs quality trade-off. Only used if Copy Streams is disabled.")
+                            scene_quiet_ffmpeg_check =gr .Checkbox (label ="Quiet FFmpeg",value =INITIAL_APP_CONFIG.scene_split.quiet_ffmpeg ,info ="Suppress ffmpeg output during scene splitting.")
 
         with gr .Tab ("Core Settings",id ="core_tab"):
             with gr .Row ():
@@ -439,38 +493,38 @@ The total combined prompt length is limited to 77 tokens."""
                         model_selector =gr .Dropdown (
                         label ="STAR Model",
                         choices =["Light Degradation","Heavy Degradation"],
-                        value =APP_CONFIG.star_model.model_choice ,
+                        value =INITIAL_APP_CONFIG.star_model.model_choice ,
                         info ="""Choose the model based on input video quality.
 'Light Degradation': Better for relatively clean inputs (e.g., downloaded web videos).
 'Heavy Degradation': Better for inputs with significant compression artifacts, noise, or blur."""
                         )
                         upscale_factor_slider =gr .Slider (
                         label ="Upscale Factor (if Target Res disabled)",
-                        minimum =1.0 ,maximum =8.0 ,value =APP_CONFIG.resolution.upscale_factor ,step =0.1 ,
+                        minimum =1.0 ,maximum =8.0 ,value =INITIAL_APP_CONFIG.resolution.upscale_factor ,step =0.1 ,
                         info ="Simple multiplication factor for output resolution if 'Enable Max Target Resolution' is OFF. E.g., 4.0 means 4x height and 4x width."
                         )
                         cfg_slider =gr .Slider (
                         label ="Guidance Scale (CFG)",
-                        minimum =1.0 ,maximum =15.0 ,value =APP_CONFIG.star_model.cfg_scale ,step =0.5 ,
+                        minimum =1.0 ,maximum =15.0 ,value =INITIAL_APP_CONFIG.star_model.cfg_scale ,step =0.5 ,
                         info ="Controls how strongly the model follows your combined text prompt. Higher values mean stricter adherence, lower values allow more creativity. Typical values: 5.0-10.0."
                         )
                         with gr .Row ():
                             solver_mode_radio =gr .Radio (
                             label ="Solver Mode",
-                            choices =['fast','normal'],value =APP_CONFIG.star_model.solver_mode ,
+                            choices =['fast','normal'],value =INITIAL_APP_CONFIG.star_model.solver_mode ,
                             info ="""Diffusion solver type.
 'fast': Fewer steps (default ~15), much faster, good quality usually.
 'normal': More steps (default ~50), slower, potentially slightly better detail/coherence."""
                             )
                             steps_slider =gr .Slider (
                             label ="Diffusion Steps",
-                            minimum =5 ,maximum =100 ,value =APP_CONFIG.star_model.steps ,step =1 ,
+                            minimum =5 ,maximum =100 ,value =INITIAL_APP_CONFIG.star_model.steps ,step =1 ,
                             info ="Number of denoising steps. 'Fast' mode uses a fixed ~15 steps. 'Normal' mode uses the value set here.",
                             interactive =False 
                             )
                         color_fix_dropdown =gr .Dropdown (
                         label ="Color Correction",
-                        choices =['AdaIN','Wavelet','None'],value =APP_CONFIG.star_model.color_fix_method ,
+                        choices =['AdaIN','Wavelet','None'],value =INITIAL_APP_CONFIG.star_model.color_fix_method ,
                         info ="""Attempts to match the color tone of the output to the input video. Helps prevent color shifts.
 'AdaIN' / 'Wavelet': Different algorithms for color matching. AdaIN is often a good default.
 'None': Disables color correction."""
@@ -479,7 +533,7 @@ The total combined prompt length is limited to 77 tokens."""
                     with gr .Accordion ("Performance & VRAM Optimization (Only for STAR Model)",open =True ):
                         max_chunk_len_slider =gr .Slider (
                         label ="Max Frames per Chunk (VRAM)",
-                        minimum =4 ,maximum =96 ,value =APP_CONFIG.performance.max_chunk_len ,step =4 ,
+                        minimum =4 ,maximum =96 ,value =INITIAL_APP_CONFIG.performance.max_chunk_len ,step =4 ,
                         info ="""IMPORTANT for VRAM. This is the standard way the application manages VRAM. It divides the entire sequence of video frames into sequential, non-overlapping chunks.
 - Mechanism: The STAR model processes one complete chunk (of this many frames) at a time.
 - VRAM Impact: High Reduction (Lower value = Less VRAM).
@@ -489,7 +543,7 @@ The total combined prompt length is limited to 77 tokens."""
                         )
                         enable_chunk_optimization_check =gr .Checkbox (
                         label ="Optimize Last Chunk Quality",
-                        value =APP_CONFIG.performance.enable_chunk_optimization ,
+                        value =INITIAL_APP_CONFIG.performance.enable_chunk_optimization ,
                         info ="""Process extra frames for small last chunks to improve quality. When the last chunk has fewer frames than target size (causing quality drops), this processes additional frames but only keeps the necessary output.
 - Example: For 70 frames with 32-frame chunks, instead of processing only 6 frames for the last chunk (poor quality), it processes 23 frames (48-70) but keeps only the last 6 (65-70).
 - Quality Impact: Significantly improves quality for small last chunks.
@@ -498,7 +552,7 @@ The total combined prompt length is limited to 77 tokens."""
                         )
                         vae_chunk_slider =gr .Slider (
                         label ="VAE Decode Chunk (VRAM)",
-                        minimum =1 ,maximum =16 ,value =APP_CONFIG.performance.vae_chunk ,step =1 ,
+                        minimum =1 ,maximum =16 ,value =INITIAL_APP_CONFIG.performance.vae_chunk ,step =1 ,
                         info ="""Controls max latent frames decoded back to pixels by VAE simultaneously.
 - VRAM Impact: High Reduction (Lower value = Less VRAM during decode stage).
 - Quality Impact: Minimal / Negligible. Safe to lower.
@@ -510,7 +564,7 @@ The total combined prompt length is limited to 77 tokens."""
                         gr .Markdown ("### Image-Based Upscaler (Alternative to STAR)")
                         enable_image_upscaler_check =gr .Checkbox (
                         label ="Enable Image-Based Upscaling (Disables STAR Model)",
-                        value =APP_CONFIG.image_upscaler.enable ,
+                        value =INITIAL_APP_CONFIG.image_upscaler.enable ,
                         info ="""Use deterministic image upscaler models instead of STAR. When enabled:
 - Processes frames individually using spandrel-compatible models
 - Ignores prompts, auto-caption, context window, and tiling settings
@@ -524,7 +578,7 @@ The total combined prompt length is limited to 77 tokens."""
                             available_model_files = util_scan_for_models(APP_CONFIG.paths.upscale_models_dir, logger)
                             if available_model_files:
                                 model_choices = available_model_files
-                                default_model_choice = model_choices[0]
+                                default_model_choice = INITIAL_APP_CONFIG.image_upscaler.model if INITIAL_APP_CONFIG.image_upscaler.model in model_choices else model_choices[0]
                             else:
                                 model_choices = ["No models found - place models in upscale_models/"]
                                 default_model_choice = model_choices[0]
@@ -545,7 +599,7 @@ The total combined prompt length is limited to 77 tokens."""
                         label ="Batch Size",
                         minimum =1 ,
                         maximum =1000 ,
-                        value =APP_CONFIG.image_upscaler.batch_size ,
+                        value =INITIAL_APP_CONFIG.image_upscaler.batch_size ,
                         step =1 ,
                         info ="Number of frames to process simultaneously. Higher values = faster processing but more VRAM usage. Adjust based on your GPU memory.",
                         interactive =False 
@@ -555,7 +609,7 @@ The total combined prompt length is limited to 77 tokens."""
                         gr .Markdown ("### Face Restoration (CodeFormer)")
                         enable_face_restoration_check =gr .Checkbox (
                         label ="Enable Face Restoration",
-                        value =APP_CONFIG.face_restoration.enable ,
+                        value =INITIAL_APP_CONFIG.face_restoration.enable ,
                         info ="""Enhance faces in the video using CodeFormer. Works with both STAR and image-based upscaling.
 - Detects and restores faces automatically
 - Can be applied before or after upscaling
@@ -567,7 +621,7 @@ The total combined prompt length is limited to 77 tokens."""
                         label ="Fidelity Weight",
                         minimum =0.0 ,
                         maximum =1.0 ,
-                        value =APP_CONFIG.face_restoration.fidelity_weight ,
+                        value =INITIAL_APP_CONFIG.face_restoration.fidelity_weight ,
                         step =0.1 ,
                         info ="""Balance between quality and identity preservation:
 - 0.0-0.3: Prioritize quality/detail (may change facial features)
@@ -579,7 +633,7 @@ The total combined prompt length is limited to 77 tokens."""
                         with gr .Row ():
                             enable_face_colorization_check =gr .Checkbox (
                             label ="Enable Colorization",
-                            value =APP_CONFIG.face_restoration.enable_colorization ,
+                            value =INITIAL_APP_CONFIG.face_restoration.enable_colorization ,
                             info ="Apply colorization to grayscale faces (experimental feature)",
                             interactive =False 
                             )
@@ -587,7 +641,7 @@ The total combined prompt length is limited to 77 tokens."""
                             face_restoration_when_radio =gr .Radio (
                             label ="Apply Timing",
                             choices =['before','after'],
-                            value =APP_CONFIG.face_restoration.when ,
+                            value =INITIAL_APP_CONFIG.face_restoration.when ,
                             info ="""When to apply face restoration:
 'before': Apply before upscaling (may be enhanced further)
 'after': Apply after upscaling (final enhancement)""",
@@ -598,7 +652,9 @@ The total combined prompt length is limited to 77 tokens."""
                             with gr .Row ():
                                 model_choices = ["Auto (Default)", "codeformer.pth (359.2MB)"]
                                 default_model_choice = "Auto (Default)"
-                                
+                                if INITIAL_APP_CONFIG.face_restoration.model and "codeformer.pth" in INITIAL_APP_CONFIG.face_restoration.model:
+                                    default_model_choice = "codeformer.pth (359.2MB)"
+
                                 codeformer_model_dropdown =gr .Dropdown (
                                 label ="CodeFormer Model",
                                 choices =model_choices ,
@@ -611,7 +667,7 @@ The total combined prompt length is limited to 77 tokens."""
                         label ="Face Restoration Batch Size",
                         minimum =1 ,
                         maximum =32 ,
-                        value =APP_CONFIG.face_restoration.batch_size ,
+                        value =INITIAL_APP_CONFIG.face_restoration.batch_size ,
                         step =1 ,
                         info ="Number of frames to process simultaneously for face restoration. Higher values = faster processing but more VRAM usage.",
                         interactive =False 
@@ -627,13 +683,13 @@ The total combined prompt length is limited to 77 tokens."""
                                 cogvlm_quant_radio =gr .Radio (
                                 label ="CogVLM2 Quantization",
                                 choices =cogvlm_quant_radio_choices_display ,
-                                value =default_quant_display_val ,
+                                value =INITIAL_APP_CONFIG.cogvlm.quant_display ,
                                 info ="Quantization for the CogVLM2 captioning model (uses less VRAM). INT4/8 require CUDA & bitsandbytes.",
                                 interactive =True if len (cogvlm_quant_radio_choices_display )>1 else False 
                                 )
                                 cogvlm_unload_radio =gr .Radio (
                                 label ="CogVLM2 After-Use",
-                                choices =['full','cpu'],value =APP_CONFIG.cogvlm.unload_after_use ,
+                                choices =['full','cpu'],value =INITIAL_APP_CONFIG.cogvlm.unload_after_use ,
                                 info ="""Memory management after captioning.
 'full': Unload model completely from VRAM/RAM (frees most memory).
 'cpu': Move model to RAM (faster next time, uses RAM, not for quantized models)."""
@@ -644,7 +700,7 @@ The total combined prompt length is limited to 77 tokens."""
                     with gr .Accordion ("Context Window - Previous Frames for Better Consistency (Only for STAR Model)",open =True ):
                         enable_context_window_check =gr .Checkbox (
                         label ="Enable Context Window",
-                        value =APP_CONFIG.context_window.enable ,
+                        value =INITIAL_APP_CONFIG.context_window.enable ,
                         info ="""Include previous frames as context when processing each chunk (except the first). Similar to "Optimize Last Chunk Quality" but applied to all chunks.
 - Mechanism: Each chunk (except first) includes N previous frames as context, but only outputs new frames. Provides temporal consistency without complex overlap logic.
 - Quality Impact: Better temporal consistency and reduced flickering between chunks. More context = better consistency.
@@ -653,14 +709,14 @@ The total combined prompt length is limited to 77 tokens."""
                         )
                         context_overlap_num =gr .Slider (
                         label ="Context Overlap (frames)",
-                        value =APP_CONFIG.context_window.overlap ,minimum =0 ,maximum =31 ,step =1 ,
+                        value =INITIAL_APP_CONFIG.context_window.overlap ,minimum =0 ,maximum =31 ,step =1 ,
                         info ="Number of previous frames to include as context for each chunk (except first). 0 = disabled (same as normal chunking). Higher values = better consistency but more VRAM and slower processing. Recommend: 25-50% of Max Frames per Chunk."
                         )
 
                     with gr .Accordion ("Advanced: Tiling (Very High Res / Low VRAM)",open =True, visible=False ):
                         enable_tiling_check =gr .Checkbox (
                         label ="Enable Tiled Upscaling",
-                        value =APP_CONFIG.tiling.enable ,
+                        value =INITIAL_APP_CONFIG.tiling.enable ,
                         info ="""Processes each frame in small spatial patches (tiles). Use ONLY if necessary for extreme resolutions or very low VRAM.
 - VRAM Impact: Very High Reduction.
 - Quality Impact: High risk of tile seams/artifacts. Can harm global coherence and severely reduce temporal consistency.
@@ -669,12 +725,12 @@ The total combined prompt length is limited to 77 tokens."""
                         with gr .Row ():
                             tile_size_num =gr .Number (
                             label ="Tile Size (px, input res)",
-                            value =APP_CONFIG.tiling.tile_size ,minimum =64 ,step =32 ,
+                            value =INITIAL_APP_CONFIG.tiling.tile_size ,minimum =64 ,step =32 ,
                             info ="Size of the square patches (in input resolution pixels) to process. Smaller = less VRAM per tile but more tiles = slower."
                             )
                             tile_overlap_num =gr .Number (
                             label ="Tile Overlap (px, input res)",
-                            value =APP_CONFIG.tiling.tile_overlap ,minimum =0 ,step =16 ,
+                            value =INITIAL_APP_CONFIG.tiling.tile_overlap ,minimum =0 ,step =16 ,
                             info ="How much the tiles overlap (in input resolution pixels). Higher overlap helps reduce seams but increases processing time. Recommend 1/4 to 1/2 of Tile Size."
                             )
 
@@ -684,25 +740,25 @@ The total combined prompt length is limited to 77 tokens."""
                     with gr .Accordion ("FFmpeg Encoding Settings",open =True ):
                         ffmpeg_use_gpu_check =gr .Checkbox (
                         label ="Use NVIDIA GPU for FFmpeg (h264_nvenc)",
-                        value =APP_CONFIG.ffmpeg.use_gpu ,
+                        value =INITIAL_APP_CONFIG.ffmpeg.use_gpu ,
                         info ="If checked, uses NVIDIA's NVENC for FFmpeg video encoding (downscaling and final video creation). Requires NVIDIA GPU and correctly configured FFmpeg with NVENC support."
                         )
                         with gr .Row ():
                             ffmpeg_preset_dropdown =gr .Dropdown (
                             label ="FFmpeg Preset",
                             choices =['ultrafast','superfast','veryfast','faster','fast','medium','slow','slower','veryslow'],
-                            value =APP_CONFIG.ffmpeg.preset ,
+                            value =INITIAL_APP_CONFIG.ffmpeg.preset ,
                             info ="Controls encoding speed vs. compression efficiency. 'ultrafast' is fastest with lowest quality/compression, 'veryslow' is slowest with highest quality/compression. Note: NVENC presets behave differently (e.g. p1-p7 or specific names like 'slow', 'medium', 'fast')."
                             )
                             ffmpeg_quality_slider =gr .Slider (
                             label ="FFmpeg Quality (CRF for libx264 / CQ for NVENC)",
-                            minimum =0 ,maximum =51 ,value =APP_CONFIG.ffmpeg.quality ,step =1 ,
+                            minimum =0 ,maximum =51 ,value =INITIAL_APP_CONFIG.ffmpeg.quality ,step =1 ,
                             info ="For libx264 (CPU): Constant Rate Factor (CRF). Lower values mean higher quality (0 is lossless, 23 is default). For h264_nvenc (GPU): Constrained Quality (CQ). Lower values generally mean better quality. Typical range for NVENC CQ is 18-28."
                             )
                         
                         frame_folder_fps_slider =gr .Slider (
                         label ="Frame Folder FPS",
-                        minimum =1.0 ,maximum =120.0 ,value =APP_CONFIG.frame_folder.fps ,step =0.001 ,
+                        minimum =1.0 ,maximum =120.0 ,value =INITIAL_APP_CONFIG.frame_folder.fps ,step =0.001 ,
                         info ="FPS to use when converting frame folders to videos. This setting only applies when processing input frame folders (not regular videos). Common values: 23.976, 24, 25, 29.97, 30, 60."
                         )
 
@@ -710,30 +766,30 @@ The total combined prompt length is limited to 77 tokens."""
                     with gr .Accordion ("Output Options",open =True ):
                         create_comparison_video_check =gr .Checkbox (
                         label ="Generate Comparison Video",
-                        value =APP_CONFIG.outputs.create_comparison_video ,
+                        value =INITIAL_APP_CONFIG.outputs.create_comparison_video ,
                         info ="""Create a side-by-side or top-bottom comparison video showing original vs upscaled quality.
 The layout is automatically chosen based on aspect ratio to stay within 1920x1080 bounds when possible.
 This helps visualize the quality improvement from upscaling."""
                         )
-                        save_frames_checkbox =gr .Checkbox (label ="Save Input and Processed Frames",value =APP_CONFIG.outputs.save_frames ,info ="If checked, saves the extracted input frames and the upscaled output frames into a subfolder named after the output video (e.g., '0001/input_frames' and '0001/processed_frames').")
-                        save_metadata_checkbox =gr .Checkbox (label ="Save Processing Metadata",value =APP_CONFIG.outputs.save_metadata ,info ="If checked, saves a .txt file (e.g., '0001.txt') in the main output folder, containing all processing parameters and total processing time.")
-                        save_chunks_checkbox =gr .Checkbox (label ="Save Processed Chunks",value =APP_CONFIG.outputs.save_chunks ,info ="If checked, saves each processed chunk as a video file in a 'chunks' subfolder (e.g., '0001/chunks/chunk_0001.mp4'). Uses the same FFmpeg settings as the final video.")
-                        save_chunk_frames_checkbox =gr .Checkbox (label ="Save Chunk Input Frames (Debug)",value =APP_CONFIG.outputs.save_chunk_frames ,info ="If checked, saves the input frames for each chunk before processing into a 'chunk_frames' subfolder (e.g., '0001/chunk_frames/chunk_01_frame_012.png'). Useful for debugging which frames are processed in each chunk.")
+                        save_frames_checkbox =gr .Checkbox (label ="Save Input and Processed Frames",value =INITIAL_APP_CONFIG.outputs.save_frames ,info ="If checked, saves the extracted input frames and the upscaled output frames into a subfolder named after the output video (e.g., '0001/input_frames' and '0001/processed_frames').")
+                        save_metadata_checkbox =gr .Checkbox (label ="Save Processing Metadata",value =INITIAL_APP_CONFIG.outputs.save_metadata ,info ="If checked, saves a .txt file (e.g., '0001.txt') in the main output folder, containing all processing parameters and total processing time.")
+                        save_chunks_checkbox =gr .Checkbox (label ="Save Processed Chunks",value =INITIAL_APP_CONFIG.outputs.save_chunks ,info ="If checked, saves each processed chunk as a video file in a 'chunks' subfolder (e.g., '0001/chunks/chunk_0001.mp4'). Uses the same FFmpeg settings as the final video.")
+                        save_chunk_frames_checkbox =gr .Checkbox (label ="Save Chunk Input Frames (Debug)",value =INITIAL_APP_CONFIG.outputs.save_chunk_frames ,info ="If checked, saves the input frames for each chunk before processing into a 'chunk_frames' subfolder (e.g., '0001/chunk_frames/chunk_01_frame_012.png'). Useful for debugging which frames are processed in each chunk.")
 
                     with gr .Accordion ("Advanced: Seeding (Reproducibility)",open =True ):
                         with gr .Row ():
                             seed_num =gr .Number (
                             label ="Seed",
-                            value =APP_CONFIG.seed.seed ,
+                            value =INITIAL_APP_CONFIG.seed.seed ,
                             minimum =-1 ,
                             maximum =2 **32 -1 ,
                             step =1 ,
                             info ="Seed for random number generation. Used for reproducibility. Set to -1 or check 'Random Seed' for a random seed. Value is ignored if 'Random Seed' is checked.",
-                            interactive =not APP_CONFIG.seed.use_random 
+                            interactive =not INITIAL_APP_CONFIG.seed.use_random 
                             )
                             random_seed_check =gr .Checkbox (
                             label ="Random Seed",
-                            value =APP_CONFIG.seed.use_random ,
+                            value =INITIAL_APP_CONFIG.seed.use_random ,
                             info ="If checked, a random seed will be generated and used, ignoring the 'Seed' value."
                             )
 
@@ -801,19 +857,19 @@ This helps visualize the quality improvement from upscaling."""
 
                     batch_skip_existing =gr .Checkbox (
                     label ="Skip Existing Outputs",
-                    value =APP_CONFIG.batch.skip_existing ,
+                    value =INITIAL_APP_CONFIG.batch.skip_existing ,
                     info ="Skip processing if the output file already exists. Useful for resuming interrupted batch jobs."
                     )
 
                     batch_use_prompt_files =gr .Checkbox (
                     label ="Use Prompt Files (filename.txt)",
-                    value =APP_CONFIG.batch.use_prompt_files ,
+                    value =INITIAL_APP_CONFIG.batch.use_prompt_files ,
                     info ="Look for text files with same name as video (e.g., video.txt) to use as custom prompts. Takes priority over user prompt and auto-caption."
                     )
 
                     batch_save_captions =gr .Checkbox (
                     label ="Save Auto-Generated Captions",
-                    value =APP_CONFIG.batch.save_captions ,
+                    value =INITIAL_APP_CONFIG.batch.save_captions ,
                     info ="Save auto-generated captions as filename.txt in the input folder for future reuse. Never overwrites existing prompt files."
                     )
 
@@ -842,7 +898,7 @@ This helps visualize the quality improvement from upscaling."""
 
                         enable_rife_interpolation =gr .Checkbox (
                         label ="Enable RIFE Interpolation",
-                        value =APP_CONFIG.rife.enable ,
+                        value =INITIAL_APP_CONFIG.rife.enable ,
                         info ="Enable AI-powered frame interpolation to increase video FPS. When enabled, RIFE will be applied to the final upscaled video and can optionally be applied to intermediate chunks and scenes."
                         )
 
@@ -850,31 +906,31 @@ This helps visualize the quality improvement from upscaling."""
                             rife_multiplier =gr .Radio (
                             label ="FPS Multiplier",
                             choices =[2 ,4 ],
-                            value =APP_CONFIG.rife.multiplier ,
+                            value =INITIAL_APP_CONFIG.rife.multiplier ,
                             info ="Choose how much to increase the frame rate. 2x doubles FPS (e.g., 24→48), 4x quadruples FPS (e.g., 24→96)."
                             )
 
                         with gr .Row ():
                             rife_fp16 =gr .Checkbox (
                             label ="Use FP16 Precision",
-                            value =APP_CONFIG.rife.fp16 ,
+                            value =INITIAL_APP_CONFIG.rife.fp16 ,
                             info ="Use half-precision floating point for faster processing and lower VRAM usage. Recommended for most users."
                             )
                             rife_uhd =gr .Checkbox (
                             label ="UHD Mode",
-                            value =APP_CONFIG.rife.uhd ,
+                            value =INITIAL_APP_CONFIG.rife.uhd ,
                             info ="Enable UHD mode for 4K+ videos. May improve quality for very high resolution content but requires more VRAM."
                             )
 
                         rife_scale =gr .Slider (
                         label ="Scale Factor",
-                        minimum =0.25 ,maximum =2.0 ,value =APP_CONFIG.rife.scale ,step =0.25 ,
+                        minimum =0.25 ,maximum =2.0 ,value =INITIAL_APP_CONFIG.rife.scale ,step =0.25 ,
                         info ="Scale factor for RIFE processing. 1.0 = original size. Lower values use less VRAM but may reduce quality. Higher values may improve quality but use more VRAM."
                         )
 
                         rife_skip_static =gr .Checkbox (
                         label ="Skip Static Frames",
-                        value =APP_CONFIG.rife.skip_static ,
+                        value =INITIAL_APP_CONFIG.rife.skip_static ,
                         info ="Automatically detect and skip interpolating static (non-moving) frames to save processing time and avoid unnecessary interpolation."
                         )
 
@@ -882,12 +938,12 @@ This helps visualize the quality improvement from upscaling."""
                         gr .Markdown ("**Apply RIFE to intermediate videos (recommended)**")
                         rife_apply_to_chunks =gr .Checkbox (
                         label ="Apply to Chunks",
-                        value =APP_CONFIG.rife.apply_to_chunks ,
+                        value =INITIAL_APP_CONFIG.rife.apply_to_chunks ,
                         info ="Apply RIFE interpolation to individual video chunks during processing. Enabled by default for smoother intermediate results."
                         )
                         rife_apply_to_scenes =gr .Checkbox (
                         label ="Apply to Scenes",
-                        value =APP_CONFIG.rife.apply_to_scenes ,
+                        value =INITIAL_APP_CONFIG.rife.apply_to_scenes ,
                         info ="Apply RIFE interpolation to individual scene videos when scene splitting is enabled. Enabled by default for consistent results."
                         )
 
@@ -900,14 +956,14 @@ This helps visualize the quality improvement from upscaling."""
 
                         enable_fps_decrease =gr .Checkbox (
                         label ="Enable FPS Decrease",
-                        value =APP_CONFIG.fps_decrease.enable ,
+                        value =INITIAL_APP_CONFIG.fps_decrease.enable ,
                         info ="Reduce video FPS before upscaling to speed up processing. Fewer frames = faster upscaling and lower VRAM usage."
                         )
 
                         fps_decrease_mode =gr .Radio (
                         label ="FPS Reduction Mode",
                         choices =["multiplier","fixed"],
-                        value =APP_CONFIG.fps_decrease.mode ,
+                        value =INITIAL_APP_CONFIG.fps_decrease.mode ,
                         info ="Multiplier: Reduce by fraction (1/2x, 1/4x). Fixed: Set specific FPS value. Multiplier is recommended for automatic adaptation to input video."
                         )
 
@@ -916,12 +972,12 @@ This helps visualize the quality improvement from upscaling."""
                                 fps_multiplier_preset =gr .Dropdown (
                                 label ="FPS Multiplier",
                                 choices =list (util_get_common_fps_multipliers ().values ())+["Custom"],
-                                value ="1/2x (Half FPS)",
+                                value =INITIAL_APP_CONFIG.fps_decrease.multiplier_preset,
                                 info ="Choose common multiplier. 1/2x is recommended for good speed/quality balance."
                                 )
                                 fps_multiplier_custom =gr .Number (
                                 label ="Custom Multiplier",
-                                value =APP_CONFIG.fps_decrease.multiplier_custom ,
+                                value =INITIAL_APP_CONFIG.fps_decrease.multiplier_custom ,
                                 minimum =0.1 ,
                                 maximum =1.0 ,
                                 step =0.05 ,
@@ -935,7 +991,7 @@ This helps visualize the quality improvement from upscaling."""
                             label ="Target FPS",
                             minimum =1.0 ,
                             maximum =60.0 ,
-                            value =APP_CONFIG.fps_decrease.target_fps ,
+                            value =INITIAL_APP_CONFIG.fps_decrease.target_fps ,
                             step =0.001 ,
                             info ="Target FPS for the reduced video. Lower FPS = faster upscaling. Common choices: 12-15 FPS for fast processing, 24 FPS for cinema standard. Supports precise values like 23.976."
                             )
@@ -943,7 +999,7 @@ This helps visualize the quality improvement from upscaling."""
                         fps_interpolation_method =gr .Radio (
                         label ="Frame Reduction Method",
                         choices =["drop","blend"],
-                        value =APP_CONFIG.fps_decrease.interpolation_method ,
+                        value =INITIAL_APP_CONFIG.fps_decrease.interpolation_method ,
                         info ="Drop: Faster, simply removes frames. Blend: Smoother, blends frames together (slower but may preserve motion better)."
                         )
 
@@ -957,26 +1013,26 @@ This helps visualize the quality improvement from upscaling."""
                     with gr .Accordion ("FPS Limiting & Output Control",open =True ):
                         rife_enable_fps_limit =gr .Checkbox (
                         label ="Enable FPS Limiting",
-                        value =APP_CONFIG.rife.enable_fps_limit ,
+                        value =INITIAL_APP_CONFIG.rife.enable_fps_limit ,
                         info ="Limit the output FPS to specific common values instead of unlimited interpolation. Useful for compatibility with displays and media players."
                         )
 
                         rife_max_fps_limit =gr .Radio (
                         label ="Max FPS Limit",
                         choices =[23.976 ,24 ,25 ,29.970 ,30 ,47.952 ,48 ,50 ,59.940 ,60 ,75 ,90 ,100 ,119.880 ,120 ,144 ,165 ,180 ,240 ,360 ],
-                        value =APP_CONFIG.rife.max_fps_limit ,
+                        value =INITIAL_APP_CONFIG.rife.max_fps_limit ,
                         info ="Maximum FPS when limiting is enabled. NTSC rates: 23.976/29.970/59.940 (film/TV), Standard: 24/25/30/50/60, Gaming: 120/144/240+. Choose based on your target format and display."
                         )
 
                         with gr .Row ():
                             rife_keep_original =gr .Checkbox (
                             label ="Keep Original Files",
-                            value =APP_CONFIG.rife.keep_original ,
+                            value =INITIAL_APP_CONFIG.rife.keep_original ,
                             info ="Keep the original (non-interpolated) video files alongside the RIFE-processed versions. Recommended to compare results."
                             )
                             rife_overwrite_original =gr .Checkbox (
                             label ="Overwrite Original",
-                            value =APP_CONFIG.rife.overwrite_original ,
+                            value =INITIAL_APP_CONFIG.rife.overwrite_original ,
                             info ="Replace the original upscaled video with the RIFE version as the primary output. When disabled, both versions are available."
                             )
 
@@ -1253,7 +1309,7 @@ This helps visualize the quality improvement from upscaling."""
 
     def update_steps_display (mode ):
         if mode =='fast':
-            return gr .update (value =APP_CONFIG.star_model.steps ,interactive =False )
+            return gr .update (value =INITIAL_APP_CONFIG.star_model.steps ,interactive =False )
         else :
             from logic.dataclasses import DEFAULT_DIFFUSION_STEPS_NORMAL
             return gr .update (value =DEFAULT_DIFFUSION_STEPS_NORMAL ,interactive =True )
@@ -3254,6 +3310,132 @@ This helps visualize the quality improvement from upscaling."""
         ],
         show_progress_on=[output_video_face_restoration]
     )
+
+    # --- PRESET LOGIC ---
+
+    # This list defines all UI components that are part of a preset.
+    # The order is critical and must be maintained for both saving and loading.
+    preset_components = [
+        user_prompt, pos_prompt, neg_prompt,
+        model_selector, cfg_slider, steps_slider, solver_mode_radio, color_fix_dropdown,
+        max_chunk_len_slider, enable_chunk_optimization_check, vae_chunk_slider,
+        enable_target_res_check, target_h_num, target_w_num, target_res_mode_radio, upscale_factor_slider,
+        enable_context_window_check, context_overlap_num,
+        enable_tiling_check, tile_size_num, tile_overlap_num,
+        ffmpeg_use_gpu_check, ffmpeg_preset_dropdown, ffmpeg_quality_slider,
+        enable_frame_folder_check, frame_folder_fps_slider,
+        enable_scene_split_check, scene_split_mode_radio, scene_min_scene_len_num, scene_drop_short_check, scene_merge_last_check,
+        scene_frame_skip_num, scene_threshold_num, scene_min_content_val_num, scene_frame_window_num,
+        scene_manual_split_type_radio, scene_manual_split_value_num, scene_copy_streams_check,
+        scene_use_mkvmerge_check, scene_rate_factor_num, scene_preset_dropdown, scene_quiet_ffmpeg_check,
+        (cogvlm_quant_radio if UTIL_COG_VLM_AVAILABLE else gr.State(None)),
+        (cogvlm_unload_radio if UTIL_COG_VLM_AVAILABLE else gr.State(None)),
+        auto_caption_then_upscale_check,
+        save_frames_checkbox, save_metadata_checkbox, save_chunks_checkbox, save_chunk_frames_checkbox,
+        create_comparison_video_check,
+        seed_num, random_seed_check,
+        enable_rife_interpolation, rife_multiplier, rife_fp16, rife_uhd, rife_scale,
+        rife_skip_static, rife_enable_fps_limit, rife_max_fps_limit,
+        rife_apply_to_chunks, rife_apply_to_scenes, rife_keep_original, rife_overwrite_original,
+        enable_fps_decrease, fps_decrease_mode, fps_multiplier_preset, fps_multiplier_custom, target_fps, fps_interpolation_method,
+        enable_image_upscaler_check, image_upscaler_model_dropdown, image_upscaler_batch_size_slider,
+        enable_face_restoration_check, face_restoration_fidelity_slider, enable_face_colorization_check,
+        face_restoration_when_radio, codeformer_model_dropdown, face_restoration_batch_size_slider
+    ]
+
+    # Map component objects to their location in the AppConfig structure for robust loading.
+    component_key_map = {
+        user_prompt: ('prompts', 'user'), pos_prompt: ('prompts', 'positive'), neg_prompt: ('prompts', 'negative'),
+        model_selector: ('star_model', 'model_choice'), cfg_slider: ('star_model', 'cfg_scale'), steps_slider: ('star_model', 'steps'), solver_mode_radio: ('star_model', 'solver_mode'), color_fix_dropdown: ('star_model', 'color_fix_method'),
+        max_chunk_len_slider: ('performance', 'max_chunk_len'), enable_chunk_optimization_check: ('performance', 'enable_chunk_optimization'), vae_chunk_slider: ('performance', 'vae_chunk'),
+        enable_target_res_check: ('resolution', 'enable_target_res'), target_h_num: ('resolution', 'target_h'), target_w_num: ('resolution', 'target_w'), target_res_mode_radio: ('resolution', 'target_res_mode'), upscale_factor_slider: ('resolution', 'upscale_factor'),
+        enable_context_window_check: ('context_window', 'enable'), context_overlap_num: ('context_window', 'overlap'),
+        enable_tiling_check: ('tiling', 'enable'), tile_size_num: ('tiling', 'tile_size'), tile_overlap_num: ('tiling', 'tile_overlap'),
+        ffmpeg_use_gpu_check: ('ffmpeg', 'use_gpu'), ffmpeg_preset_dropdown: ('ffmpeg', 'preset'), ffmpeg_quality_slider: ('ffmpeg', 'quality'),
+        enable_frame_folder_check: ('frame_folder', 'enable'), frame_folder_fps_slider: ('frame_folder', 'fps'),
+        enable_scene_split_check: ('scene_split', 'enable'), scene_split_mode_radio: ('scene_split', 'mode'), scene_min_scene_len_num: ('scene_split', 'min_scene_len'), scene_drop_short_check: ('scene_split', 'drop_short'), scene_merge_last_check: ('scene_split', 'merge_last'), scene_frame_skip_num: ('scene_split', 'frame_skip'), scene_threshold_num: ('scene_split', 'threshold'), scene_min_content_val_num: ('scene_split', 'min_content_val'), scene_frame_window_num: ('scene_split', 'frame_window'), scene_manual_split_type_radio: ('scene_split', 'manual_split_type'), scene_manual_split_value_num: ('scene_split', 'manual_split_value'), scene_copy_streams_check: ('scene_split', 'copy_streams'), scene_use_mkvmerge_check: ('scene_split', 'use_mkvmerge'), scene_rate_factor_num: ('scene_split', 'rate_factor'), scene_preset_dropdown: ('scene_split', 'encoding_preset'), scene_quiet_ffmpeg_check: ('scene_split', 'quiet_ffmpeg'),
+        (cogvlm_quant_radio if UTIL_COG_VLM_AVAILABLE else None): ('cogvlm', 'quant_display'), (cogvlm_unload_radio if UTIL_COG_VLM_AVAILABLE else None): ('cogvlm', 'unload_after_use'), auto_caption_then_upscale_check: ('cogvlm', 'auto_caption_then_upscale'),
+        save_frames_checkbox: ('outputs', 'save_frames'), save_metadata_checkbox: ('outputs', 'save_metadata'), save_chunks_checkbox: ('outputs', 'save_chunks'), save_chunk_frames_checkbox: ('outputs', 'save_chunk_frames'), create_comparison_video_check: ('outputs', 'create_comparison_video'),
+        seed_num: ('seed', 'seed'), random_seed_check: ('seed', 'use_random'),
+        enable_rife_interpolation: ('rife', 'enable'), rife_multiplier: ('rife', 'multiplier'), rife_fp16: ('rife', 'fp16'), rife_uhd: ('rife', 'uhd'), rife_scale: ('rife', 'scale'), rife_skip_static: ('rife', 'skip_static'), rife_enable_fps_limit: ('rife', 'enable_fps_limit'), rife_max_fps_limit: ('rife', 'max_fps_limit'), rife_apply_to_chunks: ('rife', 'apply_to_chunks'), rife_apply_to_scenes: ('rife', 'apply_to_scenes'), rife_keep_original: ('rife', 'keep_original'), rife_overwrite_original: ('rife', 'overwrite_original'),
+        enable_fps_decrease: ('fps_decrease', 'enable'), fps_decrease_mode: ('fps_decrease', 'mode'), fps_multiplier_preset: ('fps_decrease', 'multiplier_preset'), fps_multiplier_custom: ('fps_decrease', 'multiplier_custom'), target_fps: ('fps_decrease', 'target_fps'), fps_interpolation_method: ('fps_decrease', 'interpolation_method'),
+        enable_image_upscaler_check: ('image_upscaler', 'enable'), image_upscaler_model_dropdown: ('image_upscaler', 'model'), image_upscaler_batch_size_slider: ('image_upscaler', 'batch_size'),
+        enable_face_restoration_check: ('face_restoration', 'enable'), face_restoration_fidelity_slider: ('face_restoration', 'fidelity_weight'), enable_face_colorization_check: ('face_restoration', 'enable_colorization'), face_restoration_when_radio: ('face_restoration', 'when'), codeformer_model_dropdown: ('face_restoration', 'model'), face_restoration_batch_size_slider: ('face_restoration', 'batch_size'),
+    }
+
+    def save_preset_wrapper(preset_name, *all_ui_values):
+        app_config = build_app_config_from_ui(*all_ui_values)
+        success, message = preset_handler.save_preset(app_config, preset_name)
+        
+        new_choices = preset_handler.get_preset_list()
+        # Sanitize name for dropdown value
+        safe_preset_name = "".join(c for c in preset_name if c.isalnum() or c in (' ', '_', '-')).rstrip()
+
+        if success:
+            return message, gr.update(choices=new_choices, value=safe_preset_name)
+        else:
+            return message, gr.update()
+
+    def load_preset_wrapper(preset_name):
+        config_dict, message = preset_handler.load_preset(preset_name)
+        if not config_dict:
+            return [gr.update(value=message)] + [gr.update() for _ in preset_components]
+
+        # Get a fresh AppConfig with default values for any missing keys in the preset file
+        default_config = create_app_config(base_path, args.outputs_folder, star_cfg)
+        updates = []
+        
+        def reverse_extract_codeformer_model_path(path):
+            if not path: return "Auto (Default)"
+            if "codeformer.pth" in path: return "codeformer.pth (359.2MB)"
+            return "Auto (Default)"
+
+        for component in preset_components:
+            if isinstance(component, gr.State) or component is None:
+                updates.append(gr.update())
+                continue
+            
+            if component in component_key_map:
+                section, key = component_key_map[component]
+                # Get the default value from a fresh config object
+                default_value = getattr(getattr(default_config, section), key)
+                # Get value from loaded dict, falling back to the default
+                value = config_dict.get(section, {}).get(key, default_value)
+                
+                # Special handling for components that need it
+                if component is codeformer_model_dropdown:
+                    # The saved value is a path, we need to convert it back to the dropdown choice
+                    value = reverse_extract_codeformer_model_path(value)
+                
+                updates.append(gr.update(value=value))
+            else:
+                logger.warning(f"Component with label '{getattr(component, 'label', 'N/A')}' not found in component_key_map. Skipping update.")
+                updates.append(gr.update())
+        
+        return [gr.update(value=message)] + updates
+
+    def refresh_presets_list():
+        return gr.update(choices=preset_handler.get_preset_list())
+
+    save_preset_btn.click(
+        fn=save_preset_wrapper,
+        inputs=[save_preset_name_textbox] + click_inputs,
+        outputs=[preset_status, preset_dropdown]
+    )
+
+    load_preset_btn.click(
+        fn=load_preset_wrapper,
+        inputs=[preset_dropdown],
+        outputs=[preset_status] + preset_components
+    )
+
+    refresh_presets_btn.click(
+        fn=refresh_presets_list,
+        inputs=[],
+        outputs=[preset_dropdown]
+    )
+
+    # --- END OF PRESET LOGIC ---
 
 if __name__ =="__main__":
     os .makedirs (APP_CONFIG.paths.outputs_dir ,exist_ok =True )
