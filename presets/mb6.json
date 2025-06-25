@@ -116,6 +116,6 @@
         "batch_size": 4
     },
     "gpu": {
-        "device": "0"
+        "device": "1"
     }
 }

@@ -63,7 +63,7 @@
     "cogvlm": {
         "quant_display": "INT4 (CUDA)",
         "unload_after_use": "full",
-        "auto_caption_then_upscale": false,
+        "auto_caption_then_upscale": true,
         "enable_auto_caption_per_scene": false,
         "quant_value": 4
     },

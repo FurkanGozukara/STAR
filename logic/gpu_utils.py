@@ -41,8 +41,6 @@ def set_gpu_device(gpu_id, logger=None):
                 if torch.cuda.is_available() and 0 <= gpu_num < torch.cuda.device_count():
                     SELECTED_GPU_ID = gpu_num
                     torch.cuda.set_device(gpu_num)
-                    if logger:
-                        logger.info(f"GPU selection: Set to use GPU {gpu_num}")
                     return f"GPU selection: Set to use GPU {gpu_num}"
                 else:
                     if logger:

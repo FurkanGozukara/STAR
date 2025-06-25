@@ -267,7 +267,9 @@ INITIAL_APP_CONFIG = load_initial_preset()
 def get_filtered_preset_list():
     """Get preset list excluding 'last_preset' from dropdown display"""
     all_presets = preset_handler.get_preset_list()
-    return [preset for preset in all_presets if preset != "last_preset"]
+    filtered_presets = [preset for preset in all_presets if preset != "last_preset"]
+    logger.debug(f"All presets: {all_presets}, Filtered presets: {filtered_presets}")
+    return filtered_presets
 
 def wrapper_split_video_only_for_gradio (
 input_video_val ,scene_split_mode_radio_val ,scene_min_scene_len_num_val ,scene_drop_short_check_val ,scene_merge_last_check_val ,
@@ -3447,22 +3449,65 @@ This helps visualize the quality improvement from upscaling."""
     }
 
     def save_preset_wrapper(preset_name, *all_ui_values):
+        import time
+        
         app_config = build_app_config_from_ui(*all_ui_values)
         success, message = preset_handler.save_preset(app_config, preset_name)
         
-        new_choices = get_filtered_preset_list()
-        # Sanitize name for dropdown value
-        safe_preset_name = "".join(c for c in preset_name if c.isalnum() or c in (' ', '_', '-')).rstrip()
-
         if success:
+            # Sanitize name for dropdown value
+            safe_preset_name = "".join(c for c in preset_name if c.isalnum() or c in (' ', '_', '-')).rstrip()
+            
+            # Ensure file system has committed the file before updating dropdown
+            time.sleep(0.1)  # Small delay to ensure file is written
+            
+            # Verify the file was actually written
+            presets_dir = preset_handler.get_presets_dir()
+            filepath = os.path.join(presets_dir, f"{safe_preset_name}.json")
+            if not os.path.exists(filepath):
+                logger.warning(f"Preset file not immediately available after save: {filepath}")
+                time.sleep(0.2)  # Additional delay if file not found
+            
+            new_choices = get_filtered_preset_list()
+            
+            # Set the cached preset to prevent unnecessary reload after save
+            last_loaded_preset[0] = safe_preset_name
+            
             return message, gr.update(choices=new_choices, value=safe_preset_name)
         else:
             return message, gr.update()
 
     def load_preset_wrapper(preset_name):
-        config_dict, message = preset_handler.load_preset(preset_name)
+        import time
+        
+        # Skip loading if preset_name is None, empty, or just whitespace
+        if not preset_name or not preset_name.strip():
+            return [gr.update(value="No preset selected")] + [gr.update() for _ in preset_components] + [gr.update() for _ in range(20)]
+        
+        # Sanitize preset name to prevent issues
+        preset_name = preset_name.strip()
+        
+        # Check if this is the system file that should be excluded
+        if preset_name == "last_preset":
+            return [gr.update(value="Cannot load 'last_preset' - this is a system file")] + [gr.update() for _ in preset_components] + [gr.update() for _ in range(20)]
+        
+        # Try to load the preset with retry logic to handle timing issues
+        config_dict, message = None, None
+        max_retries = 3
+        
+        for attempt in range(max_retries):
+            config_dict, message = preset_handler.load_preset(preset_name)
+            if config_dict:
+                break
+            
+            if attempt < max_retries - 1:  # Don't sleep on the last attempt
+                logger.debug(f"Preset load attempt {attempt + 1} failed, retrying in 0.1s...")
+                time.sleep(0.1)
+        
         if not config_dict:
-            return [gr.update(value=message)] + [gr.update() for _ in preset_components] + [gr.update() for _ in range(20)]  # Additional outputs for conditional controls
+            # Suppress error logging for expected failures (file might not exist yet)
+            logger.debug(f"Failed to load preset '{preset_name}' after {max_retries} attempts: {message}")
+            return [gr.update(value=f"Could not load preset: {preset_name}")] + [gr.update() for _ in preset_components] + [gr.update() for _ in range(20)]  # Additional outputs for conditional controls
 
         # Get a fresh AppConfig with default values for any missing keys in the preset file
         default_config = create_app_config(base_path, args.outputs_folder, star_cfg)
@@ -3512,7 +3557,7 @@ This helps visualize the quality improvement from upscaling."""
                     if isinstance(value, str) and value.isdigit():
                         value = int(value)
                     value = convert_gpu_index_to_dropdown(value, available_gpus)
-                    logger.info(f"Loading preset: Converting GPU index '{config_dict.get(section, {}).get(key)}' to dropdown value '{value}'")
+                    logger.info(f"Loading preset: {preset_name}")
                 
                 updates.append(gr.update(value=value))
             else:
@@ -3552,7 +3597,21 @@ This helps visualize the quality improvement from upscaling."""
         return [gr.update(value=message)] + updates + conditional_updates
 
     def refresh_presets_list():
-        return gr.update(choices=get_filtered_preset_list())
+        updated_choices = get_filtered_preset_list()
+        logger.info(f"Refreshing preset list: {updated_choices}")
+        return gr.update(choices=updated_choices)
+    
+    # Cache the last loaded preset to prevent unnecessary reloads
+    last_loaded_preset = [None]
+    
+    def safe_load_preset_wrapper(preset_name):
+        # Skip if this is the same preset we just loaded
+        if preset_name == last_loaded_preset[0]:
+            logger.debug(f"Skipping reload of already loaded preset: '{preset_name}'")
+            return [gr.update()] + [gr.update() for _ in preset_components] + [gr.update() for _ in range(20)]
+        
+        last_loaded_preset[0] = preset_name
+        return load_preset_wrapper(preset_name)
 
     save_preset_btn.click(
         fn=save_preset_wrapper,
@@ -3561,7 +3620,7 @@ This helps visualize the quality improvement from upscaling."""
     )
 
     preset_dropdown.change(
-        fn=load_preset_wrapper,
+        fn=safe_load_preset_wrapper,
         inputs=[preset_dropdown],
         outputs=[preset_status] + preset_components + [
             # Image upscaler controls
