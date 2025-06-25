@@ -2174,7 +2174,6 @@ def run_upscale (
                 # If audio addition failed or wasn't needed, copy the silent video
                 if not audio_added:
                     try:
-                        import shutil
                         shutil.copy2(silent_partial_path, partial_video_path)
                         logger.info("Using silent partial video (no audio)")
                     except Exception as e_copy:

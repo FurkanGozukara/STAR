@@ -275,10 +275,23 @@ def create_comparison_video(
         # Try each encoding approach
         for attempt_idx, encoding_config in enumerate(encoding_attempts):
             try:
+                # Map preset for h264_nvenc compatibility
+                actual_preset = ffmpeg_preset
+                if encoding_config["codec"] == "h264_nvenc":
+                    # Map libx264 presets to h264_nvenc presets
+                    if ffmpeg_preset in ["ultrafast", "superfast", "veryfast", "faster", "fast"]:
+                        actual_preset = "fast"
+                    elif ffmpeg_preset in ["slower", "veryslow"]:
+                        actual_preset = "slow"
+                    elif ffmpeg_preset == "medium":
+                        actual_preset = "medium"  # medium is valid for both
+                    else:  # "slow" and others
+                        actual_preset = "slow"
+                
                 ffmpeg_cmd = (
                     f'ffmpeg -y -i "{original_video_path}" -i "{upscaled_video_path}" '
                     f'-filter_complex "{video_filter}" -map "[output]" '
-                    f'-map 0:a? -c:v {encoding_config["codec"]} {encoding_config["quality_param"]} -preset {ffmpeg_preset} '
+                    f'-map 0:a? -c:v {encoding_config["codec"]} {encoding_config["quality_param"]} -preset {actual_preset} '
                     f'-c:a copy "{output_path}"'
                 )
                 
