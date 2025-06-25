@@ -292,6 +292,151 @@ def unload_cogvlm_model(strategy, logger=None):
             if logger:
                 logger.warning(f"Unknown unload strategy: {strategy}")
 
+def _smart_frame_sampling(total_frames, target_frames, fps, logger=None):
+    """
+    Smart frame sampling algorithm that adapts to video characteristics.
+    
+    Args:
+        total_frames: Total number of frames in video
+        target_frames: Desired number of frames (typically 24 for CogVLM)
+        fps: Frames per second of the video
+        logger: Logger instance
+        
+    Returns:
+        List of frame indices to sample
+    """
+    if total_frames <= 0:
+        if logger:
+            logger.error("Invalid video: no frames detected")
+        return [0] * target_frames
+    
+    video_duration = total_frames / fps if fps > 0 else 0
+    
+    if logger:
+        logger.info(f"Smart sampling: {total_frames} frames, {video_duration:.2f}s duration, target: {target_frames} frames")
+    
+    # Case 1: Very short videos (fewer frames than target)
+    if total_frames <= target_frames:
+        if logger:
+            logger.info(f"Short video ({total_frames} frames): using all frames with repetition")
+        # Use all available frames
+        frame_indices = list(range(total_frames))
+        # Repeat frames to reach target count
+        while len(frame_indices) < target_frames:
+            # Repeat the sequence, but spread it out
+            remaining = target_frames - len(frame_indices)
+            if remaining >= total_frames:
+                frame_indices.extend(range(total_frames))
+            else:
+                # Take evenly spaced frames from the beginning
+                step = max(1, total_frames // remaining)
+                frame_indices.extend([min(i * step, total_frames - 1) for i in range(remaining)])
+        return sorted(frame_indices[:target_frames])
+    
+    # Case 2: Videos with moderate length (use intelligent sampling)
+    elif video_duration <= 60:  # Videos up to 1 minute
+        if video_duration <= 3:
+            # Very short videos: sample very densely
+            if logger:
+                logger.info(f"Very short video ({video_duration:.2f}s): dense temporal sampling")
+            step = max(1, total_frames // target_frames)
+            frame_indices = [min(i * step, total_frames - 1) for i in range(target_frames)]
+        elif video_duration <= 12:
+            # Short videos: sample every 0.5 seconds or so
+            if logger:
+                logger.info(f"Short video ({video_duration:.2f}s): 0.5s interval sampling")
+            time_step = video_duration / target_frames
+            frame_indices = []
+            for i in range(target_frames):
+                time_point = i * time_step
+                frame_idx = min(int(time_point * fps), total_frames - 1)
+                frame_indices.append(frame_idx)
+        else:
+            # Medium videos: adaptive sampling (mix of even spacing and key moments)
+            if logger:
+                logger.info(f"Medium video ({video_duration:.2f}s): adaptive temporal sampling")
+            # Use a combination of even spacing and some clustering around key points
+            base_step = total_frames // target_frames
+            frame_indices = []
+            
+            # Take evenly spaced frames
+            for i in range(target_frames):
+                frame_idx = min(i * base_step, total_frames - 1)
+                frame_indices.append(frame_idx)
+            
+            # Add some frames from beginning, middle, and end for better coverage
+            frame_indices.extend([
+                0,  # First frame
+                total_frames // 4,  # Quarter point
+                total_frames // 2,  # Middle
+                3 * total_frames // 4,  # Three-quarter point
+                total_frames - 1  # Last frame
+            ])
+            
+            # Remove duplicates and sort
+            frame_indices = sorted(list(set(frame_indices)))[:target_frames]
+    
+    # Case 3: Long videos (over 1 minute)
+    else:
+        if logger:
+            logger.info(f"Long video ({video_duration:.2f}s): strategic interval sampling")
+        # For long videos, use strategic sampling at regular intervals
+        # Sample more densely at the beginning and end, sparser in the middle
+        frame_indices = []
+        
+        # Beginning (first 25% of target frames from first 10% of video)
+        beginning_frames = target_frames // 4
+        beginning_end = min(int(0.1 * total_frames), total_frames)
+        for i in range(beginning_frames):
+            frame_idx = int(i * beginning_end / beginning_frames)
+            frame_indices.append(frame_idx)
+        
+        # Middle (50% of target frames from middle 80% of video) 
+        middle_frames = target_frames // 2
+        middle_start = beginning_end
+        middle_end = int(0.9 * total_frames)
+        middle_span = middle_end - middle_start
+        for i in range(middle_frames):
+            frame_idx = middle_start + int(i * middle_span / middle_frames)
+            frame_indices.append(frame_idx)
+        
+        # End (25% of target frames from last 10% of video)
+        end_frames = target_frames - beginning_frames - middle_frames
+        end_start = middle_end
+        end_span = total_frames - end_start
+        for i in range(end_frames):
+            frame_idx = end_start + int(i * end_span / end_frames)
+            frame_indices.append(min(frame_idx, total_frames - 1))
+        
+        # Remove duplicates and ensure we have exact target count
+        frame_indices = sorted(list(set(frame_indices)))
+        
+        # If we have too few, fill with evenly spaced frames
+        if len(frame_indices) < target_frames:
+            step = max(1, total_frames // target_frames)
+            additional = [min(i * step, total_frames - 1) for i in range(target_frames)]
+            frame_indices = sorted(list(set(frame_indices + additional)))
+        
+        frame_indices = frame_indices[:target_frames]
+    
+    # Final validation and cleanup
+    frame_indices = [max(0, min(idx, total_frames - 1)) for idx in frame_indices]
+    frame_indices = sorted(list(set(frame_indices)))
+    
+    # If we still don't have enough unique frames, pad with the last frame
+    while len(frame_indices) < target_frames:
+        frame_indices.append(frame_indices[-1] if frame_indices else 0)
+    
+    frame_indices = frame_indices[:target_frames]
+    
+    if logger:
+        sampling_density = len(frame_indices) / video_duration if video_duration > 0 else 0
+        logger.info(f"Sampled {len(frame_indices)} frames (density: {sampling_density:.1f} fps)")
+        logger.info(f"Frame indices: {frame_indices}")
+    
+    return frame_indices
+
+
 def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, logger=None, progress=gr.Progress(track_tqdm=True)):
     """Generate automatic caption for video using CogVLM model."""
     if not COG_VLM_AVAILABLE:
@@ -387,66 +532,10 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
         # Check for cancellation after video loading
         cancellation_manager.check_cancel("after video loading")
 
-        timestamps = decord_vr.get_frame_timestamp(np.arange(total_frames_decord))
-        timestamps = [ts[0] for ts in timestamps]
-
-        frame_id_list = []
-        if timestamps:
-            max_second = int(round(max(timestamps) if timestamps else 0)) + 1
-            unique_indices = set()
-            for sec in range(max_second):
-                if len(unique_indices) >= num_frames_cog:
-                    break
-                closest_time_diff = float('inf')
-                closest_idx = -1
-                for idx, ts_val in enumerate(timestamps):
-                    diff = abs(ts_val - sec)
-                    if diff < closest_time_diff:
-                        closest_time_diff = diff
-                        closest_idx = idx
-                if closest_idx != -1:
-                    unique_indices.add(closest_idx)
-            frame_id_list = sorted(list(unique_indices))[:num_frames_cog]
-
-        if len(frame_id_list) < num_frames_cog:
-            if logger:
-                logger.warning(f"Sampled {len(frame_id_list)} frames, need {num_frames_cog}. Using linspace.")
-            step = max(1, total_frames_decord // num_frames_cog)
-            frame_id_list = [min(i * step, total_frames_decord - 1) for i in range(num_frames_cog)]
-            frame_id_list = sorted(list(set(frame_id_list)))
-            frame_id_list = frame_id_list[:num_frames_cog]
-
-        if not frame_id_list:
-            if logger:
-                logger.warning("Frame ID list is empty, using first N frames or all if less than N.")
-            frame_id_list = list(range(min(num_frames_cog, total_frames_decord)))
-        
-        # Ensure all frame indices are within valid bounds
-        frame_id_list = [max(0, min(idx, total_frames_decord - 1)) for idx in frame_id_list]
-        
-        # Remove duplicates while preserving order and ensure we have enough frames
-        seen = set()
-        unique_frame_list = []
-        for idx in frame_id_list:
-            if idx not in seen:
-                seen.add(idx)
-                unique_frame_list.append(idx)
-        
-        # If we still don't have enough unique frames, fill with evenly spaced frames
-        if len(unique_frame_list) < num_frames_cog:
-            if logger:
-                logger.warning(f"Only {len(unique_frame_list)} unique frames available, filling with evenly spaced frames.")
-            # Create evenly spaced frame indices
-            if total_frames_decord > 0:
-                step = max(1, total_frames_decord // num_frames_cog)
-                evenly_spaced = [min(i * step, total_frames_decord - 1) for i in range(num_frames_cog)]
-                # Merge with existing unique frames
-                all_frames = list(set(unique_frame_list + evenly_spaced))
-                frame_id_list = sorted(all_frames)[:num_frames_cog]
-            else:
-                frame_id_list = [0] * num_frames_cog
-        else:
-            frame_id_list = unique_frame_list[:num_frames_cog]
+        # Smart frame sampling based on video characteristics
+        frame_id_list = _smart_frame_sampling(
+            total_frames_decord, num_frames_cog, fps, logger
+        )
 
         if logger:
             logger.info(f"CogVLM2 using frame indices: {frame_id_list}")
