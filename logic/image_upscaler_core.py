@@ -181,6 +181,19 @@ def process_video_with_image_upscaler(
         actual_scale = get_model_scale_factor(model)
         params_for_metadata["actual_model_scale"] = actual_scale
         
+        # Log input video resolution for image upscaler
+        from .file_utils import get_video_resolution
+        orig_h, orig_w = get_video_resolution(input_video_path, logger=logger)
+        if logger:
+            logger.info(f"Input video resolution: {orig_w}x{orig_h}")
+        
+        # Note: Target resolution handling is now done by upscaling_core.py before this function is called
+        if enable_target_res:
+            target_res_msg = f"Target resolution handling was done by main upscaling core for {actual_scale}x model"
+            status_log.append(target_res_msg)
+            if logger:
+                logger.info(target_res_msg)
+        
         yield None, "\n".join(status_log), None, "Model loaded, processing frames...", None
         
         # Process based on scene splitting

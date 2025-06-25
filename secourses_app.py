@@ -436,7 +436,7 @@ The total combined prompt length is limited to 77 tokens."""
             with gr .Row ():
                 with gr .Column (scale =1 ):
                     with gr .Accordion ("Target Resolution - Maintains Your Input Video Aspect Ratio",open =True ):
-                        gr .Markdown ("⚠️ **Note:** When Image-Based Upscaler is enabled, ratio upscale won't work since they are deterministic ratios either 2x or 4x.")
+                        gr .Markdown ("📝 **Image Upscaler Support:** Target resolution now works with image upscalers! The system automatically adapts based on your selected model's scale factor (2x, 4x, etc.).")
                         enable_target_res_check =gr .Checkbox (
                         label ="Enable Max Target Resolution",
                         value =INITIAL_APP_CONFIG.resolution.enable_target_res ,
@@ -447,7 +447,7 @@ The total combined prompt length is limited to 77 tokens."""
                         choices =['Ratio Upscale','Downscale then 4x'],value =INITIAL_APP_CONFIG.resolution.target_res_mode ,
                         info ="""How to apply the target H/W limits.
 'Ratio Upscale': Upscales by the largest factor possible without exceeding Target H/W, preserving aspect ratio.
-'Downscale then 4x': If input is large, downscales it towards Target H/W divided by 4, THEN applies a 4x upscale. Can clean noisy high-res input before upscaling."""
+'Downscale then 4x': For STAR models, downscales towards Target H/W ÷ 4, then applies 4x upscale. For image upscalers, adapts to model scale (e.g., 2x model = Target H/W ÷ 2). Can clean noisy high-res input before upscaling."""
                         )
                         with gr .Row ():
                             target_h_num =gr .Slider (

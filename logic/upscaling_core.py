@@ -438,7 +438,7 @@ def run_upscale (
 
         if enable_target_res :
             needs_downscale ,ds_h ,ds_w ,upscale_factor_calc ,final_h_calc ,final_w_calc =util_calculate_upscale_params (
-            orig_h_val ,orig_w_val ,target_h ,target_w ,target_res_mode ,logger =logger
+            orig_h_val ,orig_w_val ,target_h ,target_w ,target_res_mode ,logger =logger ,image_upscaler_model =image_upscaler_model if enable_image_upscaler else None
             )
             upscale_factor_val =upscale_factor_calc
             final_h_val ,final_w_val =final_h_calc ,final_w_calc
