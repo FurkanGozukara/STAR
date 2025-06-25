@@ -659,6 +659,8 @@ def process_single_scene(
                     os.makedirs(current_scene_chunks_save_path, exist_ok=True)
                     chunk_video_filename = f"chunk_{chunk_idx + 1:04d}.mp4"
                     chunk_video_path = os.path.join(current_scene_chunks_save_path, chunk_video_filename)
+                    final_chunk_video_path = None  # Initialize with default value
+                    
                     chunk_temp_assembly_dir = os.path.join(temp_dir, scene_name, f"temp_context_chunk_{chunk_idx+1}")
                     os.makedirs(chunk_temp_assembly_dir, exist_ok=True)
                     frames_for_this_video_chunk = []
@@ -726,10 +728,45 @@ def process_single_scene(
                         logger.warning(f"No frames for scene context chunk {chunk_idx+1}/{total_context_chunks}, video not created.")
                     shutil.rmtree(chunk_temp_assembly_dir)
 
-                # Clean up GPU memory
-                del chunk_data_cuda, chunk_sr_tensor_bcthw, chunk_sr_frames_uint8
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+                    if save_metadata and metadata_params_base:
+                        meta_chunk_dir = os.path.join(scene_output_dir, "scenes", scene_name, "chunk_progress_metadata") if scene_output_dir and scene_name else os.path.join(temp_dir, scene_name or f"s_unknown_temp_{chunk_idx+1}", "chunk_progress_metadata")
+                        os.makedirs(meta_chunk_dir, exist_ok=True)
+                        
+                        # Include RIFE chunk information in status and frame range
+                        chunk_status_info = {
+                            "current_chunk": chunk_idx + 1, 
+                            "total_chunks": total_context_chunks, 
+                            "overall_process_start_time": scene_start_time,
+                            "chunk_video_path": final_chunk_video_path,
+                            "original_chunk_video_path": chunk_video_path,
+                            "rife_applied_to_chunk": enable_rife_interpolation and rife_apply_to_chunks,
+                            "rife_multiplier_used_for_chunk": rife_multiplier if enable_rife_interpolation and rife_apply_to_chunks else None,
+                            "chunk_frame_range": (output_start_0 + 1, output_end_0 + 1)  # 1-indexed frame range for this chunk
+                        }
+                        
+                        # Add comprehensive RIFE metadata to chunk-specific metadata
+                        chunk_params_meta = metadata_params_base.copy()
+                        chunk_params_meta['input_fps'] = scene_fps
+                        chunk_params_meta['scene_prompt_used_for_chunk'] = scene_prompt if 'scene_prompt' in locals() and scene_prompt and scene_prompt != final_prompt else final_prompt
+                        
+                        if enable_rife_interpolation and rife_apply_to_chunks:
+                            chunk_params_meta.update({
+                                'rife_chunk_applied': True,
+                                'rife_chunk_multiplier': rife_multiplier,
+                                'rife_chunk_fp16': rife_fp16,
+                                'rife_chunk_uhd': rife_uhd,
+                                'rife_chunk_scale': rife_scale,
+                                'rife_chunk_skip_static': rife_skip_static,
+                                'rife_chunk_enable_fps_limit': rife_enable_fps_limit,
+                                'rife_chunk_max_fps_limit': rife_max_fps_limit,
+                                'rife_chunk_keep_original': rife_keep_original,
+                                'rife_chunk_seed': current_seed
+                            })
+                        
+                        metadata_handler.save_metadata(True, meta_chunk_dir, f"{scene_name}_context_chunk_{chunk_idx+1:04d}_progress", chunk_params_meta, chunk_status_info, logger)
+                else:
+                    # Initialize final_chunk_video_path for metadata even when save_chunks is disabled
+                    final_chunk_video_path = None
 
         else:  # Regular chunked processing (non-context mode)
             # Chunked processing mode with optimization
@@ -874,8 +911,25 @@ def process_single_scene(
                 # Save the output frames with correct names
                 for k, (frame_tensor, frame_name) in enumerate(zip(output_frames, output_frame_names)):
                     frame_np_hwc_uint8 = frame_tensor.cpu().numpy()
+                    # Ensure the frame is uint8 format to avoid CV2 depth issues
+                    if frame_np_hwc_uint8.dtype != np.uint8:
+                        frame_np_hwc_uint8 = frame_np_hwc_uint8.astype(np.uint8)
                     frame_bgr = cv2.cvtColor(frame_np_hwc_uint8, cv2.COLOR_RGB2BGR)
-                    cv2.imwrite(os.path.join(scene_output_frames_dir, frame_name), frame_bgr)
+                    frame_output_path = os.path.join(scene_output_frames_dir, frame_name)
+                    cv2.imwrite(frame_output_path, frame_bgr)
+                    # Verify frame was actually written
+                    if not os.path.exists(frame_output_path):
+                        logger.error(f"Failed to write frame: {frame_output_path}")
+                    else:
+                        logger.debug(f"Successfully wrote frame: {frame_output_path}")
+                
+                # Debug: List what frames are actually in the output directory
+                if os.path.exists(scene_output_frames_dir):
+                    actual_frames = os.listdir(scene_output_frames_dir)
+                    logger.info(f"Scene {scene_index + 1} Chunk {chunk_idx+1}: {len(actual_frames)} frames written to {scene_output_frames_dir}")
+                    logger.debug(f"Frame files: {sorted(actual_frames)[:5]}...")  # Show first 5 files
+                else:
+                    logger.error(f"Output frames directory does not exist: {scene_output_frames_dir}")
 
                 # IMMEDIATE FRAME SAVING: Save processed frames immediately after scene chunk completion
                 if save_frames and scene_output_frames_permanent:
@@ -896,9 +950,14 @@ def process_single_scene(
                     os.makedirs(current_scene_chunks_save_path, exist_ok=True)
                     chunk_video_filename = f"chunk_{chunk_idx + 1:04d}.mp4"
                     chunk_video_path = os.path.join(current_scene_chunks_save_path, chunk_video_filename)
+                    final_chunk_video_path = None  # Initialize with default value
+                    
                     chunk_temp_assembly_dir = os.path.join(temp_dir, scene_name, f"temp_chunk_{chunk_idx+1}")
                     os.makedirs(chunk_temp_assembly_dir, exist_ok=True)
                     frames_for_this_video_chunk = []
+                    logger.info(f"Scene {scene_index + 1} Chunk {chunk_idx+1}: Looking for {len(output_frame_names)} frames in {scene_output_frames_dir}")
+                    logger.debug(f"Expected frame names: {output_frame_names[:3]}...")  # Show first 3 expected names
+                    
                     for k_chunk_frame, frame_name_in_chunk in enumerate(output_frame_names):
                         src = os.path.join(scene_output_frames_dir, frame_name_in_chunk)
                         dst = os.path.join(chunk_temp_assembly_dir, f"frame_{k_chunk_frame+1:06d}.png")
@@ -907,6 +966,9 @@ def process_single_scene(
                             frames_for_this_video_chunk.append(dst)
                         else:
                             logger.warning(f"Src frame {src} not found for scene chunk video.")
+                    
+                    logger.info(f"Scene {scene_index + 1} Chunk {chunk_idx+1}: Found {len(frames_for_this_video_chunk)} out of {len(output_frame_names)} expected frames")
+                    
                     if frames_for_this_video_chunk:
                         util_create_video_from_frames(
                             chunk_temp_assembly_dir, chunk_video_path, scene_fps,
@@ -998,6 +1060,9 @@ def process_single_scene(
                             })
                         
                         metadata_handler.save_metadata(True, meta_chunk_dir, f"{scene_name}_chunk_{chunk_idx+1:04d}_progress", chunk_params_meta, chunk_status_info, logger)
+                else:
+                    # Initialize final_chunk_video_path for metadata even when save_chunks is disabled
+                    final_chunk_video_path = None
 
                 del chunk_data_cuda, chunk_sr_tensor_bcthw, chunk_sr_frames_uint8
                 if torch.cuda.is_available():

@@ -12,7 +12,7 @@
         "color_fix_method": "Wavelet"
     },
     "performance": {
-        "max_chunk_len": 32,
+        "max_chunk_len": 20,
         "vae_chunk": 3,
         "enable_chunk_optimization": true,
         "chunk_optimization_min_ratio": 0.5
