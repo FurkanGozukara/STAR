@@ -241,6 +241,10 @@ def load_initial_preset():
 # Load initial settings from presets or defaults
 INITIAL_APP_CONFIG = load_initial_preset()
 
+def get_filtered_preset_list():
+    """Get preset list excluding 'last_preset' from dropdown display"""
+    all_presets = preset_handler.get_preset_list()
+    return [preset for preset in all_presets if preset != "last_preset"]
 
 def wrapper_split_video_only_for_gradio (
 input_video_val ,scene_split_mode_radio_val ,scene_min_scene_len_num_val ,scene_drop_short_check_val ,scene_merge_last_check_val ,
@@ -406,6 +410,7 @@ The total combined prompt length is limited to 77 tokens."""
             with gr .Row ():
                 with gr .Column (scale =1 ):
                     with gr .Accordion ("Target Resolution - Maintains Your Input Video Aspect Ratio",open =True ):
+                        gr .Markdown ("⚠️ **Note:** When Image-Based Upscaler is enabled, ratio upscale won't work since they are deterministic ratios either 2x or 4x.")
                         enable_target_res_check =gr .Checkbox (
                         label ="Enable Max Target Resolution",
                         value =INITIAL_APP_CONFIG.resolution.enable_target_res ,
@@ -484,9 +489,9 @@ The total combined prompt length is limited to 77 tokens."""
             with gr .Row ():
                 with gr .Column (scale =1 ):
                     with gr .Group ():
-                        gr .Markdown ("### Core Upscaling Settings for STAR Model")
+                        gr .Markdown ("### Core Upscaling Settings for STAR Model - Temporal Upscaling")
                         model_selector =gr .Dropdown (
-                        label ="STAR Model",
+                        label ="STAR Model - Temporal Upscaling",
                         choices =["Light Degradation","Heavy Degradation"],
                         value =INITIAL_APP_CONFIG.star_model.model_choice ,
                         info ="""Choose the model based on input video quality.
@@ -525,9 +530,9 @@ The total combined prompt length is limited to 77 tokens."""
 'None': Disables color correction."""
                         )
                     
-                    with gr .Accordion ("Performance & VRAM Optimization (Only for STAR Model)",open =True ):
+                    with gr .Accordion ("QUALITY: Performance & VRAM Optimization (Only for STAR Model)",open =True ):
                         max_chunk_len_slider =gr .Slider (
-                        label ="Max Frames per Chunk (VRAM)",
+                        label ="Max Frames per Chunk (VRAM) - Bigger = Better QUALITY",
                         minimum =4 ,maximum =96 ,value =INITIAL_APP_CONFIG.performance.max_chunk_len ,step =4 ,
                         info ="""IMPORTANT for VRAM. This is the standard way the application manages VRAM. It divides the entire sequence of video frames into sequential, non-overlapping chunks.
 - Mechanism: The STAR model processes one complete chunk (of this many frames) at a time.
@@ -556,7 +561,7 @@ The total combined prompt length is limited to 77 tokens."""
 
                 with gr .Column (scale =1 ):
                     with gr .Group ():
-                        gr .Markdown ("### Image-Based Upscaler (Alternative to STAR)")
+                        gr .Markdown ("### Image-Based Upscaler (Alternative to STAR) - Spatial Upscaling")
                         enable_image_upscaler_check =gr .Checkbox (
                         label ="Enable Image-Based Upscaling (Disables STAR Model)",
                         value =INITIAL_APP_CONFIG.image_upscaler.enable ,
@@ -583,7 +588,7 @@ The total combined prompt length is limited to 77 tokens."""
                             default_model_choice = model_choices[0]
                         
                         image_upscaler_model_dropdown =gr .Dropdown (
-                        label ="Upscaler Model",
+                        label ="Select Upscaler Model - Spatial Upscaling",
                         choices =model_choices ,
                         value =default_model_choice ,
                         info ="Select the image upscaler model. Models should be placed in the 'upscale_models/' directory.",
@@ -1135,7 +1140,7 @@ This helps visualize the quality improvement from upscaling."""
                         value ="🎞️ Ready to edit videos. Upload a video and specify cut ranges to begin."
                         )
                     
-                    with gr .Accordion ("Quick Help & Examples",open =False ):
+                    with gr .Accordion ("Quick Help & Examples",open =True ):
                         gr .Markdown ("""
 **Time Range Examples:**
 - `1-3` → Cut from 1 to 3 seconds
@@ -1231,7 +1236,7 @@ This helps visualize the quality improvement from upscaling."""
 
 
                     
-                    with gr .Accordion ("Advanced Options",open =False ):
+                    with gr .Accordion ("Advanced Options",open =True ):
                         standalone_save_frames =gr .Checkbox (
                         label ="Save Individual Frames",
                         value =False ,
@@ -1282,7 +1287,7 @@ This helps visualize the quality improvement from upscaling."""
                         value ="📊 Processing statistics will appear here during face restoration."
                         )
                     
-                    with gr .Accordion ("Face Restoration Help",open =False ):
+                    with gr .Accordion ("Face Restoration Help",open =True ):
                         gr .Markdown ("""
 **Face Restoration Tips:**
 - **Fidelity Weight 0.3-0.5**: Focus on quality enhancement, may change face slightly
@@ -3338,6 +3343,8 @@ This helps visualize the quality improvement from upscaling."""
         face_restoration_when_radio, codeformer_model_dropdown, face_restoration_batch_size_slider
     ]
 
+    # Define preset helper functions before they are used
+
     # Map component objects to their location in the AppConfig structure for robust loading.
     component_key_map = {
         user_prompt: ('prompts', 'user'), pos_prompt: ('prompts', 'positive'), neg_prompt: ('prompts', 'negative'),
@@ -3357,11 +3364,6 @@ This helps visualize the quality improvement from upscaling."""
         enable_image_upscaler_check: ('image_upscaler', 'enable'), image_upscaler_model_dropdown: ('image_upscaler', 'model'), image_upscaler_batch_size_slider: ('image_upscaler', 'batch_size'),
         enable_face_restoration_check: ('face_restoration', 'enable'), face_restoration_fidelity_slider: ('face_restoration', 'fidelity_weight'), enable_face_colorization_check: ('face_restoration', 'enable_colorization'), face_restoration_when_radio: ('face_restoration', 'when'), codeformer_model_dropdown: ('face_restoration', 'model'), face_restoration_batch_size_slider: ('face_restoration', 'batch_size'),
     }
-
-    def get_filtered_preset_list():
-        """Get preset list excluding 'last_preset' from dropdown display"""
-        all_presets = preset_handler.get_preset_list()
-        return [preset for preset in all_presets if preset != "last_preset"]
 
     def save_preset_wrapper(preset_name, *all_ui_values):
         app_config = build_app_config_from_ui(*all_ui_values)
