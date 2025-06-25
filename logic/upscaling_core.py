@@ -2061,8 +2061,8 @@ def run_upscale (
                     silent_partial_path = os.path.join(temp_dir, "silent_partial_from_scenes.mp4")
                     
                     try:
-                        # Import scene merging utility
-                        from .scene_utils import merge_scene_videos as util_merge_scene_videos
+                        # Use already imported scene merging utility
+                        # (util_merge_scene_videos is imported at top of file)
                         
                         # Merge the processed scene videos
                         util_merge_scene_videos(
