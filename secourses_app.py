@@ -559,7 +559,7 @@ The total combined prompt length is limited to 77 tokens."""
                     with gr .Accordion ("QUALITY: Performance & VRAM Optimization (Only for STAR Model)",open =True ):
                         max_chunk_len_slider =gr .Slider (
                         label ="Max Frames per Chunk (VRAM) - Bigger = Better QUALITY",
-                        minimum =4 ,maximum =96 ,value =INITIAL_APP_CONFIG.performance.max_chunk_len ,step =4 ,
+                        minimum =1 ,maximum =192 ,value =INITIAL_APP_CONFIG.performance.max_chunk_len ,step =1 ,
                         info ="""IMPORTANT for VRAM. This is the standard way the application manages VRAM. It divides the entire sequence of video frames into sequential, non-overlapping chunks.
 - Mechanism: The STAR model processes one complete chunk (of this many frames) at a time.
 - VRAM Impact: High Reduction (Lower value = Less VRAM).
