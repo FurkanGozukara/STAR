@@ -378,7 +378,7 @@ The total combined prompt length is limited to 77 tokens."""
                         with gr.Row():
                             preset_dropdown = gr.Dropdown(
                                 label="Select or Create Preset",
-                                choices=preset_handler.get_preset_list(),
+                                choices=get_filtered_preset_list(),
                                 value=preset_handler.get_last_used_preset_name() or "Default",
                                 allow_custom_value=True,
                                 scale=3,
@@ -587,7 +587,7 @@ The total combined prompt length is limited to 77 tokens."""
                         choices =model_choices ,
                         value =default_model_choice ,
                         info ="Select the image upscaler model. Models should be placed in the 'upscale_models/' directory.",
-                        interactive =False 
+                        interactive =True 
                         )
                         
                         image_upscaler_batch_size_slider =gr .Slider (
@@ -597,7 +597,7 @@ The total combined prompt length is limited to 77 tokens."""
                         value =INITIAL_APP_CONFIG.image_upscaler.batch_size ,
                         step =1 ,
                         info ="Number of frames to process simultaneously. Higher values = faster processing but more VRAM usage. Adjust based on your GPU memory.",
-                        interactive =False 
+                        interactive =True 
                         )
                     
                     with gr .Group ():
@@ -622,7 +622,7 @@ The total combined prompt length is limited to 77 tokens."""
 - 0.0-0.3: Prioritize quality/detail (may change facial features)
 - 0.4-0.6: Balanced approach
 - 0.7-1.0: Prioritize identity preservation (may reduce enhancement)""",
-                        interactive =False 
+                        interactive =True 
                         )
                         
                         with gr .Row ():
@@ -630,7 +630,7 @@ The total combined prompt length is limited to 77 tokens."""
                             label ="Enable Colorization",
                             value =INITIAL_APP_CONFIG.face_restoration.enable_colorization ,
                             info ="Apply colorization to grayscale faces (experimental feature)",
-                            interactive =False 
+                            interactive =True 
                             )
                             
                             face_restoration_when_radio =gr .Radio (
@@ -640,7 +640,7 @@ The total combined prompt length is limited to 77 tokens."""
                             info ="""When to apply face restoration:
 'before': Apply before upscaling (may be enhanced further)
 'after': Apply after upscaling (final enhancement)""",
-                            interactive =False 
+                            interactive =True 
                             )
                         
                         with gr .Row ():
@@ -655,7 +655,7 @@ The total combined prompt length is limited to 77 tokens."""
                                 choices =model_choices ,
                                 value =default_model_choice ,
                                 info ="Select the CodeFormer model. 'Auto' uses the default model. Models should be in pretrained_weight/ directory.",
-                                interactive =False 
+                                interactive =True 
                                 )
                         
                         face_restoration_batch_size_slider =gr .Slider (
@@ -665,7 +665,7 @@ The total combined prompt length is limited to 77 tokens."""
                         value =INITIAL_APP_CONFIG.face_restoration.batch_size ,
                         step =1 ,
                         info ="Number of frames to process simultaneously for face restoration. Higher values = faster processing but more VRAM usage.",
-                        interactive =False 
+                        interactive =True 
                         )
 
                     if UTIL_COG_VLM_AVAILABLE :
@@ -819,7 +819,7 @@ This helps visualize the quality improvement from upscaling."""
                         manual_comparison_status =gr .Textbox (
                         label ="Manual Comparison Status",
                         lines =2 ,
-                        interactive =False ,
+                        interactive =True ,
                         visible =False 
                         )
 
@@ -3358,11 +3358,16 @@ This helps visualize the quality improvement from upscaling."""
         enable_face_restoration_check: ('face_restoration', 'enable'), face_restoration_fidelity_slider: ('face_restoration', 'fidelity_weight'), enable_face_colorization_check: ('face_restoration', 'enable_colorization'), face_restoration_when_radio: ('face_restoration', 'when'), codeformer_model_dropdown: ('face_restoration', 'model'), face_restoration_batch_size_slider: ('face_restoration', 'batch_size'),
     }
 
+    def get_filtered_preset_list():
+        """Get preset list excluding 'last_preset' from dropdown display"""
+        all_presets = preset_handler.get_preset_list()
+        return [preset for preset in all_presets if preset != "last_preset"]
+
     def save_preset_wrapper(preset_name, *all_ui_values):
         app_config = build_app_config_from_ui(*all_ui_values)
         success, message = preset_handler.save_preset(app_config, preset_name)
         
-        new_choices = preset_handler.get_preset_list()
+        new_choices = get_filtered_preset_list()
         # Sanitize name for dropdown value
         safe_preset_name = "".join(c for c in preset_name if c.isalnum() or c in (' ', '_', '-')).rstrip()
 
@@ -3374,7 +3379,7 @@ This helps visualize the quality improvement from upscaling."""
     def load_preset_wrapper(preset_name):
         config_dict, message = preset_handler.load_preset(preset_name)
         if not config_dict:
-            return [gr.update(value=message)] + [gr.update() for _ in preset_components]
+            return [gr.update(value=message)] + [gr.update() for _ in preset_components] + [gr.update() for _ in range(20)]  # Additional outputs for conditional controls
 
         # Get a fresh AppConfig with default values for any missing keys in the preset file
         default_config = create_app_config(base_path, args.outputs_folder, star_cfg)
@@ -3384,6 +3389,19 @@ This helps visualize the quality improvement from upscaling."""
             if not path: return "Auto (Default)"
             if "codeformer.pth" in path: return "codeformer.pth (359.2MB)"
             return "Auto (Default)"
+
+        # Extract checkbox values for conditional control updates
+        enable_image_upscaler_val = config_dict.get('image_upscaler', {}).get('enable', default_config.image_upscaler.enable)
+        enable_face_restoration_val = config_dict.get('face_restoration', {}).get('enable', default_config.face_restoration.enable)
+        enable_target_res_val = config_dict.get('resolution', {}).get('enable_target_res', default_config.resolution.enable_target_res)
+        enable_tiling_val = config_dict.get('tiling', {}).get('enable', default_config.tiling.enable)
+        enable_context_window_val = config_dict.get('context_window', {}).get('enable', default_config.context_window.enable)
+        enable_scene_split_val = config_dict.get('scene_split', {}).get('enable', default_config.scene_split.enable)
+        enable_rife_val = config_dict.get('rife', {}).get('enable', default_config.rife.enable)
+        enable_fps_decrease_val = config_dict.get('fps_decrease', {}).get('enable', default_config.fps_decrease.enable)
+        random_seed_val = config_dict.get('seed', {}).get('use_random', default_config.seed.use_random)
+        rife_enable_fps_limit_val = config_dict.get('rife', {}).get('enable_fps_limit', default_config.rife.enable_fps_limit)
+        enable_frame_folder_val = config_dict.get('frame_folder', {}).get('enable', default_config.frame_folder.enable)
 
         for component in preset_components:
             if isinstance(component, gr.State) or component is None:
@@ -3407,10 +3425,40 @@ This helps visualize the quality improvement from upscaling."""
                 logger.warning(f"Component with label '{getattr(component, 'label', 'N/A')}' not found in component_key_map. Skipping update.")
                 updates.append(gr.update())
         
-        return [gr.update(value=message)] + updates
+        # Add conditional control updates
+        conditional_updates = [
+            # Image upscaler controls
+            gr.update(interactive=enable_image_upscaler_val),  # image_upscaler_model_dropdown
+            gr.update(interactive=enable_image_upscaler_val),  # image_upscaler_batch_size_slider
+            # Face restoration controls
+            gr.update(interactive=enable_face_restoration_val),  # face_restoration_fidelity_slider
+            gr.update(interactive=enable_face_restoration_val),  # enable_face_colorization_check
+            gr.update(interactive=enable_face_restoration_val),  # face_restoration_when_radio
+            gr.update(interactive=enable_face_restoration_val),  # codeformer_model_dropdown
+            gr.update(interactive=enable_face_restoration_val),  # face_restoration_batch_size_slider
+            # Target resolution controls
+            gr.update(interactive=enable_target_res_val),  # target_h_num
+            gr.update(interactive=enable_target_res_val),  # target_w_num
+            gr.update(interactive=enable_target_res_val),  # target_res_mode_radio
+            # Tiling controls
+            gr.update(interactive=enable_tiling_val),  # tile_size_num
+            gr.update(interactive=enable_tiling_val),  # tile_overlap_num
+            # Context window control
+            gr.update(interactive=enable_context_window_val),  # context_overlap_num
+            # Scene splitting controls (15 controls)
+            gr.update(interactive=enable_scene_split_val),  # scene_split_mode_radio
+            gr.update(interactive=enable_scene_split_val),  # scene_min_scene_len_num
+            gr.update(interactive=enable_scene_split_val),  # scene_threshold_num
+            gr.update(interactive=enable_scene_split_val),  # scene_drop_short_check
+            gr.update(interactive=enable_scene_split_val),  # scene_merge_last_check
+            # Seed control
+            gr.update(interactive=not random_seed_val),  # seed_num
+        ]
+        
+        return [gr.update(value=message)] + updates + conditional_updates
 
     def refresh_presets_list():
-        return gr.update(choices=preset_handler.get_preset_list())
+        return gr.update(choices=get_filtered_preset_list())
 
     save_preset_btn.click(
         fn=save_preset_wrapper,
@@ -3421,7 +3469,24 @@ This helps visualize the quality improvement from upscaling."""
     preset_dropdown.change(
         fn=load_preset_wrapper,
         inputs=[preset_dropdown],
-        outputs=[preset_status] + preset_components
+        outputs=[preset_status] + preset_components + [
+            # Image upscaler controls
+            image_upscaler_model_dropdown, image_upscaler_batch_size_slider,
+            # Face restoration controls
+            face_restoration_fidelity_slider, enable_face_colorization_check, 
+            face_restoration_when_radio, codeformer_model_dropdown, face_restoration_batch_size_slider,
+            # Target resolution controls
+            target_h_num, target_w_num, target_res_mode_radio,
+            # Tiling controls
+            tile_size_num, tile_overlap_num,
+            # Context window control
+            context_overlap_num,
+            # Scene splitting controls
+            scene_split_mode_radio, scene_min_scene_len_num, scene_threshold_num, 
+            scene_drop_short_check, scene_merge_last_check,
+            # Seed control
+            seed_num
+        ]
     )
 
     refresh_presets_btn.click(
