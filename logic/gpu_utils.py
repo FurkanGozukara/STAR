@@ -27,13 +27,13 @@ def set_gpu_device(gpu_id, logger=None):
     """Set the GPU device to use for processing."""
     global SELECTED_GPU_ID
     try:
-        if gpu_id is None or gpu_id == "Auto":
+        if gpu_id is None:
             SELECTED_GPU_ID = 0
             if torch.cuda.is_available() and torch.cuda.device_count() > 0:
                 torch.cuda.set_device(0)
             if logger:
-                logger.info(f"GPU selection: Auto mode - using GPU {SELECTED_GPU_ID}")
-            return f"GPU selection: Auto mode - using GPU {SELECTED_GPU_ID}"
+                logger.info(f"GPU selection: Default mode - using GPU {SELECTED_GPU_ID}")
+            return f"GPU selection: Default mode - using GPU {SELECTED_GPU_ID}"
         else:
             if isinstance(gpu_id, str) and gpu_id.startswith("GPU "):
                 gpu_num = int(gpu_id.split(":")[0].replace("GPU ", "").strip())

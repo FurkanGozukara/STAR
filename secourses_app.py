@@ -29,7 +29,7 @@ from logic.dataclasses import (
     PathConfig, PromptConfig, StarModelConfig, PerformanceConfig, ResolutionConfig,
     ContextWindowConfig, TilingConfig, FfmpegConfig, FrameFolderConfig, SceneSplitConfig,
     CogVLMConfig, OutputConfig, SeedConfig, RifeConfig, FpsDecreaseConfig, BatchConfig,
-    ImageUpscalerConfig, FaceRestorationConfig
+    ImageUpscalerConfig, FaceRestorationConfig, GpuConfig
 )
 from logic import metadata_handler
 from logic import config as app_config_module 
@@ -202,8 +202,11 @@ if not os .path .exists (APP_CONFIG.paths.heavy_deg_model_path ):
      logger .error (f"FATAL: Heavy degradation model not found at {APP_CONFIG.paths.heavy_deg_model_path}.")
 
 css ="""
-.gradio-container { font-family: 'IBM Plex Sans', sans-serif; }
-.gr-button { color: white; border-color: black; background: black; }
+.gradio-container { font-family: 'Inter', 'Roboto', 'Helvetica Neue', Arial, sans-serif !important; font-size: 16px !important; }
+.gradio-container * { font-family: 'Inter', 'Roboto', 'Helvetica Neue', Arial, sans-serif !important; font-size: 16px !important; }
+.gr-textbox, .gr-dropdown, .gr-radio, .gr-checkbox, .gr-slider, .gr-number, .gr-markdown { font-size: 16px !important; }
+label, .gr-form > label { font-size: 16px !important; }
+.gr-button { color: white; border-color: black; background: black; font-size: 16px !important; }
 #row1, #row2, #row3, #row4 {
     margin-bottom: 20px !important;
 }
@@ -214,6 +217,9 @@ input[type='range'] { accent-color: black; }
 def load_initial_preset():
     """Loads the last used preset, or the 'Default' preset, or returns a fresh config."""
     base_config = create_app_config(base_path, args.outputs_folder, star_cfg)
+    
+    # Always ensure GPU is set to 0 as default
+    base_config.gpu.device = "0"
     
     preset_to_load = preset_handler.get_last_used_preset_name()
     if preset_to_load:
@@ -232,7 +238,24 @@ def load_initial_preset():
                 section_obj = getattr(base_config, section_name)
                 for key, value in section_data.items():
                     if hasattr(section_obj, key):
-                        setattr(section_obj, key, value)
+                        # Special handling for GPU device to ensure it's valid
+                        if section_name == 'gpu' and key == 'device':
+                            available_gpus = util_get_available_gpus()
+                            if available_gpus:
+                                try:
+                                    gpu_num = int(value) if value != "Auto" else 0
+                                    if 0 <= gpu_num < len(available_gpus):
+                                        setattr(section_obj, key, str(gpu_num))
+                                    else:
+                                        logger.warning(f"GPU index {gpu_num} out of range. Defaulting to GPU 0.")
+                                        setattr(section_obj, key, "0")
+                                except (ValueError, TypeError):
+                                    logger.warning(f"Invalid GPU device value '{value}'. Defaulting to GPU 0.")
+                                    setattr(section_obj, key, "0")
+                            else:
+                                setattr(section_obj, key, "0")
+                        else:
+                            setattr(section_obj, key, value)
         return base_config
     else:
         logger.warning(f"Could not load initial preset '{preset_to_load}'. Reason: {message}. Starting with application defaults.")
@@ -298,14 +321,15 @@ If CogVLM2 is available, you can use the button below to generate a caption auto
                             auto_caption_then_upscale_check =gr .Checkbox (label ="Auto-caption then Upscale (Useful only for STAR Model)",value =INITIAL_APP_CONFIG.cogvlm.auto_caption_then_upscale ,info ="If checked, clicking 'Upscale Video' will first generate a caption and use it as the prompt.")
 
                             available_gpus =util_get_available_gpus ()
-                            gpu_choices =["Auto"]+available_gpus if available_gpus else ["Auto","No CUDA GPUs detected"]
-                            default_gpu =available_gpus [0 ]if available_gpus else "Auto"
+                            gpu_choices = available_gpus if available_gpus else ["No CUDA GPUs detected"]
+                            # Always default to GPU 0 (first GPU in the list)
+                            default_gpu = available_gpus[0] if available_gpus else "No CUDA GPUs detected"
 
                             gpu_selector =gr .Dropdown (
                             label ="GPU Selection",
                             choices =gpu_choices ,
                             value =default_gpu ,
-                            info ="Select which GPU to use for processing. 'Auto' uses default GPU or CPU if none.",
+                            info ="Select which GPU to use for processing. Defaults to GPU 0.",
                             scale =1 
                             )
 
@@ -1483,6 +1507,75 @@ This helps visualize the quality improvement from upscaling."""
         
         return None
 
+    def extract_gpu_index_from_dropdown(dropdown_choice):
+        """Extract GPU index from dropdown choice for preset saving."""
+        if dropdown_choice is None or dropdown_choice == "No CUDA GPUs detected":
+            return 0  # Default to GPU 0 index
+        
+        available_gpus = util_get_available_gpus()
+        if not available_gpus:
+            return 0
+        
+        # Handle case where dropdown returns an integer (choice index) - this is what we want!
+        if isinstance(dropdown_choice, int):
+            # Ensure it's within valid range
+            if 0 <= dropdown_choice < len(available_gpus):
+                return dropdown_choice
+            else:
+                logger.warning(f"GPU index {dropdown_choice} is out of range. Available GPUs: {len(available_gpus)}. Defaulting to 0.")
+                return 0
+        
+        # Handle string format like "GPU 0: Device Name" - convert to index
+        if isinstance(dropdown_choice, str) and dropdown_choice.startswith("GPU "):
+            try:
+                # Extract number from "GPU 0: Device Name" format
+                gpu_index = int(dropdown_choice.split(":")[0].replace("GPU ", "").strip())
+                # Ensure it's within valid range
+                if 0 <= gpu_index < len(available_gpus):
+                    return gpu_index
+                else:
+                    logger.warning(f"GPU index {gpu_index} is out of range. Available GPUs: {len(available_gpus)}. Defaulting to 0.")
+                    return 0
+            except:
+                logger.warning(f"Failed to parse GPU index from '{dropdown_choice}'. Defaulting to 0.")
+                return 0
+        
+        # Find the choice in the available GPUs list
+        try:
+            choice_index = available_gpus.index(dropdown_choice)
+            return choice_index
+        except ValueError:
+            logger.warning(f"GPU choice '{dropdown_choice}' not found in available GPUs. Defaulting to 0.")
+            return 0
+
+    def convert_gpu_index_to_dropdown(gpu_index, available_gpus):
+        """Convert GPU index back to dropdown format for preset loading."""
+        if not available_gpus:
+            return "No CUDA GPUs detected"
+            
+        if gpu_index is None or gpu_index == "Auto":
+            # Default to GPU 0 (first GPU) 
+            return available_gpus[0] if available_gpus else "No CUDA GPUs detected"
+        
+        try:
+            # Handle both integer and string inputs
+            if isinstance(gpu_index, int):
+                gpu_num = gpu_index
+            else:
+                gpu_num = int(gpu_index)
+            
+            # Ensure the GPU index is within bounds
+            if 0 <= gpu_num < len(available_gpus):
+                return available_gpus[gpu_num]  # This will be "GPU X: Device Name"
+            else:
+                # If index is out of range, default to GPU 0
+                logger.warning(f"GPU index {gpu_num} is out of range. Available GPUs: {len(available_gpus)}. Defaulting to GPU 0.")
+                return available_gpus[0] if available_gpus else "No CUDA GPUs detected"
+        except (ValueError, TypeError):
+            # If conversion fails, default to GPU 0
+            logger.warning(f"Failed to convert GPU index '{gpu_index}' to integer. Defaulting to GPU 0.")
+            return available_gpus[0] if available_gpus else "No CUDA GPUs detected"
+
     def build_app_config_from_ui(*args):
         # This function takes all UI component values and builds an AppConfig object
         (
@@ -1508,7 +1601,8 @@ This helps visualize the quality improvement from upscaling."""
             enable_image_upscaler_val, image_upscaler_model_val, image_upscaler_batch_size_val,
             enable_face_restoration_val, face_restoration_fidelity_val, enable_face_colorization_val,
             face_restoration_when_val, codeformer_model_val, face_restoration_batch_size_val,
-            enable_frame_folder_val, input_frames_folder_val, frame_folder_fps_slider_val
+            enable_frame_folder_val, input_frames_folder_val, frame_folder_fps_slider_val,
+            gpu_selector_val
         ) = args
 
         config = AppConfig(
@@ -1635,6 +1729,9 @@ This helps visualize the quality improvement from upscaling."""
                 when=face_restoration_when_val,
                 model=extract_codeformer_model_path_from_dropdown(codeformer_model_val),
                 batch_size=face_restoration_batch_size_val
+            ),
+            gpu=GpuConfig(
+                device=str(extract_gpu_index_from_dropdown(gpu_selector_val))
             )
         )
         return config
@@ -2157,7 +2254,8 @@ This helps visualize the quality improvement from upscaling."""
         enable_image_upscaler_check, image_upscaler_model_dropdown, image_upscaler_batch_size_slider,
         enable_face_restoration_check, face_restoration_fidelity_slider, enable_face_colorization_check,
         face_restoration_when_radio, codeformer_model_dropdown, face_restoration_batch_size_slider,
-        enable_frame_folder_check, input_frames_folder, frame_folder_fps_slider
+        enable_frame_folder_check, input_frames_folder, frame_folder_fps_slider,
+        gpu_selector
     ])
 
     click_outputs_list =[output_video ,status_textbox ,user_prompt ]
@@ -2414,6 +2512,7 @@ This helps visualize the quality improvement from upscaling."""
             enable_face_restoration_val, face_restoration_fidelity_val, enable_face_colorization_val,
             face_restoration_when_val, codeformer_model_val, face_restoration_batch_size_val,
             enable_frame_folder_val, input_frames_folder_val, frame_folder_fps_slider_val,
+            gpu_selector_val,
             batch_input_folder_val, batch_output_folder_val, enable_batch_frame_folders_val,
             batch_skip_existing_val, batch_use_prompt_files_val, batch_save_captions_val, batch_enable_auto_caption_val
         ) = args
@@ -2542,6 +2641,9 @@ This helps visualize the quality improvement from upscaling."""
                 when=face_restoration_when_val,
                 model=extract_codeformer_model_path_from_dropdown(codeformer_model_val),
                 batch_size=face_restoration_batch_size_val
+            ),
+            gpu=GpuConfig(
+                device=str(extract_gpu_index_from_dropdown(gpu_selector_val))
             )
         )
         return config
@@ -3315,33 +3417,11 @@ This helps visualize the quality improvement from upscaling."""
 
     # This list defines all UI components that are part of a preset.
     # The order is critical and must be maintained for both saving and loading.
-    preset_components = [
-        user_prompt, pos_prompt, neg_prompt,
-        model_selector, cfg_slider, steps_slider, solver_mode_radio, color_fix_dropdown,
-        max_chunk_len_slider, enable_chunk_optimization_check, vae_chunk_slider,
-        enable_target_res_check, target_h_num, target_w_num, target_res_mode_radio, upscale_factor_slider,
-        enable_context_window_check, context_overlap_num,
-        enable_tiling_check, tile_size_num, tile_overlap_num,
-        ffmpeg_use_gpu_check, ffmpeg_preset_dropdown, ffmpeg_quality_slider,
-        enable_frame_folder_check, frame_folder_fps_slider,
-        enable_scene_split_check, scene_split_mode_radio, scene_min_scene_len_num, scene_drop_short_check, scene_merge_last_check,
-        scene_frame_skip_num, scene_threshold_num, scene_min_content_val_num, scene_frame_window_num,
-        scene_manual_split_type_radio, scene_manual_split_value_num, scene_copy_streams_check,
-        scene_use_mkvmerge_check, scene_rate_factor_num, scene_preset_dropdown, scene_quiet_ffmpeg_check,
-        (cogvlm_quant_radio if UTIL_COG_VLM_AVAILABLE else gr.State(None)),
-        (cogvlm_unload_radio if UTIL_COG_VLM_AVAILABLE else gr.State(None)),
-        auto_caption_then_upscale_check,
-        save_frames_checkbox, save_metadata_checkbox, save_chunks_checkbox, save_chunk_frames_checkbox,
-        create_comparison_video_check,
-        seed_num, random_seed_check,
-        enable_rife_interpolation, rife_multiplier, rife_fp16, rife_uhd, rife_scale,
-        rife_skip_static, rife_enable_fps_limit, rife_max_fps_limit,
-        rife_apply_to_chunks, rife_apply_to_scenes, rife_keep_original, rife_overwrite_original,
-        enable_fps_decrease, fps_decrease_mode, fps_multiplier_preset, fps_multiplier_custom, target_fps, fps_interpolation_method,
-        enable_image_upscaler_check, image_upscaler_model_dropdown, image_upscaler_batch_size_slider,
-        enable_face_restoration_check, face_restoration_fidelity_slider, enable_face_colorization_check,
-        face_restoration_when_radio, codeformer_model_dropdown, face_restoration_batch_size_slider
-    ]
+    # IMPORTANT: This order must exactly match the order in click_inputs for preset saving/loading to work!
+    
+    # Create preset_components by copying click_inputs and excluding input_video (first component)
+    # This ensures exact order matching between save and load operations
+    preset_components = click_inputs[1:]  # Skip input_video which is at index 0
 
     # Define preset helper functions before they are used
 
@@ -3354,7 +3434,7 @@ This helps visualize the quality improvement from upscaling."""
         enable_context_window_check: ('context_window', 'enable'), context_overlap_num: ('context_window', 'overlap'),
         enable_tiling_check: ('tiling', 'enable'), tile_size_num: ('tiling', 'tile_size'), tile_overlap_num: ('tiling', 'tile_overlap'),
         ffmpeg_use_gpu_check: ('ffmpeg', 'use_gpu'), ffmpeg_preset_dropdown: ('ffmpeg', 'preset'), ffmpeg_quality_slider: ('ffmpeg', 'quality'),
-        enable_frame_folder_check: ('frame_folder', 'enable'), frame_folder_fps_slider: ('frame_folder', 'fps'),
+        enable_frame_folder_check: ('frame_folder', 'enable'), input_frames_folder: ('frame_folder', 'input_path'), frame_folder_fps_slider: ('frame_folder', 'fps'),
         enable_scene_split_check: ('scene_split', 'enable'), scene_split_mode_radio: ('scene_split', 'mode'), scene_min_scene_len_num: ('scene_split', 'min_scene_len'), scene_drop_short_check: ('scene_split', 'drop_short'), scene_merge_last_check: ('scene_split', 'merge_last'), scene_frame_skip_num: ('scene_split', 'frame_skip'), scene_threshold_num: ('scene_split', 'threshold'), scene_min_content_val_num: ('scene_split', 'min_content_val'), scene_frame_window_num: ('scene_split', 'frame_window'), scene_manual_split_type_radio: ('scene_split', 'manual_split_type'), scene_manual_split_value_num: ('scene_split', 'manual_split_value'), scene_copy_streams_check: ('scene_split', 'copy_streams'), scene_use_mkvmerge_check: ('scene_split', 'use_mkvmerge'), scene_rate_factor_num: ('scene_split', 'rate_factor'), scene_preset_dropdown: ('scene_split', 'encoding_preset'), scene_quiet_ffmpeg_check: ('scene_split', 'quiet_ffmpeg'),
         (cogvlm_quant_radio if UTIL_COG_VLM_AVAILABLE else None): ('cogvlm', 'quant_display'), (cogvlm_unload_radio if UTIL_COG_VLM_AVAILABLE else None): ('cogvlm', 'unload_after_use'), auto_caption_then_upscale_check: ('cogvlm', 'auto_caption_then_upscale'),
         save_frames_checkbox: ('outputs', 'save_frames'), save_metadata_checkbox: ('outputs', 'save_metadata'), save_chunks_checkbox: ('outputs', 'save_chunks'), save_chunk_frames_checkbox: ('outputs', 'save_chunk_frames'), create_comparison_video_check: ('outputs', 'create_comparison_video'),
@@ -3363,6 +3443,7 @@ This helps visualize the quality improvement from upscaling."""
         enable_fps_decrease: ('fps_decrease', 'enable'), fps_decrease_mode: ('fps_decrease', 'mode'), fps_multiplier_preset: ('fps_decrease', 'multiplier_preset'), fps_multiplier_custom: ('fps_decrease', 'multiplier_custom'), target_fps: ('fps_decrease', 'target_fps'), fps_interpolation_method: ('fps_decrease', 'interpolation_method'),
         enable_image_upscaler_check: ('image_upscaler', 'enable'), image_upscaler_model_dropdown: ('image_upscaler', 'model'), image_upscaler_batch_size_slider: ('image_upscaler', 'batch_size'),
         enable_face_restoration_check: ('face_restoration', 'enable'), face_restoration_fidelity_slider: ('face_restoration', 'fidelity_weight'), enable_face_colorization_check: ('face_restoration', 'enable_colorization'), face_restoration_when_radio: ('face_restoration', 'when'), codeformer_model_dropdown: ('face_restoration', 'model'), face_restoration_batch_size_slider: ('face_restoration', 'batch_size'),
+        gpu_selector: ('gpu', 'device'),
     }
 
     def save_preset_wrapper(preset_name, *all_ui_values):
@@ -3421,6 +3502,17 @@ This helps visualize the quality improvement from upscaling."""
                 if component is codeformer_model_dropdown:
                     # The saved value is a path, we need to convert it back to the dropdown choice
                     value = reverse_extract_codeformer_model_path(value)
+                elif component is gpu_selector:
+                    # The saved value is a GPU index, we need to convert it back to the dropdown format
+                    available_gpus = util_get_available_gpus()
+                    # Handle legacy "Auto" values by converting to "0"
+                    if value == "Auto":
+                        value = 0
+                    # Convert string index to integer if needed
+                    if isinstance(value, str) and value.isdigit():
+                        value = int(value)
+                    value = convert_gpu_index_to_dropdown(value, available_gpus)
+                    logger.info(f"Loading preset: Converting GPU index '{config_dict.get(section, {}).get(key)}' to dropdown value '{value}'")
                 
                 updates.append(gr.update(value=value))
             else:
@@ -3508,13 +3600,14 @@ if __name__ =="__main__":
 
     available_gpus_main =util_get_available_gpus ()
     if available_gpus_main :
+        # Always use GPU 0 as default (first GPU in the list)
         default_gpu_main_val =available_gpus_main [0 ]
 
         util_set_gpu_device (default_gpu_main_val ,logger =logger )
-        logger .info (f"Attempted to initialize with default GPU: {default_gpu_main_val}")
+        logger .info (f"Initialized with default GPU: {default_gpu_main_val} (GPU 0)")
     else :
-        logger .info ("No CUDA GPUs detected, attempting to set to 'Auto' (CPU or default).")
-        util_set_gpu_device ("Auto",logger =logger )
+        logger .info ("No CUDA GPUs detected, attempting to set to GPU 0 (CPU fallback).")
+        util_set_gpu_device (None ,logger =logger )
 
     effective_allowed_paths =util_get_available_drives (APP_CONFIG.paths.outputs_dir ,base_path ,logger =logger )
 

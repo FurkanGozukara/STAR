@@ -140,6 +140,8 @@ DEFAULT_FACE_RESTORATION_BATCH_SIZE = 4
 DEFAULT_FACE_RESTORATION_MIN_BATCH_SIZE = 1
 DEFAULT_FACE_RESTORATION_MAX_BATCH_SIZE = 32
 
+# Default constants for GPU configuration
+DEFAULT_GPU_DEVICE = "0"
 
 # --- Dataclasses ---
 
@@ -301,6 +303,10 @@ class FaceRestorationConfig:
     batch_size: int = DEFAULT_FACE_RESTORATION_BATCH_SIZE
 
 @dataclass
+class GpuConfig:
+    device: str = DEFAULT_GPU_DEVICE
+
+@dataclass
 class AppConfig:
     input_video_path: Optional[str] = None
     paths: PathConfig = field(default_factory=PathConfig)
@@ -321,6 +327,7 @@ class AppConfig:
     batch: BatchConfig = field(default_factory=BatchConfig)
     image_upscaler: ImageUpscalerConfig = field(default_factory=ImageUpscalerConfig)
     face_restoration: FaceRestorationConfig = field(default_factory=FaceRestorationConfig)
+    gpu: GpuConfig = field(default_factory=GpuConfig)
 
 def create_app_config(base_path: str, outputs_folder: str, star_cfg: Optional[Any]) -> AppConfig:
     """Factory function to create and initialize the main AppConfig object."""
