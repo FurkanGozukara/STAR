@@ -40,6 +40,14 @@ DEFAULT_TARGET_RES_MODE = "Ratio Upscale"
 DEFAULT_TARGET_H = 1024
 DEFAULT_TARGET_W = 1024
 
+# Auto-Resolution (Aspect Ratio Aware)
+DEFAULT_ENABLE_AUTO_ASPECT_RESOLUTION = False
+DEFAULT_AUTO_RESOLUTION_STATUS = "No video loaded"
+DEFAULT_PIXEL_BUDGET = DEFAULT_TARGET_H * DEFAULT_TARGET_W  # 1,048,576 pixels (1024x1024)
+DEFAULT_LAST_VIDEO_ASPECT_RATIO = 1.0
+DEFAULT_AUTO_CALCULATED_H = DEFAULT_TARGET_H
+DEFAULT_AUTO_CALCULATED_W = DEFAULT_TARGET_W
+
 # Context Window
 DEFAULT_ENABLE_CONTEXT_WINDOW = False
 DEFAULT_CONTEXT_OVERLAP = 8
@@ -185,6 +193,12 @@ class ResolutionConfig:
     target_h: int = DEFAULT_TARGET_H
     target_w: int = DEFAULT_TARGET_W
     upscale_factor: float = DEFAULT_UPSCALE_FACTOR
+    enable_auto_aspect_resolution: bool = DEFAULT_ENABLE_AUTO_ASPECT_RESOLUTION
+    auto_resolution_status: str = DEFAULT_AUTO_RESOLUTION_STATUS
+    pixel_budget: int = DEFAULT_PIXEL_BUDGET
+    last_video_aspect_ratio: float = DEFAULT_LAST_VIDEO_ASPECT_RATIO
+    auto_calculated_h: int = DEFAULT_AUTO_CALCULATED_H
+    auto_calculated_w: int = DEFAULT_AUTO_CALCULATED_W
 
 @dataclass
 class ContextWindowConfig:

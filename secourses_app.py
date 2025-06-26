@@ -466,6 +466,28 @@ The total combined prompt length is limited to 77 tokens."""
 - Quality Impact: Direct (Lower value = Less detail).
 - Speed Impact: Faster (Lower value = Faster)."""
                             )
+                        
+                        # Auto-Resolution (Aspect Ratio Aware) Feature
+                        gr.Markdown("---")
+                        gr.Markdown("### 🎯 Auto-Resolution (Aspect Ratio Aware)")
+                        
+                        enable_auto_aspect_resolution_check = gr.Checkbox(
+                            label="Enable Auto Aspect Resolution",
+                            value=INITIAL_APP_CONFIG.resolution.enable_auto_aspect_resolution,
+                            info="""Automatically calculate optimal resolution that maintains input video aspect ratio within the pixel budget (Target H × Target W).
+- Triggered whenever you change video or process batch videos
+- Maintains exact aspect ratio while maximizing quality within pixel limits
+- Prevents manual resolution adjustment for different aspect ratios
+- Example: 1024×1024 budget + 360×640 input → auto-sets to 720×1280 (maintains 9:16 ratio, uses 921,600 pixels)"""
+                        )
+                        
+                        auto_resolution_status_display = gr.Textbox(
+                            label="Auto-Resolution Status",
+                            value=INITIAL_APP_CONFIG.resolution.auto_resolution_status,
+                            interactive=False,
+                            lines=3,
+                            info="Shows current auto-calculated resolution and aspect ratio information"
+                        )
                 with gr .Column (scale =1 ):
                     split_only_button =gr .Button ("Split Video Only (No Upscaling)",icon ="icons/split.png",variant ="primary")
                     with gr .Accordion ("Scene Splitting",open =True ):
@@ -1587,6 +1609,7 @@ This helps visualize the quality improvement from upscaling."""
             enable_tiling_check_val, tile_size_num_val, tile_overlap_num_val,
             enable_context_window_check_val, context_overlap_num_val,
             enable_target_res_check_val, target_h_num_val, target_w_num_val, target_res_mode_radio_val,
+            enable_auto_aspect_resolution_check_val, auto_resolution_status_display_val,
             ffmpeg_preset_dropdown_val, ffmpeg_quality_slider_val, ffmpeg_use_gpu_check_val,
             save_frames_checkbox_val, save_metadata_checkbox_val, save_chunks_checkbox_val, save_chunk_frames_checkbox_val,
             create_comparison_video_check_val,
@@ -1632,7 +1655,9 @@ This helps visualize the quality improvement from upscaling."""
                 target_res_mode=target_res_mode_radio_val,
                 target_h=target_h_num_val,
                 target_w=target_w_num_val,
-                upscale_factor=upscale_factor_slider_val
+                upscale_factor=upscale_factor_slider_val,
+                enable_auto_aspect_resolution=enable_auto_aspect_resolution_check_val,
+                auto_resolution_status=auto_resolution_status_display_val
             ),
             context_window=ContextWindowConfig(
                 enable=enable_context_window_check_val,
@@ -2233,6 +2258,7 @@ This helps visualize the quality improvement from upscaling."""
         enable_tiling_check, tile_size_num, tile_overlap_num,
         enable_context_window_check, context_overlap_num,
         enable_target_res_check, target_h_num, target_w_num, target_res_mode_radio,
+        enable_auto_aspect_resolution_check, auto_resolution_status_display,
         ffmpeg_preset_dropdown, ffmpeg_quality_slider, ffmpeg_use_gpu_check,
         save_frames_checkbox, save_metadata_checkbox, save_chunks_checkbox, save_chunk_frames_checkbox,
         create_comparison_video_check,
@@ -2481,7 +2507,8 @@ This helps visualize the quality improvement from upscaling."""
             logger.info(f"Successfully converted {len(temp_video_conversions)} frame folders to videos")
             app_config.batch.input_folder = actual_batch_input_folder
 
-        return process_batch_videos (
+        from logic.batch_operations import process_batch_videos_from_app_config
+        return process_batch_videos_from_app_config(
             app_config=app_config,
             run_upscale_func=partial_run_upscale_for_batch,
             logger=logger,
@@ -2497,6 +2524,7 @@ This helps visualize the quality improvement from upscaling."""
             enable_tiling_check_val, tile_size_num_val, tile_overlap_num_val,
             enable_context_window_check_val, context_overlap_num_val,
             enable_target_res_check_val, target_h_num_val, target_w_num_val, target_res_mode_radio_val,
+            enable_auto_aspect_resolution_check_val, auto_resolution_status_display_val,
             ffmpeg_preset_dropdown_val, ffmpeg_quality_slider_val, ffmpeg_use_gpu_check_val,
             save_frames_checkbox_val, save_metadata_checkbox_val, save_chunks_checkbox_val, save_chunk_frames_checkbox_val,
             create_comparison_video_check_val,
@@ -2544,7 +2572,9 @@ This helps visualize the quality improvement from upscaling."""
                 target_res_mode=target_res_mode_radio_val,
                 target_h=target_h_num_val,
                 target_w=target_w_num_val,
-                upscale_factor=upscale_factor_slider_val
+                upscale_factor=upscale_factor_slider_val,
+                enable_auto_aspect_resolution=enable_auto_aspect_resolution_check_val,
+                auto_resolution_status=auto_resolution_status_display_val
             ),
             context_window=ContextWindowConfig(
                 enable=enable_context_window_check_val,
@@ -3016,6 +3046,97 @@ This helps visualize the quality improvement from upscaling."""
         except Exception as e :
             return f"**📊 Calculation:** Error calculating preview: {str(e)}"
 
+    # --- AUTO-RESOLUTION FUNCTIONS ---
+    def calculate_auto_resolution(video_path, enable_auto_aspect_resolution, target_h, target_w):
+        """
+        Calculate optimal resolution maintaining aspect ratio within pixel budget.
+        
+        Args:
+            video_path: Path to the input video
+            enable_auto_aspect_resolution: Whether auto-resolution is enabled
+            target_h: Current target height setting (pixel budget height)
+            target_w: Current target width setting (pixel budget width)
+            
+        Returns:
+            tuple: (new_target_h, new_target_w, status_message)
+        """
+        if not enable_auto_aspect_resolution:
+            return target_h, target_w, "Auto-resolution disabled"
+        
+        if video_path is None:
+            return target_h, target_w, "No video loaded"
+        
+        try:
+            from logic.auto_resolution_utils import update_resolution_from_video
+            
+            # Calculate pixel budget from current target resolution
+            pixel_budget = target_h * target_w
+            
+            # Get updated resolution maintaining aspect ratio
+            result = update_resolution_from_video(
+                video_path=video_path,
+                pixel_budget=pixel_budget,
+                logger=logger
+            )
+            
+            if result['success']:
+                new_h = result['optimal_height']
+                new_w = result['optimal_width']
+                status_msg = result['status_message']
+                
+                logger.info(f"Auto-resolution: {video_path} -> {new_w}x{new_h} (was {target_w}x{target_h})")
+                logger.info(f"Auto-resolution status: {status_msg}")
+                
+                return new_h, new_w, status_msg
+            else:
+                error_msg = f"Auto-resolution calculation failed: {result.get('error', 'Unknown error')}"
+                logger.warning(error_msg)
+                return target_h, target_w, error_msg
+                
+        except Exception as e:
+            error_msg = f"Auto-resolution error: {str(e)}"
+            logger.error(f"Exception in calculate_auto_resolution: {e}")
+            return target_h, target_w, error_msg
+
+    def handle_video_change_with_auto_resolution(
+        video_path, 
+        enable_auto_aspect_resolution, 
+        target_h, 
+        target_w
+    ):
+        """
+        Handle video change event with auto-resolution calculation and video info display.
+        
+        Returns:
+            tuple: (status_message, new_target_h, new_target_w, auto_resolution_status)
+        """
+        # Always display video info regardless of auto-resolution setting
+        if video_path is None:
+            return "", target_h, target_w, "No video loaded"
+        
+        # Get basic video info for status display
+        try:
+            video_info = util_get_video_info(video_path, logger)
+            if video_info:
+                filename = os.path.basename(video_path) if video_path else None
+                info_message = util_format_video_info_message(video_info, filename)
+                
+                logger.info(f"Video uploaded: {filename}")
+                logger.info(f"Video details: {video_info['frames']} frames, {video_info['fps']:.2f} FPS, {video_info['duration']:.2f}s, {video_info['width']}x{video_info['height']}")
+            else:
+                info_message = "❌ Could not read video information"
+                logger.warning(f"Failed to get video info for: {video_path}")
+        except Exception as e:
+            info_message = f"❌ Error reading video: {str(e)}"
+            logger.error(f"Exception in video info: {e}")
+        
+        # Calculate auto-resolution if enabled
+        new_target_h, new_target_w, auto_status = calculate_auto_resolution(
+            video_path, enable_auto_aspect_resolution, target_h, target_w
+        )
+        
+        return info_message, new_target_h, new_target_w, auto_status
+
     enable_fps_decrease .change (
     fn =update_fps_decrease_controls_interactive ,
     inputs =enable_fps_decrease ,
@@ -3034,35 +3155,12 @@ This helps visualize the quality improvement from upscaling."""
     outputs =[fps_multiplier_custom ,fps_multiplier_custom ]
     )
 
-    def display_video_info(video_path):
-        if video_path is None:
-            return ""
-        
-        try:
-            video_info = util_get_video_info(video_path, logger)
-            
-            if video_info:
-                filename = os.path.basename(video_path) if video_path else None
-                info_message = util_format_video_info_message(video_info, filename)
-                
-                logger.info(f"Video uploaded: {filename}")
-                logger.info(f"Video details: {video_info['frames']} frames, {video_info['fps']:.2f} FPS, {video_info['duration']:.2f}s, {video_info['width']}x{video_info['height']}")
-                
-                return info_message
-            else:
-                error_msg = "❌ Could not read video information"
-                logger.warning(f"Failed to get video info for: {video_path}")
-                return error_msg
-                
-        except Exception as e:
-            error_msg = f"❌ Error reading video: {str(e)}"
-            logger.error(f"Exception in display_video_info: {e}")
-            return error_msg
+
 
     input_video.change(
-        fn=display_video_info,
-        inputs=input_video,
-        outputs=status_textbox
+        fn=handle_video_change_with_auto_resolution,
+        inputs=[input_video, enable_auto_aspect_resolution_check, target_h_num, target_w_num],
+        outputs=[status_textbox, target_h_num, target_w_num, auto_resolution_status_display]
     )
 
     for component in [input_video ,fps_decrease_mode ,fps_multiplier_preset ,fps_multiplier_custom ,target_fps ]:
@@ -3433,6 +3531,7 @@ This helps visualize the quality improvement from upscaling."""
         model_selector: ('star_model', 'model_choice'), cfg_slider: ('star_model', 'cfg_scale'), steps_slider: ('star_model', 'steps'), solver_mode_radio: ('star_model', 'solver_mode'), color_fix_dropdown: ('star_model', 'color_fix_method'),
         max_chunk_len_slider: ('performance', 'max_chunk_len'), enable_chunk_optimization_check: ('performance', 'enable_chunk_optimization'), vae_chunk_slider: ('performance', 'vae_chunk'),
         enable_target_res_check: ('resolution', 'enable_target_res'), target_h_num: ('resolution', 'target_h'), target_w_num: ('resolution', 'target_w'), target_res_mode_radio: ('resolution', 'target_res_mode'), upscale_factor_slider: ('resolution', 'upscale_factor'),
+        enable_auto_aspect_resolution_check: ('resolution', 'enable_auto_aspect_resolution'), auto_resolution_status_display: ('resolution', 'auto_resolution_status'),
         enable_context_window_check: ('context_window', 'enable'), context_overlap_num: ('context_window', 'overlap'),
         enable_tiling_check: ('tiling', 'enable'), tile_size_num: ('tiling', 'tile_size'), tile_overlap_num: ('tiling', 'tile_overlap'),
         ffmpeg_use_gpu_check: ('ffmpeg', 'use_gpu'), ffmpeg_preset_dropdown: ('ffmpeg', 'preset'), ffmpeg_quality_slider: ('ffmpeg', 'quality'),
@@ -3649,6 +3748,13 @@ This helps visualize the quality improvement from upscaling."""
     )
 
     # --- END OF PRESET LOGIC ---
+
+    for component in [input_video ,fps_decrease_mode ,fps_multiplier_preset ,fps_multiplier_custom ,target_fps ]:
+        component .change (
+        fn =calculate_fps_preview ,
+        inputs =[input_video ,fps_decrease_mode ,fps_multiplier_preset ,fps_multiplier_custom ,target_fps ],
+        outputs =fps_calculation_info 
+        )
 
 if __name__ =="__main__":
     os .makedirs (APP_CONFIG.paths.outputs_dir ,exist_ok =True )

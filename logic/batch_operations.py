@@ -71,6 +71,7 @@ def process_batch_videos(
     enable_tiling_check_val, tile_size_num_val, tile_overlap_num_val,
     enable_context_window_check_val, context_overlap_num_val,
     enable_target_res_check_val, target_h_num_val, target_w_num_val, target_res_mode_radio_val,
+    enable_auto_aspect_resolution_check_val, auto_resolution_status_display_val,
     ffmpeg_preset_dropdown_val, ffmpeg_quality_slider_val, ffmpeg_use_gpu_check_val,
     save_frames_checkbox_val, save_metadata_checkbox_val, save_chunks_checkbox_val, save_chunk_frames_checkbox_val,
     create_comparison_video_check_val,
@@ -214,6 +215,29 @@ def process_batch_videos(
                 elif enable_image_upscaler_val and batch_enable_auto_caption_val:
                     logger.info(f"Auto-captioning disabled for {video_name} (using image upscaler - prompts not used)")
 
+                # 3.5. Calculate auto-resolution for this video if enabled
+                effective_target_h = target_h_num_val
+                effective_target_w = target_w_num_val
+                auto_resolution_used = False
+                
+                if enable_auto_aspect_resolution_check_val:
+                    try:
+                        from .auto_resolution_utils import update_resolution_from_video
+                        effective_target_h, effective_target_w, auto_status = update_resolution_from_video(
+                            video_file, target_h_num_val, target_w_num_val, logger
+                        )
+                        if effective_target_h != target_h_num_val or effective_target_w != target_w_num_val:
+                            auto_resolution_used = True
+                            logger.info(f"Auto-resolution for {video_name}: {target_w_num_val}x{target_h_num_val} → {effective_target_w}x{effective_target_h}")
+                            logger.info(f"Auto-resolution status: {auto_status}")
+                        else:
+                            logger.info(f"Auto-resolution for {video_name}: No change needed ({auto_status})")
+                    except Exception as e:
+                        logger.warning(f"Auto-resolution calculation failed for {video_name}: {e}")
+                        # Fall back to original target resolution
+                        effective_target_h = target_h_num_val
+                        effective_target_w = target_w_num_val
+
                 # 4. Process the video
                 upscale_generator = run_upscale_func(
                     input_video_path=video_file, 
@@ -235,8 +259,8 @@ def process_batch_videos(
                     enable_context_window=enable_context_window_check_val, 
                     context_overlap=context_overlap_num_val,
                     enable_target_res=enable_target_res_check_val, 
-                    target_h=target_h_num_val, 
-                    target_w=target_w_num_val, 
+                    target_h=effective_target_h, 
+                    target_w=effective_target_w, 
                     target_res_mode=target_res_mode_radio_val,
                     ffmpeg_preset=ffmpeg_preset_dropdown_val, 
                     ffmpeg_quality_value=ffmpeg_quality_slider_val, 
@@ -343,7 +367,9 @@ def process_batch_videos(
                         "output": final_output, 
                         "status": "success",
                         "prompt_source": prompt_source,
-                        "caption_saved": batch_save_captions_val and generated_caption and prompt_source == "auto_caption"
+                        "caption_saved": batch_save_captions_val and generated_caption and prompt_source == "auto_caption",
+                        "auto_resolution_used": auto_resolution_used,
+                        "effective_resolution": f"{effective_target_w}x{effective_target_h}" if auto_resolution_used else None
                     })
                 else:
                     failed_files.append((video_file, "Output file not created"))
@@ -379,6 +405,15 @@ def process_batch_videos(
             status_msg += f"  👤 Face Restoration: Enabled (fidelity: {face_restoration_fidelity_val:.1f}, {timing_text}{colorization_text})\n"
         else:
             status_msg += f"  👤 Face Restoration: Disabled\n"
+        
+        # Add auto-resolution information
+        if enable_auto_aspect_resolution_check_val:
+            auto_resolution_count = sum(1 for file_info in processed_files if file_info.get('auto_resolution_used', False))
+            status_msg += f"  🎯 Auto-Resolution: Enabled ({auto_resolution_count}/{len(processed_files)} videos adjusted)\n"
+            if auto_resolution_count > 0:
+                status_msg += f"      📐 Pixel budget: {target_w_num_val}x{target_h_num_val} ({target_w_num_val * target_h_num_val:,} pixels)\n"
+        else:
+            status_msg += f"  🎯 Auto-Resolution: Disabled\n"
         status_msg += "\n"
 
         if batch_save_captions_val and any(caption_stats.values()):
@@ -421,3 +456,104 @@ def process_batch_videos(
     except Exception as e:
         logger.error(f"Error in batch processing: {e}", exc_info=True)
         raise gr.Error(f"Batch processing failed: {e}")
+
+
+def process_batch_videos_from_app_config(app_config, run_upscale_func, logger, progress=gr.Progress(track_tqdm=True)):
+    """
+    Adapter function that extracts parameters from AppConfig and calls the main batch processing function.
+    
+    Args:
+        app_config: AppConfig object containing all configuration settings
+        run_upscale_func: The upscaling function to use for processing
+        logger: Logger instance
+        progress: Gradio progress tracker
+        
+    Returns:
+        tuple: (None, status_message) from batch processing
+    """
+    return process_batch_videos(
+        batch_input_folder_val=app_config.batch.input_folder,
+        batch_output_folder_val=app_config.batch.output_folder,
+        user_prompt_val=app_config.prompts.user,
+        pos_prompt_val=app_config.prompts.positive,
+        neg_prompt_val=app_config.prompts.negative,
+        model_selector_val=app_config.star_model.model_choice,
+        upscale_factor_slider_val=app_config.resolution.upscale_factor,
+        cfg_slider_val=app_config.star_model.cfg_scale,
+        steps_slider_val=app_config.star_model.steps,
+        solver_mode_radio_val=app_config.star_model.solver_mode,
+        max_chunk_len_slider_val=app_config.performance.max_chunk_len,
+        enable_chunk_optimization_check_val=app_config.performance.enable_chunk_optimization,
+        vae_chunk_slider_val=app_config.performance.vae_chunk,
+        color_fix_dropdown_val=app_config.star_model.color_fix_method,
+        enable_tiling_check_val=app_config.tiling.enable,
+        tile_size_num_val=app_config.tiling.tile_size,
+        tile_overlap_num_val=app_config.tiling.tile_overlap,
+        enable_context_window_check_val=app_config.context_window.enable,
+        context_overlap_num_val=app_config.context_window.overlap,
+        enable_target_res_check_val=app_config.resolution.enable_target_res,
+        target_h_num_val=app_config.resolution.target_h,
+        target_w_num_val=app_config.resolution.target_w,
+        target_res_mode_radio_val=app_config.resolution.target_res_mode,
+        enable_auto_aspect_resolution_check_val=app_config.resolution.enable_auto_aspect_resolution,
+        auto_resolution_status_display_val=app_config.resolution.auto_resolution_status,
+        ffmpeg_preset_dropdown_val=app_config.ffmpeg.preset,
+        ffmpeg_quality_slider_val=app_config.ffmpeg.quality,
+        ffmpeg_use_gpu_check_val=app_config.ffmpeg.use_gpu,
+        save_frames_checkbox_val=app_config.outputs.save_frames,
+        save_metadata_checkbox_val=app_config.outputs.save_metadata,
+        save_chunks_checkbox_val=app_config.outputs.save_chunks,
+        save_chunk_frames_checkbox_val=app_config.outputs.save_chunk_frames,
+        create_comparison_video_check_val=app_config.outputs.create_comparison_video,
+        enable_scene_split_check_val=app_config.scene_split.enable,
+        scene_split_mode_radio_val=app_config.scene_split.mode,
+        scene_min_scene_len_num_val=app_config.scene_split.min_scene_len,
+        scene_drop_short_check_val=app_config.scene_split.drop_short,
+        scene_merge_last_check_val=app_config.scene_split.merge_last,
+        scene_frame_skip_num_val=app_config.scene_split.frame_skip,
+        scene_threshold_num_val=app_config.scene_split.threshold,
+        scene_min_content_val_num_val=app_config.scene_split.min_content_val,
+        scene_frame_window_num_val=app_config.scene_split.frame_window,
+        scene_copy_streams_check_val=app_config.scene_split.copy_streams,
+        scene_use_mkvmerge_check_val=app_config.scene_split.use_mkvmerge,
+        scene_rate_factor_num_val=app_config.scene_split.rate_factor,
+        scene_preset_dropdown_val=app_config.scene_split.encoding_preset,
+        scene_quiet_ffmpeg_check_val=app_config.scene_split.quiet_ffmpeg,
+        scene_manual_split_type_radio_val=app_config.scene_split.manual_split_type,
+        scene_manual_split_value_num_val=app_config.scene_split.manual_split_value,
+        enable_fps_decrease_val=app_config.fps_decrease.enable,
+        target_fps_val=app_config.fps_decrease.target_fps,
+        fps_interpolation_method_val=app_config.fps_decrease.interpolation_method,
+        enable_rife_interpolation_val=app_config.rife.enable,
+        rife_multiplier_val=app_config.rife.multiplier,
+        rife_fp16_val=app_config.rife.fp16,
+        rife_uhd_val=app_config.rife.uhd,
+        rife_scale_val=app_config.rife.scale,
+        rife_skip_static_val=app_config.rife.skip_static,
+        rife_enable_fps_limit_val=app_config.rife.enable_fps_limit,
+        rife_max_fps_limit_val=app_config.rife.max_fps_limit,
+        rife_apply_to_chunks_val=app_config.rife.apply_to_chunks,
+        rife_apply_to_scenes_val=app_config.rife.apply_to_scenes,
+        rife_keep_original_val=app_config.rife.keep_original,
+        rife_overwrite_original_val=app_config.rife.overwrite_original,
+        run_upscale_func=run_upscale_func,
+        logger=logger,
+        batch_skip_existing_val=app_config.batch.skip_existing,
+        batch_use_prompt_files_val=app_config.batch.use_prompt_files,
+        batch_save_captions_val=app_config.batch.save_captions,
+        batch_enable_auto_caption_val=app_config.batch.enable_auto_caption,
+        batch_cogvlm_quant_val=app_config.cogvlm.quant_value,
+        batch_cogvlm_unload_val=app_config.cogvlm.unload_after_use,
+        current_seed=app_config.seed.seed,
+        enable_image_upscaler_val=app_config.image_upscaler.enable,
+        image_upscaler_model_val=app_config.image_upscaler.model,
+        image_upscaler_batch_size_val=app_config.image_upscaler.batch_size,
+        enable_face_restoration_val=app_config.face_restoration.enable,
+        face_restoration_fidelity_val=app_config.face_restoration.fidelity_weight,
+        enable_face_colorization_val=app_config.face_restoration.enable_colorization,
+        face_restoration_timing_val="after_upscale",  # Default value
+        face_restoration_when_val=app_config.face_restoration.when,
+        codeformer_model_val=app_config.face_restoration.model,
+        face_restoration_batch_size_val=app_config.face_restoration.batch_size,
+        progress=progress
+    )
