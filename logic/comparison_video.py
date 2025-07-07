@@ -12,12 +12,13 @@ from .file_utils import get_video_resolution as util_get_video_resolution
 
 def determine_comparison_layout(original_w: int, original_h: int, upscaled_w: int, upscaled_h: int, max_dimension: int = 4096) -> Tuple[str, int, int, bool]:
     """
-    Determine the best layout (side-by-side or top-bottom) and final dimensions
+    Determine the best layout (side-by-side or top_bottom) and final dimensions
     for the combined comparison video.
     
-    The function aims to choose a layout that fits well within a 1920x1080 target,
-    or otherwise prefers the layout that results in a smaller overall area while
-    respecting hardware encoder limitations.
+    The function chooses layout based on target aspect ratio fit within 1920x1080:
+    - If combined width exceeds 1920px → use top-bottom layout 
+    - If combined height exceeds 1080px → use side-by-side layout
+    - Otherwise choose the layout that fits better or has smaller area
     
     Args:
         original_w, original_h: Actual original video width and height.
@@ -63,9 +64,6 @@ def determine_comparison_layout(original_w: int, original_h: int, upscaled_w: in
     # --- Decision Logic ---
     TARGET_W, TARGET_H = 1920, 1080 # Target reference resolution
     
-    sbs_exceeds_target = sbs_final_w > TARGET_W or sbs_final_h > TARGET_H
-    tb_exceeds_target = tb_final_w > TARGET_W or tb_final_h > TARGET_H
-    
     # Check for hardware encoder limitations (both width AND height)
     sbs_exceeds_hw_limit = sbs_final_w > max_dimension or sbs_final_h > max_dimension
     tb_exceeds_hw_limit = tb_final_w > max_dimension or tb_final_h > max_dimension
@@ -82,23 +80,33 @@ def determine_comparison_layout(original_w: int, original_h: int, upscaled_w: in
     elif not sbs_exceeds_hw_limit and tb_exceeds_hw_limit:
         # TB exceeds hardware limit, SBS does not. Choose SBS.
         chosen_layout, combined_w, combined_h = "side_by_side", sbs_final_w, sbs_final_h
-    elif not sbs_exceeds_target and tb_exceeds_target:
-        # SBS fits within target, TB does not. Choose SBS.
-        chosen_layout, combined_w, combined_h = "side_by_side", sbs_final_w, sbs_final_h
-    elif sbs_exceeds_target and not tb_exceeds_target:
-        # TB fits within target, SBS does not. Choose TB.
-        chosen_layout, combined_w, combined_h = "top_bottom", tb_final_w, tb_final_h
     else:
-        # Both fit, or both exceed target/hardware limits. Choose based on smaller area.
-        # If areas are very similar, side-by-side is often preferred visually for comparison.
-        sbs_area = sbs_final_w * sbs_final_h
-        tb_area = tb_final_w * tb_final_h
+        # Apply aspect ratio based decision logic:
+        # Target aspect ratio is 16:9 (1920/1080 = 1.777)
+        target_aspect_ratio = TARGET_W / TARGET_H  # 1.777
         
-        # Prefer the layout with smaller area. If areas are equal, default to SBS.
-        if tb_area < sbs_area:
+        # Calculate aspect ratios for both layouts
+        sbs_aspect_ratio = sbs_final_w / sbs_final_h if sbs_final_h > 0 else float('inf')
+        tb_aspect_ratio = tb_final_w / tb_final_h if tb_final_h > 0 else float('inf')
+        
+        # If side-by-side aspect ratio is too wide → use top-bottom
+        # If top-bottom aspect ratio is too tall → use side-by-side
+        
+        if sbs_aspect_ratio > target_aspect_ratio and tb_aspect_ratio <= target_aspect_ratio:
+            # Side-by-side is too wide, top-bottom fits better → use top-bottom
             chosen_layout, combined_w, combined_h = "top_bottom", tb_final_w, tb_final_h
-        else: # sbs_area <= tb_area
+        elif tb_aspect_ratio < target_aspect_ratio and sbs_aspect_ratio >= target_aspect_ratio:
+            # Top-bottom is too tall, side-by-side fits better → use side-by-side
             chosen_layout, combined_w, combined_h = "side_by_side", sbs_final_w, sbs_final_h
+        else:
+            # Both fit within target aspect ratio or both exceed - choose based on which is closer to target
+            sbs_aspect_diff = abs(sbs_aspect_ratio - target_aspect_ratio)
+            tb_aspect_diff = abs(tb_aspect_ratio - target_aspect_ratio)
+            
+            if tb_aspect_diff < sbs_aspect_diff:
+                chosen_layout, combined_w, combined_h = "top_bottom", tb_final_w, tb_final_h
+            else:
+                chosen_layout, combined_w, combined_h = "side_by_side", sbs_final_w, sbs_final_h
     
     # Check if the chosen layout still exceeds hardware limits
     if combined_w > max_dimension or combined_h > max_dimension:

@@ -380,23 +380,21 @@ The total combined prompt length is limited to 77 tokens."""
                         info ="Guides the model *away* from undesired aspects (e.g., bad quality, artifacts, specific styles). This does NOT count towards the 77 token limit for positive guidance."
                         )
                     with gr .Group ():
-                        enable_frame_folder_check =gr .Checkbox (
-                        label ="Process Input Frames Folder (instead of video)",
-                        value =INITIAL_APP_CONFIG.frame_folder.enable ,
-                        info ="Enable to process a folder of image frames instead of a video file. Supports jpg, png, tiff, jp2, dpx and other formats. Frames will be sorted naturally (2.png before 12.png)."
-                        )
+                        gr.Markdown("### 📁 Enhanced Input: Video Files & Frame Folders")
+                        gr.Markdown("*Auto-detects whether your input is a single video file or a folder containing frame sequences*")
+                        
                         input_frames_folder =gr .Textbox (
-                        label ="Input Frames Folder Path",
-                        placeholder ="C:/path/to/frames/folder/",
-                        interactive =False ,
-                        info ="Path to folder containing image frames. Will be processed as a video sequence using global encoding settings."
+                        label ="Input Video or Frames Folder Path",
+                        placeholder ="C:/path/to/video.mp4 or C:/path/to/frames/folder/",
+                        interactive =True ,
+                        info ="Enter path to either a video file (mp4, avi, mov, etc.) or folder containing image frames (jpg, png, tiff, etc.). Automatically detected - works on Windows and Linux."
                         )
                         frames_folder_status =gr .Textbox (
-                        label ="Frame Folder Status",
+                        label ="Input Path Status",
                         interactive =False ,
-                        lines =2 ,
-                        visible =False ,
-                        value =""
+                        lines =3 ,
+                        visible =True ,
+                        value ="Enter a video file path or frames folder path above to validate"
                         )
                     open_output_folder_button =gr .Button ("Open Outputs Folder",icon ="icons/folder.png",variant ="primary")
 
@@ -1379,35 +1377,33 @@ This helps visualize the quality improvement from upscaling."""
     outputs =context_overlap_num 
     )
 
-    def update_frame_folder_controls(enable_frame_folder):
-        return [
-            gr.update(interactive=enable_frame_folder),
-            gr.update(visible=enable_frame_folder)
-        ]
-    
-    def validate_frame_folder_input_wrapper(frames_folder_path, enable_frame_folder):
-        if not enable_frame_folder or not frames_folder_path:
-            return gr.update(visible=False, value="")
+    def validate_enhanced_input_wrapper(input_path):
+        """Validate enhanced input path (video file or frames folder) and show detailed status."""
+        if not input_path or not input_path.strip():
+            return "Enter a video file path or frames folder path above to validate"
         
-        is_valid, message, frame_count = util_validate_frame_folder_input(frames_folder_path, logger)
+        from logic.frame_folder_utils import validate_input_path
+        is_valid, message, metadata = validate_input_path(input_path, logger)
         
         if is_valid:
-            status_msg = f"✅ {message}"
+            # Show additional details for successful validation
+            if metadata.get("frame_count"):
+                # It's a frames folder
+                formats = metadata.get("supported_formats", [])
+                detail_msg = f"\n📊 Detected formats: {', '.join(formats)}" if formats else ""
+                return f"{message}{detail_msg}"
+            elif metadata.get("duration"):
+                # It's a video file
+                return f"{message}\n🎬 Input Type: Video File"
+            else:
+                return message
         else:
-            status_msg = f"❌ {message}"
-        
-        return gr.update(visible=True, value=status_msg)
-    
-    enable_frame_folder_check.change(
-        fn=update_frame_folder_controls,
-        inputs=enable_frame_folder_check,
-        outputs=[input_frames_folder, frames_folder_status]
-    )
+            return message
     
     input_frames_folder.change(
-        fn=validate_frame_folder_input_wrapper,
-        inputs=[input_frames_folder, enable_frame_folder_check],
-        outputs=frames_folder_status
+        fn=validate_enhanced_input_wrapper,
+        inputs=[input_frames_folder],
+        outputs=[frames_folder_status]
     )
 
     def update_image_upscaler_controls(enable_image_upscaler):
@@ -1626,9 +1622,20 @@ This helps visualize the quality improvement from upscaling."""
             enable_image_upscaler_val, image_upscaler_model_val, image_upscaler_batch_size_val,
             enable_face_restoration_val, face_restoration_fidelity_val, enable_face_colorization_val,
             face_restoration_when_val, codeformer_model_val, face_restoration_batch_size_val,
-            enable_frame_folder_val, input_frames_folder_val, frame_folder_fps_slider_val,
+            input_frames_folder_val, frame_folder_fps_slider_val,
             gpu_selector_val
         ) = args
+
+        # Auto-detect if frame folder processing should be enabled based on input path
+        frame_folder_enable = False
+        if input_frames_folder_val and input_frames_folder_val.strip():
+            from logic.frame_folder_utils import detect_input_type
+            input_type, _, _ = detect_input_type(input_frames_folder_val, logger)
+            frame_folder_enable = (input_type == "frames_folder")
+            if frame_folder_enable:
+                logger.info(f"Auto-detected frames folder: {input_frames_folder_val}")
+            elif input_type == "video_file":
+                logger.info(f"Auto-detected video file: {input_frames_folder_val}")
 
         config = AppConfig(
             input_video_path=input_video_val,
@@ -1674,7 +1681,7 @@ This helps visualize the quality improvement from upscaling."""
                 quality=ffmpeg_quality_slider_val
             ),
             frame_folder=FrameFolderConfig(
-                enable=enable_frame_folder_val,
+                enable=frame_folder_enable,
                 input_path=input_frames_folder_val,
                 fps=frame_folder_fps_slider_val
             ),
@@ -1785,14 +1792,107 @@ This helps visualize the quality improvement from upscaling."""
 
         actual_input_video_path = app_config.input_video_path
 
-        if app_config.frame_folder.enable and app_config.frame_folder.input_path:
-            logger.info("Frame folder processing mode enabled")
-            progress(0, desc="Converting frame folder to video...")
+        # Check if enhanced input path contains a video file or frame folder
+        if app_config.frame_folder.input_path and app_config.frame_folder.input_path.strip():
+            from logic.frame_folder_utils import detect_input_type, validate_input_path
             
-            is_valid, validation_msg, frame_count = util_validate_frame_folder_input(app_config.frame_folder.input_path, logger)
+            input_type, validated_path, metadata = detect_input_type(app_config.frame_folder.input_path, logger)
             
-            if not is_valid:
-                error_msg = f"Frame folder validation failed: {validation_msg}"
+            if input_type == "video_file":
+                # If it's a video file, use it as the main input video instead of the frame folder
+                logger.info(f"Enhanced input detected video file: {validated_path}")
+                actual_input_video_path = validated_path
+                
+                # Update status to show video file was detected
+                info_msg = f"✅ Using enhanced input video file: {os.path.basename(validated_path)}"
+                if metadata.get("duration"):
+                    info_msg += f" ({metadata['duration']:.1f}s, {metadata.get('width', '?')}x{metadata.get('height', '?')})"
+                log_accumulator_director.append(info_msg)
+                
+            elif input_type == "frames_folder":
+                logger.info("Enhanced input detected frames folder - converting to video")
+                progress(0, desc="Converting frame folder to video...")
+                
+                is_valid, validation_msg, validation_metadata = validate_input_path(app_config.frame_folder.input_path, logger)
+                
+                if not is_valid:
+                    error_msg = f"Frame folder validation failed: {validation_msg}"
+                    logger.error(error_msg)
+                    log_accumulator_director.append(error_msg)
+                    current_status_text_val = "\n".join(log_accumulator_director)
+                    yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val),
+                           gr.update(value=current_user_prompt_val),
+                           gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val),
+                           gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val),
+                                                      gr.update(value=current_comparison_video_val))
+                    return
+                
+                # Extract frame count from validation metadata
+                frame_count = validation_metadata.get("frame_count", 0)
+                
+                temp_video_dir = tempfile.mkdtemp(prefix="frame_folder_")
+                frame_folder_name = os.path.basename(app_config.frame_folder.input_path.rstrip(os.sep))
+                temp_video_path = os.path.join(temp_video_dir, f"{frame_folder_name}_from_frames.mp4")
+                
+                conversion_msg = f"Converting {frame_count} frames to video using global encoding settings..."
+                log_accumulator_director.append(conversion_msg)
+                current_status_text_val = "\n".join(log_accumulator_director)
+                yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val),
+                       gr.update(value=current_user_prompt_val),
+                       gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val),
+                       gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val),
+                       gr.update(value=current_comparison_video_val))
+                
+                try:
+                    success, conv_msg = util_process_frame_folder_to_video(
+                        app_config.frame_folder.input_path, temp_video_path, fps=app_config.frame_folder.fps,
+                        ffmpeg_preset=app_config.ffmpeg.preset,
+                        ffmpeg_quality_value=app_config.ffmpeg.quality,
+                        ffmpeg_use_gpu=app_config.ffmpeg.use_gpu,
+                        logger=logger
+                    )
+                    
+                    if success:
+                        actual_input_video_path = temp_video_path
+                        app_config.input_video_path = actual_input_video_path
+                        success_msg = f"✅ Successfully converted frame folder to video: {conv_msg}"
+                        log_accumulator_director.append(success_msg)
+                        logger.info(f"Frame folder converted successfully. Using: {actual_input_video_path}")
+                    else:
+                        error_msg = f"❌ Failed to convert frame folder: {conv_msg}"
+                        log_accumulator_director.append(error_msg)
+                        logger.error(error_msg)
+                        current_status_text_val = "\n".join(log_accumulator_director)
+                        yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val),
+                               gr.update(value=current_user_prompt_val),
+                               gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val),
+                               gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val),
+                               gr.update(value=current_comparison_video_val))
+                        return
+                        
+                except Exception as e:
+                    error_msg = f"❌ Exception during frame folder conversion: {str(e)}"
+                    log_accumulator_director.append(error_msg)
+                    logger.error(error_msg, exc_info=True)
+                    current_status_text_val = "\n".join(log_accumulator_director)
+                    yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val),
+                           gr.update(value=current_user_prompt_val),
+                           gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val),
+                           gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val),
+                           gr.update(value=current_comparison_video_val))
+                    return
+                
+                current_status_text_val = "\n".join(log_accumulator_director)
+                yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val),
+                       gr.update(value=current_user_prompt_val),
+                       gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val),
+                       gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val),
+                       gr.update(value=current_comparison_video_val))
+                
+                log_accumulator_director = []
+                
+            elif input_type == "invalid":
+                error_msg = f"❌ Enhanced input validation failed: {metadata.get('error', 'Unknown error')}"
                 logger.error(error_msg)
                 log_accumulator_director.append(error_msg)
                 current_status_text_val = "\n".join(log_accumulator_director)
@@ -1803,58 +1903,7 @@ This helps visualize the quality improvement from upscaling."""
                        gr.update(value=current_comparison_video_val))
                 return
             
-            temp_video_dir = tempfile.mkdtemp(prefix="frame_folder_")
-            frame_folder_name = os.path.basename(app_config.frame_folder.input_path.rstrip(os.sep))
-            temp_video_path = os.path.join(temp_video_dir, f"{frame_folder_name}_from_frames.mp4")
-            
-            conversion_msg = f"Converting {frame_count} frames to video using global encoding settings..."
-            log_accumulator_director.append(conversion_msg)
-            current_status_text_val = "\n".join(log_accumulator_director)
-            yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val),
-                   gr.update(value=current_user_prompt_val),
-                   gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val),
-                   gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val),
-                   gr.update(value=current_comparison_video_val))
-            
-            try:
-                success, conv_msg = util_process_frame_folder_to_video(
-                    app_config.frame_folder.input_path, temp_video_path, fps=app_config.frame_folder.fps,
-                    ffmpeg_preset=app_config.ffmpeg.preset,
-                    ffmpeg_quality_value=app_config.ffmpeg.quality,
-                    ffmpeg_use_gpu=app_config.ffmpeg.use_gpu,
-                    logger=logger
-                )
-                
-                if success:
-                    actual_input_video_path = temp_video_path
-                    app_config.input_video_path = actual_input_video_path
-                    success_msg = f"✅ Successfully converted frame folder to video: {conv_msg}"
-                    log_accumulator_director.append(success_msg)
-                    logger.info(f"Frame folder converted successfully. Using: {actual_input_video_path}")
-                else:
-                    error_msg = f"❌ Failed to convert frame folder: {conv_msg}"
-                    log_accumulator_director.append(error_msg)
-                    logger.error(error_msg)
-                    current_status_text_val = "\n".join(log_accumulator_director)
-                    yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val),
-                           gr.update(value=current_user_prompt_val),
-                           gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val),
-                           gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val),
-                           gr.update(value=current_comparison_video_val))
-                    return
-                    
-            except Exception as e:
-                error_msg = f"❌ Exception during frame folder conversion: {str(e)}"
-                log_accumulator_director.append(error_msg)
-                logger.error(error_msg, exc_info=True)
-                current_status_text_val = "\n".join(log_accumulator_director)
-                yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val),
-                       gr.update(value=current_user_prompt_val),
-                       gr.update(value=current_caption_status_text_val, visible=current_caption_status_visible_val),
-                       gr.update(value=current_last_chunk_video_val), gr.update(value=current_chunk_status_text_val),
-                       gr.update(value=current_comparison_video_val))
-                return
-            
+            # Update current status after enhanced input processing
             current_status_text_val = "\n".join(log_accumulator_director)
             yield (gr.update(value=current_output_video_val), gr.update(value=current_status_text_val),
                    gr.update(value=current_user_prompt_val),
@@ -2282,7 +2331,7 @@ This helps visualize the quality improvement from upscaling."""
         enable_image_upscaler_check, image_upscaler_model_dropdown, image_upscaler_batch_size_slider,
         enable_face_restoration_check, face_restoration_fidelity_slider, enable_face_colorization_check,
         face_restoration_when_radio, codeformer_model_dropdown, face_restoration_batch_size_slider,
-        enable_frame_folder_check, input_frames_folder, frame_folder_fps_slider,
+        input_frames_folder, frame_folder_fps_slider,
         gpu_selector
     ])
 
@@ -2541,11 +2590,18 @@ This helps visualize the quality improvement from upscaling."""
             enable_image_upscaler_val, image_upscaler_model_val, image_upscaler_batch_size_val,
             enable_face_restoration_val, face_restoration_fidelity_val, enable_face_colorization_val,
             face_restoration_when_val, codeformer_model_val, face_restoration_batch_size_val,
-            enable_frame_folder_val, input_frames_folder_val, frame_folder_fps_slider_val,
+            input_frames_folder_val, frame_folder_fps_slider_val,
             gpu_selector_val,
             batch_input_folder_val, batch_output_folder_val, enable_batch_frame_folders_val,
             batch_skip_existing_val, batch_use_prompt_files_val, batch_save_captions_val, batch_enable_auto_caption_val
         ) = args
+        
+        # Auto-detect if frame folder processing should be enabled based on input path
+        frame_folder_enable = False
+        if input_frames_folder_val and input_frames_folder_val.strip():
+            from logic.frame_folder_utils import detect_input_type
+            input_type, _, _ = detect_input_type(input_frames_folder_val, logger)
+            frame_folder_enable = (input_type == "frames_folder")
         
         config = AppConfig(
             input_video_path=input_video_val,
@@ -2591,7 +2647,7 @@ This helps visualize the quality improvement from upscaling."""
                 quality=ffmpeg_quality_slider_val
             ),
             frame_folder=FrameFolderConfig(
-                enable=enable_frame_folder_val,
+                enable=frame_folder_enable,
                 input_path=input_frames_folder_val,
                 fps=frame_folder_fps_slider_val
             ),
@@ -3535,7 +3591,7 @@ This helps visualize the quality improvement from upscaling."""
         enable_context_window_check: ('context_window', 'enable'), context_overlap_num: ('context_window', 'overlap'),
         enable_tiling_check: ('tiling', 'enable'), tile_size_num: ('tiling', 'tile_size'), tile_overlap_num: ('tiling', 'tile_overlap'),
         ffmpeg_use_gpu_check: ('ffmpeg', 'use_gpu'), ffmpeg_preset_dropdown: ('ffmpeg', 'preset'), ffmpeg_quality_slider: ('ffmpeg', 'quality'),
-        enable_frame_folder_check: ('frame_folder', 'enable'), input_frames_folder: ('frame_folder', 'input_path'), frame_folder_fps_slider: ('frame_folder', 'fps'),
+        input_frames_folder: ('frame_folder', 'input_path'), frame_folder_fps_slider: ('frame_folder', 'fps'),
         enable_scene_split_check: ('scene_split', 'enable'), scene_split_mode_radio: ('scene_split', 'mode'), scene_min_scene_len_num: ('scene_split', 'min_scene_len'), scene_drop_short_check: ('scene_split', 'drop_short'), scene_merge_last_check: ('scene_split', 'merge_last'), scene_frame_skip_num: ('scene_split', 'frame_skip'), scene_threshold_num: ('scene_split', 'threshold'), scene_min_content_val_num: ('scene_split', 'min_content_val'), scene_frame_window_num: ('scene_split', 'frame_window'), scene_manual_split_type_radio: ('scene_split', 'manual_split_type'), scene_manual_split_value_num: ('scene_split', 'manual_split_value'), scene_copy_streams_check: ('scene_split', 'copy_streams'), scene_use_mkvmerge_check: ('scene_split', 'use_mkvmerge'), scene_rate_factor_num: ('scene_split', 'rate_factor'), scene_preset_dropdown: ('scene_split', 'encoding_preset'), scene_quiet_ffmpeg_check: ('scene_split', 'quiet_ffmpeg'),
         (cogvlm_quant_radio if UTIL_COG_VLM_AVAILABLE else None): ('cogvlm', 'quant_display'), (cogvlm_unload_radio if UTIL_COG_VLM_AVAILABLE else None): ('cogvlm', 'unload_after_use'), auto_caption_then_upscale_check: ('cogvlm', 'auto_caption_then_upscale'),
         save_frames_checkbox: ('outputs', 'save_frames'), save_metadata_checkbox: ('outputs', 'save_metadata'), save_chunks_checkbox: ('outputs', 'save_chunks'), save_chunk_frames_checkbox: ('outputs', 'save_chunk_frames'), create_comparison_video_check: ('outputs', 'create_comparison_video'),
@@ -3628,7 +3684,6 @@ This helps visualize the quality improvement from upscaling."""
         enable_fps_decrease_val = config_dict.get('fps_decrease', {}).get('enable', default_config.fps_decrease.enable)
         random_seed_val = config_dict.get('seed', {}).get('use_random', default_config.seed.use_random)
         rife_enable_fps_limit_val = config_dict.get('rife', {}).get('enable_fps_limit', default_config.rife.enable_fps_limit)
-        enable_frame_folder_val = config_dict.get('frame_folder', {}).get('enable', default_config.frame_folder.enable)
 
         for component in preset_components:
             if isinstance(component, gr.State) or component is None:
