@@ -10,7 +10,7 @@ from .ffmpeg_utils import run_ffmpeg_command as util_run_ffmpeg_command
 from .file_utils import get_video_resolution as util_get_video_resolution
 
 
-def determine_comparison_layout(original_w: int, original_h: int, upscaled_w: int, upscaled_h: int, max_dimension: int = 4096) -> Tuple[str, int, int, bool]:
+def determine_comparison_layout(original_w: int, original_h: int, upscaled_w: int, upscaled_h: int, max_dimension: int = 4096, force_layout: Optional[str] = None) -> Tuple[str, int, int, bool]:
     """
     Determine the best layout (side-by-side or top_bottom) and final dimensions
     for the combined comparison video.
@@ -24,6 +24,7 @@ def determine_comparison_layout(original_w: int, original_h: int, upscaled_w: in
         original_w, original_h: Actual original video width and height.
         upscaled_w, upscaled_h: Actual upscaled video width and height.
         max_dimension: Maximum width or height allowed (for NVENC: 4096px)
+        force_layout: Optional manual override - "side_by_side" or "top_bottom"
         
     Returns:
         Tuple of (layout_choice, combined_video_width, combined_video_height, needs_downscaling).
@@ -73,40 +74,57 @@ def determine_comparison_layout(original_w: int, original_h: int, upscaled_w: in
     combined_h: int
     needs_downscaling: bool = False
 
-    # Prioritize avoiding hardware encoder limits to prevent encoding failures
-    if sbs_exceeds_hw_limit and not tb_exceeds_hw_limit:
-        # SBS exceeds hardware limit, TB does not. Choose TB to avoid encoding issues.
-        chosen_layout, combined_w, combined_h = "top_bottom", tb_final_w, tb_final_h
-    elif not sbs_exceeds_hw_limit and tb_exceeds_hw_limit:
-        # TB exceeds hardware limit, SBS does not. Choose SBS.
-        chosen_layout, combined_w, combined_h = "side_by_side", sbs_final_w, sbs_final_h
-    else:
-        # Apply aspect ratio based decision logic:
-        # Target aspect ratio is 16:9 (1920/1080 = 1.777)
-        target_aspect_ratio = TARGET_W / TARGET_H  # 1.777
-        
-        # Calculate aspect ratios for both layouts
-        sbs_aspect_ratio = sbs_final_w / sbs_final_h if sbs_final_h > 0 else float('inf')
-        tb_aspect_ratio = tb_final_w / tb_final_h if tb_final_h > 0 else float('inf')
-        
-        # If side-by-side aspect ratio is too wide → use top-bottom
-        # If top-bottom aspect ratio is too tall → use side-by-side
-        
-        if sbs_aspect_ratio > target_aspect_ratio and tb_aspect_ratio <= target_aspect_ratio:
-            # Side-by-side is too wide, top-bottom fits better → use top-bottom
+    # Handle manual layout override
+    if force_layout in ["side_by_side", "top_bottom"]:
+        if force_layout == "side_by_side" and not sbs_exceeds_hw_limit:
+            chosen_layout, combined_w, combined_h = "side_by_side", sbs_final_w, sbs_final_h
+        elif force_layout == "top_bottom" and not tb_exceeds_hw_limit:
             chosen_layout, combined_w, combined_h = "top_bottom", tb_final_w, tb_final_h
-        elif tb_aspect_ratio < target_aspect_ratio and sbs_aspect_ratio >= target_aspect_ratio:
-            # Top-bottom is too tall, side-by-side fits better → use side-by-side
+        elif force_layout == "side_by_side" and sbs_exceeds_hw_limit:
+            # User wants side-by-side but it exceeds hardware limits, warn and fall back to auto
+            chosen_layout = None  # Will trigger automatic selection below
+        elif force_layout == "top_bottom" and tb_exceeds_hw_limit:
+            # User wants top-bottom but it exceeds hardware limits, warn and fall back to auto
+            chosen_layout = None  # Will trigger automatic selection below
+    else:
+        chosen_layout = None  # Use automatic selection
+    
+    # Automatic layout selection (when no force_layout or hardware limits exceeded)
+    if chosen_layout is None:
+        # Prioritize avoiding hardware encoder limits to prevent encoding failures
+        if sbs_exceeds_hw_limit and not tb_exceeds_hw_limit:
+            # SBS exceeds hardware limit, TB does not. Choose TB to avoid encoding issues.
+            chosen_layout, combined_w, combined_h = "top_bottom", tb_final_w, tb_final_h
+        elif not sbs_exceeds_hw_limit and tb_exceeds_hw_limit:
+            # TB exceeds hardware limit, SBS does not. Choose SBS.
             chosen_layout, combined_w, combined_h = "side_by_side", sbs_final_w, sbs_final_h
         else:
-            # Both fit within target aspect ratio or both exceed - choose based on which is closer to target
-            sbs_aspect_diff = abs(sbs_aspect_ratio - target_aspect_ratio)
-            tb_aspect_diff = abs(tb_aspect_ratio - target_aspect_ratio)
+            # Apply aspect ratio based decision logic:
+            # Target aspect ratio is 16:9 (1920/1080 = 1.777)
+            target_aspect_ratio = TARGET_W / TARGET_H  # 1.777
             
-            if tb_aspect_diff < sbs_aspect_diff:
+            # Calculate aspect ratios for both layouts
+            sbs_aspect_ratio = sbs_final_w / sbs_final_h if sbs_final_h > 0 else float('inf')
+            tb_aspect_ratio = tb_final_w / tb_final_h if tb_final_h > 0 else float('inf')
+            
+            # If side-by-side aspect ratio is too wide → use top-bottom
+            # If top-bottom aspect ratio is too tall → use side-by-side
+            
+            if sbs_aspect_ratio > target_aspect_ratio and tb_aspect_ratio <= target_aspect_ratio:
+                # Side-by-side is too wide, top-bottom fits better → use top-bottom
                 chosen_layout, combined_w, combined_h = "top_bottom", tb_final_w, tb_final_h
-            else:
+            elif tb_aspect_ratio < target_aspect_ratio and sbs_aspect_ratio >= target_aspect_ratio:
+                # Top-bottom is too tall, side-by-side fits better → use side-by-side
                 chosen_layout, combined_w, combined_h = "side_by_side", sbs_final_w, sbs_final_h
+            else:
+                # Both fit within target aspect ratio or both exceed - choose based on which is closer to target
+                sbs_aspect_diff = abs(sbs_aspect_ratio - target_aspect_ratio)
+                tb_aspect_diff = abs(tb_aspect_ratio - target_aspect_ratio)
+                
+                if tb_aspect_diff < sbs_aspect_diff:
+                    chosen_layout, combined_w, combined_h = "top_bottom", tb_final_w, tb_final_h
+                else:
+                    chosen_layout, combined_w, combined_h = "side_by_side", sbs_final_w, sbs_final_h
     
     # Check if the chosen layout still exceeds hardware limits
     if combined_w > max_dimension or combined_h > max_dimension:
@@ -155,6 +173,7 @@ def create_comparison_video(
     ffmpeg_preset: str = "medium",
     ffmpeg_quality: int = 23,
     ffmpeg_use_gpu: bool = False,
+    force_layout: Optional[str] = None,
     logger: Optional[logging.Logger] = None
 ) -> bool:
     """
@@ -167,6 +186,7 @@ def create_comparison_video(
         ffmpeg_preset: FFmpeg encoding preset.
         ffmpeg_quality: FFmpeg quality setting (CRF/CQ).
         ffmpeg_use_gpu: Whether to use GPU encoding.
+        force_layout: Optional manual layout override ("side_by_side" or "top_bottom").
         logger: Logger instance.
         
     Returns:
@@ -195,7 +215,7 @@ def create_comparison_video(
         
         # Determine the best layout and the final dimensions of the *combined* video
         layout_choice, combined_final_w, combined_final_h, needs_downscaling = determine_comparison_layout(
-            orig_w, orig_h, upscaled_w, upscaled_h, NVENC_MAX_DIMENSION
+            orig_w, orig_h, upscaled_w, upscaled_h, NVENC_MAX_DIMENSION, force_layout=force_layout
         )
         
         logger.info(f"Chosen comparison layout: {layout_choice}, "

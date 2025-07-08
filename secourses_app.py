@@ -860,7 +860,15 @@ This helps visualize the quality improvement from upscaling."""
                         height =200 
                         )
 
-                        gr .Markdown ("**Step 3:** Generate the comparison video using current FFmpeg settings")
+                        gr .Markdown ("**Step 3:** Choose comparison layout")
+                        manual_comparison_layout =gr .Radio (
+                        label ="Comparison Layout",
+                        choices =["auto", "side_by_side", "top_bottom"],
+                        value ="auto",
+                        info ="Auto: Choose best layout based on aspect ratio. Side-by-Side: Force horizontal layout. Top-Bottom: Force vertical layout."
+                        )
+
+                        gr .Markdown ("**Step 4:** Generate the comparison video using current FFmpeg settings")
                         manual_comparison_button =gr .Button (
                         "Generate Manual Comparison Video",
                         variant ="primary",
@@ -2929,6 +2937,7 @@ This helps visualize the quality improvement from upscaling."""
     def manual_comparison_wrapper (
     manual_original_video_val ,
     manual_upscaled_video_val ,
+    manual_comparison_layout_val ,
     ffmpeg_preset_dropdown_val ,
     ffmpeg_quality_slider_val ,
     ffmpeg_use_gpu_check_val ,
@@ -2960,6 +2969,7 @@ This helps visualize the quality improvement from upscaling."""
             ffmpeg_quality =ffmpeg_quality_slider_val ,
             ffmpeg_use_gpu =ffmpeg_use_gpu_check_val ,
             output_dir =APP_CONFIG.paths.outputs_dir ,
+            comparison_layout =manual_comparison_layout_val ,
             seed_value =current_seed ,
             logger =logger ,
             progress =progress 
@@ -2991,6 +3001,7 @@ This helps visualize the quality improvement from upscaling."""
     inputs =[
     manual_original_video ,
     manual_upscaled_video ,
+    manual_comparison_layout ,
     ffmpeg_preset_dropdown ,
     ffmpeg_quality_slider ,
     ffmpeg_use_gpu_check ,

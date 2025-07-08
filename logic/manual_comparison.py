@@ -15,6 +15,7 @@ def generate_manual_comparison_video(
     ffmpeg_quality: int,
     ffmpeg_use_gpu: bool,
     output_dir: str,
+    comparison_layout: str = "auto",
     seed_value: int = 99,
     logger: Optional[logging.Logger] = None,
     progress=None
@@ -29,6 +30,7 @@ def generate_manual_comparison_video(
         ffmpeg_quality: FFmpeg quality setting (CRF/CQ)
         ffmpeg_use_gpu: Whether to use GPU encoding
         output_dir: Directory to save the output comparison video
+        comparison_layout: Layout choice ("auto", "side_by_side", or "top_bottom")
         seed_value: Seed value for metadata (following user rules)
         logger: Logger instance
         progress: Gradio progress callback
@@ -83,7 +85,11 @@ def generate_manual_comparison_video(
         logger.info(f"Original video: {original_video_path}")
         logger.info(f"Upscaled video: {upscaled_video_path}")
         logger.info(f"FFmpeg settings - Preset: {ffmpeg_preset}, Quality: {ffmpeg_quality}, GPU: {ffmpeg_use_gpu}")
+        logger.info(f"Layout choice: {comparison_layout}")
         logger.info(f"Seed value: {seed_value}")  # Include seed in logs following user rules
+        
+        # Convert layout choice to force_layout parameter
+        force_layout = None if comparison_layout == "auto" else comparison_layout
         
         # Use the existing comparison video creation logic
         success = create_comparison_video(
@@ -93,6 +99,7 @@ def generate_manual_comparison_video(
             ffmpeg_preset=ffmpeg_preset,
             ffmpeg_quality=ffmpeg_quality,
             ffmpeg_use_gpu=ffmpeg_use_gpu,
+            force_layout=force_layout,
             logger=logger
         )
         
