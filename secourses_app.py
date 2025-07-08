@@ -95,7 +95,8 @@ from logic .batch_processing_help import create_batch_processing_help
 from logic .upscaling_core import run_upscale as core_run_upscale 
 
 from logic .manual_comparison import (
-generate_manual_comparison_video as util_generate_manual_comparison_video 
+generate_manual_comparison_video as util_generate_manual_comparison_video,
+generate_multi_video_comparison as util_generate_multi_video_comparison 
 )
 
 from logic .rife_interpolation import (
@@ -842,22 +843,45 @@ This helps visualize the quality improvement from upscaling."""
                 with gr .Column (scale =1 ):
                     with gr .Accordion ("Manual Comparison Video Generator",open =True ):
                         gr .Markdown ("### Generate Custom Comparison Videos")
-                        gr .Markdown ("Upload two videos to create a manual side-by-side or top-bottom comparison video using the same FFmpeg settings and layout logic as the automatic comparison feature.")
+                        gr .Markdown ("Upload 2-4 videos to create custom comparison videos with various layout options using the same FFmpeg settings as the automatic comparison feature.")
 
-                        gr .Markdown ("**Step 1:** Upload the original or reference video for comparison")
+                        gr .Markdown ("**Step 1:** Choose number of videos to compare")
+                        manual_video_count =gr .Radio (
+                        label ="Number of Videos",
+                        choices =[2 , 3 , 4 ],
+                        value =2 ,
+                        info ="Select how many videos you want to compare. Additional video inputs will appear based on your selection."
+                        )
+
+                        gr .Markdown ("**Step 2:** Upload videos for comparison")
                         manual_original_video =gr .Video (
-                        label ="Original/Reference Video",
+                        label ="Video 1 (Original/Reference)",
                         sources =["upload"],
                         interactive =True ,
                         height =200 
                         )
 
-                        gr .Markdown ("**Step 2:** Upload the upscaled or enhanced video for comparison")
                         manual_upscaled_video =gr .Video (
-                        label ="Upscaled/Enhanced Video",
+                        label ="Video 2 (Upscaled/Enhanced)",
                         sources =["upload"],
                         interactive =True ,
                         height =200 
+                        )
+
+                        manual_third_video =gr .Video (
+                        label ="Video 3 (Optional)",
+                        sources =["upload"],
+                        interactive =True ,
+                        height =200 ,
+                        visible =False 
+                        )
+
+                        manual_fourth_video =gr .Video (
+                        label ="Video 4 (Optional)",
+                        sources =["upload"],
+                        interactive =True ,
+                        height =200 ,
+                        visible =False 
                         )
 
                         gr .Markdown ("**Step 3:** Choose comparison layout")
@@ -865,12 +889,13 @@ This helps visualize the quality improvement from upscaling."""
                         label ="Comparison Layout",
                         choices =["auto", "side_by_side", "top_bottom"],
                         value ="auto",
-                        info ="Auto: Choose best layout based on aspect ratio. Side-by-Side: Force horizontal layout. Top-Bottom: Force vertical layout."
+                        info ="Layout options will update based on number of videos selected.",
+                        interactive =True 
                         )
 
                         gr .Markdown ("**Step 4:** Generate the comparison video using current FFmpeg settings")
                         manual_comparison_button =gr .Button (
-                        "Generate Manual Comparison Video",
+                        "Generate Multi-Video Comparison",
                         variant ="primary",
                         size ="lg"
                         )
@@ -2934,9 +2959,49 @@ This helps visualize the quality improvement from upscaling."""
             logger.error(f"Standalone face restoration error: {str(e)}")
             return None, None, f"❌ Error during face restoration: {str(e)}", "❌ Processing error"
 
+    def update_multi_video_ui(video_count):
+        """Update UI components based on selected video count."""
+        
+        # Define layout choices for different video counts
+        layout_choices_map = {
+            2: ["auto", "side_by_side", "top_bottom"],
+            3: ["auto", "3x1_horizontal", "1x3_vertical", "L_shape"],
+            4: ["auto", "2x2_grid", "4x1_horizontal", "1x4_vertical"]
+        }
+        
+        # Define layout info text for different video counts
+        layout_info_map = {
+            2: "Auto: Choose best layout based on aspect ratio. Side-by-Side: Force horizontal layout. Top-Bottom: Force vertical layout.",
+            3: "Auto: Choose best layout automatically. 3x1: Horizontal row. 1x3: Vertical column. L-shape: 2 videos on top, 1 on bottom full width.",
+            4: "Auto: Choose best layout automatically. 2x2 Grid: Square arrangement. 4x1: Horizontal row. 1x4: Vertical column."
+        }
+        
+        # Get choices and info for selected count
+        choices = layout_choices_map.get(video_count, layout_choices_map[2])
+        info = layout_info_map.get(video_count, layout_info_map[2])
+        
+        # Update layout radio
+        layout_update = gr.update(choices=choices, value="auto", info=info)
+        
+        # Update video visibility
+        if video_count >= 3:
+            third_video_update = gr.update(visible=True)
+        else:
+            third_video_update = gr.update(visible=False)
+            
+        if video_count >= 4:
+            fourth_video_update = gr.update(visible=True)
+        else:
+            fourth_video_update = gr.update(visible=False)
+        
+        return layout_update, third_video_update, fourth_video_update
+
     def manual_comparison_wrapper (
+    manual_video_count_val ,
     manual_original_video_val ,
     manual_upscaled_video_val ,
+    manual_third_video_val ,
+    manual_fourth_video_val ,
     manual_comparison_layout_val ,
     ffmpeg_preset_dropdown_val ,
     ffmpeg_quality_slider_val ,
@@ -2952,28 +3017,54 @@ This helps visualize the quality improvement from upscaling."""
         else :
             current_seed =seed_num_val if seed_num_val >=0 else 99 
 
-        if manual_original_video_val is None :
-            error_msg ="Please upload an original/reference video"
-            return gr .update (value =None ),gr .update (value =error_msg ,visible =True )
+        # Validate required videos based on count
+        video_paths = [manual_original_video_val, manual_upscaled_video_val]
+        
+        if manual_video_count_val >= 3:
+            video_paths.append(manual_third_video_val)
+        if manual_video_count_val >= 4:
+            video_paths.append(manual_fourth_video_val)
 
-        if manual_upscaled_video_val is None :
-            error_msg ="Please upload an upscaled/enhanced video"
+        # Filter out None values and validate
+        valid_videos = [path for path in video_paths if path is not None]
+        
+        if len(valid_videos) < 2:
+            error_msg = f"Please upload at least 2 videos for comparison"
+            return gr .update (value =None ),gr .update (value =error_msg ,visible =True )
+            
+        if len(valid_videos) < manual_video_count_val:
+            error_msg = f"Please upload all {manual_video_count_val} videos as selected"
             return gr .update (value =None ),gr .update (value =error_msg ,visible =True )
 
         try :
-
-            output_path ,status_message =util_generate_manual_comparison_video (
-            original_video_path =manual_original_video_val ,
-            upscaled_video_path =manual_upscaled_video_val ,
-            ffmpeg_preset =ffmpeg_preset_dropdown_val ,
-            ffmpeg_quality =ffmpeg_quality_slider_val ,
-            ffmpeg_use_gpu =ffmpeg_use_gpu_check_val ,
-            output_dir =APP_CONFIG.paths.outputs_dir ,
-            comparison_layout =manual_comparison_layout_val ,
-            seed_value =current_seed ,
-            logger =logger ,
-            progress =progress 
-            )
+            # Use the appropriate comparison function based on video count
+            if len(valid_videos) == 2 and manual_comparison_layout_val in ["auto", "side_by_side", "top_bottom"]:
+                # Use original 2-video function for backward compatibility
+                output_path ,status_message =util_generate_manual_comparison_video (
+                original_video_path =valid_videos[0] ,
+                upscaled_video_path =valid_videos[1] ,
+                ffmpeg_preset =ffmpeg_preset_dropdown_val ,
+                ffmpeg_quality =ffmpeg_quality_slider_val ,
+                ffmpeg_use_gpu =ffmpeg_use_gpu_check_val ,
+                output_dir =APP_CONFIG.paths.outputs_dir ,
+                comparison_layout =manual_comparison_layout_val ,
+                seed_value =current_seed ,
+                logger =logger ,
+                progress =progress 
+                )
+            else:
+                # Use new multi-video function
+                output_path ,status_message =util_generate_multi_video_comparison (
+                video_paths =valid_videos ,
+                ffmpeg_preset =ffmpeg_preset_dropdown_val ,
+                ffmpeg_quality =ffmpeg_quality_slider_val ,
+                ffmpeg_use_gpu =ffmpeg_use_gpu_check_val ,
+                output_dir =APP_CONFIG.paths.outputs_dir ,
+                comparison_layout =manual_comparison_layout_val ,
+                seed_value =current_seed ,
+                logger =logger ,
+                progress =progress 
+                )
 
             if output_path :
 
@@ -2983,7 +3074,7 @@ This helps visualize the quality improvement from upscaling."""
                 return gr .update (value =None ),gr .update (value =status_message ,visible =True )
 
         except Exception as e :
-            error_msg =f"Unexpected error during manual comparison: {str(e)}"
+            error_msg =f"Unexpected error during multi-video comparison: {str(e)}"
             logger .error (error_msg ,exc_info =True )
             return gr .update (value =None ),gr .update (value =error_msg ,visible =True )
 
@@ -2996,11 +3087,21 @@ This helps visualize the quality improvement from upscaling."""
     outputs =seed_num 
     )
 
+    # Video count change handler
+    manual_video_count.change(
+    fn=update_multi_video_ui,
+    inputs=[manual_video_count],
+    outputs=[manual_comparison_layout, manual_third_video, manual_fourth_video]
+    )
+
     manual_comparison_button .click (
     fn =manual_comparison_wrapper ,
     inputs =[
+    manual_video_count ,
     manual_original_video ,
     manual_upscaled_video ,
+    manual_third_video ,
+    manual_fourth_video ,
     manual_comparison_layout ,
     ffmpeg_preset_dropdown ,
     ffmpeg_quality_slider ,

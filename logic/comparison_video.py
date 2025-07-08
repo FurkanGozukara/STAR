@@ -4,7 +4,7 @@ import numpy as np
 import subprocess
 import tempfile
 import logging
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 
 from .ffmpeg_utils import run_ffmpeg_command as util_run_ffmpeg_command
 from .file_utils import get_video_resolution as util_get_video_resolution
@@ -442,3 +442,494 @@ def get_comparison_output_path(original_output_path: str) -> str:
     """
     base_path, ext = os.path.splitext(original_output_path)
     return f"{base_path}_comparison{ext}"
+
+
+def determine_multi_video_layout(video_paths: List[str], max_dimension: int = 4096, force_layout: Optional[str] = None, logger: Optional[logging.Logger] = None) -> Tuple[str, int, int, bool, str]:
+    """
+    Determine the best layout for multiple videos (2-4 videos).
+    
+    Args:
+        video_paths: List of video file paths (2-4 videos)
+        max_dimension: Maximum width or height allowed (for NVENC: 4096px)  
+        force_layout: Optional manual override layout choice
+        logger: Logger instance
+        
+    Returns:
+        Tuple of (layout_choice, combined_video_width, combined_video_height, needs_downscaling, filter_complex).
+    """
+    
+    if logger is None:
+        logger = logging.getLogger(__name__)
+    
+    num_videos = len(video_paths)
+    if num_videos < 2 or num_videos > 4:
+        raise ValueError(f"Multi-video comparison supports 2-4 videos, got {num_videos}")
+    
+    # Get video resolutions
+    video_resolutions = []
+    for path in video_paths:
+        try:
+            h, w = util_get_video_resolution(path, logger=logger)
+            if w == 0 or h == 0:
+                raise ValueError(f"Invalid resolution for video: {path}")
+            video_resolutions.append((w, h))
+        except Exception as e:
+            logger.error(f"Failed to get resolution for {path}: {e}")
+            raise
+    
+    logger.info(f"Video resolutions: {[f'{w}x{h}' for w, h in video_resolutions]}")
+    
+    # Handle 2-video case with existing logic
+    if num_videos == 2:
+        layout_choice, combined_w, combined_h, needs_downscaling = determine_comparison_layout(
+            video_resolutions[0][0], video_resolutions[0][1],
+            video_resolutions[1][0], video_resolutions[1][1],
+            max_dimension, force_layout
+        )
+        filter_complex = _create_2_video_filter(video_resolutions, layout_choice, combined_w, combined_h)
+        return layout_choice, combined_w, combined_h, needs_downscaling, filter_complex
+    
+    # Define layout options for 3 and 4 videos
+    layout_options = []
+    
+    if num_videos == 3:
+        layout_options = [
+            ("3x1_horizontal", _calculate_3x1_horizontal),
+            ("1x3_vertical", _calculate_1x3_vertical), 
+            ("L_shape", _calculate_L_shape)
+        ]
+    elif num_videos == 4:
+        layout_options = [
+            ("2x2_grid", _calculate_2x2_grid),
+            ("4x1_horizontal", _calculate_4x1_horizontal),
+            ("1x4_vertical", _calculate_1x4_vertical)
+        ]
+    
+    # If force_layout is specified, try that first
+    if force_layout:
+        for layout_name, calc_func in layout_options:
+            if layout_name == force_layout:
+                try:
+                    combined_w, combined_h, filter_complex = calc_func(video_resolutions, max_dimension)
+                    needs_downscaling = combined_w > max_dimension or combined_h > max_dimension
+                    if needs_downscaling:
+                        combined_w, combined_h, _ = calculate_downscale_dimensions(combined_w, combined_h, max_dimension)
+                    return force_layout, combined_w, combined_h, needs_downscaling, filter_complex
+                except Exception as e:
+                    logger.warning(f"Failed to use forced layout {force_layout}: {e}")
+                    break
+    
+    # Auto-select best layout
+    best_layout = None
+    best_combined_w, best_combined_h = 0, 0
+    best_filter = ""
+    min_area = float('inf')
+    
+    for layout_name, calc_func in layout_options:
+        try:
+            combined_w, combined_h, filter_complex = calc_func(video_resolutions, max_dimension)
+            area = combined_w * combined_h
+            
+            # Prefer layouts that don't exceed hardware limits
+            exceeds_limit = combined_w > max_dimension or combined_h > max_dimension
+            if not exceeds_limit and area < min_area:
+                min_area = area
+                best_layout = layout_name
+                best_combined_w, best_combined_h = combined_w, combined_h
+                best_filter = filter_complex
+                
+        except Exception as e:
+            logger.warning(f"Failed to calculate layout {layout_name}: {e}")
+            continue
+    
+    if best_layout is None:
+        # Fallback to first available layout with downscaling
+        layout_name, calc_func = layout_options[0]
+        combined_w, combined_h, filter_complex = calc_func(video_resolutions, max_dimension)
+        best_layout = layout_name
+        best_combined_w, best_combined_h = combined_w, combined_h
+        best_filter = filter_complex
+    
+    needs_downscaling = best_combined_w > max_dimension or best_combined_h > max_dimension
+    if needs_downscaling:
+        best_combined_w, best_combined_h, _ = calculate_downscale_dimensions(best_combined_w, best_combined_h, max_dimension)
+    
+    # Ensure even dimensions
+    best_combined_w = (best_combined_w // 2) * 2
+    best_combined_h = (best_combined_h // 2) * 2
+    
+    logger.info(f"Selected layout: {best_layout}, final dimensions: {best_combined_w}x{best_combined_h}")
+    
+    return best_layout, best_combined_w, best_combined_h, needs_downscaling, best_filter
+
+
+def _create_2_video_filter(video_resolutions: List[Tuple[int, int]], layout_choice: str, combined_w: int, combined_h: int) -> str:
+    """Create FFmpeg filter for 2-video comparison."""
+    orig_w, orig_h = video_resolutions[0]
+    upscaled_w, upscaled_h = video_resolutions[1]
+    
+    if layout_choice == "side_by_side":
+        # Calculate individual video dimensions for side-by-side
+        common_h = combined_h
+        scaled_orig_w = int(round(orig_w * common_h / orig_h)) if orig_h > 0 else 0
+        scaled_upscaled_w = int(round(upscaled_w * common_h / upscaled_h)) if upscaled_h > 0 else 0
+        
+        scaled_orig_w = (scaled_orig_w // 2) * 2
+        scaled_upscaled_w = (scaled_upscaled_w // 2) * 2
+        
+        return (
+            f"[0:v]scale={scaled_orig_w}:{common_h},setsar=1[left];"
+            f"[1:v]scale={scaled_upscaled_w}:{common_h},setsar=1[right];"
+            f"[left][right]hstack=inputs=2[output]"
+        )
+    else:  # top_bottom
+        # Calculate individual video dimensions for top-bottom
+        common_w = combined_w
+        scaled_orig_h = int(round(orig_h * common_w / orig_w)) if orig_w > 0 else 0
+        scaled_upscaled_h = int(round(upscaled_h * common_w / upscaled_w)) if upscaled_w > 0 else 0
+        
+        scaled_orig_h = (scaled_orig_h // 2) * 2
+        scaled_upscaled_h = (scaled_upscaled_h // 2) * 2
+        
+        return (
+            f"[0:v]scale={common_w}:{scaled_orig_h},setsar=1[top];"
+            f"[1:v]scale={common_w}:{scaled_upscaled_h},setsar=1[bottom];"
+            f"[top][bottom]vstack=inputs=2[output]"
+        )
+
+
+def _calculate_3x1_horizontal(video_resolutions: List[Tuple[int, int]], max_dimension: int) -> Tuple[int, int, str]:
+    """Calculate dimensions and filter for 3x1 horizontal layout."""
+    # Find common height (max of all heights)
+    common_h = max(h for w, h in video_resolutions)
+    
+    # Scale all videos to common height and calculate total width
+    scaled_videos = []
+    total_width = 0
+    
+    for i, (w, h) in enumerate(video_resolutions):
+        scaled_w = int(round(w * common_h / h)) if h > 0 else 0
+        scaled_w = (scaled_w // 2) * 2
+        scaled_videos.append((scaled_w, common_h))
+        total_width += scaled_w
+    
+    # Create filter complex
+    filter_parts = []
+    input_labels = []
+    
+    for i, (scaled_w, scaled_h) in enumerate(scaled_videos):
+        label = f"v{i}"
+        filter_parts.append(f"[{i}:v]scale={scaled_w}:{scaled_h},setsar=1[{label}]")
+        input_labels.append(f"[{label}]")
+    
+    filter_complex = ";".join(filter_parts) + ";" + "".join(input_labels) + f"hstack=inputs=3[output]"
+    
+    return total_width, common_h, filter_complex
+
+
+def _calculate_1x3_vertical(video_resolutions: List[Tuple[int, int]], max_dimension: int) -> Tuple[int, int, str]:
+    """Calculate dimensions and filter for 1x3 vertical layout."""
+    # Find common width (max of all widths)
+    common_w = max(w for w, h in video_resolutions)
+    
+    # Scale all videos to common width and calculate total height
+    scaled_videos = []
+    total_height = 0
+    
+    for i, (w, h) in enumerate(video_resolutions):
+        scaled_h = int(round(h * common_w / w)) if w > 0 else 0
+        scaled_h = (scaled_h // 2) * 2
+        scaled_videos.append((common_w, scaled_h))
+        total_height += scaled_h
+    
+    # Create filter complex
+    filter_parts = []
+    input_labels = []
+    
+    for i, (scaled_w, scaled_h) in enumerate(scaled_videos):
+        label = f"v{i}"
+        filter_parts.append(f"[{i}:v]scale={scaled_w}:{scaled_h},setsar=1[{label}]")
+        input_labels.append(f"[{label}]")
+    
+    filter_complex = ";".join(filter_parts) + ";" + "".join(input_labels) + f"vstack=inputs=3[output]"
+    
+    return common_w, total_height, filter_complex
+
+
+def _calculate_L_shape(video_resolutions: List[Tuple[int, int]], max_dimension: int) -> Tuple[int, int, str]:
+    """Calculate dimensions and filter for L-shape layout (2 videos on top, 1 on bottom full width)."""
+    # For L-shape: top two videos side by side, bottom video full width
+    # Calculate dimensions for top row (first 2 videos)
+    top_common_h = max(video_resolutions[0][1], video_resolutions[1][1])
+    
+    top_v1_w = int(round(video_resolutions[0][0] * top_common_h / video_resolutions[0][1])) if video_resolutions[0][1] > 0 else 0
+    top_v2_w = int(round(video_resolutions[1][0] * top_common_h / video_resolutions[1][1])) if video_resolutions[1][1] > 0 else 0
+    
+    top_v1_w = (top_v1_w // 2) * 2
+    top_v2_w = (top_v2_w // 2) * 2
+    
+    top_row_width = top_v1_w + top_v2_w
+    
+    # Bottom video uses the full width of top row
+    bottom_v3_w = top_row_width
+    bottom_v3_h = int(round(video_resolutions[2][1] * bottom_v3_w / video_resolutions[2][0])) if video_resolutions[2][0] > 0 else 0
+    bottom_v3_h = (bottom_v3_h // 2) * 2
+    
+    total_width = top_row_width
+    total_height = top_common_h + bottom_v3_h
+    
+    # Create filter complex
+    filter_complex = (
+        f"[0:v]scale={top_v1_w}:{top_common_h},setsar=1[v1];"
+        f"[1:v]scale={top_v2_w}:{top_common_h},setsar=1[v2];"
+        f"[2:v]scale={bottom_v3_w}:{bottom_v3_h},setsar=1[v3];"
+        f"[v1][v2]hstack=inputs=2[top_row];"
+        f"[top_row][v3]vstack=inputs=2[output]"
+    )
+    
+    return total_width, total_height, filter_complex
+
+
+def _calculate_2x2_grid(video_resolutions: List[Tuple[int, int]], max_dimension: int) -> Tuple[int, int, str]:
+    """Calculate dimensions and filter for 2x2 grid layout."""
+    # For 2x2 grid: arrange 4 videos in a 2x2 grid
+    # Calculate common dimensions for each row
+    
+    # Top row (videos 0, 1)
+    top_common_h = max(video_resolutions[0][1], video_resolutions[1][1])
+    top_v1_w = int(round(video_resolutions[0][0] * top_common_h / video_resolutions[0][1])) if video_resolutions[0][1] > 0 else 0
+    top_v2_w = int(round(video_resolutions[1][0] * top_common_h / video_resolutions[1][1])) if video_resolutions[1][1] > 0 else 0
+    
+    # Bottom row (videos 2, 3)
+    bottom_common_h = max(video_resolutions[2][1], video_resolutions[3][1])
+    bottom_v3_w = int(round(video_resolutions[2][0] * bottom_common_h / video_resolutions[2][1])) if video_resolutions[2][1] > 0 else 0
+    bottom_v4_w = int(round(video_resolutions[3][0] * bottom_common_h / video_resolutions[3][1])) if video_resolutions[3][1] > 0 else 0
+    
+    # Make all widths even
+    top_v1_w = (top_v1_w // 2) * 2
+    top_v2_w = (top_v2_w // 2) * 2  
+    bottom_v3_w = (bottom_v3_w // 2) * 2
+    bottom_v4_w = (bottom_v4_w // 2) * 2
+    
+    # Calculate final grid dimensions
+    top_row_width = top_v1_w + top_v2_w
+    bottom_row_width = bottom_v3_w + bottom_v4_w
+    total_width = max(top_row_width, bottom_row_width)
+    total_height = top_common_h + bottom_common_h
+    
+    # Adjust individual video widths to match grid alignment
+    if top_row_width < total_width:
+        # Scale top row videos proportionally to fill total width
+        scale_factor = total_width / top_row_width
+        top_v1_w = int(top_v1_w * scale_factor)
+        top_v2_w = int(top_v2_w * scale_factor)
+        top_v1_w = (top_v1_w // 2) * 2
+        top_v2_w = (top_v2_w // 2) * 2
+    
+    if bottom_row_width < total_width:
+        # Scale bottom row videos proportionally to fill total width
+        scale_factor = total_width / bottom_row_width
+        bottom_v3_w = int(bottom_v3_w * scale_factor)
+        bottom_v4_w = int(bottom_v4_w * scale_factor)
+        bottom_v3_w = (bottom_v3_w // 2) * 2
+        bottom_v4_w = (bottom_v4_w // 2) * 2
+    
+    # Create filter complex
+    filter_complex = (
+        f"[0:v]scale={top_v1_w}:{top_common_h},setsar=1[v1];"
+        f"[1:v]scale={top_v2_w}:{top_common_h},setsar=1[v2];"
+        f"[2:v]scale={bottom_v3_w}:{bottom_common_h},setsar=1[v3];"
+        f"[3:v]scale={bottom_v4_w}:{bottom_common_h},setsar=1[v4];"
+        f"[v1][v2]hstack=inputs=2[top_row];"
+        f"[v3][v4]hstack=inputs=2[bottom_row];"
+        f"[top_row][bottom_row]vstack=inputs=2[output]"
+    )
+    
+    return total_width, total_height, filter_complex
+
+
+def _calculate_4x1_horizontal(video_resolutions: List[Tuple[int, int]], max_dimension: int) -> Tuple[int, int, str]:
+    """Calculate dimensions and filter for 4x1 horizontal layout."""
+    # Find common height (max of all heights)
+    common_h = max(h for w, h in video_resolutions)
+    
+    # Scale all videos to common height and calculate total width
+    scaled_videos = []
+    total_width = 0
+    
+    for i, (w, h) in enumerate(video_resolutions):
+        scaled_w = int(round(w * common_h / h)) if h > 0 else 0
+        scaled_w = (scaled_w // 2) * 2
+        scaled_videos.append((scaled_w, common_h))
+        total_width += scaled_w
+    
+    # Create filter complex
+    filter_parts = []
+    input_labels = []
+    
+    for i, (scaled_w, scaled_h) in enumerate(scaled_videos):
+        label = f"v{i}"
+        filter_parts.append(f"[{i}:v]scale={scaled_w}:{scaled_h},setsar=1[{label}]")
+        input_labels.append(f"[{label}]")
+    
+    filter_complex = ";".join(filter_parts) + ";" + "".join(input_labels) + f"hstack=inputs=4[output]"
+    
+    return total_width, common_h, filter_complex
+
+
+def _calculate_1x4_vertical(video_resolutions: List[Tuple[int, int]], max_dimension: int) -> Tuple[int, int, str]:
+    """Calculate dimensions and filter for 1x4 vertical layout."""
+    # Find common width (max of all widths)
+    common_w = max(w for w, h in video_resolutions)
+    
+    # Scale all videos to common width and calculate total height
+    scaled_videos = []
+    total_height = 0
+    
+    for i, (w, h) in enumerate(video_resolutions):
+        scaled_h = int(round(h * common_w / w)) if w > 0 else 0
+        scaled_h = (scaled_h // 2) * 2
+        scaled_videos.append((common_w, scaled_h))
+        total_height += scaled_h
+    
+    # Create filter complex
+    filter_parts = []
+    input_labels = []
+    
+    for i, (scaled_w, scaled_h) in enumerate(scaled_videos):
+        label = f"v{i}"
+        filter_parts.append(f"[{i}:v]scale={scaled_w}:{scaled_h},setsar=1[{label}]")
+        input_labels.append(f"[{label}]")
+    
+    filter_complex = ";".join(filter_parts) + ";" + "".join(input_labels) + f"vstack=inputs=4[output]"
+    
+    return common_w, total_height, filter_complex
+
+
+def create_multi_video_comparison(
+    video_paths: List[str],
+    output_path: str,
+    ffmpeg_preset: str = "medium",
+    ffmpeg_quality: int = 23,
+    ffmpeg_use_gpu: bool = False,
+    force_layout: Optional[str] = None,
+    logger: Optional[logging.Logger] = None
+) -> bool:
+    """
+    Create a comparison video from multiple videos (2-4 videos).
+    
+    Args:
+        video_paths: List of video file paths (2-4 videos)
+        output_path: Path where comparison video will be saved
+        ffmpeg_preset: FFmpeg encoding preset
+        ffmpeg_quality: FFmpeg quality setting (CRF/CQ)
+        ffmpeg_use_gpu: Whether to use GPU encoding
+        force_layout: Optional manual layout override
+        logger: Logger instance
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    
+    if logger is None:
+        logger = logging.getLogger(__name__)
+    
+    if len(video_paths) < 2 or len(video_paths) > 4:
+        logger.error(f"Multi-video comparison supports 2-4 videos, got {len(video_paths)}")
+        return False
+    
+    # Validate all input videos exist
+    for i, path in enumerate(video_paths):
+        if not os.path.exists(path):
+            logger.error(f"Video {i+1} not found: {path}")
+            return False
+    
+    NVENC_MAX_DIMENSION = 4096
+    
+    try:
+        # Determine layout and get filter complex
+        layout_choice, combined_w, combined_h, needs_downscaling, filter_complex = determine_multi_video_layout(
+            video_paths, NVENC_MAX_DIMENSION, force_layout, logger
+        )
+        
+        logger.info(f"Using layout: {layout_choice}, dimensions: {combined_w}x{combined_h}")
+        if needs_downscaling:
+            logger.warning(f"Video will be downscaled to fit hardware limits")
+        
+        # Build FFmpeg command with multiple inputs
+        input_args = []
+        for path in video_paths:
+            input_args.extend(["-i", f'"{path}"'])
+        
+        # Try different encoding approaches
+        encoding_attempts = []
+        
+        # GPU encoding if requested and within limits
+        use_gpu_final = ffmpeg_use_gpu and not (combined_w > NVENC_MAX_DIMENSION or combined_h > NVENC_MAX_DIMENSION)
+        
+        if use_gpu_final:
+            encoding_attempts.append({
+                'name': 'GPU (NVENC)',
+                'codec': 'h264_nvenc',
+                'quality_param': f'-cq {ffmpeg_quality}',
+            })
+        
+        # CPU encoding fallback
+        encoding_attempts.append({
+            'name': 'CPU (libx264)',
+            'codec': 'libx264',
+            'quality_param': f'-crf {ffmpeg_quality}',
+        })
+        
+        # Try each encoding approach
+        for attempt_idx, encoding_config in enumerate(encoding_attempts):
+            try:
+                # Map preset for h264_nvenc compatibility
+                actual_preset = ffmpeg_preset
+                if encoding_config["codec"] == "h264_nvenc":
+                    if ffmpeg_preset in ["ultrafast", "superfast", "veryfast", "faster", "fast"]:
+                        actual_preset = "fast"
+                    elif ffmpeg_preset in ["slower", "veryslow"]:
+                        actual_preset = "slow"
+                    else:
+                        actual_preset = "slow"
+                
+                ffmpeg_cmd = (
+                    f'ffmpeg -y {" ".join(input_args)} '
+                    f'-filter_complex "{filter_complex}" -map "[output]" '
+                    f'-map 0:a? -c:v {encoding_config["codec"]} {encoding_config["quality_param"]} -preset {actual_preset} '
+                    f'-c:a copy "{output_path}"'
+                )
+                
+                logger.info(f"Attempt {attempt_idx + 1}: {encoding_config['name']} encoding")
+                logger.info(f"FFmpeg command: {ffmpeg_cmd}")
+                
+                # Try to run the command
+                cmd_success = util_run_ffmpeg_command(ffmpeg_cmd, f"Multi-Video Comparison ({encoding_config['name']})", logger=logger, raise_on_error=False)
+                
+                if not cmd_success:
+                    logger.warning(f"❌ {encoding_config['name']} FFmpeg command failed")
+                    continue
+                
+                # Check if output was created successfully
+                if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                    logger.info(f"✅ Multi-video comparison created successfully with {encoding_config['name']}: {output_path}")
+                    return True
+                else:
+                    logger.warning(f"❌ {encoding_config['name']} encoding produced no output file")
+                    
+            except Exception as e_encoding:
+                logger.warning(f"❌ {encoding_config['name']} encoding failed: {str(e_encoding)}")
+                if os.path.exists(output_path):
+                    try:
+                        os.remove(output_path)
+                    except:
+                        pass
+                continue
+        
+        logger.error("❌ All encoding attempts failed for multi-video comparison")
+        return False
+        
+    except Exception as e:
+        logger.error(f"❌ Unexpected error during multi-video comparison creation: {e}", exc_info=True)
+        return False
