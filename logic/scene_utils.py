@@ -11,6 +11,73 @@ from .file_utils import get_next_filename, cleanup_temp_dir
 from .cogvlm_utils import auto_caption, COG_VLM_AVAILABLE
 from .cancellation_manager import cancellation_manager, CancelledError
 
+def split_video_fallback(input_video_path, scene_list, output_dir, video_name, ffmpeg_args, logger, formatter):
+    """
+    Fallback method for splitting video when PySceneDetect fails.
+    Uses our own ffmpeg commands with proper path escaping.
+    """
+    try:
+        if logger:
+            logger.info(f"Using fallback method to split {len(scene_list)} scenes")
+        
+        # Import required components for scene metadata
+        from scenedetect.output import SceneMetadata, VideoMetadata
+        
+        # Create a dummy video metadata object
+        video_metadata = VideoMetadata(name=video_name)
+        
+        success_count = 0
+        
+        for scene_idx, (start_time, end_time) in enumerate(scene_list):
+            # Check for cancellation
+            cancellation_manager.check_cancel()
+            
+            # Create scene metadata for the formatter
+            scene_metadata = SceneMetadata(start=start_time, end=end_time)
+            
+            # Get the output filename using the formatter
+            output_filename = formatter(video_metadata, scene_metadata)
+            output_path = os.path.join(output_dir, output_filename)
+            
+            # Calculate duration in seconds
+            start_seconds = start_time.get_seconds()
+            end_seconds = end_time.get_seconds()
+            duration = end_seconds - start_seconds
+            
+            # Build ffmpeg command with proper path escaping
+            cmd = f'ffmpeg -y -ss {start_seconds:.6f} -i "{input_video_path}" -t {duration:.6f} {ffmpeg_args} "{output_path}"'
+            
+            if logger:
+                logger.info(f"Splitting scene {scene_idx + 1}/{len(scene_list)}: {start_time.get_timecode()} - {end_time.get_timecode()}")
+            
+            try:
+                # Use our existing run_ffmpeg_command function
+                success = run_ffmpeg_command(cmd, f"Scene {scene_idx + 1} Split", logger, raise_on_error=False)
+                
+                if success and os.path.exists(output_path):
+                    success_count += 1
+                    if logger:
+                        logger.debug(f"Successfully created scene {scene_idx + 1}: {output_path}")
+                else:
+                    if logger:
+                        logger.error(f"Failed to create scene {scene_idx + 1}: {output_path}")
+                    return 1  # Return non-zero for failure
+                        
+            except Exception as e:
+                if logger:
+                    logger.error(f"Error splitting scene {scene_idx + 1}: {e}")
+                return 1  # Return non-zero for failure
+        
+        if logger:
+            logger.info(f"Fallback scene splitting completed: {success_count}/{len(scene_list)} scenes created")
+        
+        return 0 if success_count == len(scene_list) else 1
+        
+    except Exception as e:
+        if logger:
+            logger.error(f"Error in fallback scene splitting: {e}")
+        return 1
+
 def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, progress_callback=None, logger=None):
     """Split video into scenes using PySceneDetect."""
     try:
@@ -203,6 +270,15 @@ def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, prog
                 else:
                     ffmpeg_args = f"-map 0:v:0 -map 0:a? -map 0:s? -c:v libx264 -preset {scene_split_params['preset']} -crf {scene_split_params['rate_factor']} -c:a aac -avoid_negative_ts make_zero"
 
+            # Debug: Log the parameters being passed to PySceneDetect
+            if logger:
+                logger.info(f"PySceneDetect parameters:")
+                logger.info(f"  input_video_path: {input_video_path}")
+                logger.info(f"  scenes_dir: {scenes_dir}")
+                logger.info(f"  sanitized_video_name: {sanitized_video_name}")
+                logger.info(f"  ffmpeg_args: {ffmpeg_args}")
+                logger.info(f"  scene_count: {len(scene_list)}")
+            
             return_code = split_video_ffmpeg(
                 input_video_path=str(input_video_path),
                 scene_list=scene_list,
@@ -213,9 +289,37 @@ def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, prog
                 show_output=not scene_split_params['quiet_ffmpeg'],
                 formatter=scene_filename_formatter
             )
+            
+            # Debug: Log the return code
+            if logger:
+                logger.info(f"PySceneDetect split_video_ffmpeg returned code: {return_code}")
 
         if return_code != 0:
-            raise Exception(f"Scene splitting failed with return code: {return_code}")
+            if logger:
+                logger.warning(f"PySceneDetect failed with return code {return_code}, trying fallback method")
+            
+            # Fallback: Use our own ffmpeg commands to split the video
+            try:
+                return_code = split_video_fallback(
+                    input_video_path=str(input_video_path),
+                    scene_list=scene_list,
+                    output_dir=scenes_dir,
+                    video_name=sanitized_video_name,
+                    ffmpeg_args=ffmpeg_args,
+                    logger=logger,
+                    formatter=scene_filename_formatter
+                )
+                
+                if return_code != 0:
+                    raise Exception(f"Scene splitting failed with return code: {return_code}")
+                else:
+                    if logger:
+                        logger.info("Scene splitting succeeded using fallback method")
+                        
+            except Exception as fallback_error:
+                if logger:
+                    logger.error(f"Fallback scene splitting also failed: {fallback_error}")
+                raise Exception(f"Scene splitting failed with return code: {return_code}")
 
         scene_files = sorted([f for f in os.listdir(scenes_dir) if f.endswith('.mp4')])
         scene_paths = [os.path.join(scenes_dir, f) for f in scene_files]
