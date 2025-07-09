@@ -8,7 +8,6 @@ import cv2
 import gradio as gr
 from pathlib import Path
 import string
-from ctypes import windll
 
 def sanitize_filename(filename):
     """Sanitize filename by removing invalid characters."""
@@ -131,12 +130,17 @@ def get_available_drives(default_output_dir, base_path, logger=None):
     """Get available drives/paths for file browser."""
     available_paths = []
     if platform.system() == "Windows":
+        # Cross-platform Windows drive detection
         drives = []
-        bitmask = windll.kernel32.GetLogicalDrives()
         for letter in string.ascii_uppercase:
-            if bitmask & 1:
-                drives.append(f"{letter}:\\")
-            bitmask >>= 1
+            drive_path = f"{letter}:\\"
+            try:
+                # Check if drive exists and is accessible
+                if os.path.exists(drive_path) and os.path.isdir(drive_path):
+                    drives.append(drive_path)
+            except (OSError, PermissionError):
+                # Skip drives that can't be accessed
+                continue
         available_paths = drives
     elif platform.system() == "Darwin":
         available_paths = ["/", "/Volumes"]
