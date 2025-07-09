@@ -156,12 +156,18 @@ def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, prog
             scene_num = scene_list.index((scene.start, scene.end)) + 1
             return f"scene_{scene_num:04d}.mp4"
 
+        # Sanitize video name to prevent issues with spaces and special characters in filenames
+        raw_video_name = Path(input_video_path).stem
+        # Use the existing sanitize_filename function for proper cross-platform filename handling
+        from .file_utils import sanitize_filename
+        sanitized_video_name = sanitize_filename(raw_video_name)
+        
         if scene_split_params['use_mkvmerge'] and is_mkvmerge_available():
             return_code = split_video_mkvmerge(
                 input_video_path=str(input_video_path),
                 scene_list=scene_list,
                 output_dir=scenes_dir,
-                video_name=Path(input_video_path).stem,
+                video_name=sanitized_video_name,
                 show_output=not scene_split_params['quiet_ffmpeg'],
                 formatter=scene_filename_formatter
             )
@@ -201,7 +207,7 @@ def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, prog
                 input_video_path=str(input_video_path),
                 scene_list=scene_list,
                 output_dir=scenes_dir,
-                video_name=Path(input_video_path).stem,
+                video_name=sanitized_video_name,
                 arg_override=ffmpeg_args,
                 show_progress=scene_split_params['show_progress'],
                 show_output=not scene_split_params['quiet_ffmpeg'],

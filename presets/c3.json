@@ -1,0 +1,127 @@
+{
+    "prompts": {
+        "user": "",
+        "positive": "Cinematic, High Contrast, highly detailed, taken using a Canon EOS R camera,   hyper detailed photo - realistic maximum detail, 32k, Color Grading, ultra HD, extreme meticulous detailing,  skin pore detailing, hyper sharpness, perfect without deformations.",
+        "negative": "painting, oil painting, illustration, drawing, art, sketch, oil painting, cartoon, CG Style, 3D render, unreal engine, blurring, dirty, messy, worst quality, low quality, frames, watermark, signature, jpeg artifacts, deformed, lowres, over-smooth"
+    },
+    "star_model": {
+        "model_choice": "Light Degradation",
+        "cfg_scale": 7.5,
+        "solver_mode": "fast",
+        "steps": 15,
+        "color_fix_method": "Wavelet"
+    },
+    "performance": {
+        "max_chunk_len": 5,
+        "vae_chunk": 3,
+        "enable_chunk_optimization": true,
+        "chunk_optimization_min_ratio": 0.5
+    },
+    "resolution": {
+        "enable_target_res": true,
+        "target_res_mode": "Ratio Upscale",
+        "target_h": 1888,
+        "target_w": 1024,
+        "upscale_factor": 4,
+        "enable_auto_aspect_resolution": false,
+        "auto_resolution_status": "No video loaded",
+        "pixel_budget": 1048576,
+        "last_video_aspect_ratio": 1.0,
+        "auto_calculated_h": 1024,
+        "auto_calculated_w": 1024
+    },
+    "context_window": {
+        "enable": false,
+        "overlap": 8
+    },
+    "tiling": {
+        "enable": false,
+        "tile_size": 256,
+        "tile_overlap": 64
+    },
+    "ffmpeg": {
+        "use_gpu": true,
+        "preset": "slower",
+        "quality": 12
+    },
+    "frame_folder": {
+        "enable": false,
+        "fps": 24
+    },
+    "scene_split": {
+        "enable": true,
+        "mode": "automatic",
+        "min_scene_len": 0.6,
+        "threshold": 3,
+        "drop_short": false,
+        "merge_last": true,
+        "frame_skip": 0,
+        "min_content_val": 15,
+        "frame_window": 2,
+        "manual_split_type": "duration",
+        "manual_split_value": 30,
+        "copy_streams": false,
+        "use_mkvmerge": true,
+        "rate_factor": 12,
+        "encoding_preset": "slower",
+        "quiet_ffmpeg": true
+    },
+    "cogvlm": {
+        "quant_display": "INT4 (CUDA)",
+        "unload_after_use": "full",
+        "auto_caption_then_upscale": true,
+        "enable_auto_caption_per_scene": false,
+        "quant_value": 4
+    },
+    "outputs": {
+        "save_frames": true,
+        "save_metadata": true,
+        "save_chunks": true,
+        "save_chunk_frames": true,
+        "create_comparison_video": true
+    },
+    "seed": {
+        "seed": 99,
+        "use_random": false
+    },
+    "rife": {
+        "enable": false,
+        "multiplier": 2,
+        "fp16": true,
+        "uhd": false,
+        "scale": 1,
+        "skip_static": false,
+        "enable_fps_limit": false,
+        "max_fps_limit": 60,
+        "apply_to_chunks": true,
+        "apply_to_scenes": true,
+        "keep_original": true,
+        "overwrite_original": false
+    },
+    "fps_decrease": {
+        "enable": false,
+        "mode": "multiplier",
+        "multiplier_preset": "1/2x (Half FPS)",
+        "multiplier_custom": 0.5,
+        "target_fps": 24,
+        "interpolation_method": "blend"
+    },
+    "image_upscaler": {
+        "enable": false,
+        "model": "2x-AnimeSharpV4_Fast_RCAN_PU.safetensors",
+        "batch_size": 1,
+        "device": "cuda",
+        "cache_models": true
+    },
+    "face_restoration": {
+        "enable": false,
+        "fidelity_weight": 0.7,
+        "enable_colorization": false,
+        "when": "after",
+        "model": null,
+        "batch_size": 4
+    },
+    "gpu": {
+        "device": "0"
+    }
+}
