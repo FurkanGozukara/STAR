@@ -821,7 +821,14 @@ def restore_video_frames(
         if not os.path.exists(video_path):
             result['error'] = f"Video file not found: {video_path}"
             return result
-            
+        
+        # Extract video metadata FIRST to get the correct FPS
+        if progress_callback:
+            progress_callback(0.05, "Extracting video metadata...")
+        
+        video_metadata = _get_video_metadata(video_path, logger)
+        video_fps = video_metadata.get('fps', 30.0)
+        
         # Create frame extraction directory
         frames_dir = os.path.join(output_dir, "extracted_frames")
         os.makedirs(frames_dir, exist_ok=True)
@@ -829,13 +836,14 @@ def restore_video_frames(
         if progress_callback:
             progress_callback(0.1, "Extracting frames from video...")
             
-        # Extract frames using ffmpeg
+        # Extract frames using ffmpeg with the CORRECT FPS from metadata
         frame_pattern = os.path.join(frames_dir, "frame_%06d.png")
         
         try:
+            # Use the original video's FPS instead of hardcoded 30 FPS
             cmd = [
                 'ffmpeg', '-i', video_path,
-                '-vf', 'fps=fps=30',  # Extract at 30fps or original fps
+                '-vf', f'fps=fps={video_fps}',  # Use actual FPS from metadata
                 '-y',  # Overwrite output files
                 frame_pattern
             ]
@@ -890,19 +898,16 @@ def restore_video_frames(
             if progress_callback:
                 progress_callback(0.9, "Reassembling video from processed frames...")
             
-            # Get video metadata for reassembly
-            video_metadata = _get_video_metadata(video_path, logger)
-            
             # Generate output video path
             video_name = os.path.splitext(os.path.basename(video_path))[0]
             output_video_path = os.path.join(output_dir, f"{video_name}_face_restored.mp4")
             
-            # Reassemble video from processed frames
+            # Reassemble video from processed frames using the correct FPS
             reassembly_result = _reassemble_video_from_frames(
                 frame_paths=batch_result['output_paths'],
                 output_path=output_video_path,
                 original_video_path=video_path if preserve_audio else None,
-                fps=video_metadata.get('fps', 30.0),
+                fps=video_fps,  # Use the correct FPS from metadata
                 preserve_audio=preserve_audio,
                 logger=logger
             )

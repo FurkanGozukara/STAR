@@ -43,7 +43,8 @@ from .face_restoration_utils import (
     setup_codeformer_environment,
     restore_frames_batch_true,
     restore_video_frames,
-    apply_face_restoration_to_frames
+    apply_face_restoration_to_frames,
+    _check_video_has_audio
 )
 
 
@@ -2212,16 +2213,13 @@ def run_upscale (
                     try:
                         logger.info("Extracting and trimming audio to match partial video length...")
                         
-                        # Check if original video has audio
-                        probe_audio_cmd = f'ffprobe -v error -select_streams a:0 -count_packets -show_entries stream=nb_read_packets -csv=p=0 "{input_video_path}"'
-                        import subprocess
-                        try:
-                            result = subprocess.run(probe_audio_cmd, shell=True, capture_output=True, text=True, check=True)
-                            has_audio = result.stdout.strip() and int(result.stdout.strip()) > 0
-                        except:
-                            has_audio = False
+                        # Import the better audio detection function
+                        from .face_restoration_utils import _check_video_has_audio
                         
-                        if has_audio and 'partial_duration_seconds' in locals() and partial_duration_seconds:
+                        # Check if original video has audio using proper method
+                        has_audio = _check_video_has_audio(input_video_path, logger)
+                        
+                        if has_audio and 'partial_duration_seconds' in locals() and partial_duration_seconds and partial_duration_seconds > 0:
                             # Create final video with trimmed audio
                             trim_audio_cmd = (
                                 f'ffmpeg -y -i "{silent_partial_path}" -i "{input_video_path}" '
@@ -2235,11 +2233,14 @@ def run_upscale (
                             
                             if audio_success and os.path.exists(partial_video_path):
                                 audio_added = True
-                                logger.info("Successfully added trimmed audio to partial video")
+                                logger.info(f"Successfully added trimmed audio ({partial_duration_seconds:.3f}s) to partial video")
                             else:
                                 logger.warning("Failed to add audio, using silent video")
                         else:
-                            logger.info("Original video has no audio stream or duration not available")
+                            if not has_audio:
+                                logger.info("Original video has no audio stream")
+                            else:
+                                logger.info("Partial video duration not available or invalid")
                             
                     except Exception as e_audio:
                         logger.warning(f"Error processing audio for partial video: {e_audio}")
