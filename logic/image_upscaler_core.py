@@ -22,6 +22,9 @@ from .image_upscaler_utils import (
     extract_model_filename_from_dropdown
 )
 
+# Import cancellation manager
+from .cancellation_manager import cancellation_manager, CancelledError
+
 def process_video_with_image_upscaler(
     input_video_path: str,
     selected_model_filename: str,
@@ -196,6 +199,16 @@ def process_video_with_image_upscaler(
         
         yield None, "\n".join(status_log), None, "Model loaded, processing frames...", None
         
+        # Check for cancellation before starting processing
+        try:
+            cancellation_manager.check_cancel("image upscaler - before processing")
+        except CancelledError:
+            if logger:
+                logger.info("Image upscaling cancelled before processing started")
+            status_log.append("⚠️ Processing cancelled by user before frame processing")
+            yield None, "\n".join(status_log), None, "Processing cancelled", None
+            return
+        
         # Process based on scene splitting
         if enable_scene_split and scene_video_paths:
             # Process each scene separately
@@ -203,6 +216,24 @@ def process_video_with_image_upscaler(
             processed_scenes = []
             
             for scene_idx, scene_video_path in enumerate(scene_video_paths):
+                # Check for cancellation before processing each scene
+                try:
+                    cancellation_manager.check_cancel(f"image upscaler - before scene {scene_idx + 1}")
+                except CancelledError:
+                    if logger:
+                        logger.info(f"Image upscaling cancelled before processing scene {scene_idx + 1}")
+                    status_log.append(f"⚠️ Processing cancelled before scene {scene_idx + 1}")
+                    
+                    # Return partial results if any scenes were completed
+                    if processed_scenes:
+                        status_log.append(f"⚠️ Processing cancelled. {len(processed_scenes)} scenes were completed.")
+                        # Use the first completed scene as partial result
+                        partial_output_path = processed_scenes[0] if processed_scenes else None
+                        yield partial_output_path, "\n".join(status_log), partial_output_path, f"Partial video from {len(processed_scenes)} completed scenes", None
+                    else:
+                        yield None, "\n".join(status_log), None, "Processing cancelled before any scenes completed", None
+                    return
+                
                 scene_start_time = time.time()
                 scene_name = f"scene_{scene_idx + 1:04d}"
                 
@@ -257,6 +288,21 @@ def process_video_with_image_upscaler(
                         last_chunk_status = f"Scene {scene_idx + 1}/{total_scenes} complete"
                         
                         yield None, "\n".join(status_log), last_chunk_video_path, last_chunk_status, None
+                    
+                except CancelledError:
+                    # Handle cancellation during scene processing
+                    if logger:
+                        logger.info(f"Image upscaling cancelled during scene {scene_idx + 1} processing")
+                    status_log.append(f"⚠️ Processing cancelled during scene {scene_idx + 1}")
+                    
+                    # Return partial results if any scenes were completed
+                    if processed_scenes:
+                        status_log.append(f"⚠️ Processing cancelled. {len(processed_scenes)} scenes were completed.")
+                        partial_output_path = processed_scenes[0] if processed_scenes else None
+                        yield partial_output_path, "\n".join(status_log), partial_output_path, f"Partial video from {len(processed_scenes)} completed scenes", None
+                    else:
+                        yield None, "\n".join(status_log), None, "Processing cancelled during scene processing", None
+                    return
                     
                 except Exception as e:
                     error_msg = f"Error processing scene {scene_idx + 1}: {str(e)}"
@@ -496,18 +542,60 @@ def process_single_video_image_upscaler(
         
         yield None, "\n".join(status_log), None, "Processing frames...", None
         
-        # Process frames in batches
-        processed_count, failed_count = process_frames_batch(
-            frame_files=frame_files,
-            input_dir=input_frames_dir,
-            output_dir=output_frames_dir,
-            model=model,
-            batch_size=batch_size,
-            device=device,
-            progress_callback=progress_callback,
-            secondary_output_dir=permanent_processed_frames_dir,
-            logger=logger
-        )
+        # Process frames in batches with cancellation handling
+        try:
+            processed_count, failed_count = process_frames_batch(
+                frame_files=frame_files,
+                input_dir=input_frames_dir,
+                output_dir=output_frames_dir,
+                model=model,
+                batch_size=batch_size,
+                device=device,
+                progress_callback=progress_callback,
+                secondary_output_dir=permanent_processed_frames_dir,
+                logger=logger
+            )
+        except CancelledError:
+            # Handle cancellation during frame processing - create partial video if possible
+            if logger:
+                logger.info("Image upscaling cancelled during frame processing")
+            status_log.append("⚠️ Processing cancelled by user during frame processing")
+            
+            # Check if any frames were processed successfully
+            processed_files = [f for f in os.listdir(output_frames_dir) if f.endswith(('.png', '.jpg', '.jpeg'))]
+            if processed_files:
+                if logger:
+                    logger.info(f"Creating partial video from {len(processed_files)} processed frames")
+                status_log.append(f"Creating partial video from {len(processed_files)} processed frames...")
+                
+                # Generate partial output path
+                partial_output_video_path = os.path.join(output_dir, f"{base_output_filename_no_ext}_partial_cancelled.mp4")
+                
+                try:
+                    # Create partial video from the frames that were processed
+                    util_create_video_from_frames(
+                        output_frames_dir,
+                        partial_output_video_path,
+                        input_fps,
+                        ffmpeg_preset,
+                        ffmpeg_quality_value,
+                        ffmpeg_use_gpu,
+                        logger=logger
+                    )
+                    
+                    status_log.append(f"⚠️ Processing cancelled. Partial video saved: {os.path.basename(partial_output_video_path)}")
+                    yield partial_output_video_path, "\n".join(status_log), partial_output_video_path, "Partial video created after cancellation", None
+                    return
+                    
+                except Exception as video_e:
+                    if logger:
+                        logger.error(f"Failed to create partial video: {video_e}")
+                    status_log.append("⚠️ Processing cancelled. Could not create partial video.")
+            else:
+                status_log.append("⚠️ Processing cancelled. No frames were processed.")
+            
+            yield None, "\n".join(status_log), None, "Processing cancelled", None
+            return
         
         process_time = time.time() - process_start
         process_complete_msg = f"Frame processing complete: {processed_count} processed, {failed_count} failed in {format_time(process_time) if format_time else f'{process_time:.2f}s'}"
@@ -519,6 +607,16 @@ def process_single_video_image_upscaler(
             raise Exception("No frames were processed successfully")
         
         yield None, "\n".join(status_log), None, f"Processed {processed_count} frames", None
+        
+        # Check for cancellation before creating video
+        try:
+            cancellation_manager.check_cancel("image upscaler - before video creation")
+        except CancelledError:
+            if logger:
+                logger.info("Image upscaling cancelled before video creation")
+            status_log.append("⚠️ Processing cancelled before video creation")
+            yield None, "\n".join(status_log), None, "Processing cancelled", None
+            return
         
         # Create output video
         video_start = time.time()
@@ -646,18 +744,26 @@ def process_single_scene_image_upscaler(
         
         yield None, "\n".join(status_log), None, f"Extracting frames from {scene_name}...", None
         
-        # Process frames
-        processed_count, failed_count = process_frames_batch(
-            frame_files=frame_files,
-            input_dir=scene_input_frames_dir,
-            output_dir=scene_output_frames_dir,
-            model=model,
-            batch_size=batch_size,
-            device=device,
-            progress_callback=None,
-            secondary_output_dir=permanent_scene_processed_dir,
-            logger=logger
-        )
+        # Process frames with cancellation handling
+        try:
+            processed_count, failed_count = process_frames_batch(
+                frame_files=frame_files,
+                input_dir=scene_input_frames_dir,
+                output_dir=scene_output_frames_dir,
+                model=model,
+                batch_size=batch_size,
+                device=device,
+                progress_callback=None,
+                secondary_output_dir=permanent_scene_processed_dir,
+                logger=logger
+            )
+        except CancelledError:
+            # Handle cancellation during scene processing
+            if logger:
+                logger.info(f"Image upscaling cancelled during scene {scene_index + 1} processing")
+            status_log.append(f"⚠️ Processing cancelled during scene {scene_index + 1}")
+            yield None, "\n".join(status_log), None, f"Scene {scene_index + 1} processing cancelled", None
+            raise  # Re-raise to propagate cancellation to parent function
         
         if processed_count == 0:
             raise Exception(f"No frames processed for scene {scene_index + 1}")

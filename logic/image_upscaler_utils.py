@@ -21,6 +21,9 @@ SUPPORTED_EXTENSIONS = ['.pth', '.safetensors', '.pt', '.bin', '.onnx']
 # Global cache for loaded models to avoid reloading
 _loaded_models_cache = {}
 
+# Import cancellation manager
+from .cancellation_manager import cancellation_manager, CancelledError
+
 def get_upscale_models_dir(base_path: str) -> str:
     """Get the upscale models directory path."""
     return os.path.join(base_path, "upscale_models")
@@ -498,11 +501,29 @@ def process_frames_batch(
     frames_by_size = group_frames_by_size(frame_files, input_dir, logger)
     
     for size, size_frame_files in frames_by_size.items():
+        # Check for cancellation before processing each size group
+        try:
+            cancellation_manager.check_cancel("image upscaler - before size group")
+        except CancelledError:
+            if logger:
+                logger.info(f"Image upscaling cancelled before processing size group {size[0]}x{size[1]}")
+            # Return current progress with partial results
+            return processed_count, failed_count + (total_frames - processed_count - failed_count)
+        
         if logger:
             logger.info(f"Processing {len(size_frame_files)} frames of size {size[0]}x{size[1]}")
         
         # Process frames in batches within each size group
         for i in range(0, len(size_frame_files), batch_size):
+            # Check for cancellation before each batch
+            try:
+                cancellation_manager.check_cancel("image upscaler - before batch")
+            except CancelledError:
+                if logger:
+                    logger.info(f"Image upscaling cancelled during batch processing (step {current_step + 1})")
+                # Return current progress with partial results
+                return processed_count, failed_count + (total_frames - processed_count - failed_count)
+                
             # Increment the global step counter *before* processing so that step numbers start at 1
             current_step += 1
 
@@ -643,6 +664,15 @@ def process_frames_batch(
                         f"Processed frames: {processed_count}/{total_frames}. "
                         f"Remaining steps: {remaining_steps}, Remaining frames: {remaining_frames}."
                     )
+                
+                # Check for cancellation after each batch completion
+                try:
+                    cancellation_manager.check_cancel("image upscaler - after batch")
+                except CancelledError:
+                    if logger:
+                        logger.info(f"Image upscaling cancelled after completing step {current_step}")
+                    # Return current progress with partial results
+                    return processed_count, failed_count + (total_frames - processed_count - failed_count)
                 
                 # Clear GPU memory
                 if torch.cuda.is_available():
