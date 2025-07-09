@@ -563,17 +563,26 @@ def process_single_video_image_upscaler(
             
             # Check if any frames were processed successfully
             processed_files = [f for f in os.listdir(output_frames_dir) if f.endswith(('.png', '.jpg', '.jpeg'))]
-            if processed_files:
+            min_frames_for_video = 5  # Minimum frames required to create a meaningful video
+            
+            if len(processed_files) >= min_frames_for_video:
                 if logger:
                     logger.info(f"Creating partial video from {len(processed_files)} processed frames")
                 status_log.append(f"Creating partial video from {len(processed_files)} processed frames...")
+            elif processed_files:
+                # Some frames processed but below threshold
+                if logger:
+                    logger.info(f"Only {len(processed_files)} frames processed (minimum {min_frames_for_video} required for video creation)")
+                status_log.append(f"⚠️ Processing cancelled. Only {len(processed_files)} frames processed (minimum {min_frames_for_video} required for video creation).")
+                yield None, "\n".join(status_log), None, "Insufficient frames for video creation", None
+                return
                 
                 # Generate partial output path
                 partial_output_video_path = os.path.join(output_dir, f"{base_output_filename_no_ext}_partial_cancelled.mp4")
                 
                 try:
                     # Create partial video from the frames that were processed
-                    util_create_video_from_frames(
+                    video_success = util_create_video_from_frames(
                         output_frames_dir,
                         partial_output_video_path,
                         input_fps,
@@ -583,14 +592,19 @@ def process_single_video_image_upscaler(
                         logger=logger
                     )
                     
-                    status_log.append(f"⚠️ Processing cancelled. Partial video saved: {os.path.basename(partial_output_video_path)}")
-                    yield partial_output_video_path, "\n".join(status_log), partial_output_video_path, "Partial video created after cancellation", None
-                    return
+                    if video_success and os.path.exists(partial_output_video_path):
+                        status_log.append(f"⚠️ Processing cancelled. Partial video saved: {os.path.basename(partial_output_video_path)}")
+                        yield partial_output_video_path, "\n".join(status_log), partial_output_video_path, "Partial video created after cancellation", None
+                        return
+                    else:
+                        if logger:
+                            logger.warning("Partial video creation failed, possibly due to resolution constraints")
+                        status_log.append("⚠️ Processing cancelled. Could not create partial video due to resolution constraints.")
                     
                 except Exception as video_e:
                     if logger:
                         logger.error(f"Failed to create partial video: {video_e}")
-                    status_log.append("⚠️ Processing cancelled. Could not create partial video.")
+                    status_log.append("⚠️ Processing cancelled. Could not create partial video due to encoding error.")
             else:
                 status_log.append("⚠️ Processing cancelled. No frames were processed.")
             
@@ -615,6 +629,49 @@ def process_single_video_image_upscaler(
             if logger:
                 logger.info("Image upscaling cancelled before video creation")
             status_log.append("⚠️ Processing cancelled before video creation")
+            
+            # Check if we have enough processed frames to create a partial video
+            processed_files = [f for f in os.listdir(output_frames_dir) if f.endswith(('.png', '.jpg', '.jpeg'))]
+            min_frames_for_video = 5  # Same threshold as frame processing cancellation
+            
+            if len(processed_files) >= min_frames_for_video:
+                if logger:
+                    logger.info(f"Creating partial video from {len(processed_files)} processed frames before video creation cancellation")
+                status_log.append(f"Creating partial video from {len(processed_files)} processed frames...")
+                
+                # Generate partial output path
+                partial_output_video_path = os.path.join(output_dir, f"{base_output_filename_no_ext}_partial_cancelled.mp4")
+                
+                try:
+                    # Create partial video from the frames that were processed
+                    video_success = util_create_video_from_frames(
+                        output_frames_dir,
+                        partial_output_video_path,
+                        input_fps,
+                        ffmpeg_preset,
+                        ffmpeg_quality_value,
+                        ffmpeg_use_gpu,
+                        logger=logger
+                    )
+                    
+                    if video_success and os.path.exists(partial_output_video_path):
+                        status_log.append(f"⚠️ Processing cancelled. Partial video saved: {os.path.basename(partial_output_video_path)}")
+                        yield partial_output_video_path, "\n".join(status_log), partial_output_video_path, "Partial video created after cancellation", None
+                        return
+                    else:
+                        if logger:
+                            logger.warning("Partial video creation failed, possibly due to resolution constraints")
+                        status_log.append("⚠️ Processing cancelled. Could not create partial video due to resolution constraints.")
+                    
+                except Exception as video_e:
+                    if logger:
+                        logger.error(f"Failed to create partial video: {video_e}")
+                    status_log.append("⚠️ Processing cancelled. Could not create partial video due to encoding error.")
+            else:
+                if logger:
+                    logger.info(f"Only {len(processed_files)} frames processed (minimum {min_frames_for_video} required for video creation)")
+                status_log.append(f"⚠️ Processing cancelled. Only {len(processed_files)} frames processed (minimum {min_frames_for_video} required for video creation).")
+            
             yield None, "\n".join(status_log), None, "Processing cancelled", None
             return
         
@@ -628,22 +685,43 @@ def process_single_video_image_upscaler(
         
         yield None, "\n".join(status_log), None, "Creating video...", None
         
-        # Create video from frames
-        util_create_video_from_frames(
-            output_frames_dir,
-            output_video_path,
-            input_fps,
-            ffmpeg_preset,
-            ffmpeg_quality_value,
-            ffmpeg_use_gpu,
-            logger=logger
-        )
-        
-        video_time = time.time() - video_start
-        video_complete_msg = f"Output video created in {format_time(video_time) if format_time else f'{video_time:.2f}s'}"
-        status_log.append(video_complete_msg)
-        if logger:
-            logger.info(video_complete_msg)
+        # Create video from frames with proper error handling
+        try:
+            video_success = util_create_video_from_frames(
+                output_frames_dir,
+                output_video_path,
+                input_fps,
+                ffmpeg_preset,
+                ffmpeg_quality_value,
+                ffmpeg_use_gpu,
+                logger=logger
+            )
+            
+            if not video_success or not os.path.exists(output_video_path):
+                error_msg = "Video creation failed, possibly due to resolution constraints. Frames were processed successfully."
+                status_log.append(f"⚠️ {error_msg}")
+                if logger:
+                    logger.warning(error_msg)
+                
+                # Return success with frame processing complete but no video
+                yield None, "\n".join(status_log), None, "Frames processed, video creation failed", None
+                return
+            
+            video_time = time.time() - video_start
+            video_complete_msg = f"Output video created in {format_time(video_time) if format_time else f'{video_time:.2f}s'}"
+            status_log.append(video_complete_msg)
+            if logger:
+                logger.info(video_complete_msg)
+                
+        except Exception as video_e:
+            error_msg = f"Video creation failed with error: {str(video_e)}. Frames were processed successfully."
+            status_log.append(f"⚠️ {error_msg}")
+            if logger:
+                logger.error(error_msg)
+            
+            # Return success with frame processing complete but no video
+            yield None, "\n".join(status_log), None, "Frames processed, video creation failed", None
+            return
         
         # Handle frame saving – final sync/copy for any remaining files that
         # might not have been flushed yet or if save_frames was disabled.

@@ -5,7 +5,8 @@ import shutil
 import numpy as np
 import gradio as gr
 from pathlib import Path
-from .ffmpeg_utils import run_ffmpeg_command, is_resolution_too_small_for_nvenc
+from .ffmpeg_utils import run_ffmpeg_command
+from .nvenc_utils import should_fallback_to_cpu_encoding
 from .file_utils import get_next_filename, cleanup_temp_dir
 from .cogvlm_utils import auto_caption, COG_VLM_AVAILABLE
 from .cancellation_manager import cancellation_manager, CancelledError
@@ -175,7 +176,7 @@ def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, prog
                     try:
                         from .file_utils import get_video_resolution
                         orig_h, orig_w = get_video_resolution(input_video_path, logger)
-                        use_cpu_fallback = is_resolution_too_small_for_nvenc(orig_w, orig_h, logger)
+                        use_cpu_fallback = should_fallback_to_cpu_encoding(orig_w, orig_h, logger)
                     except Exception as e:
                         if logger:
                             logger.warning(f"Could not get video resolution for NVENC check: {e}, using CPU fallback")
@@ -191,7 +192,7 @@ def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, prog
                         ffmpeg_args = f"-map 0:v:0 -map 0:a? -map 0:s? -c:v h264_nvenc -preset:v {nvenc_preset} -cq:v {scene_split_params['rate_factor']} -pix_fmt yuv420p -c:a aac -avoid_negative_ts make_zero"
                     else:
                         if logger:
-                            logger.info(f"Falling back to CPU encoding for scene splitting due to small video resolution: {orig_w}x{orig_h}")
+                            logger.info(f"Falling back to CPU encoding for scene splitting due to resolution constraints: {orig_w}x{orig_h}")
                         ffmpeg_args = f"-map 0:v:0 -map 0:a? -map 0:s? -c:v libx264 -preset {scene_split_params['preset']} -crf {scene_split_params['rate_factor']} -c:a aac -avoid_negative_ts make_zero"
                 else:
                     ffmpeg_args = f"-map 0:v:0 -map 0:a? -map 0:s? -c:v libx264 -preset {scene_split_params['preset']} -crf {scene_split_params['rate_factor']} -c:a aac -avoid_negative_ts make_zero"
@@ -257,7 +258,7 @@ def merge_scene_videos(scene_video_paths, output_path, temp_dir, ffmpeg_preset="
             try:
                 from .file_utils import get_video_resolution
                 scene_h, scene_w = get_video_resolution(scene_video_paths[0], logger)
-                use_cpu_fallback = is_resolution_too_small_for_nvenc(scene_w, scene_h, logger)
+                use_cpu_fallback = should_fallback_to_cpu_encoding(scene_w, scene_h, logger)
             except Exception as e:
                 if logger:
                     logger.warning(f"Could not get scene video resolution for NVENC check: {e}, using CPU fallback")
@@ -273,7 +274,7 @@ def merge_scene_videos(scene_video_paths, output_path, temp_dir, ffmpeg_preset="
             ffmpeg_opts = f'-c:v h264_nvenc -preset:v {nvenc_preset} -cq:v {ffmpeg_quality} -pix_fmt yuv420p'
         else:
             if use_cpu_fallback and logger:
-                logger.info(f"Falling back to CPU encoding for scene merging due to small scene resolution: {scene_w}x{scene_h}")
+                logger.info(f"Falling back to CPU encoding for scene merging due to resolution constraints: {scene_w}x{scene_h}")
             ffmpeg_opts = f'-c:v libx264 -preset {ffmpeg_preset} -crf {ffmpeg_quality} -pix_fmt yuv420p'
 
         cmd = f'ffmpeg -y -f concat -safe 0 -i "{concat_file}" {ffmpeg_opts} -c:a copy "{output_path}"'

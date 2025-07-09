@@ -35,7 +35,7 @@ from .scene_utils import (
 )
 from .upscaling_utils import calculate_upscale_params as util_calculate_upscale_params
 from .gpu_utils import get_gpu_device as util_get_gpu_device
-from .nvenc_utils import is_resolution_too_small_for_nvenc
+from .nvenc_utils import should_fallback_to_cpu_encoding
 from .scene_processing_core import process_single_scene
 from .comparison_video import create_comparison_video, get_comparison_output_path
 from .rife_interpolation import apply_rife_to_chunks, apply_rife_to_scenes
@@ -473,7 +473,7 @@ def run_upscale (
                 scale_filter =f"scale='trunc(iw*min({ds_w}/iw,{ds_h}/ih)/2)*2':'trunc(ih*min({ds_w}/iw,{ds_h}/ih)/2)*2'"
 
                 ffmpeg_opts_downscale =""
-                use_cpu_fallback =ffmpeg_use_gpu and is_resolution_too_small_for_nvenc (ds_w ,ds_h ,logger )
+                use_cpu_fallback =ffmpeg_use_gpu and should_fallback_to_cpu_encoding (ds_w ,ds_h ,logger )
 
                 if ffmpeg_use_gpu and not use_cpu_fallback :
                     nvenc_preset_down =ffmpeg_preset
@@ -482,7 +482,7 @@ def run_upscale (
                     ffmpeg_opts_downscale =f'-c:v h264_nvenc -preset:v {nvenc_preset_down} -cq:v {ffmpeg_quality_value} -pix_fmt yuv420p'
                 else :
                     if use_cpu_fallback :
-                        logger .info (f"Falling back to CPU encoding for downscaling due to small target resolution: {ds_w}x{ds_h}")
+                        logger .info (f"Falling back to CPU encoding for downscaling due to resolution constraints: {ds_w}x{ds_h}")
                     ffmpeg_opts_downscale =f'-c:v libx264 -preset {ffmpeg_preset} -crf {ffmpeg_quality_value} -pix_fmt yuv420p'
 
                 cmd =f'ffmpeg -y -i "{current_input_video_for_frames}" -vf "{scale_filter}" {ffmpeg_opts_downscale} -c:a copy "{downscaled_temp_video}"'
@@ -786,12 +786,17 @@ def run_upscale (
                                 shutil.copy2(output_video_path, silent_upscaled_video_path)
                                 logger.info(f"Image upscaler: Copied output to intermediate path for audio merge: {silent_upscaled_video_path}")
                             
-                            # Important: The image upscaler returned a temp path, but we need to use the permanent path
-                            # The permanent target path was already established at the beginning of this function
-                            # We need to save the temp output path and restore the target permanent path
-                            image_upscaler_temp_output = output_video_path  # Save the temp path returned by image upscaler
-                            output_video_path = params_for_metadata["final_output_path"]  # Restore the permanent target path
-                            logger.info(f"Image upscaler: Restoring permanent output path: {output_video_path} (was temp: {image_upscaler_temp_output})")
+                            # Important: For partial results (cancellation), preserve the partial path
+                            # Only restore permanent target path if this is a complete result
+                            current_final_path = params_for_metadata.get("final_output_path")
+                            if current_final_path and not any(indicator in os.path.basename(output_video_path) for indicator in ["partial", "cancelled"]):
+                                # Complete result - use the permanent target path
+                                image_upscaler_temp_output = output_video_path  # Save the temp path returned by image upscaler
+                                output_video_path = current_final_path  # Restore the permanent target path
+                                logger.info(f"Image upscaler: Restoring permanent output path: {output_video_path} (was temp: {image_upscaler_temp_output})")
+                            else:
+                                # Partial result or no permanent path set - preserve the path returned by image upscaler
+                                logger.info(f"Image upscaler: Using partial/cancelled result path: {output_video_path}")
                         else:
                             # Direct upscaling without scene splitting
                             silent_upscaled_video_path = output_video_path
@@ -1777,12 +1782,47 @@ def run_upscale (
         if not silent_upscaled_video_path: # If not already set (e.g., by scene merge)
             progress (current_overall_progress ,desc ="Creating silent video...")
             silent_upscaled_video_path =os .path .join (temp_dir ,"silent_upscaled_video.mp4")
-            util_create_video_from_frames (output_frames_dir ,silent_upscaled_video_path ,input_fps_val ,
-            ffmpeg_preset ,ffmpeg_quality_value ,ffmpeg_use_gpu ,logger =logger )
-            silent_video_msg ="Silent upscaled video created. Merging audio..."
-            status_log .append (silent_video_msg )
-            logger .info (silent_video_msg )
-            yield None ,"\n".join (status_log ),last_chunk_video_path ,silent_video_msg,None
+            
+            # Create video with proper error handling for NVENC limitations
+            try:
+                video_creation_success = util_create_video_from_frames (output_frames_dir ,silent_upscaled_video_path ,input_fps_val ,
+                ffmpeg_preset ,ffmpeg_quality_value ,ffmpeg_use_gpu ,logger =logger )
+                
+                if not video_creation_success or not os.path.exists(silent_upscaled_video_path):
+                    error_msg = "Silent video creation failed, possibly due to resolution constraints. Frames were processed successfully."
+                    status_log.append(f"⚠️ {error_msg}")
+                    logger.warning(error_msg)
+                    
+                    # Try to create a basic video without GPU acceleration as fallback
+                    logger.info("Attempting fallback video creation without GPU acceleration...")
+                    fallback_success = util_create_video_from_frames (output_frames_dir ,silent_upscaled_video_path ,input_fps_val ,
+                    ffmpeg_preset ,ffmpeg_quality_value ,False ,logger =logger )
+                    
+                    if fallback_success and os.path.exists(silent_upscaled_video_path):
+                        logger.info("Fallback video creation successful")
+                        silent_video_msg ="Silent upscaled video created with CPU fallback. Merging audio..."
+                        status_log .append (silent_video_msg )
+                        logger .info (silent_video_msg )
+                        yield None ,"\n".join (status_log ),last_chunk_video_path ,silent_video_msg,None
+                    else:
+                        error_msg = "Both GPU and CPU video creation failed. Frames were processed successfully but video encoding failed."
+                        status_log.append(f"❌ {error_msg}")
+                        logger.error(error_msg)
+                        yield None, "\n".join(status_log), last_chunk_video_path, "Video creation failed - frames processed", None
+                        return  # Return gracefully instead of raising error
+                else:
+                    silent_video_msg ="Silent upscaled video created. Merging audio..."
+                    status_log .append (silent_video_msg )
+                    logger .info (silent_video_msg )
+                    yield None ,"\n".join (status_log ),last_chunk_video_path ,silent_video_msg,None
+                    
+            except Exception as video_e:
+                error_msg = f"Silent video creation failed with error: {str(video_e)}. Frames were processed successfully."
+                status_log.append(f"❌ {error_msg}")
+                logger.error(error_msg, exc_info=True)
+                yield None, "\n".join(status_log), last_chunk_video_path, "Video creation failed - frames processed", None
+                return  # Return gracefully instead of raising error
+                
         else : # Video already merged from scenes (is silent_upscaled_video_path)
             silent_video_msg ="Scene-merged video ready. Merging audio..."
             status_log .append (silent_video_msg )
@@ -1798,10 +1838,20 @@ def run_upscale (
         if not os .path .exists (audio_source_video ):
             logger .warning (f"Audio source video '{audio_source_video}' not found. Output will be video-only.")
             if os .path .exists (silent_upscaled_video_path ):
-                shutil .copy2 (silent_upscaled_video_path ,final_output_path )
+                if final_output_path is not None:
+                    shutil .copy2 (silent_upscaled_video_path ,final_output_path )
+                else:
+                    error_msg = "Final output path not set - cannot complete video processing. Processing was successful but final file could not be moved."
+                    logger .error (error_msg)
+                    status_log.append(f"❌ {error_msg}")
+                    yield None, "\n".join(status_log), last_chunk_video_path, "Processing complete but output path issue", None
+                    return  # Return gracefully instead of raising error
             else :
-                logger .error (f"Silent upscaled video path {silent_upscaled_video_path} not found for copy.")
-                raise gr .Error ("Silent video not found for final output.")
+                error_msg = f"Silent upscaled video path {silent_upscaled_video_path} not found for copy. Processing may have failed."
+                logger .error (error_msg)
+                status_log.append(f"❌ {error_msg}")
+                yield None, "\n".join(status_log), last_chunk_video_path, "Silent video not found", None
+                return  # Return gracefully instead of raising error
         else :
             if os .path .exists (silent_upscaled_video_path ):
                 # Use a temporary file for the merge to avoid FFmpeg "same input/output file" error
@@ -1810,14 +1860,27 @@ def run_upscale (
                 
                 # Move the temporary merged file to the final output path
                 if os .path .exists (temp_merged_video ):
-                    shutil .move (temp_merged_video ,final_output_path )
-                    logger .info (f"Moved merged video from temp location to final output: {final_output_path}")
+                    if final_output_path is not None:
+                        shutil .move (temp_merged_video ,final_output_path )
+                        logger .info (f"Moved merged video from temp location to final output: {final_output_path}")
+                    else:
+                        error_msg = "Final output path not set - cannot move merged video. Processing was successful but final file could not be moved."
+                        logger .error (error_msg)
+                        status_log.append(f"❌ {error_msg}")
+                        yield None, "\n".join(status_log), last_chunk_video_path, "Processing complete but output path issue", None
+                        return  # Return gracefully instead of raising error
                 else :
-                    logger .error (f"Temporary merged video not found: {temp_merged_video}")
-                    raise gr .Error ("Temporary merged video not found after audio merge.")
+                    error_msg = f"Temporary merged video not found: {temp_merged_video}. Audio merge may have failed."
+                    logger .error (error_msg)
+                    status_log.append(f"❌ {error_msg}")
+                    yield None, "\n".join(status_log), last_chunk_video_path, "Audio merge failed", None
+                    return  # Return gracefully instead of raising error
             else :
-                logger .error (f"Silent upscaled video path {silent_upscaled_video_path} not found for audio merge.")
-                raise gr .Error ("Silent video not found for audio merge.")
+                error_msg = f"Silent upscaled video path {silent_upscaled_video_path} not found for audio merge. Video processing may have failed."
+                logger .error (error_msg)
+                status_log.append(f"❌ {error_msg}")
+                yield None, "\n".join(status_log), last_chunk_video_path, "Silent video not found for audio merge", None
+                return  # Return gracefully instead of raising error
 
         current_overall_progress =initial_progress_audio_merge +stage_weights ["reassembly_audio_merge"]
         progress (current_overall_progress ,desc ="Audio merged.")
@@ -2101,11 +2164,21 @@ def run_upscale (
                 frame_files = sorted([f for f in os.listdir(output_frames_dir) 
                                      if f.lower().endswith(('.png', '.jpg', '.jpeg'))])
                 
-                if frame_files:
+                min_frames_for_video = 5  # Minimum frames required to create a meaningful video
+                
+                if len(frame_files) >= min_frames_for_video:
                     num_processed_frames = len(frame_files)
                     logger.info(f"🔄 Composing partial video from {num_processed_frames} processed frames after cancellation...")
                     status_log.append(f"🔄 Composing partial video from {num_processed_frames} processed frames...")
                     progress(current_overall_progress, desc="Composing partial video...")
+                elif frame_files:
+                    # Some frames processed but below threshold
+                    num_processed_frames = len(frame_files)
+                    logger.info(f"Only {num_processed_frames} frames processed (minimum {min_frames_for_video} required for video creation)")
+                    partial_success_msg = f"⚠️ Process cancelled. Only {num_processed_frames} frames processed (minimum {min_frames_for_video} required for video creation)."
+                    status_log.append(partial_success_msg)
+                    yield None, "\n".join(status_log), last_chunk_video_path, partial_success_msg, None
+                    return
                     
                     # Create partial video filename
                     partial_video_name = f"{base_output_filename_no_ext}_partial_cancelled.mp4"

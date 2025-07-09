@@ -3,7 +3,7 @@ import subprocess
 import gradio as gr
 import cv2
 import re
-from .nvenc_utils import is_resolution_too_small_for_nvenc
+from .nvenc_utils import should_fallback_to_cpu_encoding
 from .cancellation_manager import cancellation_manager
 
 def run_ffmpeg_command(cmd, desc="ffmpeg command", logger=None, raise_on_error=True):
@@ -284,9 +284,9 @@ def decrease_fps(input_video_path, output_video_path, target_fps=None, interpola
                 if logger:
                     logger.warning(f"Could not detect video resolution: {e}")
         
-        # Check if we need to fallback to CPU due to small resolution
+        # Check if we need to fallback to CPU due to resolution constraints (too small or too large)
         use_cpu_fallback = (ffmpeg_use_gpu and frame_width is not None and frame_height is not None and 
-                           is_resolution_too_small_for_nvenc(frame_width, frame_height, logger))
+                           should_fallback_to_cpu_encoding(frame_width, frame_height, logger))
         
         # Build encoding options
         video_codec_opts = ""
@@ -302,7 +302,7 @@ def decrease_fps(input_video_path, output_video_path, target_fps=None, interpola
                 logger.info(f"Using NVIDIA NVENC for FPS decrease with preset {nvenc_preset} and CQ {ffmpeg_quality_value}.")
         else:
             if use_cpu_fallback and logger:
-                logger.info(f"Falling back to CPU encoding for FPS decrease due to small video resolution: {frame_width}x{frame_height}")
+                logger.info(f"Falling back to CPU encoding for FPS decrease due to resolution constraints: {frame_width}x{frame_height}")
             video_codec_opts = f'-c:v libx264 -preset {ffmpeg_preset} -crf {ffmpeg_quality_value} -pix_fmt yuv420p'
             if logger:
                 logger.info(f"Using libx264 for FPS decrease with preset {ffmpeg_preset} and CRF {ffmpeg_quality_value}.")
@@ -362,21 +362,13 @@ def decrease_fps_with_multiplier(input_video_path, output_video_path, multiplier
         fps_multiplier=multiplier
     )
 
-def is_resolution_too_small_for_nvenc(width, height, logger=None):
-    """Check if resolution is too small for NVENC (minimum 145x96)."""
-    min_width, min_height = 145, 96
-    too_small = width < min_width or height < min_height
-    if too_small and logger:
-        logger.warning(f"Resolution {width}x{height} is below NVENC minimum ({min_width}x{min_height}), will fallback to CPU encoding")
-    return too_small
-
 def create_video_from_frames(frame_dir, output_path, fps, ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=None):
     """Create video from frames using FFmpeg."""
     if logger:
         logger.info(f"Creating video from frames in '{frame_dir}' to '{output_path}' at {fps} FPS with preset: {ffmpeg_preset}, quality: {ffmpeg_quality_value}, GPU: {ffmpeg_use_gpu}")
     input_pattern = os.path.join(frame_dir, "frame_%06d.png")
 
-    # Detect frame resolution for NVENC minimum size check
+    # Detect frame resolution for NVENC resolution compatibility check
     frame_width, frame_height = None, None
     if ffmpeg_use_gpu:
         # Find first frame to check resolution
@@ -393,9 +385,10 @@ def create_video_from_frames(frame_dir, output_path, fps, ffmpeg_preset, ffmpeg_
                 if logger:
                     logger.warning(f"Could not detect frame resolution: {e}")
 
-    # Check if we need to fallback to CPU due to small resolution
+    # Check if we need to fallback to CPU due to resolution constraints (too small or too large)
+    from .nvenc_utils import should_fallback_to_cpu_encoding
     use_cpu_fallback = (ffmpeg_use_gpu and frame_width is not None and frame_height is not None and 
-                       is_resolution_too_small_for_nvenc(frame_width, frame_height, logger))
+                       should_fallback_to_cpu_encoding(frame_width, frame_height, logger))
 
     video_codec_opts = ""
     if ffmpeg_use_gpu and not use_cpu_fallback:
@@ -410,7 +403,7 @@ def create_video_from_frames(frame_dir, output_path, fps, ffmpeg_preset, ffmpeg_
             logger.info(f"Using NVIDIA NVENC with preset {nvenc_preset} and CQ {ffmpeg_quality_value}.")
     else:
         if use_cpu_fallback and logger:
-            logger.info(f"Falling back to CPU encoding for video creation due to small frame resolution: {frame_width}x{frame_height}")
+            logger.info(f"Falling back to CPU encoding for video creation due to resolution constraints: {frame_width}x{frame_height}")
         video_codec_opts = f'-c:v libx264 -preset {ffmpeg_preset} -crf {ffmpeg_quality_value} -pix_fmt yuv420p'
         if logger:
             logger.info(f"Using libx264 with preset {ffmpeg_preset} and CRF {ffmpeg_quality_value}.")
