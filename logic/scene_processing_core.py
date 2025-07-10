@@ -639,6 +639,11 @@ def process_single_scene(
                     
                     # Mark frame as processed
                     processed_frame_filenames[output_start_0 + k] = frame_name
+                    
+                    # Log progress every 25 frames or at the end
+                    if (k + 1) % 25 == 0 or (k + 1) == len(output_frames):
+                        save_progress_msg = f"Scene {scene_index + 1} context chunk {chunk_idx + 1}/{total_context_chunks}: Saved {k + 1}/{len(output_frames)} frames to disk"
+                        logger.info(save_progress_msg)
 
                 # IMMEDIATE FRAME SAVING: Save processed frames immediately after scene chunk completion
                 if save_frames and scene_output_frames_permanent:
@@ -922,6 +927,11 @@ def process_single_scene(
                         logger.error(f"Failed to write frame: {frame_output_path}")
                     else:
                         logger.debug(f"Successfully wrote frame: {frame_output_path}")
+                    
+                    # Log progress every 25 frames or at the end
+                    if (k + 1) % 25 == 0 or (k + 1) == len(output_frames):
+                        save_progress_msg = f"Scene {scene_index + 1} direct chunk {chunk_idx + 1}/{num_chunks}: Saved {k + 1}/{len(output_frames)} frames to disk"
+                        logger.info(save_progress_msg)
                 
                 # Debug: List what frames are actually in the output directory
                 if os.path.exists(scene_output_frames_dir):

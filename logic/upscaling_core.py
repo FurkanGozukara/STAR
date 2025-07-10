@@ -1383,6 +1383,7 @@ def run_upscale (
 
                     # Save output frames (only the new frames, not the context frames)
                     context_offset = len(processing_frames) - len(output_frames)
+                    frames_written_in_chunk = 0
                     for local_idx, global_frame_idx in enumerate(output_frames):
                         processed_frame_idx = context_offset + local_idx
                         if 0 <= global_frame_idx < frame_count and processed_frame_filenames[global_frame_idx] is None:
@@ -1391,6 +1392,12 @@ def run_upscale (
                             out_f_path = os.path.join(output_frames_dir, frame_files[global_frame_idx])
                             cv2.imwrite(out_f_path, frame_bgr)
                             processed_frame_filenames[global_frame_idx] = frame_files[global_frame_idx]
+                            frames_written_in_chunk += 1
+                            
+                            # Log progress every 25 frames or at the end
+                            if frames_written_in_chunk % 25 == 0 or local_idx == len(output_frames) - 1:
+                                save_progress_msg = f"Context chunk {current_chunk_display_num}/{total_chunks_to_process}: Saved {frames_written_in_chunk}/{len(output_frames)} frames to disk"
+                                logger.info(save_progress_msg)
 
                     # Save processed frames immediately if enabled
                     if save_frames and processed_frames_permanent_save_path:
@@ -1582,6 +1589,11 @@ def run_upscale (
                         frame_np_hwc_uint8_direct = frame_tensor.cpu().numpy()
                         frame_bgr_direct = cv2.cvtColor(frame_np_hwc_uint8_direct, cv2.COLOR_RGB2BGR)
                         cv2.imwrite(os.path.join(output_frames_dir, frame_name_direct), frame_bgr_direct)
+                        
+                        # Log progress every 25 frames or at the end
+                        if (k_direct + 1) % 25 == 0 or (k_direct + 1) == len(output_frames):
+                            save_progress_msg = f"Direct chunk {chunk_idx_direct + 1}/{num_chunks_direct}: Saved {k_direct + 1}/{len(output_frames)} frames to disk"
+                            logger.info(save_progress_msg)
 
                     # IMMEDIATE FRAME SAVING: Save processed frames immediately after chunk completion
                     if save_frames and processed_frames_permanent_save_path:
