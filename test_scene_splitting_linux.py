@@ -123,7 +123,7 @@ def test_nvenc_availability(logger):
     """Test if NVENC is available on the system."""
     logger.info("Testing NVENC availability...")
     
-    test_cmd = 'ffmpeg -loglevel error -f lavfi -i color=c=black:s=64x64:d=0.1:r=1 -c:v h264_nvenc -preset fast -f null -'
+    test_cmd = 'ffmpeg -loglevel error -f lavfi -i color=c=black:s=512x512:d=0.1:r=1 -c:v h264_nvenc -preset fast -f null -'
     
     try:
         result = run_ffmpeg_command(test_cmd, "NVENC Availability Test", logger, raise_on_error=False)
