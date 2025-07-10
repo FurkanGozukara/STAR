@@ -12,7 +12,7 @@ def run_ffmpeg_command(cmd, desc="ffmpeg command", logger=None, raise_on_error=T
     Supports cancellation via the global cancellation manager.
     
     Args:
-        cmd: FFmpeg command to run
+        cmd: FFmpeg command to run (string or list)
         desc: Description for logging
         logger: Logger instance  
         raise_on_error: If True, raises gr.Error on failure. If False, returns False on failure.
@@ -23,11 +23,19 @@ def run_ffmpeg_command(cmd, desc="ffmpeg command", logger=None, raise_on_error=T
     Raises:
         gr.Error: When command fails and raise_on_error=True
     """
+    # Determine if cmd is a list or string and set shell accordingly
+    if isinstance(cmd, list):
+        use_shell = False
+        cmd_for_logging = ' '.join(cmd)  # For logging purposes
+    else:
+        use_shell = True
+        cmd_for_logging = cmd
+    
     if logger:
-        logger.info(f"Running {desc}: {cmd}")
+        logger.info(f"Running {desc}: {cmd_for_logging}")
     try:
         # Use Popen for better process control and cancellation support
-        process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
+        process = subprocess.Popen(cmd, shell=use_shell, stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
                                  text=True, encoding='utf-8', errors='ignore')
         
         # Register the process with the cancellation manager
@@ -55,7 +63,7 @@ def run_ffmpeg_command(cmd, desc="ffmpeg command", logger=None, raise_on_error=T
         if returncode != 0:
             if stderr and logger:
                 logger.error(f"{desc} stderr: {stderr.strip()}")
-            raise subprocess.CalledProcessError(returncode, cmd, stdout, stderr)
+            raise subprocess.CalledProcessError(returncode, cmd_for_logging, stdout, stderr)
         elif stderr and ('error' in stderr.lower() or 'warning' in stderr.lower()):
             if logger:
                 logger.info(f"{desc} stderr: {stderr.strip()}")
@@ -64,7 +72,7 @@ def run_ffmpeg_command(cmd, desc="ffmpeg command", logger=None, raise_on_error=T
     except subprocess.CalledProcessError as e:
         if logger:
             logger.error(f"Error running {desc}:")
-            logger.error(f"  Command: {e.cmd}")
+            logger.error(f"  Command: {cmd_for_logging}")
             logger.error(f"  Return code: {e.returncode}")
             if e.stdout:
                 logger.error(f"  Stdout: {e.stdout.strip()}")
@@ -78,7 +86,7 @@ def run_ffmpeg_command(cmd, desc="ffmpeg command", logger=None, raise_on_error=T
             
     except Exception as e_gen:
         if logger:
-            logger.error(f"Unexpected error preparing/running {desc} for command '{cmd}': {e_gen}")
+            logger.error(f"Unexpected error preparing/running {desc} for command '{cmd_for_logging}': {e_gen}")
         
         if raise_on_error:
             raise gr.Error(f"ffmpeg command failed: {e_gen}")
