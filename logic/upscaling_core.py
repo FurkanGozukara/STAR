@@ -473,18 +473,23 @@ def run_upscale (
                 downscaled_temp_video =os .path .join (temp_dir ,"downscaled_input.mp4")
                 scale_filter =f"scale='trunc(iw*min({ds_w}/iw,{ds_h}/ih)/2)*2':'trunc(ih*min({ds_w}/iw,{ds_h}/ih)/2)*2'"
 
-                ffmpeg_opts_downscale =""
-                use_cpu_fallback =ffmpeg_use_gpu and should_fallback_to_cpu_encoding (ds_w ,ds_h ,logger )
-
-                if ffmpeg_use_gpu and not use_cpu_fallback :
-                    nvenc_preset_down =ffmpeg_preset
-                    if ffmpeg_preset in ["ultrafast","superfast","veryfast","faster","fast"]:nvenc_preset_down ="fast"
-                    elif ffmpeg_preset in ["slower","veryslow"]:nvenc_preset_down ="slow"
-                    ffmpeg_opts_downscale =f'-c:v h264_nvenc -preset:v {nvenc_preset_down} -cq:v {ffmpeg_quality_value} -pix_fmt yuv420p'
-                else :
-                    if use_cpu_fallback :
-                        logger .info (f"Falling back to CPU encoding for downscaling due to resolution constraints: {ds_w}x{ds_h}")
-                    ffmpeg_opts_downscale =f'-c:v libx264 -preset {ffmpeg_preset} -crf {ffmpeg_quality_value} -pix_fmt yuv420p'
+                # Get encoding configuration with automatic NVENC fallback
+                from .nvenc_utils import get_nvenc_fallback_encoding_config, build_ffmpeg_video_encoding_args
+                
+                encoding_config = get_nvenc_fallback_encoding_config(
+                    use_gpu=ffmpeg_use_gpu,
+                    ffmpeg_preset=ffmpeg_preset,
+                    ffmpeg_quality=ffmpeg_quality_value,
+                    width=ds_w,
+                    height=ds_h,
+                    logger=logger
+                )
+                
+                ffmpeg_opts_downscale = build_ffmpeg_video_encoding_args(encoding_config)
+                
+                if logger:
+                    codec_info = f"Using {encoding_config['codec']} for downscaling with preset {encoding_config['preset']} and {encoding_config['quality_param'].upper()} {encoding_config['quality_value']}."
+                    logger.info(codec_info)
 
                 cmd =f'ffmpeg -y -i "{current_input_video_for_frames}" -vf "{scale_filter}" {ffmpeg_opts_downscale} -c:a copy "{downscaled_temp_video}"'
                 util_run_ffmpeg_command (cmd ,"Input Downscaling with Audio Copy",logger =logger )

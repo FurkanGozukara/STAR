@@ -284,28 +284,23 @@ def decrease_fps(input_video_path, output_video_path, target_fps=None, interpola
                 if logger:
                     logger.warning(f"Could not detect video resolution: {e}")
         
-        # Check if we need to fallback to CPU due to resolution constraints (too small or too large)
-        use_cpu_fallback = (ffmpeg_use_gpu and frame_width is not None and frame_height is not None and 
-                           should_fallback_to_cpu_encoding(frame_width, frame_height, logger))
+        # Get encoding configuration with automatic NVENC fallback
+        from .nvenc_utils import get_nvenc_fallback_encoding_config, build_ffmpeg_video_encoding_args
         
-        # Build encoding options
-        video_codec_opts = ""
-        if ffmpeg_use_gpu and not use_cpu_fallback:
-            nvenc_preset = ffmpeg_preset
-            if ffmpeg_preset in ["ultrafast", "superfast", "veryfast", "faster", "fast"]:
-                nvenc_preset = "fast"
-            elif ffmpeg_preset in ["slower", "veryslow"]:
-                nvenc_preset = "slow"
-            
-            video_codec_opts = f'-c:v h264_nvenc -preset:v {nvenc_preset} -cq:v {ffmpeg_quality_value} -pix_fmt yuv420p'
-            if logger:
-                logger.info(f"Using NVIDIA NVENC for FPS decrease with preset {nvenc_preset} and CQ {ffmpeg_quality_value}.")
-        else:
-            if use_cpu_fallback and logger:
-                logger.info(f"Falling back to CPU encoding for FPS decrease due to resolution constraints: {frame_width}x{frame_height}")
-            video_codec_opts = f'-c:v libx264 -preset {ffmpeg_preset} -crf {ffmpeg_quality_value} -pix_fmt yuv420p'
-            if logger:
-                logger.info(f"Using libx264 for FPS decrease with preset {ffmpeg_preset} and CRF {ffmpeg_quality_value}.")
+        encoding_config = get_nvenc_fallback_encoding_config(
+            use_gpu=ffmpeg_use_gpu,
+            ffmpeg_preset=ffmpeg_preset,
+            ffmpeg_quality=ffmpeg_quality_value,
+            width=frame_width,
+            height=frame_height,
+            logger=logger
+        )
+        
+        video_codec_opts = build_ffmpeg_video_encoding_args(encoding_config)
+        
+        if logger:
+            codec_info = f"Using {encoding_config['codec']} for FPS decrease with preset {encoding_config['preset']} and {encoding_config['quality_param'].upper()} {encoding_config['quality_value']}."
+            logger.info(codec_info)
         
         # Build FFmpeg command
         cmd = f'ffmpeg -y -i "{input_video_path}" -filter:v "{fps_filter}" {video_codec_opts} -c:a copy "{output_video_path}"'
@@ -385,28 +380,23 @@ def create_video_from_frames(frame_dir, output_path, fps, ffmpeg_preset, ffmpeg_
                 if logger:
                     logger.warning(f"Could not detect frame resolution: {e}")
 
-    # Check if we need to fallback to CPU due to resolution constraints (too small or too large)
-    from .nvenc_utils import should_fallback_to_cpu_encoding
-    use_cpu_fallback = (ffmpeg_use_gpu and frame_width is not None and frame_height is not None and 
-                       should_fallback_to_cpu_encoding(frame_width, frame_height, logger))
-
-    video_codec_opts = ""
-    if ffmpeg_use_gpu and not use_cpu_fallback:
-        nvenc_preset = ffmpeg_preset
-        if ffmpeg_preset in ["ultrafast", "superfast", "veryfast", "faster", "fast"]:
-            nvenc_preset = "fast"
-        elif ffmpeg_preset in ["slower", "veryslow"]:
-            nvenc_preset = "slow"
-
-        video_codec_opts = f'-c:v h264_nvenc -preset:v {nvenc_preset} -cq:v {ffmpeg_quality_value} -pix_fmt yuv420p'
-        if logger:
-            logger.info(f"Using NVIDIA NVENC with preset {nvenc_preset} and CQ {ffmpeg_quality_value}.")
-    else:
-        if use_cpu_fallback and logger:
-            logger.info(f"Falling back to CPU encoding for video creation due to resolution constraints: {frame_width}x{frame_height}")
-        video_codec_opts = f'-c:v libx264 -preset {ffmpeg_preset} -crf {ffmpeg_quality_value} -pix_fmt yuv420p'
-        if logger:
-            logger.info(f"Using libx264 with preset {ffmpeg_preset} and CRF {ffmpeg_quality_value}.")
+    # Get encoding configuration with automatic NVENC fallback
+    from .nvenc_utils import get_nvenc_fallback_encoding_config, build_ffmpeg_video_encoding_args
+    
+    encoding_config = get_nvenc_fallback_encoding_config(
+        use_gpu=ffmpeg_use_gpu,
+        ffmpeg_preset=ffmpeg_preset,
+        ffmpeg_quality=ffmpeg_quality_value,
+        width=frame_width,
+        height=frame_height,
+        logger=logger
+    )
+    
+    video_codec_opts = build_ffmpeg_video_encoding_args(encoding_config)
+    
+    if logger:
+        codec_info = f"Using {encoding_config['codec']} with preset {encoding_config['preset']} and {encoding_config['quality_param'].upper()} {encoding_config['quality_value']}."
+        logger.info(codec_info)
 
     cmd = f'ffmpeg -y -framerate {fps} -i "{input_pattern}" {video_codec_opts} "{output_path}"'
     

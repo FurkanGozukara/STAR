@@ -227,12 +227,26 @@ def cut_video_segments(
             
             cmd = ["ffmpeg", "-y", "-ss", str(start_time), "-i", video_path, "-t", str(duration)]
             
-            if ffmpeg_settings.get("use_gpu", False):
-                cmd.extend(["-c:v", "h264_nvenc", "-cq", str(ffmpeg_settings.get("quality", 18))])
-            else:
-                cmd.extend(["-c:v", "libx264", "-crf", str(ffmpeg_settings.get("quality", 18))])
+            # Get encoding configuration with automatic NVENC fallback
+            from .nvenc_utils import get_nvenc_fallback_encoding_config
             
-            cmd.extend(["-preset", ffmpeg_settings.get("preset", "medium")])
+            encoding_config = get_nvenc_fallback_encoding_config(
+                use_gpu=ffmpeg_settings.get("use_gpu", False),
+                ffmpeg_preset=ffmpeg_settings.get("preset", "medium"),
+                ffmpeg_quality=ffmpeg_settings.get("quality", 18),
+                width=video_info.get('width'),
+                height=video_info.get('height'),
+                logger=logger
+            )
+            
+            cmd.extend(["-c:v", encoding_config['codec']])
+            
+            if encoding_config['codec'] == 'h264_nvenc':
+                cmd.extend(["-preset:v", encoding_config['preset']])
+                cmd.extend(["-cq:v", str(encoding_config['quality_value'])])
+            else:
+                cmd.extend(["-preset", encoding_config['preset']])
+                cmd.extend(["-crf", str(encoding_config['quality_value'])])
             cmd.extend(["-c:a", "aac", "-b:a", "128k"])
             cmd.append(segment_path)
             

@@ -278,48 +278,53 @@ def create_comparison_video(
         # Try different encoding approaches with fallbacks
         encoding_attempts = []
         
-        # Attempt 1: GPU encoding if requested and dimensions are within limits
-        use_gpu_final = ffmpeg_use_gpu
-        if ffmpeg_use_gpu and (combined_final_w > NVENC_MAX_DIMENSION or combined_final_h > NVENC_MAX_DIMENSION):
-            use_gpu_final = False
-            logger.warning(f"Comparison video dimensions ({combined_final_w}x{combined_final_h}) exceed NVENC maximum ({NVENC_MAX_DIMENSION}px). Falling back to CPU encoding (libx264).")
+        # Get encoding configuration with automatic NVENC fallback
+        from .nvenc_utils import get_nvenc_fallback_encoding_config
         
-        if use_gpu_final:
-            encoding_attempts.append({
-                'name': 'GPU (NVENC)',
-                'codec': 'h264_nvenc',
-                'quality_param': f'-cq {ffmpeg_quality}',
-                'use_gpu': True
-            })
+        encoding_config = get_nvenc_fallback_encoding_config(
+            use_gpu=ffmpeg_use_gpu,
+            ffmpeg_preset=ffmpeg_preset,
+            ffmpeg_quality=ffmpeg_quality,
+            width=combined_final_w,
+            height=combined_final_h,
+            logger=logger
+        )
         
-        # Attempt 2: CPU encoding
+        # Primary encoding attempt
         encoding_attempts.append({
-            'name': 'CPU (libx264)',
-            'codec': 'libx264', 
-            'quality_param': f'-crf {ffmpeg_quality}',
-            'use_gpu': False
+            'name': f"Primary ({encoding_config['codec'].upper()})",
+            'codec': encoding_config['codec'],
+            'preset': encoding_config['preset'],
+            'quality_param': f"-{encoding_config['quality_param']} {encoding_config['quality_value']}",
+            'use_gpu': encoding_config['codec'] == 'h264_nvenc'
         })
+        
+        # Fallback to CPU if primary was GPU
+        if encoding_config['codec'] == 'h264_nvenc':
+            encoding_attempts.append({
+                'name': 'CPU Fallback (libx264)',
+                'codec': 'libx264',
+                'preset': ffmpeg_preset,
+                'quality_param': f'-crf {ffmpeg_quality}',
+                'use_gpu': False
+            })
         
         # Try each encoding approach
         for attempt_idx, encoding_config in enumerate(encoding_attempts):
             try:
-                # Map preset for h264_nvenc compatibility
-                actual_preset = ffmpeg_preset
+                # Use the preset from the encoding config if available, otherwise use the actual preset handling
+                actual_preset = encoding_config.get('preset', ffmpeg_preset)
+                
+                # For h264_nvenc, we need to add the :v suffix
                 if encoding_config["codec"] == "h264_nvenc":
-                    # Map libx264 presets to h264_nvenc presets
-                    if ffmpeg_preset in ["ultrafast", "superfast", "veryfast", "faster", "fast"]:
-                        actual_preset = "fast"
-                    elif ffmpeg_preset in ["slower", "veryslow"]:
-                        actual_preset = "slow"
-                    elif ffmpeg_preset == "medium":
-                        actual_preset = "medium"  # medium is valid for both
-                    else:  # "slow" and others
-                        actual_preset = "slow"
+                    preset_param = f"-preset:v {actual_preset}"
+                else:
+                    preset_param = f"-preset {actual_preset}"
                 
                 ffmpeg_cmd = (
                     f'ffmpeg -y -i "{original_video_path}" -i "{upscaled_video_path}" '
                     f'-filter_complex "{video_filter}" -map "[output]" '
-                    f'-map 0:a? -c:v {encoding_config["codec"]} {encoding_config["quality_param"]} -preset {actual_preset} '
+                    f'-map 0:a? -c:v {encoding_config["codec"]} {encoding_config["quality_param"]} {preset_param} '
                     f'-c:a copy "{output_path}"'
                 )
                 
@@ -861,43 +866,54 @@ def create_multi_video_comparison(
         for path in video_paths:
             input_args.extend(["-i", f'"{path}"'])
         
+        # Get encoding configuration with automatic NVENC fallback
+        from .nvenc_utils import get_nvenc_fallback_encoding_config
+        
+        encoding_config = get_nvenc_fallback_encoding_config(
+            use_gpu=ffmpeg_use_gpu,
+            ffmpeg_preset=ffmpeg_preset,
+            ffmpeg_quality=ffmpeg_quality,
+            width=combined_w,
+            height=combined_h,
+            logger=logger
+        )
+        
         # Try different encoding approaches
         encoding_attempts = []
         
-        # GPU encoding if requested and within limits
-        use_gpu_final = ffmpeg_use_gpu and not (combined_w > NVENC_MAX_DIMENSION or combined_h > NVENC_MAX_DIMENSION)
-        
-        if use_gpu_final:
-            encoding_attempts.append({
-                'name': 'GPU (NVENC)',
-                'codec': 'h264_nvenc',
-                'quality_param': f'-cq {ffmpeg_quality}',
-            })
-        
-        # CPU encoding fallback
+        # Primary encoding attempt
         encoding_attempts.append({
-            'name': 'CPU (libx264)',
-            'codec': 'libx264',
-            'quality_param': f'-crf {ffmpeg_quality}',
+            'name': f"Primary ({encoding_config['codec'].upper()})",
+            'codec': encoding_config['codec'],
+            'preset': encoding_config['preset'],
+            'quality_param': f"-{encoding_config['quality_param']} {encoding_config['quality_value']}",
         })
+        
+        # Fallback to CPU if primary was GPU
+        if encoding_config['codec'] == 'h264_nvenc':
+            encoding_attempts.append({
+                'name': 'CPU Fallback (libx264)',
+                'codec': 'libx264',
+                'preset': ffmpeg_preset,
+                'quality_param': f'-crf {ffmpeg_quality}',
+            })
         
         # Try each encoding approach
         for attempt_idx, encoding_config in enumerate(encoding_attempts):
             try:
-                # Map preset for h264_nvenc compatibility
-                actual_preset = ffmpeg_preset
+                # Use the preset from the encoding config if available, otherwise use the actual preset handling
+                actual_preset = encoding_config.get('preset', ffmpeg_preset)
+                
+                # For h264_nvenc, we need to add the :v suffix
                 if encoding_config["codec"] == "h264_nvenc":
-                    if ffmpeg_preset in ["ultrafast", "superfast", "veryfast", "faster", "fast"]:
-                        actual_preset = "fast"
-                    elif ffmpeg_preset in ["slower", "veryslow"]:
-                        actual_preset = "slow"
-                    else:
-                        actual_preset = "slow"
+                    preset_param = f"-preset:v {actual_preset}"
+                else:
+                    preset_param = f"-preset {actual_preset}"
                 
                 ffmpeg_cmd = (
                     f'ffmpeg -y {" ".join(input_args)} '
                     f'-filter_complex "{filter_complex}" -map "[output]" '
-                    f'-map 0:a? -c:v {encoding_config["codec"]} {encoding_config["quality_param"]} -preset {actual_preset} '
+                    f'-map 0:a? -c:v {encoding_config["codec"]} {encoding_config["quality_param"]} {preset_param} '
                     f'-c:a copy "{output_path}"'
                 )
                 
