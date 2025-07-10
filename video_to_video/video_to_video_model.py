@@ -155,7 +155,8 @@ class VideoToVideo_sr():
             logger.info(f'sampling, finished in {format_time(sampling_duration)} total.')
 
             vae_decode_start_time = time.time()
-            vid_tensor_gen = self.vae_decode_chunk(gen_vid, chunk_size=vae_decoder_chunk_size)
+            logger.info(f'Starting VAE decoding for {frames_num} frames at {target_h}x{target_w} resolution...')
+            vid_tensor_gen = self.vae_decode_chunk(gen_vid, chunk_size=vae_decoder_chunk_size, progress_callback=progress_callback)
             vae_decode_duration = time.time() - vae_decode_start_time
             logger.info(f'temporal vae decoding, finished in {format_time(vae_decode_duration)} total.')
 
@@ -172,12 +173,39 @@ class VideoToVideo_sr():
     def temporal_vae_decode(self, z, num_f):
         return self.vae.decode(z/self.vae.config.scaling_factor, num_frames=num_f).sample
 
-    def vae_decode_chunk(self, z, chunk_size=3):
+    def vae_decode_chunk(self, z, chunk_size=3, progress_callback=None):
         z = rearrange(z, "b c f h w -> (b f) c h w")
+        total_frames = z.shape[0]
+        total_chunks = (total_frames + chunk_size - 1) // chunk_size
+        
+        logger.info(f'VAE decoding {total_frames} frames in {total_chunks} chunks (chunk_size={chunk_size})')
+        
         video = []
-        for ind in range(0, z.shape[0], chunk_size):
+        for chunk_idx, ind in enumerate(range(0, z.shape[0], chunk_size)):
+            chunk_start_time = time.time()
             num_f = z[ind:ind+chunk_size].shape[0]
-            video.append(self.temporal_vae_decode(z[ind:ind+chunk_size],num_f))
+            
+            decoded_chunk = self.temporal_vae_decode(z[ind:ind+chunk_size], num_f)
+            video.append(decoded_chunk)
+            
+            chunk_duration = time.time() - chunk_start_time
+            progress_pct = ((chunk_idx + 1) / total_chunks) * 100
+            
+            logger.info(f'VAE Decode Chunk {chunk_idx + 1}/{total_chunks} (frames {ind}-{ind+num_f-1}) - Duration: {format_time(chunk_duration)}, Progress: {progress_pct:.1f}%')
+            
+            # Call progress callback if provided
+            if progress_callback:
+                try:
+                    progress_callback(
+                        current_step=chunk_idx + 1,
+                        total_steps=total_chunks,
+                        stage="vae_decode",
+                        message=f"VAE Decode Chunk {chunk_idx + 1}/{total_chunks}"
+                    )
+                except:
+                    # If progress callback fails, continue processing
+                    pass
+        
         video = torch.cat(video)
         return video
 
@@ -209,12 +237,17 @@ class Vid2VidFr(VideoToVideo_sr):
 
         torch.cuda.empty_cache()
 
-    def vae_decode_fr(self, z, z_prev, feature_map_prev, is_first_batch, out_win_step, out_win_overlap):
+    def vae_decode_fr(self, z, z_prev, feature_map_prev, is_first_batch, out_win_step, out_win_overlap, progress_callback=None):
         z = rearrange(z, "b c f h w -> (b f) c h w")
         num_f = z.shape[0]
         num_steps = int(ceil(num_f/out_win_step))
+        
+        logger.info(f'VAE decoding with feature resetting: {num_f} frames in {num_steps} steps (step_size={out_win_step}, overlap={out_win_overlap})')
+        
         video = []
         for i in range(num_steps):
+            step_start_time = time.time()
+            
             # Only if both input & output 1st batch, is_first_batch is true
             if i == 0 and is_first_batch:
                 is_first_batch = True
@@ -231,6 +264,24 @@ class Vid2VidFr(VideoToVideo_sr):
             v = v.sample
             video.append(v[out_win_overlap:,:,:,:]) # handle corner case.
             z_prev = z_chunk[-out_win_overlap:,:,:,:] #always ensure out_win_overlap win size
+
+            step_duration = time.time() - step_start_time
+            progress_pct = ((i + 1) / num_steps) * 100
+            
+            logger.info(f'VAE FR Decode Step {i + 1}/{num_steps} - Duration: {format_time(step_duration)}, Progress: {progress_pct:.1f}%')
+            
+            # Call progress callback if provided
+            if progress_callback:
+                try:
+                    progress_callback(
+                        current_step=i + 1,
+                        total_steps=num_steps,
+                        stage="vae_decode_fr",
+                        message=f"VAE FR Decode Step {i + 1}/{num_steps}"
+                    )
+                except:
+                    # If progress callback fails, continue processing
+                    pass
 
         video = torch.cat(video)
 
@@ -249,6 +300,7 @@ class Vid2VidFr(VideoToVideo_sr):
               solver_mode='fast',
               guide_scale=7.5,
               max_chunk_len=32,
+              progress_callback=None,
               seed=None):
         video_data = input['video_data']
         y = input['y']
@@ -298,18 +350,21 @@ class Vid2VidFr(VideoToVideo_sr):
                 t_min=0,
                 discretization='trailing',
                 chunk_inds=chunk_inds,
+                progress_callback=progress_callback,
                 seed=seed)
             torch.cuda.empty_cache()
             sampling_duration_fr = time.time() - sampling_start_time_fr
             logger.info(f'sampling, finished in {format_time(sampling_duration_fr)} total.')
 
             vae_decode_fr_start_time = time.time()
+            logger.info(f'Starting VAE decoding with feature resetting for {frames_num} frames at {target_h}x{target_w} resolution...')
             vid_tensor_gen, feature_map_prev, z_prev = self.vae_decode_fr(z=gen_vid,
                                                                           z_prev=z_prev,
                                                                           feature_map_prev=feature_map_prev,
                                                                           is_first_batch=is_first_batch,
                                                                           out_win_step=out_win_step,
-                                                                          out_win_overlap=out_win_overlap)
+                                                                          out_win_overlap=out_win_overlap,
+                                                                          progress_callback=progress_callback)
             vae_decode_fr_duration = time.time() - vae_decode_fr_start_time
             logger.info(f'temporal vae decoding with feature resetting, finished in {format_time(vae_decode_fr_duration)} total.')
 
