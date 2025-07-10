@@ -23,8 +23,9 @@ def split_video_fallback(input_video_path, scene_list, output_dir, video_name, f
         # Import required components for scene metadata
         from scenedetect.output import SceneMetadata, VideoMetadata
         
-        # Create a dummy video metadata object
-        video_metadata = VideoMetadata(name=video_name)
+        # Create a dummy video metadata object with correct constructor signature
+        # VideoMetadata requires path and total_scenes parameters
+        video_metadata = VideoMetadata(path=input_video_path, total_scenes=len(scene_list))
         
         success_count = 0
         
@@ -44,7 +45,8 @@ def split_video_fallback(input_video_path, scene_list, output_dir, video_name, f
             end_seconds = end_time.get_seconds()
             duration = end_seconds - start_seconds
             
-            # Build ffmpeg command with proper path escaping
+            # Build ffmpeg command with proper path escaping and Linux-friendly options
+            # Use more compatible audio/subtitle mapping for Linux
             cmd = f'ffmpeg -y -ss {start_seconds:.6f} -i "{input_video_path}" -t {duration:.6f} {ffmpeg_args} "{output_path}"'
             
             if logger:
@@ -241,6 +243,8 @@ def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, prog
         else:
             # Use FFmpeg for splitting
             if scene_split_params['copy_streams']:
+                # Use more compatible audio/subtitle mapping for cross-platform compatibility
+                # Try to include audio but don't fail if not present
                 ffmpeg_args = "-map 0:v:0 -map 0:a? -map 0:s? -c:v copy -c:a copy -avoid_negative_ts make_zero"
             else:
                 # Check if GPU encoding is requested and available
@@ -255,19 +259,39 @@ def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, prog
                             logger.warning(f"Could not get video resolution for NVENC check: {e}, using CPU fallback")
                         use_cpu_fallback = True
                     
+                    # Additional NVENC availability check for Linux compatibility
+                    nvenc_available = False
                     if not use_cpu_fallback:
+                        try:
+                            # Test if NVENC is available by running a quick ffmpeg command
+                            # Use a more robust test that works on both Windows and Linux
+                            test_cmd = 'ffmpeg -loglevel error -f lavfi -i color=c=black:s=64x64:d=0.1:r=1 -c:v h264_nvenc -preset fast -f null -'
+                            test_result = run_ffmpeg_command(test_cmd, "NVENC Test", logger, raise_on_error=False)
+                            nvenc_available = test_result
+                            if logger:
+                                logger.info(f"NVENC availability test: {'PASSED' if nvenc_available else 'FAILED'}")
+                        except Exception as e:
+                            if logger:
+                                logger.warning(f"NVENC availability test failed: {e}")
+                            nvenc_available = False
+                    
+                    if not use_cpu_fallback and nvenc_available:
                         nvenc_preset = scene_split_params['preset']
                         if scene_split_params['preset'] in ["ultrafast", "superfast", "veryfast", "faster", "fast"]:
                             nvenc_preset = "fast"
                         elif scene_split_params['preset'] in ["slower", "veryslow"]:
                             nvenc_preset = "slow"
                         
+                        # Use safer audio mapping with ? suffix for cross-platform compatibility
                         ffmpeg_args = f"-map 0:v:0 -map 0:a? -map 0:s? -c:v h264_nvenc -preset:v {nvenc_preset} -cq:v {scene_split_params['rate_factor']} -pix_fmt yuv420p -c:a aac -avoid_negative_ts make_zero"
                     else:
                         if logger:
-                            logger.info(f"Falling back to CPU encoding for scene splitting due to resolution constraints: {orig_w}x{orig_h}")
+                            reason = "resolution constraints" if use_cpu_fallback else "NVENC not available"
+                            logger.info(f"Falling back to CPU encoding for scene splitting due to {reason}: {orig_w}x{orig_h}")
+                        # Use safer audio mapping with ? suffix for cross-platform compatibility
                         ffmpeg_args = f"-map 0:v:0 -map 0:a? -map 0:s? -c:v libx264 -preset {scene_split_params['preset']} -crf {scene_split_params['rate_factor']} -c:a aac -avoid_negative_ts make_zero"
                 else:
+                    # Use safer audio mapping with ? suffix for cross-platform compatibility
                     ffmpeg_args = f"-map 0:v:0 -map 0:a? -map 0:s? -c:v libx264 -preset {scene_split_params['preset']} -crf {scene_split_params['rate_factor']} -c:a aac -avoid_negative_ts make_zero"
 
             # Debug: Log the parameters being passed to PySceneDetect
@@ -311,7 +335,31 @@ def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, prog
                 )
                 
                 if return_code != 0:
-                    raise Exception(f"Scene splitting failed with return code: {return_code}")
+                    # If fallback also failed and we were using GPU encoding, try CPU encoding
+                    if 'h264_nvenc' in ffmpeg_args:
+                        if logger:
+                            logger.warning("Fallback with GPU encoding failed, trying CPU encoding")
+                        
+                        # Force CPU encoding for fallback
+                        cpu_ffmpeg_args = ffmpeg_args.replace('h264_nvenc', 'libx264').replace('-preset:v', '-preset').replace('-cq:v', '-crf')
+                        
+                        return_code = split_video_fallback(
+                            input_video_path=str(input_video_path),
+                            scene_list=scene_list,
+                            output_dir=scenes_dir,
+                            video_name=sanitized_video_name,
+                            ffmpeg_args=cpu_ffmpeg_args,
+                            logger=logger,
+                            formatter=scene_filename_formatter
+                        )
+                        
+                        if return_code != 0:
+                            raise Exception(f"Scene splitting failed with return code: {return_code}")
+                        else:
+                            if logger:
+                                logger.info("Scene splitting succeeded using CPU encoding fallback")
+                    else:
+                        raise Exception(f"Scene splitting failed with return code: {return_code}")
                 else:
                     if logger:
                         logger.info("Scene splitting succeeded using fallback method")
