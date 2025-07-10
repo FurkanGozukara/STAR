@@ -264,8 +264,8 @@ def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, prog
                     if not use_cpu_fallback:
                         try:
                             # Test if NVENC is available by running a quick ffmpeg command
-                            # Use a more robust test that works on both Windows and Linux
-                            test_cmd = 'ffmpeg -loglevel error -f lavfi -i color=c=black:s=64x64:d=0.1:r=1 -c:v h264_nvenc -preset fast -f null -'
+                            # Use 512x512 resolution to ensure compatibility with all NVENC hardware generations
+                            test_cmd = 'ffmpeg -loglevel error -f lavfi -i color=c=black:s=512x512:d=0.1:r=1 -c:v h264_nvenc -preset fast -f null -'
                             test_result = run_ffmpeg_command(test_cmd, "NVENC Test", logger, raise_on_error=False)
                             nvenc_available = test_result
                             if logger:
