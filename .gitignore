@@ -18,3 +18,4 @@ split_videos
 a.mp4
 upscale_models
 weights
+presets/last_preset.json
