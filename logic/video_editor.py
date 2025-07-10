@@ -252,7 +252,7 @@ def cut_video_segments(
             
             logger.info(f"Cutting segment {i+1}: {start_time:.3f}s - {end_time:.3f}s")
             try:
-                result = run_ffmpeg_command(cmd, logger)
+                result = run_ffmpeg_command(cmd, f"Video Segment Cutting ({i+1}/{total_segments})", logger)
                 # run_ffmpeg_command returns True on success, False on failure
                 if result:
                     segment_paths.append(segment_path)
@@ -278,7 +278,7 @@ def cut_video_segments(
             
             cmd = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_file, "-c", "copy", final_output]
             try:
-                result = run_ffmpeg_command(cmd, logger)
+                result = run_ffmpeg_command(cmd, "Video Segment Concatenation", logger)
                 
                 try:
                     os.remove(concat_file)
@@ -350,7 +350,7 @@ def create_preview_segment(video_path: str, first_range: Tuple, range_type: str,
         cmd = ["ffmpeg", "-y", "-ss", str(start_time), "-i", video_path, "-t", str(duration), "-c", "copy", preview_path]
         
         try:
-            result = run_ffmpeg_command(cmd, logger)
+            result = run_ffmpeg_command(cmd, "Video Preview Creation", logger)
             # run_ffmpeg_command returns True on success, False on failure
             return preview_path if result else None
         except Exception as e:
