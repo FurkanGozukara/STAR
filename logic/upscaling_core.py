@@ -529,7 +529,30 @@ def run_upscale (
             if stage_weights ["downscale"]>0 : # This means it was enabled but now skipped
                 current_overall_progress +=stage_weights ["downscale"] # Add its original weight allocation
             
-            upscale_factor_val =upscale_factor_slider
+            # Determine the actual upscale factor - use model scale for image upscalers
+            if enable_image_upscaler and image_upscaler_model:
+                # Load image upscaler model early to get its actual scale factor
+                from .image_upscaler_utils import (
+                    get_model_info, extract_model_filename_from_dropdown
+                )
+                
+                actual_model_filename = extract_model_filename_from_dropdown(image_upscaler_model)
+                if actual_model_filename:
+                    model_path = os.path.join(app_config_module.UPSCALE_MODELS_DIR, actual_model_filename)
+                    model_info = get_model_info(model_path, logger)
+                    if "error" not in model_info:
+                        upscale_factor_val = model_info.get("scale", upscale_factor_slider)
+                        if logger:
+                            logger.info(f"Using image upscaler scale factor: {upscale_factor_val}x from model {actual_model_filename}")
+                    else:
+                        upscale_factor_val = upscale_factor_slider
+                        if logger:
+                            logger.warning(f"Could not get scale from image upscaler model, using slider value: {upscale_factor_val}x")
+                else:
+                    upscale_factor_val = upscale_factor_slider
+            else:
+                upscale_factor_val = upscale_factor_slider
+                
             final_h_val =int (round (orig_h_val *upscale_factor_val /2 )*2 )
             final_w_val =int (round (orig_w_val *upscale_factor_val /2 )*2 )
 
