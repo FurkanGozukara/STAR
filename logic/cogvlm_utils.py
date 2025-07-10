@@ -85,9 +85,9 @@ def load_cogvlm_model(quantization, device, cog_vlm_model_path, logger=None):
             if logger:
                 logger.info(f"Preparing to load model from: {cog_vlm_model_path} with quant: {quantization}, dtype: {model_dtype}, device: {device}, device_map: {current_device_map}, low_cpu_mem: {effective_low_cpu_mem_usage}")
 
-            # Final check for cancellation before model loading (this is the longest operation)  
+            # Final check for cancellation before model loading (this is the longest operation)
             cancellation_manager.check_cancel("before model loading")
-            
+
             # Note to user that model loading cannot be interrupted once started
             if logger:
                 logger.info("Starting model loading - this operation cannot be interrupted once started")
@@ -95,7 +95,7 @@ def load_cogvlm_model(quantization, device, cog_vlm_model_path, logger=None):
             # Use a separate thread for model loading with periodic cancellation checks
             model_loading_result = {"model": None, "error": None, "cancelled_before_start": False}
             model_loading_complete = threading.Event()
-            
+
             def load_model_thread():
                 try:
                     # One final check right before starting the loading
@@ -103,25 +103,38 @@ def load_cogvlm_model(quantization, device, cog_vlm_model_path, logger=None):
                         model_loading_result["cancelled_before_start"] = True
                         model_loading_complete.set()
                         return
-                    
+
+                    ### START OF FIX ###
+                    # Build arguments for from_pretrained conditionally
+                    from_pretrained_kwargs = {
+                        "trust_remote_code": True,
+                        "quantization_config": bnb_config,
+                        "low_cpu_mem_usage": effective_low_cpu_mem_usage,
+                        "device_map": current_device_map
+                    }
+
+                    # Only specify torch_dtype for non-quantized models.
+                    # For BNB models, the dtype is handled by the quantization_config
+                    # and passing it explicitly can cause conflicts.
+                    if not bnb_config:
+                        from_pretrained_kwargs["torch_dtype"] = model_dtype if device == 'cuda' else torch.float32
+
                     model = AutoModelForCausalLM.from_pretrained(
                         cog_vlm_model_path,
-                        torch_dtype=model_dtype if device == 'cuda' else torch.float32,
-                        trust_remote_code=True,
-                        quantization_config=bnb_config,
-                        low_cpu_mem_usage=effective_low_cpu_mem_usage,
-                        device_map=current_device_map
+                        **from_pretrained_kwargs
                     )
+                    ### END OF FIX ###
+
                     model_loading_result["model"] = model
                 except Exception as e:
                     model_loading_result["error"] = e
                 finally:
                     model_loading_complete.set()
-            
+
             # Start model loading in separate thread
             loading_thread = threading.Thread(target=load_model_thread, daemon=True)
             loading_thread.start()
-            
+
             # Wait for loading to complete or cancellation, checking periodically
             while not model_loading_complete.is_set():
                 # Check for cancellation every 0.5 seconds during model loading
@@ -132,24 +145,24 @@ def load_cogvlm_model(quantization, device, cog_vlm_model_path, logger=None):
                 if cancellation_manager.is_cancelled():
                     if logger:
                         logger.warning("Cancellation requested during model loading - waiting for loading to complete before cleanup")
-            
+
             # Wait for thread to complete
             loading_thread.join(timeout=30)  # Give it 30 seconds to complete
-            
+
             # Check if cancellation was requested before loading started
             if model_loading_result["cancelled_before_start"]:
                 if logger:
                     logger.info("Model loading cancelled before it started")
                 raise CancelledError("Model loading was cancelled by the user.")
-            
+
             # Check for loading errors
             if model_loading_result["error"]:
                 raise model_loading_result["error"]
-            
+
             model = model_loading_result["model"]
             if model is None:
                 raise RuntimeError("Model loading thread completed but no model was returned")
-            
+
             # Check for cancellation after model loading completes
             # If user cancelled during loading, we cleanup and raise error
             if cancellation_manager.is_cancelled():
@@ -295,13 +308,13 @@ def unload_cogvlm_model(strategy, logger=None):
 def _smart_frame_sampling(total_frames, target_frames, fps, logger=None):
     """
     Smart frame sampling algorithm that adapts to video characteristics.
-    
+
     Args:
         total_frames: Total number of frames in video
         target_frames: Desired number of frames (typically 24 for CogVLM)
         fps: Frames per second of the video
         logger: Logger instance
-        
+
     Returns:
         List of frame indices to sample
     """
@@ -309,12 +322,12 @@ def _smart_frame_sampling(total_frames, target_frames, fps, logger=None):
         if logger:
             logger.error("Invalid video: no frames detected")
         return [0] * target_frames
-    
+
     video_duration = total_frames / fps if fps > 0 else 0
-    
+
     if logger:
         logger.info(f"Smart sampling: {total_frames} frames, {video_duration:.2f}s duration, target: {target_frames} frames")
-    
+
     # Case 1: Very short videos (fewer frames than target)
     if total_frames <= target_frames:
         if logger:
@@ -332,7 +345,7 @@ def _smart_frame_sampling(total_frames, target_frames, fps, logger=None):
                 step = max(1, total_frames // remaining)
                 frame_indices.extend([min(i * step, total_frames - 1) for i in range(remaining)])
         return sorted(frame_indices[:target_frames])
-    
+
     # Case 2: Videos with moderate length (use intelligent sampling)
     elif video_duration <= 60:  # Videos up to 1 minute
         if video_duration <= 3:
@@ -358,12 +371,12 @@ def _smart_frame_sampling(total_frames, target_frames, fps, logger=None):
             # Use a combination of even spacing and some clustering around key points
             base_step = total_frames // target_frames
             frame_indices = []
-            
+
             # Take evenly spaced frames
             for i in range(target_frames):
                 frame_idx = min(i * base_step, total_frames - 1)
                 frame_indices.append(frame_idx)
-            
+
             # Add some frames from beginning, middle, and end for better coverage
             frame_indices.extend([
                 0,  # First frame
@@ -372,10 +385,10 @@ def _smart_frame_sampling(total_frames, target_frames, fps, logger=None):
                 3 * total_frames // 4,  # Three-quarter point
                 total_frames - 1  # Last frame
             ])
-            
+
             # Remove duplicates and sort
             frame_indices = sorted(list(set(frame_indices)))[:target_frames]
-    
+
     # Case 3: Long videos (over 1 minute)
     else:
         if logger:
@@ -383,15 +396,15 @@ def _smart_frame_sampling(total_frames, target_frames, fps, logger=None):
         # For long videos, use strategic sampling at regular intervals
         # Sample more densely at the beginning and end, sparser in the middle
         frame_indices = []
-        
+
         # Beginning (first 25% of target frames from first 10% of video)
         beginning_frames = target_frames // 4
         beginning_end = min(int(0.1 * total_frames), total_frames)
         for i in range(beginning_frames):
             frame_idx = int(i * beginning_end / beginning_frames)
             frame_indices.append(frame_idx)
-        
-        # Middle (50% of target frames from middle 80% of video) 
+
+        # Middle (50% of target frames from middle 80% of video)
         middle_frames = target_frames // 2
         middle_start = beginning_end
         middle_end = int(0.9 * total_frames)
@@ -399,7 +412,7 @@ def _smart_frame_sampling(total_frames, target_frames, fps, logger=None):
         for i in range(middle_frames):
             frame_idx = middle_start + int(i * middle_span / middle_frames)
             frame_indices.append(frame_idx)
-        
+
         # End (25% of target frames from last 10% of video)
         end_frames = target_frames - beginning_frames - middle_frames
         end_start = middle_end
@@ -407,33 +420,33 @@ def _smart_frame_sampling(total_frames, target_frames, fps, logger=None):
         for i in range(end_frames):
             frame_idx = end_start + int(i * end_span / end_frames)
             frame_indices.append(min(frame_idx, total_frames - 1))
-        
+
         # Remove duplicates and ensure we have exact target count
         frame_indices = sorted(list(set(frame_indices)))
-        
+
         # If we have too few, fill with evenly spaced frames
         if len(frame_indices) < target_frames:
             step = max(1, total_frames // target_frames)
             additional = [min(i * step, total_frames - 1) for i in range(target_frames)]
             frame_indices = sorted(list(set(frame_indices + additional)))
-        
+
         frame_indices = frame_indices[:target_frames]
-    
+
     # Final validation and cleanup
     frame_indices = [max(0, min(idx, total_frames - 1)) for idx in frame_indices]
     frame_indices = sorted(list(set(frame_indices)))
-    
+
     # If we still don't have enough unique frames, pad with the last frame
     while len(frame_indices) < target_frames:
         frame_indices.append(frame_indices[-1] if frame_indices else 0)
-    
+
     frame_indices = frame_indices[:target_frames]
-    
+
     if logger:
         sampling_density = len(frame_indices) / video_duration if video_duration > 0 else 0
         logger.info(f"Sampled {len(frame_indices)} frames (density: {sampling_density:.1f} fps)")
         logger.info(f"Frame indices: {frame_indices}")
-    
+
     return frame_indices
 
 
@@ -498,7 +511,7 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
         progress(0.3, desc="Preparing video for CogVLM2...")
         # Check for cancellation before video processing
         cancellation_manager.check_cancel("before video processing")
-        
+
         bridge.set_bridge('torch')
         try:
             with open(video_path, 'rb') as f:
@@ -513,7 +526,7 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
 
             if total_frames_decord == 0:
                 raise gr.Error("Video has no frames or could not be read by decord.")
-            
+
             # Validate video reader properties
             try:
                 # Try to get basic video info to ensure the reader is working
@@ -523,7 +536,7 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
             except Exception as info_error:
                 if logger:
                     logger.warning(f"Could not get video info, but proceeding: {info_error}")
-                    
+
         except Exception as video_load_error:
             if logger:
                 logger.error(f"Failed to load video with decord: {video_load_error}")
@@ -539,16 +552,16 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
 
         if logger:
             logger.info(f"CogVLM2 using frame indices: {frame_id_list}")
-        
+
         # Check for cancellation before frame extraction
         cancellation_manager.check_cancel("before frame extraction")
-        
+
         # Robust frame extraction with fallback for DECORD errors
         video_data_cog = None
         try:
             # First attempt: try to get batch of frames
             video_data_cog = decord_vr.get_batch(frame_id_list).permute(3, 0, 1, 2)
-            
+
             # Convert RGBA to RGB if necessary (CogVLM expects 3 channels)
             if video_data_cog.shape[0] == 4:  # RGBA
                 if logger:
@@ -558,24 +571,24 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
             if logger:
                 logger.warning(f"DECORD batch extraction failed: {decord_error}")
                 logger.info("Attempting frame-by-frame extraction as fallback...")
-            
+
             # Fallback: extract frames one by one and handle size mismatches
             try:
                 frames_list = []
                 target_shape = None
-                
+
                 for frame_idx in frame_id_list:
                     try:
                         # Clamp frame index to valid range
                         safe_frame_idx = max(0, min(frame_idx, total_frames_decord - 1))
                         frame = decord_vr[safe_frame_idx]  # Get single frame
-                        
+
                         # Check if this is the first valid frame to establish target shape
                         if target_shape is None:
                             target_shape = frame.shape
                             if logger:
                                 logger.info(f"Established target frame shape: {target_shape}")
-                        
+
                         # Ensure all frames have the same shape
                         if frame.shape != target_shape:
                             if logger:
@@ -586,45 +599,45 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
                                 frame = frames_list[-1].clone()
                             else:
                                 continue
-                        
+
                         frames_list.append(frame)
-                        
+
                     except Exception as frame_error:
                         if logger:
                             logger.warning(f"Could not extract frame {frame_idx}: {frame_error}")
                         # Use previous frame if available, otherwise skip
                         if frames_list:
                             frames_list.append(frames_list[-1].clone())
-                
+
                 if not frames_list:
                     raise gr.Error("Could not extract any valid frames from video for captioning.")
-                
+
                 # Pad or truncate to exactly num_frames_cog frames
                 while len(frames_list) < num_frames_cog:
                     frames_list.append(frames_list[-1].clone())
                 frames_list = frames_list[:num_frames_cog]
-                
+
                 # Stack frames and permute dimensions
                 video_data_cog = torch.stack(frames_list, dim=0).permute(3, 0, 1, 2)
-                
+
                 # Convert RGBA to RGB if necessary (CogVLM expects 3 channels)
                 if video_data_cog.shape[0] == 4:  # RGBA
                     if logger:
                         logger.info("Converting RGBA frames to RGB (removing alpha channel)")
                     video_data_cog = video_data_cog[:3, :, :, :]  # Keep only RGB channels
-                
+
                 if logger:
                     logger.info(f"Successfully extracted {len(frames_list)} frames using fallback method")
                     logger.info(f"Final video tensor shape for CogVLM: {video_data_cog.shape}")
-                    
+
             except Exception as fallback_error:
                 if logger:
                     logger.error(f"Frame-by-frame extraction also failed: {fallback_error}")
                 raise gr.Error(f"Could not extract video frames for captioning: {fallback_error}")
-        
+
         if video_data_cog is None:
             raise gr.Error("Failed to extract video data for captioning.")
-        
+
         # Final validation: Ensure video tensor has correct shape for CogVLM
         expected_channels = 3  # RGB
         if video_data_cog.shape[0] != expected_channels:
@@ -640,7 +653,7 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
                 video_data_cog = video_data_cog.repeat(3, 1, 1, 1)
             else:
                 raise gr.Error(f"Unsupported video format: {video_data_cog.shape[0]} channels. CogVLM requires RGB (3 channels).")
-        
+
         if logger:
             logger.info(f"Final video tensor shape for CogVLM processing: {video_data_cog.shape}")
 
@@ -661,7 +674,7 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
         progress(0.6, desc="Generating caption with CogVLM2...")
         # Check for cancellation before generation
         cancellation_manager.check_cancel("before caption generation")
-        
+
         with torch.no_grad():
             outputs_tensor = local_model_ref.generate(**inputs_on_device, **gen_kwargs)
         outputs_tensor = outputs_tensor[:, inputs_on_device['input_ids'].shape[1]:]
@@ -696,4 +709,4 @@ def auto_caption(video_path, quantization, unload_strategy, cog_vlm_model_path, 
             del local_tokenizer_ref
 
         unload_cogvlm_model(unload_strategy, logger)
-    return caption, f"Captioning status: {'Success' if not caption.startswith('Error') and not caption.startswith('Caption generation cancelled') else caption}" 
+    return caption, f"Captioning status: {'Success' if not caption.startswith('Error') and not caption.startswith('Caption generation cancelled') else caption}"
