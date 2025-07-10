@@ -20,8 +20,8 @@
     "resolution": {
         "enable_target_res": true,
         "target_res_mode": "Downscale then 4x",
-        "target_h": 1920,
-        "target_w": 1080,
+        "target_h": 1080,
+        "target_w": 1920,
         "upscale_factor": 4,
         "enable_auto_aspect_resolution": false,
         "auto_resolution_status": "Auto-resolution disabled",

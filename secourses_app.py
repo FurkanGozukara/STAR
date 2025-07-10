@@ -449,18 +449,18 @@ The total combined prompt length is limited to 77 tokens."""
 'Downscale then 4x': For STAR models, downscales towards Target H/W ÷ 4, then applies 4x upscale. For image upscalers, adapts to model scale (e.g., 2x model = Target H/W ÷ 2). Can clean noisy high-res input before upscaling."""
                         )
                         with gr .Row ():
-                            target_h_num =gr .Slider (
-                            label ="Max Target Height (px)",
-                            value =INITIAL_APP_CONFIG.resolution.target_h ,minimum =128 ,maximum =4096 ,step =16 ,
-                            info ="""Maximum allowed height for the output video. Overrides Upscale Factor if enabled.
-- VRAM Impact: Very High (Lower value = Less VRAM).
-- Quality Impact: Direct (Lower value = Less detail).
-- Speed Impact: Faster (Lower value = Faster)."""
-                            )
                             target_w_num =gr .Slider (
                             label ="Max Target Width (px)",
                             value =INITIAL_APP_CONFIG.resolution.target_w ,minimum =128 ,maximum =4096 ,step =16 ,
                             info ="""Maximum allowed width for the output video. Overrides Upscale Factor if enabled.
+- VRAM Impact: Very High (Lower value = Less VRAM).
+- Quality Impact: Direct (Lower value = Less detail).
+- Speed Impact: Faster (Lower value = Faster)."""
+                            )
+                            target_h_num =gr .Slider (
+                            label ="Max Target Height (px)",
+                            value =INITIAL_APP_CONFIG.resolution.target_h ,minimum =128 ,maximum =4096 ,step =16 ,
+                            info ="""Maximum allowed height for the output video. Overrides Upscale Factor if enabled.
 - VRAM Impact: Very High (Lower value = Less VRAM).
 - Quality Impact: Direct (Lower value = Less detail).
 - Speed Impact: Faster (Lower value = Faster)."""
@@ -3237,13 +3237,16 @@ This helps visualize the quality improvement from upscaling."""
         try:
             from logic.auto_resolution_utils import update_resolution_from_video
             
-            # Calculate pixel budget from current target resolution
-            pixel_budget = target_h * target_w
+            # Use constraint box approach - target_h and target_w are maximum constraints
+            # Convert to constraint box format for the new API
+            constraint_width = target_w
+            constraint_height = target_h
             
-            # Get updated resolution maintaining aspect ratio
+            # Get updated resolution maintaining aspect ratio within constraints
             result = update_resolution_from_video(
                 video_path=video_path,
-                pixel_budget=pixel_budget,
+                constraint_width=constraint_width,
+                constraint_height=constraint_height,
                 logger=logger
             )
             

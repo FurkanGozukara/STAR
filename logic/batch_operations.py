@@ -223,15 +223,25 @@ def process_batch_videos(
                 if enable_auto_aspect_resolution_check_val:
                     try:
                         from .auto_resolution_utils import update_resolution_from_video
-                        effective_target_h, effective_target_w, auto_status = update_resolution_from_video(
-                            video_file, target_h_num_val, target_w_num_val, logger
+                        result = update_resolution_from_video(
+                            video_file, target_w_num_val, target_h_num_val, logger
                         )
-                        if effective_target_h != target_h_num_val or effective_target_w != target_w_num_val:
-                            auto_resolution_used = True
-                            logger.info(f"Auto-resolution for {video_name}: {target_w_num_val}x{target_h_num_val} → {effective_target_w}x{effective_target_h}")
-                            logger.info(f"Auto-resolution status: {auto_status}")
+                        if result['success']:
+                            effective_target_h = result['optimal_height']
+                            effective_target_w = result['optimal_width']
+                            auto_status = result['status_message']
+                            
+                            if effective_target_h != target_h_num_val or effective_target_w != target_w_num_val:
+                                auto_resolution_used = True
+                                logger.info(f"Auto-resolution for {video_name}: {target_w_num_val}x{target_h_num_val} → {effective_target_w}x{effective_target_h}")
+                                logger.info(f"Auto-resolution status: {auto_status}")
+                            else:
+                                logger.info(f"Auto-resolution for {video_name}: No change needed ({auto_status})")
                         else:
-                            logger.info(f"Auto-resolution for {video_name}: No change needed ({auto_status})")
+                            logger.warning(f"Auto-resolution calculation failed for {video_name}: {result.get('error', 'Unknown error')}")
+                            # Fall back to original target resolution
+                            effective_target_h = target_h_num_val
+                            effective_target_w = target_w_num_val
                     except Exception as e:
                         logger.warning(f"Auto-resolution calculation failed for {video_name}: {e}")
                         # Fall back to original target resolution
