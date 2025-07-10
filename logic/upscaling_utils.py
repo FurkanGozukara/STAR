@@ -46,10 +46,38 @@ def calculate_upscale_params(orig_h, orig_w, target_h, target_w, target_res_mode
             actual_upscale_factor = 4.0  # STAR model default
             model_type = "STAR"
         
-        intermediate_h = final_h / actual_upscale_factor
-        intermediate_w = final_w / actual_upscale_factor
+        # Calculate pixel budget from target resolution
+        pixel_budget = final_h * final_w
+        
+        # Calculate what the final resolution should be to fit the pixel budget while maintaining aspect ratio
+        # This is the same logic as "Ratio Upscale" but with pixel budget constraint
+        if orig_h == 0 or orig_w == 0:
+            raise ValueError("Original dimensions cannot be zero.")
+        
+        aspect_ratio = orig_w / orig_h
+        
+        # Calculate optimal final resolution within pixel budget
+        optimal_final_h = math.sqrt(pixel_budget / aspect_ratio)
+        optimal_final_w = optimal_final_h * aspect_ratio
+        
+        # Round to even dimensions
+        optimal_final_h = int(round(optimal_final_h / 2) * 2)
+        optimal_final_w = int(round(optimal_final_w / 2) * 2)
+        
+        # Verify we're still within pixel budget after rounding
+        if optimal_final_h * optimal_final_w > pixel_budget:
+            # If rounding up exceeded budget, try rounding down
+            optimal_final_h = int(optimal_final_h / 2) * 2
+            optimal_final_w = int(optimal_final_w / 2) * 2
+        
+        # Calculate what the intermediate (pre-upscale) resolution should be
+        intermediate_h = optimal_final_h / actual_upscale_factor
+        intermediate_w = optimal_final_w / actual_upscale_factor
+        
+        # Check if we need to downscale the original to reach the intermediate resolution
         if orig_h > intermediate_h or orig_w > intermediate_w:
             needs_downscale = True
+            # Calculate the ratio needed to fit within intermediate resolution while maintaining aspect ratio
             ratio = min(intermediate_h / orig_h, intermediate_w / orig_w)
             downscale_h = int(round(orig_h * ratio / 2) * 2)
             downscale_w = int(round(orig_w * ratio / 2) * 2)
@@ -58,10 +86,18 @@ def calculate_upscale_params(orig_h, orig_w, target_h, target_w, target_res_mode
         else:
             if logger:
                 logger.info(f"No downscaling needed for 'Downscale then {actual_upscale_factor}x' mode with {model_type}.")
+        
         final_upscale_factor = actual_upscale_factor
 
+        # Calculate final dimensions from the downscaled/original dimensions
         final_h = int(round(downscale_h * final_upscale_factor / 2) * 2)
         final_w = int(round(downscale_w * final_upscale_factor / 2) * 2)
+        
+        if logger:
+            orig_pixels = orig_h * orig_w
+            final_pixels = final_h * final_w
+            logger.info(f"Pixel budget: {pixel_budget:,} pixels, Final output: {final_pixels:,} pixels ({final_pixels/pixel_budget*100:.1f}% of budget)")
+            logger.info(f"Aspect ratio preserved: {orig_w/orig_h:.3f} -> {final_w/final_h:.3f}")
 
     elif target_res_mode == 'Ratio Upscale':
         if orig_h == 0 or orig_w == 0:

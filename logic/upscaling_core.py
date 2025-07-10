@@ -499,6 +499,23 @@ def run_upscale (
                 params_for_metadata ["orig_h"]=orig_h_val
                 params_for_metadata ["orig_w"]=orig_w_val
 
+                # Copy downscaled video to output folder for user access
+                try:
+                    # Create session output directory if it doesn't exist
+                    if is_batch_mode:
+                        session_output_dir = main_output_dir
+                    else:
+                        session_output_dir = os.path.join(main_output_dir, base_output_filename_no_ext)
+                        os.makedirs(session_output_dir, exist_ok=True)
+                    
+                    downscaled_save_path = os.path.join(session_output_dir, "downscaled_input.mp4")
+                    shutil.copy2(downscaled_temp_video, downscaled_save_path)
+                    logger.info(f"Downscaled video saved to: {downscaled_save_path}")
+                    params_for_metadata["downscaled_video_saved_path"] = downscaled_save_path
+                except Exception as e_save:
+                    logger.warning(f"Failed to save downscaled video to session folder: {e_save}")
+                    params_for_metadata["downscaled_video_saved_path"] = "Failed to save"
+
                 downscale_duration_msg =f"Input downscaling finished. Time: {format_time(time.time() - downscale_stage_start_time)}"
                 status_log .append (downscale_duration_msg )
                 logger .info (downscale_duration_msg )
