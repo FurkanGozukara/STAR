@@ -96,16 +96,25 @@ class VideoToVideo_sr():
         self.diffusion = diffusion
         logger.info('Build diffusion with GaussianDiffusion')
 
-        # Temporal VAE
+        # Temporal VAE with VRAM optimization
         vae = AutoencoderKLTemporalDecoder.from_pretrained(
             "stabilityai/stable-video-diffusion-img2vid", subfolder="vae", variant="fp16"
         )
         vae.eval()
         vae.requires_grad_(False)
-        vae.to(self.device)
+        
+        # VAE placement based on optimization setting
+        if self.enable_vram_optimization:
+            vae.to('cpu')  # Start on CPU to save VRAM
+            self.vae_on_gpu = False
+            logger.info('Build Temporal VAE (initialized on CPU for VRAM optimization)')
+            self._log_vram_usage("after VAE CPU initialization")
+        else:
+            vae.to(self.device)  # Traditional GPU placement
+            self.vae_on_gpu = True
+            logger.info('Build Temporal VAE (on GPU)')
+        
         self.vae = vae
-        logger.info('Build Temporal VAE')
-
         torch.cuda.empty_cache()
 
     def _clear_text_encoder_cache(self):
@@ -114,6 +123,51 @@ class VideoToVideo_sr():
             cache_size = len(self.text_encoder_cache)
             self.text_encoder_cache.clear()
             logger.info(f"VRAM Optimization: Cleared text encoder cache ({cache_size} entries)")
+
+    def _move_vae_to_gpu(self):
+        """Move VAE to GPU when needed for encode/decode operations"""
+        if self.enable_vram_optimization and not self.vae_on_gpu:
+            logger.info("VRAM Optimization: Moving VAE to GPU")
+            self._log_vram_usage("before VAE GPU load")
+            
+            # Clear CUDA cache before moving
+            torch.cuda.empty_cache()
+            
+            try:
+                self.vae.to(self.device)
+                self.vae_on_gpu = True
+                
+                self._log_vram_usage("after VAE GPU load")
+                logger.info("VRAM Optimization: VAE moved to GPU successfully")
+            except Exception as e:
+                logger.error(f"VRAM Optimization: Failed to move VAE to GPU: {e}")
+                raise
+
+    def _move_vae_to_cpu(self):
+        """Move VAE to CPU to free VRAM when not needed"""
+        if self.enable_vram_optimization and self.vae_on_gpu:
+            logger.info("VRAM Optimization: Moving VAE to CPU")
+            self._log_vram_usage("before VAE CPU move")
+            
+            try:
+                # Move VAE to CPU
+                self.vae.cpu()
+                self.vae_on_gpu = False
+                
+                # Force garbage collection and clear CUDA cache
+                import gc
+                gc.collect()
+                torch.cuda.empty_cache()
+                
+                # Additional CUDA cleanup
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+                    torch.cuda.empty_cache()
+                
+                self._log_vram_usage("after VAE CPU move")
+                logger.info("VRAM Optimization: VAE moved to CPU and VRAM cleared")
+            except Exception as e:
+                logger.warning(f"VRAM Optimization: Error moving VAE to CPU: {e}")
 
     def _log_vram_usage(self, context=""):
         """Log current VRAM usage for debugging"""
@@ -297,6 +351,9 @@ class VideoToVideo_sr():
         return self.vae.decode(z/self.vae.config.scaling_factor, num_frames=num_f).sample
 
     def vae_decode_chunk(self, z, chunk_size=3, progress_callback=None):
+        # Move VAE to GPU if needed for decoding
+        self._move_vae_to_gpu()
+        
         z = rearrange(z, "b c f h w -> (b f) c h w")
         total_frames = z.shape[0]
         total_chunks = (total_frames + chunk_size - 1) // chunk_size
@@ -330,9 +387,16 @@ class VideoToVideo_sr():
                     pass
         
         video = torch.cat(video)
+        
+        # Move VAE back to CPU after decoding to free VRAM
+        self._move_vae_to_cpu()
+        
         return video
 
     def vae_encode(self, t, chunk_size=1):
+        # Move VAE to GPU if needed for encoding
+        self._move_vae_to_gpu()
+        
         num_f = t.shape[1]
         t = rearrange(t, "b f c h w -> (b f) c h w")
         z_list = []
@@ -340,27 +404,46 @@ class VideoToVideo_sr():
             z_list.append(self.vae.encode(t[ind:ind+chunk_size]).latent_dist.sample())
         z = torch.cat(z_list, dim=0)
         z = rearrange(z, "(b f) c h w -> b c f h w", f=num_f)
-        return z * self.vae.config.scaling_factor
+        result = z * self.vae.config.scaling_factor
+        
+        # Move VAE back to CPU after encoding to free VRAM for diffusion
+        self._move_vae_to_cpu()
+        
+        return result
 
 
 class Vid2VidFr(VideoToVideo_sr):
     """
     Video to video model with feature resetting.
     """
-    def __init__(self, opt, device=torch.device(f'cuda:0')):
-        super().__init__(opt, device)
+    def __init__(self, opt, device=torch.device(f'cuda:0'), enable_vram_optimization=True):
+        super().__init__(opt, device, enable_vram_optimization)
+        
+        # Replace with feature resetting VAE and apply VRAM optimization
         vae = AutoencoderKLTemporalDecoderFeatureResetting.from_pretrained(
             "stabilityai/stable-video-diffusion-img2vid", subfolder="vae", variant="fp16"
         )
         vae.eval()
         vae.requires_grad_(False)
-        vae.to(self.device)
+        
+        # VAE placement based on optimization setting
+        if self.enable_vram_optimization:
+            vae.to('cpu')  # Start on CPU to save VRAM
+            self.vae_on_gpu = False
+            logger.info('Build Temporal VAE with Feature Resetting Decoder (initialized on CPU for VRAM optimization)')
+            self._log_vram_usage("after VAE FR CPU initialization")
+        else:
+            vae.to(self.device)  # Traditional GPU placement
+            self.vae_on_gpu = True
+            logger.info('Build Temporal VAE with Feature Resetting Decoder (on GPU)')
+        
         self.vae = vae
-        logger.info('Build Temporal VAE with Feature Resetting Decoder.')
-
         torch.cuda.empty_cache()
 
     def vae_decode_fr(self, z, z_prev, feature_map_prev, is_first_batch, out_win_step, out_win_overlap, progress_callback=None):
+        # Move VAE to GPU if needed for feature resetting decoding
+        self._move_vae_to_gpu()
+        
         z = rearrange(z, "b c f h w -> (b f) c h w")
         num_f = z.shape[0]
         num_steps = int(ceil(num_f/out_win_step))
@@ -407,6 +490,9 @@ class Vid2VidFr(VideoToVideo_sr):
                     pass
 
         video = torch.cat(video)
+        
+        # Move VAE back to CPU after feature resetting decoding to free VRAM
+        self._move_vae_to_cpu()
 
         return video, feature_map_prev, z_prev
 
