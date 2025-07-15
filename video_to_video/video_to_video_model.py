@@ -143,6 +143,10 @@ class VideoToVideo_sr():
         vae.eval()
         vae.requires_grad_(False)
         
+        # Explicitly convert VAE to fp16 for compatibility with fp16 inputs
+        vae = vae.half()
+        logger.info('VAE converted to fp16 precision for compatibility with fp16 video_data tensors')
+        
         # VAE placement based on optimization setting
         if self.enable_vram_optimization:
             vae.to('cpu')  # Start on CPU to save VRAM
@@ -175,10 +179,12 @@ class VideoToVideo_sr():
             
             try:
                 self.vae.to(self.device)
+                # Ensure VAE remains in fp16 precision for compatibility with fp16 inputs
+                self.vae = self.vae.half()
                 self.vae_on_gpu = True
                 
                 self._log_vram_usage("after VAE GPU load")
-                logger.info("VRAM Optimization: VAE moved to GPU successfully")
+                logger.info("VRAM Optimization: VAE moved to GPU successfully (maintaining fp16 precision)")
             except Exception as e:
                 logger.error(f"VRAM Optimization: Failed to move VAE to GPU: {e}")
                 raise
@@ -482,6 +488,10 @@ class Vid2VidFr(VideoToVideo_sr):
         )
         vae.eval()
         vae.requires_grad_(False)
+        
+        # Explicitly convert VAE to fp16 for compatibility with fp16 inputs
+        vae = vae.half()
+        logger.info('Feature Resetting VAE converted to fp16 precision for compatibility with fp16 video_data tensors')
         
         # VAE placement based on optimization setting
         if self.enable_vram_optimization:

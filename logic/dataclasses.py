@@ -30,6 +30,7 @@ DEFAULT_COLOR_FIX_METHOD = "Wavelet"
 DEFAULT_MAX_CHUNK_LEN = 32
 DEFAULT_VAE_CHUNK = 3
 DEFAULT_ENABLE_VRAM_OPTIMIZATION = True
+DEFAULT_ENABLE_FP16_PROCESSING = True  # Use fp16 tensors to reduce VRAM usage by ~50%
 
 # Chunk Optimization
 DEFAULT_ENABLE_CHUNK_OPTIMIZATION = True
@@ -187,6 +188,7 @@ class PerformanceConfig:
     enable_chunk_optimization: bool = DEFAULT_ENABLE_CHUNK_OPTIMIZATION
     chunk_optimization_min_ratio: float = DEFAULT_CHUNK_OPTIMIZATION_MIN_RATIO
     enable_vram_optimization: bool = DEFAULT_ENABLE_VRAM_OPTIMIZATION
+    enable_fp16_processing: bool = DEFAULT_ENABLE_FP16_PROCESSING
 
 @dataclass
 class ResolutionConfig:

@@ -23,7 +23,18 @@ def tensor2vid(video, mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]):
     return images
 
 
-def preprocess(input_frames):
+def preprocess(input_frames, use_fp16=True, force_fp32=False):
+    """
+    Preprocess input frames for STAR model.
+    
+    Args:
+        input_frames: List of input frames
+        use_fp16: If True, return fp16 tensors to reduce VRAM usage (default: True)
+        force_fp32: If True, force fp32 even if use_fp16=True (for VAE compatibility fallback)
+    
+    Returns:
+        Preprocessed video tensor with dtype float16 (if use_fp16=True) or float32
+    """
     out_frame_list = []
     for pointer in range(len(input_frames)):
         frame = input_frames[pointer]
@@ -36,6 +47,32 @@ def preprocess(input_frames):
     mean = out_frames.new_tensor([0.5, 0.5, 0.5]).view(-1)
     std = out_frames.new_tensor([0.5, 0.5, 0.5]).view(-1)
     out_frames.sub_(mean.view(1, -1, 1, 1)).div_(std.view(1, -1, 1, 1))
+    
+    # Convert to fp16 to reduce VRAM usage by ~50%, unless forced to fp32
+    if use_fp16 and not force_fp32:
+        try:
+            out_frames = out_frames.half()
+            
+            # Calculate memory usage info for detailed logging
+            num_elements = out_frames.numel()
+            fp32_bytes = num_elements * 4  # 4 bytes per float32
+            fp16_bytes = num_elements * 2  # 2 bytes per float16
+            memory_saved_mb = (fp32_bytes - fp16_bytes) / (1024 * 1024)
+            
+            logger.info(f"video_data shape: {out_frames.shape} | dtype: {out_frames.dtype} | "
+                       f"VRAM: {fp16_bytes / (1024 * 1024):.1f} MB (saved {memory_saved_mb:.1f} MB vs fp32)")
+        except Exception as e:
+            logger.warning(f"Failed to convert to fp16, falling back to fp32: {e}")
+            # Keep as fp32 if fp16 conversion fails
+            fp32_bytes = out_frames.numel() * 4
+            logger.info(f"video_data shape: {out_frames.shape} | dtype: {out_frames.dtype} | "
+                       f"VRAM: {fp32_bytes / (1024 * 1024):.1f} MB (fp32 fallback)")
+    else:
+        reason = "force_fp32=True" if force_fp32 else "use_fp16=False"
+        fp32_bytes = out_frames.numel() * 4
+        logger.info(f"video_data shape: {out_frames.shape} | dtype: {out_frames.dtype} | "
+                   f"VRAM: {fp32_bytes / (1024 * 1024):.1f} MB ({reason})")
+    
     return out_frames
 
 
