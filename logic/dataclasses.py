@@ -29,6 +29,7 @@ DEFAULT_COLOR_FIX_METHOD = "Wavelet"
 # Performance & VRAM
 DEFAULT_MAX_CHUNK_LEN = 32
 DEFAULT_VAE_CHUNK = 3
+DEFAULT_ENABLE_VRAM_OPTIMIZATION = True
 
 # Chunk Optimization
 DEFAULT_ENABLE_CHUNK_OPTIMIZATION = True
@@ -185,6 +186,7 @@ class PerformanceConfig:
     vae_chunk: int = DEFAULT_VAE_CHUNK
     enable_chunk_optimization: bool = DEFAULT_ENABLE_CHUNK_OPTIMIZATION
     chunk_optimization_min_ratio: float = DEFAULT_CHUNK_OPTIMIZATION_MIN_RATIO
+    enable_vram_optimization: bool = DEFAULT_ENABLE_VRAM_OPTIMIZATION
 
 @dataclass
 class ResolutionConfig:

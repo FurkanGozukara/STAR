@@ -51,7 +51,7 @@ from .face_restoration_utils import (
 def run_upscale (
     input_video_path ,user_prompt ,positive_prompt ,negative_prompt ,model_choice ,
     upscale_factor_slider ,cfg_scale ,steps ,solver_mode ,
-    max_chunk_len ,enable_chunk_optimization ,vae_chunk ,color_fix_method ,
+    max_chunk_len ,enable_chunk_optimization ,vae_chunk ,enable_vram_optimization ,color_fix_method ,
     enable_tiling ,tile_size ,tile_overlap ,
     enable_context_window ,context_overlap ,
     enable_target_res ,target_h ,target_w ,target_res_mode ,
@@ -929,7 +929,7 @@ def run_upscale (
                     scene_processor_generator = process_single_scene (
                         scene_video_path=scene_video_path_item, scene_index=scene_idx, total_scenes=total_scenes, temp_dir=temp_dir, # star_model (instance) removed
                         final_prompt=scene_prompt_override, upscale_factor=upscale_factor_val, final_h=final_h_val, final_w=final_w_val, ui_total_diffusion_steps=ui_total_diffusion_steps,
-                        solver_mode=solver_mode, cfg_scale=cfg_scale, max_chunk_len=max_chunk_len, enable_chunk_optimization=enable_chunk_optimization, vae_chunk=vae_chunk, color_fix_method=color_fix_method,
+                        solver_mode=solver_mode, cfg_scale=cfg_scale, max_chunk_len=max_chunk_len, enable_chunk_optimization=enable_chunk_optimization, vae_chunk=vae_chunk, enable_vram_optimization=enable_vram_optimization, color_fix_method=color_fix_method,
                         enable_tiling=enable_tiling, tile_size=tile_size, tile_overlap=tile_overlap, enable_context_window=enable_context_window, context_overlap=context_overlap,
                         save_frames=save_frames, scene_output_dir=frames_output_subfolder, progress_callback=scene_upscale_progress_callback,
                         enable_auto_caption_per_scene=scene_enable_auto_caption_current,
@@ -1128,7 +1128,7 @@ def run_upscale (
             model_cfg_ns = EasyDict_class()
             model_cfg_ns.model_path = model_file_path # model_file_path determined earlier
             model_device_ns = torch.device(util_get_gpu_device(logger=logger)) if torch.cuda.is_available() else torch.device('cpu')
-            star_model_ns = VideoToVideo_sr_class(model_cfg_ns, device=model_device_ns)
+            star_model_ns = VideoToVideo_sr_class(model_cfg_ns, device=model_device_ns, enable_vram_optimization=enable_vram_optimization)
             logger.info(f"Non-scene-split: STAR model loaded on {model_device_ns}. Load time: {format_time(time.time() - model_load_start_time_ns)}")
 
             all_lr_frames_bgr = []

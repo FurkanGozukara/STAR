@@ -43,15 +43,33 @@ except ImportError:
 logger = get_logger()
 
 class VideoToVideo_sr():
-    def __init__(self, opt, device=torch.device(f'cuda:0')):
+    def __init__(self, opt, device=torch.device(f'cuda:0'), enable_vram_optimization=True):
         self.opt = opt
         self.device = device # torch.device(f'cuda:0')
-
-        # text_encoder
-        text_encoder = FrozenOpenCLIPEmbedder(device=self.device, pretrained="laion2b_s32b_b79k")
-        text_encoder.model.to(self.device)
-        self.text_encoder = text_encoder
-        logger.info(f'Build encoder with FrozenOpenCLIPEmbedder')
+        self.enable_vram_optimization = enable_vram_optimization
+        
+        # Text encoder cache for VRAM optimization
+        self.text_encoder = None
+        self.text_encoder_cache = {}  # Cache for encoded prompts
+        self.text_encoder_loaded = False
+        
+        # Initialize text encoder
+        self._load_text_encoder()
+        
+        # Cache negative prompt encoding
+        self.negative_prompt = cfg.negative_prompt
+        self.positive_prompt = cfg.positive_prompt
+        
+        if self.enable_vram_optimization:
+            self._log_vram_usage("before negative prompt encoding")
+        
+        negative_y = self._encode_text(self.negative_prompt)
+        self.negative_y = negative_y
+        
+        # Unload text encoder if optimization is enabled
+        if self.enable_vram_optimization:
+            self._unload_text_encoder()
+            logger.info("VRAM Optimization: Text encoder unloaded after negative prompt encoding")
 
         # U-Net with ControlNet
         generator = ControlledV2VUNet()
@@ -90,12 +108,117 @@ class VideoToVideo_sr():
 
         torch.cuda.empty_cache()
 
-        self.negative_prompt = cfg.negative_prompt
-        self.positive_prompt = cfg.positive_prompt
+    def _clear_text_encoder_cache(self):
+        """Clear the text encoder cache to free CPU memory"""
+        if self.enable_vram_optimization and self.text_encoder_cache:
+            cache_size = len(self.text_encoder_cache)
+            self.text_encoder_cache.clear()
+            logger.info(f"VRAM Optimization: Cleared text encoder cache ({cache_size} entries)")
 
-        negative_y = text_encoder(self.negative_prompt).detach()
-        self.negative_y = negative_y
+    def _log_vram_usage(self, context=""):
+        """Log current VRAM usage for debugging"""
+        if torch.cuda.is_available() and self.enable_vram_optimization:
+            try:
+                allocated = torch.cuda.memory_allocated(self.device) / 1024**3  # GB
+                reserved = torch.cuda.memory_reserved(self.device) / 1024**3   # GB
+                logger.info(f"VRAM {context}: Allocated: {allocated:.2f}GB, Reserved: {reserved:.2f}GB")
+            except Exception as e:
+                logger.warning(f"Could not log VRAM usage: {e}")
 
+    def _load_text_encoder(self):
+        """Load text encoder to GPU"""
+        if not self.text_encoder_loaded:
+            # Clean up any existing encoder first
+            if self.text_encoder is not None:
+                self._unload_text_encoder()
+            
+            if self.enable_vram_optimization:
+                logger.info("VRAM Optimization: Loading text encoder to GPU")
+                self._log_vram_usage("before text encoder load")
+            
+            # Clear CUDA cache before loading
+            torch.cuda.empty_cache()
+            
+            text_encoder = FrozenOpenCLIPEmbedder(device=self.device, pretrained="laion2b_s32b_b79k")
+            text_encoder.model.to(self.device)
+            self.text_encoder = text_encoder
+            self.text_encoder_loaded = True
+            
+            if not self.enable_vram_optimization:
+                logger.info(f'Build encoder with FrozenOpenCLIPEmbedder')
+            else:
+                self._log_vram_usage("after text encoder load")
+                logger.info("VRAM Optimization: Text encoder loaded successfully")
+
+    def _unload_text_encoder(self):
+        """Completely unload text encoder to free VRAM"""
+        if self.text_encoder_loaded and self.enable_vram_optimization:
+            logger.info("VRAM Optimization: Unloading text encoder from GPU")
+            self._log_vram_usage("before text encoder unload")
+            
+            # Move to CPU first to release GPU memory
+            if self.text_encoder is not None:
+                try:
+                    # Move main model to CPU
+                    self.text_encoder.cpu()
+                    if hasattr(self.text_encoder, 'model'):
+                        self.text_encoder.model.cpu()
+                    
+                    # Clear all parameters explicitly (more aggressive cleanup)
+                    if hasattr(self.text_encoder, 'model') and hasattr(self.text_encoder.model, 'parameters'):
+                        for param in self.text_encoder.model.parameters():
+                            if param.is_cuda:
+                                param.data = param.data.cpu()
+                                if param.grad is not None:
+                                    param.grad = param.grad.cpu()
+                    
+                except Exception as e:
+                    logger.warning(f"VRAM Optimization: Error moving text encoder to CPU: {e}")
+            
+            # Delete the text encoder
+            del self.text_encoder
+            self.text_encoder = None
+            self.text_encoder_loaded = False
+            
+            # Force garbage collection
+            import gc
+            gc.collect()
+            
+            # Clear CUDA cache
+            torch.cuda.empty_cache()
+            
+            # Additional CUDA memory cleanup
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+            
+            self._log_vram_usage("after text encoder unload")
+            logger.info("VRAM Optimization: Text encoder completely unloaded and VRAM cleared")
+
+    def _encode_text(self, text_prompt):
+        """Encode text with caching support"""
+        # Check cache first
+        if text_prompt in self.text_encoder_cache:
+            if self.enable_vram_optimization:
+                logger.info(f"VRAM Optimization: Using cached embedding for prompt: '{text_prompt[:50]}...'")
+            return self.text_encoder_cache[text_prompt].to(self.device)
+        
+        # Load text encoder if needed
+        if not self.text_encoder_loaded:
+            self._load_text_encoder()
+        
+        # Encode text
+        encoded = self.text_encoder(text_prompt).detach()
+        
+        # Cache the result
+        self.text_encoder_cache[text_prompt] = encoded.cpu()  # Store on CPU to save VRAM
+        
+        if self.enable_vram_optimization:
+            logger.info(f"VRAM Optimization: Encoded and cached prompt: '{text_prompt[:50]}...'")
+            # Unload text encoder after encoding
+            self._unload_text_encoder()
+        
+        return encoded
 
     def test(self, input: Dict[str, Any], total_noise_levels=1000, \
                  steps=50, solver_mode='fast', guide_scale=7.5, max_chunk_len=32, vae_decoder_chunk_size=3,
@@ -119,7 +242,7 @@ class VideoToVideo_sr():
         video_data_feature = self.vae_encode(video_data)
         torch.cuda.empty_cache()
 
-        y = self.text_encoder(y).detach()
+        y = self._encode_text(y)
 
         with amp.autocast(enabled=True):
 
@@ -321,7 +444,7 @@ class Vid2VidFr(VideoToVideo_sr):
         video_data_feature = self.vae_encode(video_data)
         torch.cuda.empty_cache()
 
-        y = self.text_encoder(y).detach()
+        y = self._encode_text(y)
 
         with amp.autocast(enabled=True):
             t = torch.LongTensor([total_noise_levels - 1]).to(self.device)

@@ -605,6 +605,16 @@ The total combined prompt length is limited to 77 tokens."""
 - Quality Impact: Minimal / Negligible. Safe to lower.
 - Speed Impact: Slower (Lower value = Slower decoding)."""
                         )
+                        enable_vram_optimization_check =gr .Checkbox (
+                        label ="Enable Advanced VRAM Optimization",
+                        value =True ,
+                        info ="""Advanced memory management for STAR model components. Automatically moves models to CPU/unloads when not in use.
+- Text Encoder: Completely unloaded after encoding, reloaded only for new prompts
+- VAE: Moved to CPU when not actively encoding/decoding
+- VRAM Impact: Significant reduction (2-6GB saved depending on model)
+- Quality Impact: None - identical results with optimized memory usage
+- Speed Impact: Minimal - slight overhead from model loading/moving"""
+                        )
 
                 with gr .Column (scale =1 ):
                     with gr .Group ():
@@ -1634,7 +1644,7 @@ This helps visualize the quality improvement from upscaling."""
         (
             input_video_val, user_prompt_val, pos_prompt_val, neg_prompt_val, model_selector_val,
             upscale_factor_slider_val, cfg_slider_val, steps_slider_val, solver_mode_radio_val,
-            max_chunk_len_slider_val, enable_chunk_optimization_check_val, vae_chunk_slider_val, color_fix_dropdown_val,
+            max_chunk_len_slider_val, enable_chunk_optimization_check_val, vae_chunk_slider_val, enable_vram_optimization_check_val, color_fix_dropdown_val,
             enable_tiling_check_val, tile_size_num_val, tile_overlap_num_val,
             enable_context_window_check_val, context_overlap_num_val,
             enable_target_res_check_val, target_h_num_val, target_w_num_val, target_res_mode_radio_val,
@@ -1688,7 +1698,8 @@ This helps visualize the quality improvement from upscaling."""
             performance=PerformanceConfig(
                 max_chunk_len=max_chunk_len_slider_val,
                 vae_chunk=vae_chunk_slider_val,
-                enable_chunk_optimization=enable_chunk_optimization_check_val
+                enable_chunk_optimization=enable_chunk_optimization_check_val,
+                enable_vram_optimization=enable_vram_optimization_check_val
             ),
             resolution=ResolutionConfig(
                 enable_target_res=enable_target_res_check_val,
@@ -2104,7 +2115,7 @@ This helps visualize the quality improvement from upscaling."""
             input_video_path =actual_input_video_path ,user_prompt =app_config.prompts.user ,
             positive_prompt =app_config.prompts.positive ,negative_prompt =app_config.prompts.negative ,model_choice =app_config.star_model.model_choice ,
             upscale_factor_slider =app_config.resolution.upscale_factor ,cfg_scale =app_config.star_model.cfg_scale ,steps =app_config.star_model.steps ,solver_mode =app_config.star_model.solver_mode ,
-            max_chunk_len =app_config.performance.max_chunk_len ,enable_chunk_optimization =app_config.performance.enable_chunk_optimization ,vae_chunk =app_config.performance.vae_chunk ,color_fix_method =app_config.star_model.color_fix_method ,
+            max_chunk_len =app_config.performance.max_chunk_len ,enable_chunk_optimization =app_config.performance.enable_chunk_optimization ,vae_chunk =app_config.performance.vae_chunk ,enable_vram_optimization =app_config.performance.enable_vram_optimization ,color_fix_method =app_config.star_model.color_fix_method ,
             enable_tiling =app_config.tiling.enable ,tile_size =app_config.tiling.tile_size ,tile_overlap =app_config.tiling.tile_overlap ,
             enable_context_window =app_config.context_window.enable ,context_overlap =app_config.context_window.overlap ,
             enable_target_res =app_config.resolution.enable_target_res ,target_h =app_config.resolution.target_h ,target_w =app_config.resolution.target_w ,target_res_mode =app_config.resolution.target_res_mode ,
@@ -2336,7 +2347,7 @@ This helps visualize the quality improvement from upscaling."""
     click_inputs =[
         input_video, user_prompt, pos_prompt, neg_prompt, model_selector,
         upscale_factor_slider, cfg_slider, steps_slider, solver_mode_radio,
-        max_chunk_len_slider, enable_chunk_optimization_check, vae_chunk_slider, color_fix_dropdown,
+        max_chunk_len_slider, enable_chunk_optimization_check, vae_chunk_slider, enable_vram_optimization_check, color_fix_dropdown,
         enable_tiling_check, tile_size_num, tile_overlap_num,
         enable_context_window_check, context_overlap_num,
         enable_target_res_check, target_h_num, target_w_num, target_res_mode_radio,
@@ -2602,7 +2613,7 @@ This helps visualize the quality improvement from upscaling."""
         (
             input_video_val, user_prompt_val, pos_prompt_val, neg_prompt_val, model_selector_val,
             upscale_factor_slider_val, cfg_slider_val, steps_slider_val, solver_mode_radio_val,
-            max_chunk_len_slider_val, enable_chunk_optimization_check_val, vae_chunk_slider_val, color_fix_dropdown_val,
+            max_chunk_len_slider_val, enable_chunk_optimization_check_val, vae_chunk_slider_val, enable_vram_optimization_check_val, color_fix_dropdown_val,
             enable_tiling_check_val, tile_size_num_val, tile_overlap_num_val,
             enable_context_window_check_val, context_overlap_num_val,
             enable_target_res_check_val, target_h_num_val, target_w_num_val, target_res_mode_radio_val,
@@ -2654,7 +2665,8 @@ This helps visualize the quality improvement from upscaling."""
             performance=PerformanceConfig(
                 max_chunk_len=max_chunk_len_slider_val,
                 vae_chunk=vae_chunk_slider_val,
-                enable_chunk_optimization=enable_chunk_optimization_check_val
+                enable_chunk_optimization=enable_chunk_optimization_check_val,
+                enable_vram_optimization=enable_vram_optimization_check_val
             ),
             resolution=ResolutionConfig(
                 enable_target_res=enable_target_res_check_val,

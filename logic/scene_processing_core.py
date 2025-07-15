@@ -22,7 +22,7 @@ from .face_restoration_utils import (
 def process_single_scene(
     scene_video_path, scene_index, total_scenes, temp_dir,
     final_prompt, upscale_factor, final_h, final_w, ui_total_diffusion_steps,
-    solver_mode, cfg_scale, max_chunk_len, enable_chunk_optimization, vae_chunk, color_fix_method,
+    solver_mode, cfg_scale, max_chunk_len, enable_chunk_optimization, vae_chunk, enable_vram_optimization, color_fix_method,
     enable_tiling, tile_size, tile_overlap, enable_context_window, context_overlap,
     save_frames, scene_output_dir, progress_callback=None,
 
@@ -187,7 +187,7 @@ def process_single_scene(
             # Check for cancellation before loading the STAR model
             cancellation_manager.check_cancel()
             
-            star_model_instance = VideoToVideo_sr_class(model_cfg, device=model_device)
+            star_model_instance = VideoToVideo_sr_class(model_cfg, device=model_device, enable_vram_optimization=enable_vram_optimization)
             
             # Check for cancellation after model loading
             cancellation_manager.check_cancel()
