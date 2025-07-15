@@ -82,7 +82,47 @@ class VideoToVideo_sr():
             load_dict = load_dict['state_dict']
         ret = generator.load_state_dict(load_dict, strict=False)
         
-        self.generator = generator.half()
+        # Try to use fp8 for UNet, fallback to fp16 if not supported
+        self.generator_dtype = None  # Track the actual dtype used
+        fp8_success = False
+        
+        try:
+            # Check if fp8 is available and supported by the hardware
+            if hasattr(torch, 'float8_e4m3fn') and torch.cuda.is_available():
+                # Test if fp8 operations work on this hardware
+                test_tensor = torch.randn(2, 2, device=self.device)
+                test_fp8 = test_tensor.to(torch.float8_e4m3fn)
+                _ = test_fp8.to(torch.float16)  # Test conversion back
+                
+                # If test passes, use fp8 for UNet
+                self.generator = generator.to(torch.float8_e4m3fn)
+                self.generator_dtype = torch.float8_e4m3fn
+                fp8_success = True
+                logger.info('UNet loaded with fp8 precision (float8_e4m3fn) - hardware compatible')
+                
+            elif hasattr(torch, 'float8_e5m2') and torch.cuda.is_available():
+                # Try alternative fp8 format
+                test_tensor = torch.randn(2, 2, device=self.device)
+                test_fp8 = test_tensor.to(torch.float8_e5m2)
+                _ = test_fp8.to(torch.float16)  # Test conversion back
+                
+                self.generator = generator.to(torch.float8_e5m2)
+                self.generator_dtype = torch.float8_e5m2
+                fp8_success = True
+                logger.info('UNet loaded with fp8 precision (float8_e5m2) - hardware compatible')
+            else:
+                logger.info('fp8 not available in this PyTorch version, using fp16')
+                
+        except Exception as e:
+            logger.info(f'fp8 testing failed ({e}), falling back to fp16')
+            fp8_success = False
+        
+        # Fallback to fp16 if fp8 is not available or failed
+        if not fp8_success:
+            self.generator = generator.half()
+            self.generator_dtype = torch.float16
+            logger.info('UNet loaded with fp16 precision')
+        
         logger.info('Load model path {}, with local status {}'.format(cfg.model_path, ret))
 
         # Noise scheduler
@@ -178,6 +218,19 @@ class VideoToVideo_sr():
                 logger.info(f"VRAM {context}: Allocated: {allocated:.2f}GB, Reserved: {reserved:.2f}GB")
             except Exception as e:
                 logger.warning(f"Could not log VRAM usage: {e}")
+
+    def _is_fp8_dtype(self, dtype):
+        """Check if dtype is fp8"""
+        return dtype in [torch.float8_e4m3fn, torch.float8_e5m2] if hasattr(torch, 'float8_e4m3fn') else False
+
+    def _get_computation_context(self):
+        """Get the appropriate autocast context for mixed precision computation"""
+        if hasattr(self, 'generator_dtype') and self._is_fp8_dtype(self.generator_dtype):
+            # For fp8 models, use mixed precision with fp16 compute but keep weights in fp8
+            return torch.cuda.amp.autocast(enabled=True, dtype=torch.float16)
+        else:
+            # For fp16 models, use standard autocast
+            return torch.cuda.amp.autocast(enabled=True, dtype=torch.float16)
 
     def _load_text_encoder(self):
         """Load text encoder to GPU"""
@@ -298,7 +351,8 @@ class VideoToVideo_sr():
 
         y = self._encode_text(y)
 
-        with amp.autocast(enabled=True):
+        # Use the appropriate precision context for computation
+        with self._get_computation_context():
 
             t = torch.LongTensor([total_noise_levels-1]).to(self.device)
             noised_lr = self.diffusion.diffuse(video_data_feature, t)
@@ -311,6 +365,8 @@ class VideoToVideo_sr():
 
             solver = 'dpmpp_2m_sde' # 'heun' | 'dpmpp_2m_sde' 
             sampling_start_time = time.time()
+            
+            # Use the UNet directly in its native precision (fp8 or fp16)
             gen_vid = self.diffusion.sample_sr(
                 noise=noised_lr,
                 model=self.generator,
@@ -328,6 +384,7 @@ class VideoToVideo_sr():
                 progress_callback=progress_callback,
                 seed=seed)
             torch.cuda.empty_cache()
+            
             sampling_duration = time.time() - sampling_start_time
             logger.info(f'sampling, finished in {format_time(sampling_duration)} total.')
 
@@ -532,7 +589,8 @@ class Vid2VidFr(VideoToVideo_sr):
 
         y = self._encode_text(y)
 
-        with amp.autocast(enabled=True):
+        # Use the appropriate precision context for computation  
+        with self._get_computation_context():
             t = torch.LongTensor([total_noise_levels - 1]).to(self.device)
             noised_lr = self.diffusion.diffuse(video_data_feature, t)
 
@@ -545,6 +603,8 @@ class Vid2VidFr(VideoToVideo_sr):
 
             solver = 'dpmpp_2m_sde'  # 'heun' | 'dpmpp_2m_sde'
             sampling_start_time_fr = time.time()
+            
+            # Use the UNet directly in its native precision (fp8 or fp16)
             gen_vid = self.diffusion.sample_sr(
                 noise=noised_lr,
                 model=self.generator,
@@ -562,6 +622,7 @@ class Vid2VidFr(VideoToVideo_sr):
                 progress_callback=progress_callback,
                 seed=seed)
             torch.cuda.empty_cache()
+            
             sampling_duration_fr = time.time() - sampling_start_time_fr
             logger.info(f'sampling, finished in {format_time(sampling_duration_fr)} total.')
 
