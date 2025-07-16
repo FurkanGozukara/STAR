@@ -19,7 +19,7 @@ from .image_upscaler_utils import (
     extract_model_filename_from_dropdown
 )
 from .upscaling_utils import calculate_upscale_params
-from .file_utils import get_next_filename, sanitize_filename
+from .file_utils import sanitize_filename
 from .ffmpeg_utils import natural_sort_key
 
 
@@ -385,7 +385,16 @@ def preview_all_models(
         
         # Create output folder with incremental naming
         base_folder_name = "upscale_models_test"
-        output_folder = get_next_filename(output_dir, base_folder_name, "", is_folder=True)
+        
+        # Find next available folder number
+        folder_num = 1
+        while True:
+            folder_name = f"{base_folder_name}_{folder_num:04d}"
+            output_folder = os.path.join(output_dir, folder_name)
+            if not os.path.exists(output_folder):
+                break
+            folder_num += 1
+        
         os.makedirs(output_folder, exist_ok=True)
         result['output_folder'] = output_folder
         
