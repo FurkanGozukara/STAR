@@ -1,1 +1,2681 @@
-How To Use
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SECourses Video Upscaler Pro V1 - Complete User Guide</title>
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Prism.js for code highlighting -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --secondary-color: #64748b;
+            --accent-color: #f59e0b;
+            --success-color: #10b981;
+            --warning-color: #f59e0b;
+            --danger-color: #ef4444;
+            --dark-color: #1e293b;
+            --light-color: #f8fafc;
+            --border-color: #e2e8f0;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            line-height: 1.6;
+            color: #334155;
+            background-color: #ffffff;
+        }
+        
+        .navbar {
+            background: linear-gradient(135deg, var(--primary-color), #3b82f6);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            padding: 1rem 0;
+        }
+        
+        .navbar-brand {
+            font-weight: 700;
+            font-size: 1.5rem;
+            color: white !important;
+        }
+        
+        .search-container {
+            position: relative;
+            max-width: 400px;
+        }
+        
+        .search-input {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            border-radius: 50px;
+            padding: 0.5rem 1rem 0.5rem 3rem;
+            width: 100%;
+            transition: all 0.3s ease;
+        }
+        
+        .search-input:focus {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.4);
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1);
+        }
+        
+        .search-input::placeholder {
+            color: rgba(255, 255, 255, 0.7);
+        }
+        
+        .search-icon {
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: rgba(255, 255, 255, 0.7);
+            z-index: 10;
+        }
+        
+        .search-results {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
+            max-height: 400px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+            margin-top: 0.5rem;
+            border: 1px solid var(--border-color);
+        }
+        
+        .search-results.visible {
+            display: block;
+        }
+        
+        .search-result-item {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        
+        .search-result-item:hover,
+        .search-result-item.active {
+            background-color: var(--light-color);
+        }
+        
+        .search-result-item:last-child {
+            border-bottom: none;
+        }
+        
+        .search-result-title {
+            font-weight: 600;
+            color: var(--primary-color);
+            margin-bottom: 0.25rem;
+            display: flex;
+            align-items: center;
+        }
+        
+        .search-result-title i {
+            margin-right: 0.5rem;
+        }
+        
+        .search-result-snippet {
+            color: var(--secondary-color);
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+        
+        .search-result-snippet .search-match {
+            background: var(--accent-color);
+            color: white;
+            padding: 0.1rem 0.3rem;
+            border-radius: 0.25rem;
+            font-weight: 500;
+        }
+        
+        .search-no-results {
+            padding: 2rem;
+            text-align: center;
+            color: var(--secondary-color);
+        }
+        
+        .search-no-results i {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+        
+        .search-clear {
+            position: absolute;
+            right: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: rgba(255, 255, 255, 0.7);
+            cursor: pointer;
+            z-index: 10;
+            display: none;
+            transition: color 0.2s ease;
+        }
+        
+        .search-clear.visible {
+            display: block;
+        }
+        
+        .search-clear:hover {
+            color: white;
+        }
+        
+        .search-results-header {
+            padding: 0.75rem 1rem;
+            background: var(--light-color);
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 600;
+            color: var(--dark-color);
+            font-size: 0.9rem;
+        }
+        
+        .sidebar {
+            background: var(--light-color);
+            border-right: 1px solid var(--border-color);
+            height: calc(100vh - 76px);
+            overflow-y: auto;
+            position: sticky;
+            top: 76px;
+            padding: 2rem 0;
+        }
+        
+        .sidebar-nav {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .sidebar-nav > li {
+            margin-bottom: 0.5rem;
+        }
+        
+        .sidebar-nav > li > a {
+            display: block;
+            padding: 0.75rem 1.5rem;
+            color: var(--secondary-color);
+            text-decoration: none;
+            font-weight: 500;
+            border-radius: 0.5rem;
+            margin: 0 1rem;
+            transition: all 0.2s ease;
+        }
+        
+        .sidebar-nav > li > a:hover,
+        .sidebar-nav > li > a.active {
+            background: var(--primary-color);
+            color: white;
+            transform: translateX(5px);
+        }
+        
+        .sidebar-nav > li > a i {
+            margin-right: 0.75rem;
+            width: 20px;
+            text-align: center;
+        }
+        
+        .content-area {
+            padding: 2rem 0;
+        }
+        
+        .section {
+            margin-bottom: 4rem;
+        }
+        
+        .section-header {
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid var(--border-color);
+        }
+        
+        .section-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--dark-color);
+            margin-bottom: 0.5rem;
+        }
+        
+        .section-subtitle {
+            font-size: 1.2rem;
+            color: var(--secondary-color);
+            font-weight: 400;
+        }
+        
+        .feature-card {
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: 1rem;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+        }
+        
+        .feature-card:hover {
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+            transform: translateY(-2px);
+        }
+        
+        .feature-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--dark-color);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+        }
+        
+        .feature-icon {
+            background: linear-gradient(135deg, var(--primary-color), #3b82f6);
+            color: white;
+            border-radius: 0.75rem;
+            padding: 0.75rem;
+            margin-right: 1rem;
+            font-size: 1.2rem;
+        }
+        
+        .alert-info {
+            background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+            border: 1px solid #93c5fd;
+            color: #1e40af;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        
+        .alert-success {
+            background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+            border: 1px solid #6ee7b7;
+            color: #065f46;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        
+        .alert-warning {
+            background: linear-gradient(135deg, #fef3c7, #fed7aa);
+            border: 1px solid #fbbf24;
+            color: #92400e;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        
+        .badge-feature {
+            background: var(--accent-color);
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 50px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            margin-left: 0.5rem;
+        }
+        
+        .badge-new {
+            background: var(--success-color);
+        }
+        
+        .badge-experimental {
+            background: var(--warning-color);
+        }
+        
+        .code-block {
+            background: #1e293b;
+            color: #e2e8f0;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            margin: 1rem 0;
+            overflow-x: auto;
+        }
+        
+        .steps-list {
+            counter-reset: step-counter;
+            list-style: none;
+            padding: 0;
+        }
+        
+        .steps-list > li {
+            counter-increment: step-counter;
+            margin-bottom: 2rem;
+            padding-left: 4rem;
+            position: relative;
+        }
+        
+        .steps-list > li::before {
+            content: counter(step-counter);
+            position: absolute;
+            left: 0;
+            top: 0;
+            background: var(--primary-color);
+            color: white;
+            border-radius: 50%;
+            width: 3rem;
+            height: 3rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 1.2rem;
+        }
+        
+        .parameter-table {
+            margin: 1.5rem 0;
+        }
+        
+        .parameter-table th {
+            background: var(--light-color);
+            color: var(--dark-color);
+            font-weight: 600;
+            padding: 1rem;
+            border: 1px solid var(--border-color);
+        }
+        
+        .parameter-table td {
+            padding: 1rem;
+            border: 1px solid var(--border-color);
+            vertical-align: top;
+        }
+        
+        .back-to-top {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 3.5rem;
+            height: 3.5rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transition: all 0.3s ease;
+            opacity: 0;
+            visibility: hidden;
+        }
+        
+        .back-to-top.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .back-to-top:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+        }
+        
+        .highlight {
+            background: linear-gradient(120deg, #fbbf24 0%, #fbbf24 100%);
+            background-repeat: no-repeat;
+            background-size: 100% 0.2em;
+            background-position: 0 88%;
+            transition: background-size 0.3s ease;
+        }
+        
+        .search-highlight {
+            background: #fef08a;
+            padding: 0.1rem 0.2rem;
+            border-radius: 0.25rem;
+        }
+        
+        @media (max-width: 768px) {
+            .sidebar {
+                position: static;
+                height: auto;
+            }
+            
+            .section-title {
+                font-size: 2rem;
+            }
+            
+            .feature-card {
+                padding: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg fixed-top">
+        <div class="container-fluid">
+            <div class="d-flex align-items-center">
+                <a class="navbar-brand me-3" href="#top">
+                    <i class="fas fa-video me-2"></i>
+                    SECourses Video Upscaler Pro V1
+                </a>
+                
+                <div class="search-container">
+                    <i class="fas fa-search search-icon"></i>
+                    <input type="text" class="form-control search-input" id="searchInput" placeholder="Search documentation...">
+                    <i class="fas fa-times search-clear" id="searchClear"></i>
+                    <div class="search-results" id="searchResults"></div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid" style="margin-top: 76px;">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-lg-3 col-xl-2">
+                <div class="sidebar">
+                    <ul class="sidebar-nav">
+                        <li><a href="#overview" class="nav-link"><i class="fas fa-home"></i>Overview</a></li>
+                        <li><a href="#getting-started" class="nav-link"><i class="fas fa-rocket"></i>Getting Started</a></li>
+                        <li><a href="#main-tab" class="nav-link"><i class="fas fa-play"></i>Main Processing</a></li>
+                        <li><a href="#resolution-tab" class="nav-link"><i class="fas fa-expand"></i>Resolution & Scenes</a></li>
+                        <li><a href="#core-settings" class="nav-link"><i class="fas fa-cogs"></i>Core Settings</a></li>
+                        <li><a href="#star-upscaler" class="nav-link"><i class="fas fa-star"></i>STAR Upscaler</a></li>
+                        <li><a href="#image-upscaler" class="nav-link"><i class="fas fa-image"></i>Image Upscaler</a></li>
+                        <li><a href="#seedvr2" class="nav-link"><i class="fas fa-seedling"></i>SeedVR2</a></li>
+                        <li><a href="#output-comparison" class="nav-link"><i class="fas fa-file-export"></i>Output & Comparison</a></li>
+                        <li><a href="#batch-processing" class="nav-link"><i class="fas fa-layer-group"></i>Batch Processing</a></li>
+                        <li><a href="#fps-control" class="nav-link"><i class="fas fa-tachometer-alt"></i>FPS Control</a></li>
+                        <li><a href="#video-editor" class="nav-link"><i class="fas fa-cut"></i>Video Editor</a></li>
+                        <li><a href="#face-restoration" class="nav-link"><i class="fas fa-user"></i>Face Restoration</a></li>
+                        <li><a href="#presets" class="nav-link"><i class="fas fa-save"></i>Presets</a></li>
+                        <li><a href="#troubleshooting" class="nav-link"><i class="fas fa-wrench"></i>Troubleshooting</a></li>
+                        <li><a href="#advanced-tips" class="nav-link"><i class="fas fa-lightbulb"></i>Advanced Tips</a></li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="col-lg-9 col-xl-10">
+                <div class="content-area">
+                    
+                    <!-- Overview Section -->
+                    <section id="overview" class="section">
+                        <div class="section-header">
+                            <h1 class="section-title">SECourses Video Upscaler Pro V1</h1>
+                            <p class="section-subtitle">Complete User Guide & Documentation</p>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-lg-8">
+                                <div class="feature-card">
+                                    <h2 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-video"></i></span>
+                                        Welcome to the Ultimate Video Upscaling Solution
+                                    </h2>
+                                    <p>This comprehensive application provides state-of-the-art video upscaling capabilities using multiple AI models and techniques. Whether you're enhancing old videos, increasing resolution for modern displays, or processing large batches of content, this tool has everything you need.</p>
+                                    
+                                    <div class="alert-info">
+                                        <i class="fas fa-info-circle me-2"></i>
+                                        <strong>Version:</strong> Pro V1 | <strong>Updated:</strong> Latest Features | <strong>Support:</strong> Windows & Linux
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-lg-4">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-star"></i></span>
+                                        Key Features
+                                    </h3>
+                                    <ul class="list-unstyled">
+                                        <li><i class="fas fa-check text-success me-2"></i>STAR AI Temporal Upscaling</li>
+                                        <li><i class="fas fa-check text-success me-2"></i>Image-Based Super Resolution</li>
+                                        <li><i class="fas fa-check text-success me-2"></i>Auto-Captioning with CogVLM2</li>
+                                        <li><i class="fas fa-check text-success me-2"></i>Face Restoration (CodeFormer)</li>
+                                        <li><i class="fas fa-check text-success me-2"></i>RIFE Frame Interpolation</li>
+                                        <li><i class="fas fa-check text-success me-2"></i>Batch Processing</li>
+                                        <li><i class="fas fa-check text-success me-2"></i>Video Editing & Cutting</li>
+                                        <li><i class="fas fa-check text-success me-2"></i>Scene-Based Processing</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Getting Started Section -->
+                    <section id="getting-started" class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Getting Started</h2>
+                            <p class="section-subtitle">Quick setup guide to get you upscaling videos in minutes</p>
+                        </div>
+                        
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-rocket"></i></span>
+                                Quick Start Guide
+                            </h3>
+                            
+                            <ol class="steps-list">
+                                <li>
+                                    <h4>Choose Your Upscaler</h4>
+                                    <p>Navigate to the <strong>Core Settings</strong> tab and select your preferred upscaling method:</p>
+                                    <ul>
+                                        <li><strong>STAR Model Upscaler:</strong> AI temporal upscaling with prompt guidance</li>
+                                        <li><strong>Image Based Upscalers:</strong> Fast spatial upscaling (RealESRGAN, etc.)</li>
+                                        <li><strong>SeedVR2:</strong> Advanced video upscaler (coming soon)</li>
+                                    </ul>
+                                </li>
+                                
+                                <li>
+                                    <h4>Upload Your Video</h4>
+                                    <p>In the <strong>Main</strong> tab, upload your video file or specify a frames folder path. The app supports most video formats and can process frame sequences.</p>
+                                </li>
+                                
+                                <li>
+                                    <h4>Configure Settings</h4>
+                                    <p>Adjust settings based on your needs:</p>
+                                    <ul>
+                                        <li><strong>For STAR Model:</strong> Set prompts, target resolution, and model parameters</li>
+                                        <li><strong>For Image Upscalers:</strong> Choose model and batch size</li>
+                                        <li><strong>GPU:</strong> Select your GPU for processing</li>
+                                    </ul>
+                                </li>
+                                
+                                <li>
+                                    <h4>Start Processing</h4>
+                                    <p>Click <strong>"Upscale Video"</strong> and monitor progress. You can cancel at any time if needed.</p>
+                                </li>
+                            </ol>
+                            
+                            <div class="alert-success">
+                                <i class="fas fa-lightbulb me-2"></i>
+                                <strong>Pro Tip:</strong> Start with Image Based Upscalers for quick results, then explore STAR Model for advanced quality when you need prompt-guided enhancement.
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Main Tab Section -->
+                    <section id="main-tab" class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Main Processing Tab</h2>
+                            <p class="section-subtitle">Core video processing interface and controls</p>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-upload"></i></span>
+                                        Video Input Options
+                                    </h3>
+                                    
+                                    <h5>Standard Video Upload</h5>
+                                    <p>Upload video files directly through the interface. Supported formats:</p>
+                                    <ul>
+                                        <li>MP4, AVI, MOV, MKV, WebM</li>
+                                        <li>WMV, FLV, M4V</li>
+                                        <li>Most common codecs supported</li>
+                                    </ul>
+                                    
+                                    <h5>Enhanced Input: Frames Folder <span class="badge-feature badge-new">NEW</span></h5>
+                                    <p>Process frame sequences directly by specifying folder paths:</p>
+                                    <div class="code-block">
+                                        <code>C:/path/to/frames/folder/</code><br>
+                                        <code>/home/user/video_frames/</code>
+                                    </div>
+                                    
+                                    <div class="alert-info">
+                                        <strong>Auto-Detection:</strong> The app automatically detects whether your input is a video file or frames folder and processes accordingly.
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-comments"></i></span>
+                                        Prompt System (STAR Model)
+                                    </h3>
+                                    
+                                    <h5>User Prompt</h5>
+                                    <p>Describe your video content to guide the upscaling process:</p>
+                                    <div class="code-block">
+                                        <code>"A panda playing guitar by a lake at sunset"</code>
+                                    </div>
+                                    
+                                    <h5>Auto-Captioning <span class="badge-feature">CogVLM2</span></h5>
+                                    <p>Generate intelligent descriptions automatically:</p>
+                                    <ul>
+                                        <li>Analyzes video content using AI</li>
+                                        <li>Works per-scene or entire video</li>
+                                        <li>Multiple quantization options (FP16, INT4, INT8)</li>
+                                    </ul>
+                                    
+                                    <h5>Positive & Negative Prompts</h5>
+                                    <ul>
+                                        <li><strong>Positive:</strong> Quality aspects you want (realism, detail)</li>
+                                        <li><strong>Negative:</strong> Aspects to avoid (artifacts, blur)</li>
+                                    </ul>
+                                    
+                                    <div class="alert-warning">
+                                        <strong>Token Limit:</strong> Combined prompts are limited to 77 tokens for STAR model processing.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-play-circle"></i></span>
+                                Processing Controls
+                            </h3>
+                            
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <h5><i class="fas fa-upload"></i> Upscale Video</h5>
+                                    <p>Main processing button. Starts upscaling with current settings.</p>
+                                </div>
+                                
+                                <div class="col-md-4">
+                                    <h5><i class="fas fa-stop"></i> Cancel Processing</h5>
+                                    <p>Safely stops processing at the next checkpoint. Partial results may be saved.</p>
+                                </div>
+                                
+                                <div class="col-md-4">
+                                    <h5><i class="fas fa-expand"></i> RIFE FPS Increase</h5>
+                                    <p>Apply frame interpolation only (no upscaling).</p>
+                                </div>
+                            </div>
+                            
+                            <div class="row mt-4">
+                                <div class="col-md-6">
+                                    <h5><i class="fas fa-magic"></i> Generate Caption (CogVLM2)</h5>
+                                    <p>Generate video description without upscaling.</p>
+                                </div>
+                                
+                                <div class="col-md-6">
+                                    <h5><i class="fas fa-trash"></i> Delete Temp Folder</h5>
+                                    <p>Clean up temporary processing files to free disk space.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Resolution & Scene Split Section -->
+                    <section id="resolution-tab" class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Resolution & Scene Split</h2>
+                            <p class="section-subtitle">Control output resolution and scene-based processing</p>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-expand-arrows-alt"></i></span>
+                                        Target Resolution Settings
+                                    </h3>
+                                    
+                                    <h5>Manual Resolution Control</h5>
+                                    <p>Override automatic scaling with precise resolution limits:</p>
+                                    <ul>
+                                        <li><strong>Max Target Width/Height:</strong> Set pixel limits</li>
+                                        <li><strong>Ratio Upscale:</strong> Maintain aspect ratio within limits</li>
+                                        <li><strong>Downscale then Upscale:</strong> Optimize for 4x scaling</li>
+                                    </ul>
+                                    
+                                    <h5>Auto-Aspect Resolution <span class="badge-feature badge-new">NEW</span></h5>
+                                    <p>Automatically calculate optimal resolution maintaining aspect ratio:</p>
+                                    <ul>
+                                        <li>Respects pixel budget (Target H × Target W)</li>
+                                        <li>Maintains exact input aspect ratio</li>
+                                        <li>Works with different aspect ratios automatically</li>
+                                    </ul>
+                                    
+                                    <div class="alert-info">
+                                        <strong>Example:</strong> 1024×1024 budget + 360×640 input → auto-sets to 720×1280 (maintains 9:16 ratio)
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-film"></i></span>
+                                        Scene Splitting
+                                    </h3>
+                                    
+                                    <h5>Automatic Scene Detection</h5>
+                                    <p>AI-powered scene boundary detection:</p>
+                                    <ul>
+                                        <li><strong>Detection Threshold:</strong> Sensitivity control</li>
+                                        <li><strong>Min Scene Length:</strong> Prevent tiny segments</li>
+                                        <li><strong>Frame Skip:</strong> Speed up detection</li>
+                                    </ul>
+                                    
+                                    <h5>Manual Scene Splitting</h5>
+                                    <p>Fixed interval splitting options:</p>
+                                    <ul>
+                                        <li><strong>Duration:</strong> Split every N seconds</li>
+                                        <li><strong>Frame Count:</strong> Split every N frames</li>
+                                    </ul>
+                                    
+                                    <h5>Encoding Settings</h5>
+                                    <ul>
+                                        <li><strong>Copy Streams:</strong> Fast, lossless splitting</li>
+                                        <li><strong>MKVMerge:</strong> Alternative splitting tool</li>
+                                        <li><strong>Quality Control:</strong> CRF and preset settings</li>
+                                    </ul>
+                                    
+                                    <div class="alert-success">
+                                        <strong>Benefits:</strong> Better temporal consistency, cancellation support, per-scene auto-captioning
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Core Settings Section -->
+                    <section id="core-settings" class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Core Settings</h2>
+                            <p class="section-subtitle">Choose your upscaling method and configure key features</p>
+                        </div>
+                        
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-layer-group"></i></span>
+                                Upscaler Type Selection
+                            </h3>
+                            
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <h5><i class="fas fa-star text-primary"></i> STAR Model Upscaler</h5>
+                                    <p><strong>AI temporal upscaler with prompt guidance</strong></p>
+                                    <ul>
+                                        <li>Advanced temporal consistency</li>
+                                        <li>Text prompt guided enhancement</li>
+                                        <li>Scene-aware processing</li>
+                                        <li>High quality, slower processing</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="col-md-4">
+                                    <h5><i class="fas fa-image text-success"></i> Image Based Upscalers</h5>
+                                    <p><strong>Fast deterministic spatial upscaling</strong></p>
+                                    <ul>
+                                        <li>RealESRGAN, DAT, SPAN models</li>
+                                        <li>2x, 4x scaling options</li>
+                                        <li>Fast processing</li>
+                                        <li>No prompts needed</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="col-md-4">
+                                    <h5><i class="fas fa-seedling text-warning"></i> SeedVR2 Video Upscaler</h5>
+                                    <p><strong>Advanced video upscaler (coming soon)</strong></p>
+                                    <ul>
+                                        <li>Best of both worlds</li>
+                                        <li>Variable scale factors</li>
+                                        <li>Real-time preview</li>
+                                        <li>Custom training support</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-robot"></i></span>
+                                        Auto-Captioning (CogVLM2)
+                                    </h3>
+                                    
+                                    <h5>Quantization Options</h5>
+                                    <table class="table parameter-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Mode</th>
+                                                <th>VRAM Usage</th>
+                                                <th>Speed</th>
+                                                <th>Quality</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td>FP16/BF16</td>
+                                                <td>High (~24GB)</td>
+                                                <td>Fast</td>
+                                                <td>Best</td>
+                                            </tr>
+                                            <tr>
+                                                <td>INT8</td>
+                                                <td>Medium (~12GB)</td>
+                                                <td>Good</td>
+                                                <td>Very Good</td>
+                                            </tr>
+                                            <tr>
+                                                <td>INT4</td>
+                                                <td>Low (~6GB)</td>
+                                                <td>Slower</td>
+                                                <td>Good</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    
+                                    <h5>Memory Management</h5>
+                                    <ul>
+                                        <li><strong>Full Unload:</strong> Complete memory cleanup</li>
+                                        <li><strong>CPU Move:</strong> Keep in RAM for faster reuse</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-user-md"></i></span>
+                                        Face Restoration (CodeFormer)
+                                    </h3>
+                                    
+                                    <h5>Key Parameters</h5>
+                                    <ul>
+                                        <li><strong>Fidelity Weight (0.0-1.0):</strong>
+                                            <ul>
+                                                <li>0.0-0.3: Prioritize quality (may change features)</li>
+                                                <li>0.4-0.6: Balanced approach</li>
+                                                <li>0.7-1.0: Preserve identity</li>
+                                            </ul>
+                                        </li>
+                                        <li><strong>Colorization:</strong> Restore color to grayscale faces</li>
+                                        <li><strong>Timing:</strong> Apply before or after upscaling</li>
+                                        <li><strong>Batch Size:</strong> Process multiple frames simultaneously</li>
+                                    </ul>
+                                    
+                                    <div class="alert-warning">
+                                        <strong>Requirements:</strong> CodeFormer models must be placed in the `pretrained_weight/` directory.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- STAR Upscaler Section -->
+                    <section id="star-upscaler" class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">STAR Upscaler Settings</h2>
+                            <p class="section-subtitle">Advanced temporal upscaling with AI guidance</p>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-cog"></i></span>
+                                        Model Configuration
+                                    </h3>
+                                    
+                                    <h5>Model Selection</h5>
+                                    <ul>
+                                        <li><strong>Light Degradation:</strong> For clean input videos (web downloads)</li>
+                                        <li><strong>Heavy Degradation:</strong> For compressed/noisy inputs</li>
+                                    </ul>
+                                    
+                                    <h5>Core Parameters</h5>
+                                    <table class="table parameter-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Parameter</th>
+                                                <th>Range</th>
+                                                <th>Description</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td>Upscale Factor</td>
+                                                <td>1.0 - 8.0</td>
+                                                <td>Simple resolution multiplier</td>
+                                            </tr>
+                                            <tr>
+                                                <td>Guidance Scale (CFG)</td>
+                                                <td>1.0 - 15.0</td>
+                                                <td>How strictly model follows prompts</td>
+                                            </tr>
+                                            <tr>
+                                                <td>Diffusion Steps</td>
+                                                <td>5 - 100</td>
+                                                <td>Processing iterations (more = quality)</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    
+                                    <h5>Solver Modes</h5>
+                                    <ul>
+                                        <li><strong>Fast:</strong> ~15 steps, much faster processing</li>
+                                        <li><strong>Normal:</strong> ~50 steps, potentially better quality</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-memory"></i></span>
+                                        Performance Optimization
+                                    </h3>
+                                    
+                                    <h5>VRAM Management</h5>
+                                    <ul>
+                                        <li><strong>Max Frames per Chunk:</strong> Primary VRAM control (32 = best quality)</li>
+                                        <li><strong>VAE Decode Chunk:</strong> Memory usage for decoding</li>
+                                        <li><strong>Optimize Last Chunk:</strong> Improve quality for small final chunks</li>
+                                    </ul>
+                                    
+                                    <h5>Advanced Features</h5>
+                                    <ul>
+                                        <li><strong>Context Window:</strong> Use previous frames for consistency</li>
+                                        <li><strong>Tiling:</strong> Process in spatial patches (very slow)</li>
+                                        <li><strong>VRAM Optimization:</strong> Advanced memory management</li>
+                                    </ul>
+                                    
+                                    <h5>Color Correction</h5>
+                                    <ul>
+                                        <li><strong>AdaIN:</strong> Adaptive Instance Normalization</li>
+                                        <li><strong>Wavelet:</strong> Wavelet-based color matching</li>
+                                        <li><strong>None:</strong> Disable color correction</li>
+                                    </ul>
+                                    
+                                    <div class="alert-info">
+                                        <strong>Recommendation:</strong> Start with 32 frames per chunk. Reduce if you get out-of-memory errors.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Image Upscaler Section -->
+                    <section id="image-upscaler" class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Image Based Upscalers</h2>
+                            <p class="section-subtitle">Fast spatial upscaling with specialized models</p>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-lg-8">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-images"></i></span>
+                                        Model Selection & Configuration
+                                    </h3>
+                                    
+                                    <h5>Popular Models</h5>
+                                    <table class="table parameter-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Model</th>
+                                                <th>Scale</th>
+                                                <th>Best For</th>
+                                                <th>Speed</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td>2xLiveActionV1_SPAN_490000</td>
+                                                <td>2x</td>
+                                                <td>Live-action video content</td>
+                                                <td>Very Fast</td>
+                                            </tr>
+                                            <tr>
+                                                <td>RealESRGAN_x4plus</td>
+                                                <td>4x</td>
+                                                <td>General-purpose upscaling</td>
+                                                <td>Fast</td>
+                                            </tr>
+                                            <tr>
+                                                <td>DAT-2 series</td>
+                                                <td>2x/4x</td>
+                                                <td>High quality results</td>
+                                                <td>Slower</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    
+                                    <h5>Batch Size Optimization</h5>
+                                    <ul>
+                                        <li><strong>Start with 2-4:</strong> Safe for most GPUs</li>
+                                        <li><strong>Increase gradually:</strong> Monitor VRAM usage</li>
+                                        <li><strong>2x models:</strong> Can handle larger batch sizes</li>
+                                        <li><strong>4x models:</strong> Require more VRAM per frame</li>
+                                    </ul>
+                                    
+                                    <div class="alert-success">
+                                        <strong>Performance Tip:</strong> 2x models are significantly faster and use less VRAM than 4x models.
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-lg-4">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-download"></i></span>
+                                        Model Management
+                                    </h3>
+                                    
+                                    <h5>Installation</h5>
+                                    <ol>
+                                        <li>Download models (.pth files)</li>
+                                        <li>Place in <code>upscale_models/</code> directory</li>
+                                        <li>Refresh model list in app</li>
+                                        <li>Select from dropdown</li>
+                                    </ol>
+                                    
+                                    <h5>Model Information</h5>
+                                    <p>The app automatically detects:</p>
+                                    <ul>
+                                        <li>Architecture type</li>
+                                        <li>Scale factor</li>
+                                        <li>Input/output channels</li>
+                                        <li>File size</li>
+                                        <li>Precision support</li>
+                                    </ul>
+                                    
+                                    <div class="alert-warning">
+                                        <strong>Note:</strong> Target resolution settings work with image upscalers and adapt to model scale factors.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- SeedVR2 Section -->
+                    <section id="seedvr2" class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">SeedVR2 Video Upscaler</h2>
+                            <p class="section-subtitle">Next-generation video upscaling (coming soon)</p>
+                        </div>
+                        
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-seedling"></i></span>
+                                Planned Features <span class="badge-feature badge-experimental">COMING SOON</span>
+                            </h3>
+                            
+                            <div class="alert-info">
+                                <i class="fas fa-info-circle me-2"></i>
+                                <strong>Development Status:</strong> SeedVR2 is currently in development and will be available in a future update.
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h5>Advanced Features</h5>
+                                    <ul>
+                                        <li><strong>Temporal Consistency:</strong> Advanced inter-frame coherence</li>
+                                        <li><strong>Variable Scale Factors:</strong> 2x, 4x, and custom scaling</li>
+                                        <li><strong>Multiple Architectures:</strong> Optimized for different content types</li>
+                                        <li><strong>Real-time Preview:</strong> Live preview during processing</li>
+                                        <li><strong>Custom Training:</strong> Fine-tune on your own data</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="col-md-6">
+                                    <h5>Expected Benefits</h5>
+                                    <ul>
+                                        <li>Best of both temporal and spatial upscaling</li>
+                                        <li>Improved quality over current methods</li>
+                                        <li>Efficient processing pipeline</li>
+                                        <li>Advanced customization options</li>
+                                        <li>Batch processing optimization</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Output & Comparison Section -->
+                    <section id="output-comparison" class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Output & Comparison</h2>
+                            <p class="section-subtitle">Control output settings and generate comparison videos</p>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-video"></i></span>
+                                        FFmpeg Encoding Settings
+                                    </h3>
+                                    
+                                    <h5>GPU Acceleration</h5>
+                                    <ul>
+                                        <li><strong>NVIDIA NVENC:</strong> Hardware-accelerated encoding</li>
+                                        <li><strong>Quality Settings:</strong> CRF for CPU, CQ for GPU</li>
+                                        <li><strong>Preset Options:</strong> Speed vs quality trade-off</li>
+                                    </ul>
+                                    
+                                    <h5>Quality Parameters</h5>
+                                    <table class="table parameter-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Encoder</th>
+                                                <th>Quality Setting</th>
+                                                <th>Recommended Range</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td>libx264 (CPU)</td>
+                                                <td>CRF</td>
+                                                <td>18-28 (23 default)</td>
+                                            </tr>
+                                            <tr>
+                                                <td>h264_nvenc (GPU)</td>
+                                                <td>CQ</td>
+                                                <td>18-28 (25 default)</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    
+                                    <h5>Frame Folder Settings</h5>
+                                    <p>When processing frame folders, set the target FPS:</p>
+                                    <ul>
+                                        <li>23.976 FPS (Cinema)</li>
+                                        <li>24 FPS (Film standard)</li>
+                                        <li>30 FPS (Standard video)</li>
+                                        <li>60 FPS (High frame rate)</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-save"></i></span>
+                                        Output Options
+                                    </h3>
+                                    
+                                    <h5>File Saving Options</h5>
+                                    <ul>
+                                        <li><strong>Save Frames:</strong> Keep extracted input and processed frames</li>
+                                        <li><strong>Save Metadata:</strong> Processing parameters and timing info</li>
+                                        <li><strong>Save Chunks:</strong> Individual processed video chunks</li>
+                                        <li><strong>Save Chunk Frames:</strong> Debug frames for each chunk</li>
+                                    </ul>
+                                    
+                                    <h5>Comparison Video</h5>
+                                    <p>Automatically generate side-by-side or top-bottom comparisons:</p>
+                                    <ul>
+                                        <li>Layout chosen based on aspect ratio</li>
+                                        <li>Stays within 1920x1080 when possible</li>
+                                        <li>Uses same FFmpeg settings as main output</li>
+                                    </ul>
+                                    
+                                    <h5>Seeding for Reproducibility</h5>
+                                    <ul>
+                                        <li><strong>Fixed Seed:</strong> Reproducible results</li>
+                                        <li><strong>Random Seed:</strong> Generate new seed each time</li>
+                                        <li><strong>Seed -1:</strong> Auto-generate random seed</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-compress-arrows-alt"></i></span>
+                                Manual Comparison Video Generator
+                            </h3>
+                            
+                            <div class="row">
+                                <div class="col-md-8">
+                                    <h5>Multi-Video Comparison</h5>
+                                    <p>Create custom comparison videos with 2-4 videos:</p>
+                                    
+                                    <ol class="steps-list">
+                                        <li>
+                                            <h6>Choose Video Count</h6>
+                                            <p>Select how many videos to compare (2, 3, or 4 videos)</p>
+                                        </li>
+                                        
+                                        <li>
+                                            <h6>Upload Videos</h6>
+                                            <p>Upload your videos for comparison (original, upscaled, different methods, etc.)</p>
+                                        </li>
+                                        
+                                        <li>
+                                            <h6>Select Layout</h6>
+                                            <p>Choose comparison layout or let the app decide automatically</p>
+                                        </li>
+                                        
+                                        <li>
+                                            <h6>Generate</h6>
+                                            <p>Create the comparison video using current FFmpeg settings</p>
+                                        </li>
+                                    </ol>
+                                </div>
+                                
+                                <div class="col-md-4">
+                                    <h5>Layout Options</h5>
+                                    <ul>
+                                        <li><strong>2 Videos:</strong> Side-by-side, Top-bottom, Auto</li>
+                                        <li><strong>3 Videos:</strong> 3x1 horizontal, 1x3 vertical, L-shape</li>
+                                        <li><strong>4 Videos:</strong> 2x2 grid, 4x1 horizontal, 1x4 vertical</li>
+                                    </ul>
+                                    
+                                    <div class="alert-success">
+                                        <strong>Auto Layout:</strong> Automatically chooses the best layout based on video aspect ratios.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Batch Processing Section -->
+                    <section id="batch-processing" class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Batch Processing</h2>
+                            <p class="section-subtitle">Process multiple videos automatically with smart prompt handling</p>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-lg-8">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-layer-group"></i></span>
+                                        Batch Workflow
+                                    </h3>
+                                    
+                                    <ol class="steps-list">
+                                        <li>
+                                            <h6>File Discovery</h6>
+                                            <p>Scans input folder for video files or frame folders:</p>
+                                            <ul>
+                                                <li>Supported formats: MP4, AVI, MOV, MKV, WebM, WMV, FLV, M4V</li>
+                                                <li>Recursive folder scanning</li>
+                                                <li>Frame folder detection (when enabled)</li>
+                                            </ul>
+                                        </li>
+                                        
+                                        <li>
+                                            <h6>Prompt Selection (Priority Order)</h6>
+                                            <div class="alert-info">
+                                                <strong>1. Prompt Files:</strong> `filename.txt` next to video (highest priority)<br>
+                                                <strong>2. Auto-Caption:</strong> CogVLM2 generated descriptions<br>
+                                                <strong>3. User Prompt:</strong> Main tab prompt (fallback)
+                                            </div>
+                                        </li>
+                                        
+                                        <li>
+                                            <h6>Processing</h6>
+                                            <p>Each video processed with same settings from Main tab</p>
+                                        </li>
+                                        
+                                        <li>
+                                            <h6>Output Organization</h6>
+                                            <p>Results saved in organized folder structure</p>
+                                        </li>
+                                    </ol>
+                                </div>
+                            </div>
+                            
+                            <div class="col-lg-4">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-cogs"></i></span>
+                                        Batch Options
+                                    </h3>
+                                    
+                                    <h5>Smart Features</h5>
+                                    <ul>
+                                        <li><strong>Skip Existing:</strong> Resume interrupted jobs</li>
+                                        <li><strong>Use Prompt Files:</strong> Per-video custom prompts</li>
+                                        <li><strong>Save Captions:</strong> Store auto-generated descriptions</li>
+                                        <li><strong>Auto-Caption:</strong> Generate descriptions for videos without prompts</li>
+                                    </ul>
+                                    
+                                    <h5>Frame Folder Mode</h5>
+                                    <p>Process subfolders containing frame sequences:</p>
+                                    <ul>
+                                        <li>Automatically converts to videos first</li>
+                                        <li>Uses global FPS and encoding settings</li>
+                                        <li>Preserves folder names</li>
+                                    </ul>
+                                    
+                                    <div class="alert-warning">
+                                        <strong>Tip:</strong> Create prompt files for videos requiring specific descriptions to ensure best quality.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-file-text"></i></span>
+                                Prompt File System
+                            </h3>
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h5>Creating Prompt Files</h5>
+                                    <p>Create text files with the same name as your videos:</p>
+                                    <div class="code-block">
+                                        <code>video.mp4</code> → <code>video.txt</code><br>
+                                        <code>movie_clip.avi</code> → <code>movie_clip.txt</code><br>
+                                        <code>scene_01.mkv</code> → <code>scene_01.txt</code>
+                                    </div>
+                                </div>
+                                
+                                <div class="col-md-6">
+                                    <h5>Example Prompt File Content</h5>
+                                    <div class="code-block">
+                                        <code>A beautiful sunset over mountains with golden hour lighting, cinematic composition, high detail</code>
+                                    </div>
+                                    
+                                    <div class="alert-success">
+                                        <strong>Auto-Save:</strong> Enable "Save Captions" to automatically create prompt files from auto-generated descriptions.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- FPS Control Section -->
+                    <section id="fps-control" class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">FPS Control & Frame Interpolation</h2>
+                            <p class="section-subtitle">RIFE interpolation and FPS manipulation for smooth motion</p>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-play-circle"></i></span>
+                                        RIFE Frame Interpolation
+                                    </h3>
+                                    
+                                    <h5>How RIFE Works</h5>
+                                    <p>RIFE (Real-time Intermediate Flow Estimation) uses AI to generate intermediate frames between existing frames, creating smooth motion and higher frame rates.</p>
+                                    
+                                    <h5>Key Settings</h5>
+                                    <table class="table parameter-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Parameter</th>
+                                                <th>Options</th>
+                                                <th>Impact</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td>FPS Multiplier</td>
+                                                <td>2x, 4x</td>
+                                                <td>24fps → 48fps or 96fps</td>
+                                            </tr>
+                                            <tr>
+                                                <td>FP16 Precision</td>
+                                                <td>On/Off</td>
+                                                <td>Faster, less VRAM</td>
+                                            </tr>
+                                            <tr>
+                                                <td>UHD Mode</td>
+                                                <td>On/Off</td>
+                                                <td>Better for 4K+ content</td>
+                                            </tr>
+                                            <tr>
+                                                <td>Scale Factor</td>
+                                                <td>0.25-2.0</td>
+                                                <td>Processing resolution</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    
+                                    <h5>Advanced Options</h5>
+                                    <ul>
+                                        <li><strong>Skip Static Frames:</strong> Avoid interpolating still scenes</li>
+                                        <li><strong>FPS Limiting:</strong> Cap output at specific frame rates</li>
+                                        <li><strong>Apply to Chunks/Scenes:</strong> Use throughout pipeline</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-tachometer-alt"></i></span>
+                                        FPS Decrease (Pre-processing)
+                                    </h3>
+                                    
+                                    <h5>Why Reduce FPS?</h5>
+                                    <p>Reducing FPS before upscaling can significantly speed up processing and reduce VRAM usage. You can then use RIFE to restore smooth motion.</p>
+                                    
+                                    <h5>Reduction Methods</h5>
+                                    <ul>
+                                        <li><strong>Multiplier Mode:</strong> Fraction of original (1/2x, 1/4x)</li>
+                                        <li><strong>Fixed Mode:</strong> Set specific target FPS</li>
+                                    </ul>
+                                    
+                                    <h5>Frame Selection</h5>
+                                    <ul>
+                                        <li><strong>Drop:</strong> Simply remove frames (faster)</li>
+                                        <li><strong>Blend:</strong> Blend frames together (smoother)</li>
+                                    </ul>
+                                    
+                                    <div class="alert-success">
+                                        <strong>Recommended Workflow:</strong> Use 1/2x FPS decrease for faster upscaling, then apply RIFE 2x-4x to restore 24-60 FPS output!
+                                    </div>
+                                    
+                                    <h5>Common FPS Values</h5>
+                                    <ul>
+                                        <li><strong>23.976/29.970/59.940:</strong> NTSC rates</li>
+                                        <li><strong>24/25/30/50/60:</strong> Standard rates</li>
+                                        <li><strong>120/144/240+:</strong> Gaming rates</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-chart-line"></i></span>
+                                Optimal FPS Workflow Examples
+                            </h3>
+                            
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <h5>Speed Optimization</h5>
+                                    <ol>
+                                        <li>Input: 30 FPS video</li>
+                                        <li>FPS Decrease: 1/2x → 15 FPS</li>
+                                        <li>Upscale: Process 15 FPS (faster)</li>
+                                        <li>RIFE: 4x → 60 FPS output</li>
+                                    </ol>
+                                    <div class="alert-info">
+                                        <strong>Result:</strong> 2x faster processing, 2x higher output FPS
+                                    </div>
+                                </div>
+                                
+                                <div class="col-md-4">
+                                    <h5>Quality Focus</h5>
+                                    <ol>
+                                        <li>Input: 24 FPS video</li>
+                                        <li>No FPS decrease</li>
+                                        <li>Upscale: Full 24 FPS</li>
+                                        <li>RIFE: 2x → 48 FPS output</li>
+                                    </ol>
+                                    <div class="alert-info">
+                                        <strong>Result:</strong> Maximum quality, smooth motion
+                                    </div>
+                                </div>
+                                
+                                <div class="col-md-4">
+                                    <h5>VRAM Conservation</h5>
+                                    <ol>
+                                        <li>Input: 60 FPS video</li>
+                                        <li>FPS Decrease: Fixed 12 FPS</li>
+                                        <li>Upscale: Process 12 FPS</li>
+                                        <li>RIFE: 4x → 48 FPS output</li>
+                                    </ol>
+                                    <div class="alert-info">
+                                        <strong>Result:</strong> 5x less VRAM, great for high-res videos
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Video Editor Section -->
+                    <section id="video-editor" class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Video Editor & Cutting Tools</h2>
+                            <p class="section-subtitle">Precise video cutting and segment extraction</p>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-cut"></i></span>
+                                        Cutting Modes
+                                    </h3>
+                                    
+                                    <h5>Time-Based Cutting</h5>
+                                    <p>Cut using timestamps (seconds or MM:SS format):</p>
+                                    <div class="code-block">
+                                        <code>1-3,5-8,10-15</code><br>
+                                        <code>1:30-2:45,3:00-4:30</code>
+                                    </div>
+                                    
+                                    <h5>Frame-Based Cutting</h5>
+                                    <p>Cut using exact frame numbers (0-indexed):</p>
+                                    <div class="code-block">
+                                        <code>30-90,150-210,300-450</code>
+                                    </div>
+                                    
+                                    <h5>Precision Options</h5>
+                                    <ul>
+                                        <li><strong>Precise:</strong> Frame-accurate re-encoding</li>
+                                        <li><strong>Fast:</strong> Stream copy (faster, less accurate)</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-info-circle"></i></span>
+                                        Video Analysis
+                                    </h3>
+                                    
+                                    <h5>Automatic Information Display</h5>
+                                    <p>When you upload a video, the editor shows:</p>
+                                    <ul>
+                                        <li>Duration and frame count</li>
+                                        <li>Frame rate (FPS)</li>
+                                        <li>Resolution</li>
+                                        <li>Codec information</li>
+                                    </ul>
+                                    
+                                    <h5>Cut Analysis</h5>
+                                    <p>Real-time validation and preview:</p>
+                                    <ul>
+                                        <li>Validates time/frame ranges</li>
+                                        <li>Shows total output duration</li>
+                                        <li>Estimates processing time</li>
+                                        <li>Checks for overlaps or errors</li>
+                                    </ul>
+                                    
+                                    <div class="alert-success">
+                                        <strong>Preview:</strong> Enable "Generate Preview" to create a sample of the first cut segment for verification.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-workflow"></i></span>
+                                Integration Workflow
+                            </h3>
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h5>Cut and Save</h5>
+                                    <p>Standard workflow for saving cut segments:</p>
+                                    <ol>
+                                        <li>Upload video and enter cut ranges</li>
+                                        <li>Choose precision mode</li>
+                                        <li>Click "Cut and Save"</li>
+                                        <li>Review results and metadata</li>
+                                    </ol>
+                                </div>
+                                
+                                <div class="col-md-6">
+                                    <h5>Cut and Move to Upscale</h5>
+                                    <p>Seamless integration with main processing:</p>
+                                    <ol>
+                                        <li>Cut video segments as above</li>
+                                        <li>Click "Cut and Move to Upscale"</li>
+                                        <li>Automatically loads cut video in Main tab</li>
+                                        <li>Ready for immediate upscaling</li>
+                                    </ol>
+                                </div>
+                            </div>
+                            
+                            <div class="alert-info">
+                                <strong>Output Organization:</strong> Cut videos are saved in organized session folders with detailed metadata about the cutting parameters used.
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Face Restoration Section -->
+                    <section id="face-restoration" class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Standalone Face Restoration</h2>
+                            <p class="section-subtitle">CodeFormer-powered face enhancement without upscaling</p>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-user-md"></i></span>
+                                        CodeFormer Face Enhancement
+                                    </h3>
+                                    
+                                    <h5>Processing Modes</h5>
+                                    <ul>
+                                        <li><strong>Single Video:</strong> Process one video at a time</li>
+                                        <li><strong>Batch Folder:</strong> Process entire folders of videos</li>
+                                    </ul>
+                                    
+                                    <h5>Key Parameters</h5>
+                                    <table class="table parameter-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Setting</th>
+                                                <th>Range</th>
+                                                <th>Purpose</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td>Fidelity Weight</td>
+                                                <td>0.0 - 1.0</td>
+                                                <td>Quality vs Identity balance</td>
+                                            </tr>
+                                            <tr>
+                                                <td>Batch Size</td>
+                                                <td>1 - 16</td>
+                                                <td>Frames processed simultaneously</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    
+                                    <h5>Fidelity Guidelines</h5>
+                                    <ul>
+                                        <li><strong>0.3-0.5:</strong> Focus on quality (may change features)</li>
+                                        <li><strong>0.7:</strong> Recommended balance</li>
+                                        <li><strong>0.8-1.0:</strong> Preserve identity (minimal changes)</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-palette"></i></span>
+                                        Advanced Features
+                                    </h3>
+                                    
+                                    <h5>Colorization Support</h5>
+                                    <p>Restore color to grayscale faces:</p>
+                                    <ul>
+                                        <li>Ideal for old black & white videos</li>
+                                        <li>Experimental feature</li>
+                                        <li>Works best with clear facial features</li>
+                                    </ul>
+                                    
+                                    <h5>Output Options</h5>
+                                    <ul>
+                                        <li><strong>Individual Frames:</strong> Save processed frames as images</li>
+                                        <li><strong>Comparison Video:</strong> Before/after side-by-side</li>
+                                        <li><strong>Preserve Audio:</strong> Keep original audio track</li>
+                                    </ul>
+                                    
+                                    <h5>Model Selection</h5>
+                                    <ul>
+                                        <li><strong>Auto (Default):</strong> Use built-in optimal settings</li>
+                                        <li><strong>Custom Model:</strong> Specify CodeFormer model path</li>
+                                    </ul>
+                                    
+                                    <div class="alert-warning">
+                                        <strong>Requirements:</strong> CodeFormer models must be placed in the `pretrained_weight/CodeFormer/` directory.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-chart-bar"></i></span>
+                                Best Practices & Tips
+                            </h3>
+                            
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <h5>Optimal Settings</h5>
+                                    <ul>
+                                        <li>Start with fidelity weight 0.7</li>
+                                        <li>Use comparison video to evaluate</li>
+                                        <li>Adjust batch size based on VRAM</li>
+                                        <li>Enable colorization only for grayscale content</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="col-md-4">
+                                    <h5>Content Suitability</h5>
+                                    <ul>
+                                        <li>Works best with clear, visible faces</li>
+                                        <li>Effective for compressed/low-quality videos</li>
+                                        <li>Good for older video content</li>
+                                        <li>Can enhance face details and skin texture</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="col-md-4">
+                                    <h5>Performance Tips</h5>
+                                    <ul>
+                                        <li>Higher batch sizes = faster processing</li>
+                                        <li>Monitor VRAM usage during processing</li>
+                                        <li>Use GPU acceleration when available</li>
+                                        <li>Process shorter videos first to test settings</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Presets Section -->
+                    <section id="presets" class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Presets Management</h2>
+                            <p class="section-subtitle">Save and load your favorite configurations</p>
+                        </div>
+                        
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-save"></i></span>
+                                Working with Presets
+                            </h3>
+                            
+                            <div class="row">
+                                <div class="col-lg-6">
+                                    <h5>Saving Presets</h5>
+                                    <ol class="steps-list">
+                                        <li>
+                                            <h6>Configure Settings</h6>
+                                            <p>Set up all your desired parameters across all tabs</p>
+                                        </li>
+                                        
+                                        <li>
+                                            <h6>Name Your Preset</h6>
+                                            <p>Enter a descriptive name in the preset dropdown</p>
+                                        </li>
+                                        
+                                        <li>
+                                            <h6>Click Save</h6>
+                                            <p>Your configuration is saved for future use</p>
+                                        </li>
+                                    </ol>
+                                </div>
+                                
+                                <div class="col-lg-6">
+                                    <h5>Loading Presets</h5>
+                                    <ul>
+                                        <li>Select from the dropdown to load settings</li>
+                                        <li>All tabs update automatically</li>
+                                        <li>Last used preset loads on startup</li>
+                                        <li>Refresh button updates the list</li>
+                                    </ul>
+                                    
+                                    <h5>What's Saved</h5>
+                                    <ul>
+                                        <li>All upscaler settings and parameters</li>
+                                        <li>Resolution and scene split configuration</li>
+                                        <li>FPS and RIFE settings</li>
+                                        <li>Output and comparison options</li>
+                                        <li>Face restoration parameters</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <div class="alert-info">
+                                <strong>Smart Loading:</strong> Presets automatically update UI controls and enable/disable dependent settings for a seamless experience.
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-star"></i></span>
+                                        Recommended Presets
+                                    </h3>
+                                    
+                                    <h5>Quick Start Presets</h5>
+                                    <ul>
+                                        <li><strong>Image Upscaler Fast:</strong> 2x model, high batch size</li>
+                                        <li><strong>STAR Quality:</strong> 32 frames, normal solver</li>
+                                        <li><strong>STAR Speed:</strong> 16 frames, fast solver</li>
+                                        <li><strong>Face Restoration:</strong> Optimized for face enhancement</li>
+                                    </ul>
+                                    
+                                    <div class="alert-success">
+                                        <strong>Tip:</strong> Create presets for different content types (animation, live-action, low-quality, etc.)
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-edit"></i></span>
+                                        Preset Organization
+                                    </h3>
+                                    
+                                    <h5>Naming Conventions</h5>
+                                    <ul>
+                                        <li>Use descriptive names</li>
+                                        <li>Include model type and quality level</li>
+                                        <li>Add content type if specific</li>
+                                    </ul>
+                                    
+                                    <h5>Examples</h5>
+                                    <div class="code-block">
+                                        <code>STAR_High_Quality_Anime</code><br>
+                                        <code>Image_2x_Fast_Batch</code><br>
+                                        <code>RIFE_60fps_Smooth</code><br>
+                                        <code>Face_Restore_Old_Videos</code>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Troubleshooting Section -->
+                    <section id="troubleshooting" class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Troubleshooting & Common Issues</h2>
+                            <p class="section-subtitle">Solutions to common problems and error messages</p>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-memory"></i></span>
+                                        Memory & VRAM Issues
+                                    </h3>
+                                    
+                                    <h5>Out of Memory Errors</h5>
+                                    <div class="alert-warning">
+                                        <strong>Error:</strong> "CUDA out of memory" or "RuntimeError: out of memory"
+                                    </div>
+                                    
+                                    <p><strong>Solutions:</strong></p>
+                                    <ul>
+                                        <li><strong>Reduce Frames per Chunk:</strong> Start with 16, then 8 if needed</li>
+                                        <li><strong>Lower Batch Size:</strong> For image upscalers, try 1-2 frames</li>
+                                        <li><strong>Enable VRAM Optimization:</strong> In STAR settings</li>
+                                        <li><strong>Close Other Applications:</strong> Free up GPU memory</li>
+                                        <li><strong>Use FP16 Mode:</strong> For RIFE and compatible models</li>
+                                        <li><strong>Reduce Target Resolution:</strong> Lower output size</li>
+                                    </ul>
+                                    
+                                    <h5>System RAM Issues</h5>
+                                    <ul>
+                                        <li>Close other applications</li>
+                                        <li>Process shorter video segments</li>
+                                        <li>Disable frame saving options</li>
+                                        <li>Use scene splitting for large videos</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-exclamation-triangle"></i></span>
+                                        Model Loading Issues
+                                    </h3>
+                                    
+                                    <h5>STAR Model Not Found</h5>
+                                    <div class="alert-warning">
+                                        <strong>Error:</strong> "Model not found" or loading failures
+                                    </div>
+                                    
+                                    <p><strong>Solutions:</strong></p>
+                                    <ul>
+                                        <li>Check model files in correct directories</li>
+                                        <li>Verify file integrity (not corrupted)</li>
+                                        <li>Ensure sufficient disk space</li>
+                                        <li>Re-download models if necessary</li>
+                                    </ul>
+                                    
+                                    <h5>CogVLM2 Issues</h5>
+                                    <ul>
+                                        <li><strong>Quantization Errors:</strong> Try different quantization modes</li>
+                                        <li><strong>Linux vs Windows:</strong> Some quantization modes work differently</li>
+                                        <li><strong>Model Loading:</strong> Check CUDA compatibility</li>
+                                    </ul>
+                                    
+                                    <h5>Image Upscaler Models</h5>
+                                    <ul>
+                                        <li>Place .pth files in <code>upscale_models/</code></li>
+                                        <li>Use refresh button after adding models</li>
+                                        <li>Check model architecture compatibility</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-video"></i></span>
+                                        Video Processing Issues
+                                    </h3>
+                                    
+                                    <h5>FFmpeg Errors</h5>
+                                    <ul>
+                                        <li><strong>Codec Issues:</strong> Try different presets or quality settings</li>
+                                        <li><strong>Resolution Problems:</strong> Check if resolution is too small for NVENC</li>
+                                        <li><strong>Audio Sync:</strong> Verify original video integrity</li>
+                                        <li><strong>Permission Errors:</strong> Check file/folder permissions</li>
+                                    </ul>
+                                    
+                                    <h5>Processing Stuck or Slow</h5>
+                                    <ul>
+                                        <li>Check if process is actually stuck (monitor GPU usage)</li>
+                                        <li>Some steps (model loading) cannot be cancelled</li>
+                                        <li>Use scene splitting for better cancellation points</li>
+                                        <li>Monitor system resources (CPU, GPU, RAM)</li>
+                                    </ul>
+                                    
+                                    <h5>Output Quality Issues</h5>
+                                    <ul>
+                                        <li><strong>Blurry Results:</strong> Increase diffusion steps or CFG scale</li>
+                                        <li><strong>Artifacts:</strong> Try different color correction methods</li>
+                                        <li><strong>Inconsistent Quality:</strong> Enable scene splitting</li>
+                                        <li><strong>Wrong Colors:</strong> Enable color correction</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-bug"></i></span>
+                                        Application Issues
+                                    </h3>
+                                    
+                                    <h5>Interface Not Responding</h5>
+                                    <ul>
+                                        <li>Wait for current operation to complete</li>
+                                        <li>Check browser console for errors</li>
+                                        <li>Refresh the page if needed</li>
+                                        <li>Restart the application</li>
+                                    </ul>
+                                    
+                                    <h5>Preset Loading Problems</h5>
+                                    <ul>
+                                        <li>Check preset file corruption</li>
+                                        <li>Delete problematic preset files</li>
+                                        <li>Use "Default" preset as fallback</li>
+                                        <li>Manually configure settings if needed</li>
+                                    </ul>
+                                    
+                                    <h5>File Path Issues</h5>
+                                    <ul>
+                                        <li>Use full paths (not relative)</li>
+                                        <li>Check for special characters in filenames</li>
+                                        <li>Ensure files exist and are accessible</li>
+                                        <li>Windows: Use forward slashes or double backslashes</li>
+                                    </ul>
+                                    
+                                    <div class="alert-info">
+                                        <strong>Debug Tip:</strong> Check the application logs for detailed error messages and stack traces.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Advanced Tips Section -->
+                    <section id="advanced-tips" class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Advanced Tips & Optimization</h2>
+                            <p class="section-subtitle">Pro tips for optimal results and efficient workflows</p>
+                        </div>
+                        
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-rocket"></i></span>
+                                Performance Optimization Strategies
+                            </h3>
+                            
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <h5>Hardware Optimization</h5>
+                                    <ul>
+                                        <li><strong>GPU Selection:</strong> Use the most powerful GPU available</li>
+                                        <li><strong>VRAM Management:</strong> Monitor usage and adjust batch sizes</li>
+                                        <li><strong>Storage:</strong> Use fast SSD for temp files</li>
+                                        <li><strong>RAM:</strong> 32GB+ recommended for large videos</li>
+                                        <li><strong>CPU:</strong> Multi-core helps with FFmpeg operations</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="col-md-4">
+                                    <h5>Processing Strategies</h5>
+                                    <ul>
+                                        <li><strong>Scene Splitting:</strong> Always enable for cancellation support</li>
+                                        <li><strong>FPS Reduction:</strong> Use 1/2x for speed without quality loss</li>
+                                        <li><strong>Target Resolution:</strong> Set reasonable limits</li>
+                                        <li><strong>Chunk Optimization:</strong> Balance VRAM vs processing time</li>
+                                        <li><strong>Context Window:</strong> Use sparingly (experimental)</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="col-md-4">
+                                    <h5>Workflow Efficiency</h5>
+                                    <ul>
+                                        <li><strong>Test Settings:</strong> Use short clips first</li>
+                                        <li><strong>Save Presets:</strong> Create templates for different content</li>
+                                        <li><strong>Batch Processing:</strong> Process multiple videos overnight</li>
+                                        <li><strong>Video Editing:</strong> Cut segments before upscaling</li>
+                                        <li><strong>Prompt Files:</strong> Use for consistent quality</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-palette"></i></span>
+                                        Quality Optimization
+                                    </h3>
+                                    
+                                    <h5>STAR Model Tips</h5>
+                                    <ul>
+                                        <li><strong>Prompt Engineering:</strong> Be specific about content and style</li>
+                                        <li><strong>CFG Scale:</strong> 7-10 for most content, lower for creative freedom</li>
+                                        <li><strong>Model Selection:</strong> Light for clean input, Heavy for degraded</li>
+                                        <li><strong>Steps:</strong> 15-25 for fast mode, 50+ for quality</li>
+                                        <li><strong>Color Correction:</strong> AdaIN works well for most content</li>
+                                    </ul>
+                                    
+                                    <h5>Image Upscaler Tips</h5>
+                                    <ul>
+                                        <li><strong>Model Choice:</strong> Match model to content type</li>
+                                        <li><strong>Scale Factor:</strong> 2x for speed, 4x for dramatic upscaling</li>
+                                        <li><strong>Target Resolution:</strong> Works with image upscalers</li>
+                                        <li><strong>Batch Size:</strong> Higher for 2x models, lower for 4x</li>
+                                    </ul>
+                                    
+                                    <h5>Face Restoration Tips</h5>
+                                    <ul>
+                                        <li><strong>Fidelity Balance:</strong> 0.7 is usually optimal</li>
+                                        <li><strong>Timing:</strong> After upscaling for final enhancement</li>
+                                        <li><strong>Content:</strong> Works best with clear, frontal faces</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <div class="col-lg-6">
+                                <div class="feature-card">
+                                    <h3 class="feature-title">
+                                        <span class="feature-icon"><i class="fas fa-cogs"></i></span>
+                                        Advanced Workflows
+                                    </h3>
+                                    
+                                    <h5>Multi-Stage Processing</h5>
+                                    <ol>
+                                        <li><strong>Preparation:</strong> Cut and preview segments</li>
+                                        <li><strong>Test Run:</strong> Process short clip with settings</li>
+                                        <li><strong>Optimization:</strong> Adjust based on results</li>
+                                        <li><strong>Full Processing:</strong> Run complete upscaling</li>
+                                        <li><strong>Post-Processing:</strong> RIFE interpolation if needed</li>
+                                        <li><strong>Face Enhancement:</strong> Apply face restoration</li>
+                                        <li><strong>Comparison:</strong> Generate before/after videos</li>
+                                    </ol>
+                                    
+                                    <h5>Content-Specific Strategies</h5>
+                                    <ul>
+                                        <li><strong>Animation:</strong> Higher CFG scale, disable scene splitting</li>
+                                        <li><strong>Live Action:</strong> Enable scene splitting, moderate CFG</li>
+                                        <li><strong>Old Movies:</strong> Heavy degradation model, face restoration</li>
+                                        <li><strong>Gaming Videos:</strong> Image upscalers for speed</li>
+                                        <li><strong>Documentaries:</strong> Auto-captioning per scene</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-chart-line"></i></span>
+                                Quality vs Speed Trade-offs
+                            </h3>
+                            
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <h5>Maximum Quality Settings</h5>
+                                    <ul>
+                                        <li>STAR Model: Heavy degradation</li>
+                                        <li>32 frames per chunk</li>
+                                        <li>Normal solver mode, 50+ steps</li>
+                                        <li>CFG scale 8-10</li>
+                                        <li>Scene splitting enabled</li>
+                                        <li>Auto-captioning per scene</li>
+                                        <li>Color correction enabled</li>
+                                        <li>Face restoration after upscaling</li>
+                                    </ul>
+                                    <div class="alert-info">
+                                        <strong>Best for:</strong> Final production, important content, archival work
+                                    </div>
+                                </div>
+                                
+                                <div class="col-md-4">
+                                    <h5>Balanced Quality/Speed</h5>
+                                    <ul>
+                                        <li>Image upscaler: 2x models</li>
+                                        <li>OR STAR: Fast solver, 15-25 steps</li>
+                                        <li>16-24 frames per chunk</li>
+                                        <li>CFG scale 6-8</li>
+                                        <li>Scene splitting optional</li>
+                                        <li>FPS decrease 1/2x + RIFE 2x</li>
+                                        <li>Batch size 4-8</li>
+                                    </ul>
+                                    <div class="alert-info">
+                                        <strong>Best for:</strong> Daily use, testing, preview work
+                                    </div>
+                                </div>
+                                
+                                <div class="col-md-4">
+                                    <h5>Maximum Speed Settings</h5>
+                                    <ul>
+                                        <li>Image upscaler: 2x models only</li>
+                                        <li>High batch sizes (8-16)</li>
+                                        <li>Target resolution limits</li>
+                                        <li>FPS decrease to 12-15 FPS</li>
+                                        <li>RIFE 4x for final output</li>
+                                        <li>No face restoration</li>
+                                        <li>Fast FFmpeg presets</li>
+                                    </ul>
+                                    <div class="alert-info">
+                                        <strong>Best for:</strong> Batch processing, quick previews, low-priority content
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-graduation-cap"></i></span>
+                                Expert Tips & Hidden Features
+                            </h3>
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h5>🔧 Advanced Configuration</h5>
+                                    <ul>
+                                        <li><strong>Temp Folder Management:</strong> Monitor size and clean regularly</li>
+                                        <li><strong>Metadata Saving:</strong> Keep records of successful settings</li>
+                                        <li><strong>Chunk Preview:</strong> Use last chunk video for quality assessment</li>
+                                        <li><strong>Context Window:</strong> Experimental - test carefully</li>
+                                        <li><strong>Tiling Mode:</strong> Only for extremely high resolutions</li>
+                                    </ul>
+                                    
+                                    <h5>🎯 Prompt Engineering</h5>
+                                    <ul>
+                                        <li>Be specific about content type</li>
+                                        <li>Include quality descriptors</li>
+                                        <li>Mention lighting conditions</li>
+                                        <li>Specify camera angles/styles</li>
+                                        <li>Keep within 77 token limit</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="col-md-6">
+                                    <h5>⚡ Performance Monitoring</h5>
+                                    <ul>
+                                        <li>Watch GPU utilization in Task Manager</li>
+                                        <li>Monitor VRAM usage during processing</li>
+                                        <li>Check temp folder growth rate</li>
+                                        <li>Time different settings for comparison</li>
+                                        <li>Use system monitoring tools</li>
+                                    </ul>
+                                    
+                                    <h5>🔄 Cancellation & Recovery</h5>
+                                    <ul>
+                                        <li>Scene splitting provides better cancellation points</li>
+                                        <li>Partial videos may be saved on cancellation</li>
+                                        <li>Check outputs folder for partial results</li>
+                                        <li>Use "Skip Existing" for resuming batch jobs</li>
+                                        <li>Save chunks for manual assembly if needed</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <div class="alert-success">
+                                <strong>Pro Tip:</strong> Create multiple test presets (Fast, Balanced, Quality) and benchmark them with your typical content to find your optimal settings.
+                            </div>
+                        </div>
+                    </section>
+                    
+                    <!-- Footer Section -->
+                    <section class="section">
+                        <div class="feature-card text-center">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-heart"></i></span>
+                                Thank You for Using SECourses Video Upscaler Pro V1
+                            </h3>
+                            
+                            <p class="lead">This comprehensive tool represents the culmination of advanced AI research and practical video processing needs. We hope this documentation helps you achieve amazing results with your video upscaling projects.</p>
+                            
+                            <div class="row mt-4">
+                                <div class="col-md-4">
+                                    <h5><i class="fas fa-lightbulb text-warning"></i> Keep Learning</h5>
+                                    <p>Experiment with different settings and models to discover what works best for your specific content types.</p>
+                                </div>
+                                
+                                <div class="col-md-4">
+                                    <h5><i class="fas fa-share-alt text-primary"></i> Share Your Results</h5>
+                                    <p>The comparison video feature makes it easy to showcase the quality improvements achieved with upscaling.</p>
+                                </div>
+                                
+                                <div class="col-md-4">
+                                    <h5><i class="fas fa-rocket text-success"></i> Stay Updated</h5>
+                                    <p>New features like SeedVR2 and additional models are continuously being added to enhance your workflow.</p>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-4">
+                                <p class="text-muted">
+                                    <strong>Version:</strong> Pro V1 | 
+                                    <strong>Last Updated:</strong> <span id="lastUpdated"></span> | 
+                                    <strong>Features:</strong> STAR AI, Image Upscaling, Face Restoration, RIFE Interpolation, Batch Processing
+                                </p>
+                            </div>
+                        </div>
+                    </section>
+                    
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Back to Top Button -->
+    <button class="back-to-top" id="backToTop">
+        <i class="fas fa-arrow-up"></i>
+    </button>
+
+    <!-- Scripts -->
+    <!-- Bootstrap 5 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Prism.js for code highlighting -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    
+    <script>
+        // Enhanced Search functionality
+        let searchTimeout;
+        const searchInput = document.getElementById('searchInput');
+        const searchResults = document.getElementById('searchResults');
+        const searchClear = document.getElementById('searchClear');
+        
+        // Define sections with metadata for better search results
+        const searchableSections = [
+            { id: 'overview', title: 'Overview', icon: 'fas fa-home', description: 'Introduction and key features' },
+            { id: 'getting-started', title: 'Getting Started', icon: 'fas fa-rocket', description: 'Quick setup guide' },
+            { id: 'main-tab', title: 'Main Processing', icon: 'fas fa-play', description: 'Core video processing interface' },
+            { id: 'resolution-tab', title: 'Resolution & Scene Split', icon: 'fas fa-expand', description: 'Resolution control and scene processing' },
+            { id: 'core-settings', title: 'Core Settings', icon: 'fas fa-cogs', description: 'Upscaler selection and core features' },
+            { id: 'star-upscaler', title: 'STAR Upscaler', icon: 'fas fa-star', description: 'AI temporal upscaling settings' },
+            { id: 'image-upscaler', title: 'Image Based Upscalers', icon: 'fas fa-image', description: 'Fast spatial upscaling models' },
+            { id: 'seedvr2', title: 'SeedVR2 Video Upscaler', icon: 'fas fa-seedling', description: 'Next-generation upscaling (coming soon)' },
+            { id: 'output-comparison', title: 'Output & Comparison', icon: 'fas fa-file-export', description: 'Output settings and comparison videos' },
+            { id: 'batch-processing', title: 'Batch Processing', icon: 'fas fa-layer-group', description: 'Multi-video automation' },
+            { id: 'fps-control', title: 'FPS Control & Frame Interpolation', icon: 'fas fa-tachometer-alt', description: 'RIFE interpolation and FPS manipulation' },
+            { id: 'video-editor', title: 'Video Editor & Cutting Tools', icon: 'fas fa-cut', description: 'Precise video cutting and editing' },
+            { id: 'face-restoration', title: 'Standalone Face Restoration', icon: 'fas fa-user', description: 'CodeFormer face enhancement' },
+            { id: 'presets', title: 'Presets Management', icon: 'fas fa-save', description: 'Save and load configurations' },
+            { id: 'troubleshooting', title: 'Troubleshooting & Common Issues', icon: 'fas fa-wrench', description: 'Solutions to problems and errors' },
+            { id: 'advanced-tips', title: 'Advanced Tips & Optimization', icon: 'fas fa-lightbulb', description: 'Pro tips and optimization strategies' }
+        ];
+        
+        searchInput.addEventListener('input', function(e) {
+            const searchTerm = e.target.value.trim();
+            
+            // Show/hide clear button
+            if (searchTerm.length > 0) {
+                searchClear.classList.add('visible');
+            } else {
+                searchClear.classList.remove('visible');
+            }
+            
+            // Debounce search to improve performance
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                performSearch(searchTerm);
+            }, 150);
+        });
+        
+        searchClear.addEventListener('click', function() {
+            searchInput.value = '';
+            searchClear.classList.remove('visible');
+            clearSearch();
+        });
+        
+        // Click outside to close search results
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.search-container')) {
+                searchResults.classList.remove('visible');
+            }
+        });
+        
+        // Keep search results open when clicking inside
+        searchResults.addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
+        
+        function performSearch(searchTerm) {
+            if (searchTerm.length === 0) {
+                clearSearch();
+                return;
+            }
+            
+            if (searchTerm.length < 2) {
+                searchResults.classList.remove('visible');
+                return;
+            }
+            
+            const results = findSearchResults(searchTerm.toLowerCase());
+            displaySearchResults(results, searchTerm);
+        }
+        
+        function findSearchResults(searchTerm) {
+            const results = [];
+            
+            searchableSections.forEach(sectionMeta => {
+                const sectionElement = document.getElementById(sectionMeta.id);
+                if (!sectionElement) return;
+                
+                // Search in section title and description
+                const titleMatch = sectionMeta.title.toLowerCase().includes(searchTerm);
+                const descMatch = sectionMeta.description.toLowerCase().includes(searchTerm);
+                
+                // Search in section content
+                const contentText = sectionElement.textContent.toLowerCase();
+                const contentMatch = contentText.includes(searchTerm);
+                
+                if (titleMatch || descMatch || contentMatch) {
+                    // Find specific matches within the content
+                    const matches = findContentMatches(sectionElement, searchTerm);
+                    
+                    results.push({
+                        ...sectionMeta,
+                        titleMatch,
+                        descMatch,
+                        contentMatches: matches,
+                        relevanceScore: calculateRelevance(titleMatch, descMatch, matches.length)
+                    });
+                }
+            });
+            
+            // Sort by relevance score (highest first)
+            return results.sort((a, b) => b.relevanceScore - a.relevanceScore);
+        }
+        
+        function findContentMatches(element, searchTerm) {
+            const matches = [];
+            const walker = document.createTreeWalker(
+                element,
+                NodeFilter.SHOW_TEXT,
+                null,
+                false
+            );
+            
+            let node;
+            while (node = walker.nextNode()) {
+                const text = node.textContent;
+                const lowerText = text.toLowerCase();
+                
+                if (lowerText.includes(searchTerm)) {
+                    // Find the parent element with meaningful context
+                    let contextElement = node.parentElement;
+                    while (contextElement && !contextElement.tagName.match(/^(H[1-6]|P|LI|TD)$/)) {
+                        contextElement = contextElement.parentElement;
+                    }
+                    
+                    if (contextElement) {
+                        const contextText = contextElement.textContent.trim();
+                        if (contextText.length > 10) { // Only meaningful content
+                            matches.push({
+                                text: contextText,
+                                element: contextElement
+                            });
+                        }
+                    }
+                }
+            }
+            
+            // Remove duplicates and limit results
+            const uniqueMatches = matches.filter((match, index, self) => 
+                index === self.findIndex(m => m.text === match.text)
+            ).slice(0, 3);
+            
+            return uniqueMatches;
+        }
+        
+        function calculateRelevance(titleMatch, descMatch, contentMatches) {
+            let score = 0;
+            if (titleMatch) score += 100;
+            if (descMatch) score += 50;
+            score += contentMatches * 10;
+            return score;
+        }
+        
+        function displaySearchResults(results, searchTerm) {
+            if (results.length === 0) {
+                searchResults.innerHTML = `
+                    <div class="search-no-results">
+                        <i class="fas fa-search"></i>
+                        <div>No results found for "${searchTerm}"</div>
+                        <small>Try a different search term or check spelling</small>
+                    </div>
+                `;
+            } else {
+                const headerText = results.length === 1 ? '1 result found' : `${results.length} results found`;
+                let html = `<div class="search-results-header">${headerText}</div>`;
+                
+                results.forEach(result => {
+                    const snippet = generateSnippet(result, searchTerm);
+                    html += `
+                        <div class="search-result-item" onclick="navigateToSection('${result.id}')">
+                            <div class="search-result-title">
+                                <i class="${result.icon}"></i>
+                                ${highlightText(result.title, searchTerm)}
+                            </div>
+                            <div class="search-result-snippet">${snippet}</div>
+                        </div>
+                    `;
+                });
+                
+                searchResults.innerHTML = html;
+            }
+            
+            searchResults.classList.add('visible');
+        }
+        
+        function generateSnippet(result, searchTerm) {
+            if (result.titleMatch) {
+                return highlightText(result.description, searchTerm);
+            }
+            
+            if (result.contentMatches.length > 0) {
+                const match = result.contentMatches[0];
+                return truncateAndHighlight(match.text, searchTerm, 100);
+            }
+            
+            return highlightText(result.description, searchTerm);
+        }
+        
+        function truncateAndHighlight(text, searchTerm, maxLength) {
+            const lowerText = text.toLowerCase();
+            const termIndex = lowerText.indexOf(searchTerm.toLowerCase());
+            
+            if (termIndex === -1) {
+                return highlightText(text.substring(0, maxLength) + (text.length > maxLength ? '...' : ''), searchTerm);
+            }
+            
+            // Try to center the search term in the snippet
+            const start = Math.max(0, termIndex - Math.floor((maxLength - searchTerm.length) / 2));
+            const end = Math.min(text.length, start + maxLength);
+            
+            let snippet = text.substring(start, end);
+            if (start > 0) snippet = '...' + snippet;
+            if (end < text.length) snippet = snippet + '...';
+            
+            return highlightText(snippet, searchTerm);
+        }
+        
+        function highlightText(text, searchTerm) {
+            if (!searchTerm) return text;
+            const regex = new RegExp(`(${escapeRegExp(searchTerm)})`, 'gi');
+            return text.replace(regex, '<span class="search-match">$1</span>');
+        }
+        
+        function escapeRegExp(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+        
+        function navigateToSection(sectionId) {
+            const targetElement = document.getElementById(sectionId);
+            if (targetElement) {
+                // Hide search results
+                searchResults.classList.remove('visible');
+                
+                // Update navigation
+                document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+                const navLink = document.querySelector(`a[href="#${sectionId}"]`);
+                if (navLink) navLink.classList.add('active');
+                
+                // Smooth scroll to section
+                targetElement.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+                
+                // Highlight the section briefly
+                targetElement.style.transition = 'background-color 0.3s ease';
+                targetElement.style.backgroundColor = 'rgba(37, 99, 235, 0.1)';
+                setTimeout(() => {
+                    targetElement.style.backgroundColor = '';
+                }, 1000);
+            }
+        }
+        
+        function clearSearch() {
+            searchResults.classList.remove('visible');
+            searchResults.innerHTML = '';
+        }
+        
+        // Keyboard navigation for search results
+        searchInput.addEventListener('keydown', function(e) {
+            const items = searchResults.querySelectorAll('.search-result-item');
+            const activeItem = searchResults.querySelector('.search-result-item.active');
+            
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (activeItem) {
+                    activeItem.classList.remove('active');
+                    const next = activeItem.nextElementSibling;
+                    if (next && next.classList.contains('search-result-item')) {
+                        next.classList.add('active');
+                    } else if (items.length > 0) {
+                        items[0].classList.add('active');
+                    }
+                } else if (items.length > 0) {
+                    items[0].classList.add('active');
+                }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (activeItem) {
+                    activeItem.classList.remove('active');
+                    const prev = activeItem.previousElementSibling;
+                    if (prev && prev.classList.contains('search-result-item')) {
+                        prev.classList.add('active');
+                    } else if (items.length > 0) {
+                        items[items.length - 1].classList.add('active');
+                    }
+                } else if (items.length > 0) {
+                    items[items.length - 1].classList.add('active');
+                }
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (activeItem) {
+                    activeItem.click();
+                } else if (items.length > 0) {
+                    items[0].click();
+                }
+            } else if (e.key === 'Escape') {
+                clearSearch();
+                searchInput.blur();
+            }
+        });
+        
+        // Smooth scrolling for navigation links
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                const targetId = this.getAttribute('href').substring(1);
+                const targetElement = document.getElementById(targetId);
+                
+                if (targetElement) {
+                    // Update active state
+                    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    // Smooth scroll
+                    targetElement.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+        
+        // Back to top functionality
+        const backToTopButton = document.getElementById('backToTop');
+        
+        window.addEventListener('scroll', function() {
+            if (window.pageYOffset > 300) {
+                backToTopButton.classList.add('visible');
+            } else {
+                backToTopButton.classList.remove('visible');
+            }
+        });
+        
+        backToTopButton.addEventListener('click', function() {
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        });
+        
+        // Auto-update active navigation based on scroll position
+        window.addEventListener('scroll', function() {
+            const sections = document.querySelectorAll('.section');
+            const navLinks = document.querySelectorAll('.nav-link');
+            
+            let current = '';
+            sections.forEach(section => {
+                const sectionTop = section.offsetTop;
+                if (pageYOffset >= sectionTop - 200) {
+                    current = section.getAttribute('id');
+                }
+            });
+            
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href').substring(1) === current) {
+                    link.classList.add('active');
+                }
+            });
+        });
+        
+        // Initialize tooltips if needed
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl)
+        });
+        
+        // Set current date in footer
+        document.getElementById('lastUpdated').textContent = new Date().toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+    </script>
+</body>
+</html>
