@@ -51,9 +51,9 @@ def detect_input_type(input_path: str, logger: Optional[logging.Logger] = None) 
             if file_ext in supported_video_exts:
                 # It's a video file
                 try:
-                    # Try to get basic video info
-                    from .ffmpeg_utils import get_video_info
-                    video_info = get_video_info(validated_path, logger)
+                    # Try to get basic video info (using fast version for UI responsiveness)
+                    from .ffmpeg_utils import get_video_info_fast
+                    video_info = get_video_info_fast(validated_path, logger)
                     if video_info:
                         metadata.update({
                             "file_extension": file_ext,

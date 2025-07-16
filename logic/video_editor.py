@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import List, Tuple, Dict, Optional, Any
 import cv2
 
-from .ffmpeg_utils import run_ffmpeg_command, get_video_info
+from .ffmpeg_utils import run_ffmpeg_command, get_video_info, get_video_info_fast
 from .file_utils import sanitize_filename, get_next_filename
 
 
@@ -116,7 +116,8 @@ def get_video_detailed_info(video_path: str, logger) -> Optional[Dict[str, Any]]
         return None
     
     try:
-        basic_info = get_video_info(video_path, logger)
+        # Use fast version for UI responsiveness (detailed frame count not critical for editing preview)
+        basic_info = get_video_info_fast(video_path, logger)
         if not basic_info:
             return None
         

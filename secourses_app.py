@@ -53,6 +53,7 @@ decrease_fps_with_multiplier as util_decrease_fps_with_multiplier ,
 calculate_target_fps_from_multiplier as util_calculate_target_fps_from_multiplier ,
 get_common_fps_multipliers as util_get_common_fps_multipliers ,
 get_video_info as util_get_video_info ,
+get_video_info_fast as util_get_video_info_fast ,
 format_video_info_message as util_format_video_info_message 
 )
 
@@ -3548,9 +3549,9 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         if video_path is None:
             return "", target_h, target_w, "No video loaded"
         
-        # Get basic video info for status display
+        # Get basic video info for status display (using fast version for UI responsiveness)
         try:
-            video_info = util_get_video_info(video_path, logger)
+            video_info = util_get_video_info_fast(video_path, logger)
             if video_info:
                 filename = os.path.basename(video_path) if video_path else None
                 info_message = util_format_video_info_message(video_info, filename)

@@ -10,7 +10,7 @@ import math
 from typing import Tuple, Optional
 import logging
 
-from .ffmpeg_utils import get_video_info
+from .ffmpeg_utils import get_video_info, get_video_info_fast
 from .dataclasses import ResolutionConfig
 
 
@@ -176,8 +176,8 @@ def update_auto_resolution_if_enabled(
         return updated_config, updated_config.auto_resolution_status
     
     try:
-        # Get video information
-        video_info = get_video_info(video_path, logger=logger)
+        # Get video information (using fast version for UI responsiveness)
+        video_info = get_video_info_fast(video_path, logger=logger)
         
         if not video_info:
             error_msg = f"Could not read video info: {os.path.basename(video_path)}"
@@ -334,8 +334,8 @@ def update_resolution_from_video(
                 'status_message': "❌ Video file not found"
             }
         
-        # Get video information
-        video_info = get_video_info(video_path, logger=logger)
+        # Get video information (using fast version for UI responsiveness)
+        video_info = get_video_info_fast(video_path, logger=logger)
         
         if not video_info:
             return {
