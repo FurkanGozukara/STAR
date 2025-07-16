@@ -403,17 +403,18 @@ The total combined prompt length is limited to 77 tokens."""
                         visible =True ,
                         value ="Enter a video file path or frames folder path above to validate"
                         )
-                    open_output_folder_button =gr .Button ("Open Outputs Folder",icon ="icons/folder.png",variant ="primary")
+                    
 
                 with gr .Column (scale =1 ):
                     output_video =gr .Video (label ="Upscaled Video",interactive =False ,height =512 )
                     
                     # Documentation and Version History buttons
                     with gr .Row ():
-                        how_to_use_button = gr .Button ("📖 How To Use Documentation", variant ="secondary", icon ="icons/folder.png")
-                        version_history_button = gr .Button ("📋 Version History V1", variant ="secondary", icon ="icons/folder.png")
+                        how_to_use_button = gr .Button ("📖 How To Use Documentation", variant ="secondary")
+                        version_history_button = gr .Button ("📋 Version History V1", variant ="secondary")
+                        open_output_folder_button =gr .Button ("Open Outputs Folder",icon ="icons/folder.png",variant ="primary")
                     
-                    status_textbox =gr .Textbox (label ="Log",interactive =False ,lines =8 ,max_lines =15 )
+                    status_textbox =gr .Textbox (label ="Log",interactive =False ,lines =10 ,max_lines =15 )
                     
                     with gr.Accordion("Save/Load Presets", open=True):
                         with gr.Row():
@@ -498,6 +499,19 @@ The total combined prompt length is limited to 77 tokens."""
                             interactive=False,
                             lines=3,
                             info="Shows current auto-calculated resolution and aspect ratio information"
+                        )
+                        
+                        # Output Resolution Preview Feature
+                        gr.Markdown("---")
+                        gr.Markdown("### 📐 Expected Output Resolution Preview")
+                        gr.Markdown("*Real-time preview of your final video resolution based on current settings*")
+                        
+                        output_resolution_preview = gr.Textbox(
+                            label="Expected Output Resolution",
+                            value="📹 Upload a video and configure settings to see expected output resolution",
+                            interactive=False,
+                            lines=10,
+                            info="Shows the calculated final output resolution based on your current upscaler settings, target resolution, and input video"
                         )
                 with gr .Column (scale =1 ):
                     split_only_button =gr .Button ("Split Video Only (No Upscaling)",icon ="icons/split.png",variant ="primary")
@@ -3786,6 +3800,142 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
             logger.error(f"Exception in calculate_auto_resolution: {e}")
             return target_h, target_w, error_msg
 
+    # --- OUTPUT RESOLUTION PREVIEW FUNCTIONS ---
+    def calculate_expected_output_resolution(
+        video_path,
+        upscaler_type,
+        enable_target_res,
+        target_h,
+        target_w,
+        target_res_mode,
+        upscale_factor,
+        image_upscaler_model,
+        enable_auto_aspect_resolution
+    ):
+        """
+        Calculate the expected output resolution based on current settings.
+        
+        Args:
+            video_path: Path to the input video
+            upscaler_type: Type of upscaler selected (STAR, Image Based, SeedVR2)
+            enable_target_res: Whether target resolution is enabled
+            target_h, target_w: Target resolution constraints
+            target_res_mode: How to apply target resolution
+            upscale_factor: Simple upscale factor when target res disabled
+            image_upscaler_model: Selected image upscaler model
+            enable_auto_aspect_resolution: Whether auto aspect resolution is enabled
+            
+        Returns:
+            str: Formatted preview message
+        """
+        if video_path is None:
+            return "📹 Upload a video to see expected output resolution"
+        
+        try:
+            # Get video information
+            video_info = util_get_video_info_fast(video_path, logger)
+            if not video_info:
+                return "❌ Could not read video information"
+            
+            orig_w = video_info.get('width', 0)
+            orig_h = video_info.get('height', 0)
+            
+            if orig_w <= 0 or orig_h <= 0:
+                return f"❌ Invalid video dimensions: {orig_w}x{orig_h}"
+            
+            # Map upscaler type display values to internal values
+            upscaler_type_map = {
+                "Use STAR Model Upscaler": "star",
+                "Use Image Based Upscalers": "image_upscaler", 
+                "Use SeedVR2 Video Upscaler": "seedvr2"
+            }
+            internal_upscaler_type = upscaler_type_map.get(upscaler_type, "star")
+            
+            # Determine the effective upscale factor
+            if internal_upscaler_type == "image_upscaler" and image_upscaler_model:
+                # Get scale factor from image upscaler model
+                try:
+                    model_path = os.path.join(APP_CONFIG.paths.upscale_models_dir, image_upscaler_model)
+                    if os.path.exists(model_path):
+                        model_info = util_get_model_info(model_path, logger)
+                        if "error" not in model_info:
+                            effective_upscale_factor = float(model_info.get("scale", upscale_factor))
+                            model_name = f"{image_upscaler_model} ({effective_upscale_factor}x)"
+                        else:
+                            effective_upscale_factor = upscale_factor
+                            model_name = f"{image_upscaler_model} (scale unknown, using {upscale_factor}x)"
+                    else:
+                        effective_upscale_factor = upscale_factor
+                        model_name = f"{image_upscaler_model} (not found, using {upscale_factor}x)"
+                except Exception as e:
+                    effective_upscale_factor = upscale_factor
+                    model_name = f"{image_upscaler_model} (error reading scale, using {upscale_factor}x)"
+            elif internal_upscaler_type == "star":
+                effective_upscale_factor = 4.0  # STAR model default
+                model_name = "STAR Model (4x)"
+            elif internal_upscaler_type == "seedvr2":
+                effective_upscale_factor = 4.0  # SeedVR2 default (placeholder)
+                model_name = "SeedVR2 (4x - Coming Soon)"
+            else:
+                effective_upscale_factor = upscale_factor
+                model_name = f"Unknown Upscaler ({upscale_factor}x)"
+            
+            # Calculate final resolution
+            if enable_target_res:
+                # Use target resolution calculation
+                try:
+                    needs_downscale, ds_h, ds_w, upscale_factor_calc, final_h_calc, final_w_calc = util_calculate_upscale_params(
+                        orig_h, orig_w, target_h, target_w, target_res_mode,
+                        logger=logger,
+                        image_upscaler_model=image_upscaler_model if internal_upscaler_type == "image_upscaler" else None
+                    )
+                    
+                    final_h = final_h_calc
+                    final_w = final_w_calc
+                    actual_upscale_factor = upscale_factor_calc
+                    
+                    # Prepare status message
+                    info_lines = [
+                        f"🎯 **Target Resolution Mode**: {target_res_mode}",
+                        f"📹 **Input**: {orig_w}x{orig_h} ({orig_w * orig_h:,} pixels)",
+                        f"🚀 **Upscaler**: {model_name}",
+                        f"📐 **Output**: {final_w}x{final_h} ({final_w * final_h:,} pixels)",
+                        f"📊 **Effective Scale**: {actual_upscale_factor:.2f}x"
+                    ]
+                    
+                    if needs_downscale:
+                        info_lines.append(f"⬇️ **Downscale First**: {orig_w}x{orig_h} → {ds_w}x{ds_h}")
+                    
+                    # Calculate pixel budget usage
+                    target_pixels = target_h * target_w
+                    output_pixels = final_w * final_h
+                    budget_usage = (output_pixels / target_pixels) * 100
+                    
+                    info_lines.append(f"💾 **Pixel Budget**: {budget_usage:.1f}% of {target_w}x{target_h}")
+                    
+                    return "\n".join(info_lines)
+                    
+                except Exception as e:
+                    return f"❌ Error calculating target resolution: {str(e)}"
+            else:
+                # Simple upscale factor calculation
+                final_h = int(round(orig_h * effective_upscale_factor / 2) * 2)
+                final_w = int(round(orig_w * effective_upscale_factor / 2) * 2)
+                
+                info_lines = [
+                    f"🎯 **Mode**: Simple {effective_upscale_factor}x Upscale",
+                    f"📹 **Input**: {orig_w}x{orig_h} ({orig_w * orig_h:,} pixels)",
+                    f"🚀 **Upscaler**: {model_name}",
+                    f"📐 **Output**: {final_w}x{final_h} ({final_w * final_h:,} pixels)",
+                    f"📊 **Scale Factor**: {effective_upscale_factor}x"
+                ]
+                
+                return "\n".join(info_lines)
+                
+        except Exception as e:
+            logger.error(f"Error calculating expected output resolution: {e}")
+            return f"❌ Error calculating resolution: {str(e)}"
+
     def handle_video_change_with_auto_resolution(
         video_path, 
         enable_auto_aspect_resolution, 
@@ -3825,6 +3975,133 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         
         return info_message, new_target_h, new_target_w, auto_status
 
+    def calculate_compact_resolution_preview(
+        video_path,
+        upscaler_type,
+        enable_target_res,
+        target_h,
+        target_w,
+        target_res_mode,
+        upscale_factor,
+        image_upscaler_model,
+        enable_auto_aspect_resolution
+    ):
+        """
+        Calculate a compact version of the expected output resolution for the log section.
+        
+        Returns:
+            str: Compact formatted preview message for the log
+        """
+        if video_path is None:
+            return ""
+        
+        try:
+            # Get video information
+            video_info = util_get_video_info_fast(video_path, logger)
+            if not video_info:
+                return ""
+            
+            orig_w = video_info.get('width', 0)
+            orig_h = video_info.get('height', 0)
+            
+            if orig_w <= 0 or orig_h <= 0:
+                return ""
+            
+            # Map upscaler type display values to internal values
+            upscaler_type_map = {
+                "Use STAR Model Upscaler": "star",
+                "Use Image Based Upscalers": "image_upscaler", 
+                "Use SeedVR2 Video Upscaler": "seedvr2"
+            }
+            internal_upscaler_type = upscaler_type_map.get(upscaler_type, "star")
+            
+            # Determine the effective upscale factor and model name
+            if internal_upscaler_type == "image_upscaler" and image_upscaler_model:
+                try:
+                    model_path = os.path.join(APP_CONFIG.paths.upscale_models_dir, image_upscaler_model)
+                    if os.path.exists(model_path):
+                        model_info = util_get_model_info(model_path, logger)
+                        if "error" not in model_info:
+                            effective_upscale_factor = float(model_info.get("scale", upscale_factor))
+                            model_name = f"{image_upscaler_model.split('.')[0]} ({effective_upscale_factor}x)"
+                        else:
+                            effective_upscale_factor = upscale_factor
+                            model_name = f"{image_upscaler_model.split('.')[0]} ({upscale_factor}x)"
+                    else:
+                        effective_upscale_factor = upscale_factor
+                        model_name = f"Image Upscaler ({upscale_factor}x)"
+                except Exception:
+                    effective_upscale_factor = upscale_factor
+                    model_name = f"Image Upscaler ({upscale_factor}x)"
+            elif internal_upscaler_type == "star":
+                effective_upscale_factor = 4.0
+                model_name = "STAR Model (4x)"
+            elif internal_upscaler_type == "seedvr2":
+                effective_upscale_factor = 4.0
+                model_name = "SeedVR2 (4x)"
+            else:
+                effective_upscale_factor = upscale_factor
+                model_name = f"Upscaler ({upscale_factor}x)"
+            
+            # Calculate final resolution
+            if enable_target_res:
+                try:
+                    needs_downscale, ds_h, ds_w, upscale_factor_calc, final_h_calc, final_w_calc = util_calculate_upscale_params(
+                        orig_h, orig_w, target_h, target_w, target_res_mode,
+                        logger=logger,
+                        image_upscaler_model=image_upscaler_model if internal_upscaler_type == "image_upscaler" else None
+                    )
+                    
+                    final_h = final_h_calc
+                    final_w = final_w_calc
+                    actual_upscale_factor = upscale_factor_calc
+                    
+                    # Create compact preview message
+                    downscale_info = f" (⬇️ {ds_w}x{ds_h} first)" if needs_downscale else ""
+                    
+                    return f"🎯 **Expected Output with {model_name}:**\n• Output Resolution: {final_w}x{final_h} ({actual_upscale_factor:.2f}x){downscale_info}\n• Target Mode: {target_res_mode}"
+                    
+                except Exception as e:
+                    return f"🎯 **Expected Output:** Error calculating ({str(e)})"
+            else:
+                # Simple upscale factor calculation
+                final_h = int(round(orig_h * effective_upscale_factor / 2) * 2)
+                final_w = int(round(orig_w * effective_upscale_factor / 2) * 2)
+                
+                return f"🎯 **Expected Output with {model_name}:**\n• Output Resolution: {final_w}x{final_h} ({effective_upscale_factor}x scale)"
+                
+        except Exception as e:
+            return f"🎯 **Expected Output:** Error calculating ({str(e)})"
+    
+    def update_resolution_preview_wrapper(
+        video_path,
+        upscaler_type,
+        enable_target_res,
+        target_h,
+        target_w,
+        target_res_mode,
+        upscale_factor,
+        image_upscaler_model,
+        enable_auto_aspect_resolution
+    ):
+        """
+        Wrapper function to update the resolution preview when settings change.
+        
+        Returns:
+            str: Updated resolution preview text
+        """
+        return calculate_expected_output_resolution(
+            video_path=video_path,
+            upscaler_type=upscaler_type,
+            enable_target_res=enable_target_res,
+            target_h=target_h,
+            target_w=target_w,
+            target_res_mode=target_res_mode,
+            upscale_factor=upscale_factor,
+            image_upscaler_model=image_upscaler_model,
+            enable_auto_aspect_resolution=enable_auto_aspect_resolution
+        )
+
     enable_fps_decrease .change (
     fn =update_fps_decrease_controls_interactive ,
     inputs =enable_fps_decrease ,
@@ -3845,11 +4122,188 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
 
 
 
+    # Enhanced video change handler that also updates resolution preview
+    def enhanced_video_change_handler(
+        video_path, 
+        enable_auto_aspect_resolution, 
+        target_h, 
+        target_w,
+        upscaler_type,
+        enable_target_res,
+        target_res_mode,
+        upscale_factor,
+        image_upscaler_model
+    ):
+        """
+        Enhanced video change handler that updates both auto-resolution and resolution preview.
+        
+        Returns:
+            tuple: (status_message, new_target_h, new_target_w, auto_resolution_status, resolution_preview)
+        """
+        # Get auto-resolution results
+        status_msg, new_target_h, new_target_w, auto_status = handle_video_change_with_auto_resolution(
+            video_path, enable_auto_aspect_resolution, target_h, target_w
+        )
+        
+        # Calculate resolution preview with potentially updated target values
+        resolution_preview = update_resolution_preview_wrapper(
+            video_path=video_path,
+            upscaler_type=upscaler_type,
+            enable_target_res=enable_target_res,
+            target_h=new_target_h,  # Use updated target_h from auto-resolution
+            target_w=new_target_w,  # Use updated target_w from auto-resolution
+            target_res_mode=target_res_mode,
+            upscale_factor=upscale_factor,
+            image_upscaler_model=image_upscaler_model,
+            enable_auto_aspect_resolution=enable_auto_aspect_resolution
+        )
+        
+        # Enhanced status message that includes resolution preview in the log
+        if video_path and not status_msg.startswith("❌"):
+            # Add expected output resolution to the log message
+            compact_resolution_preview = calculate_compact_resolution_preview(
+                video_path=video_path,
+                upscaler_type=upscaler_type,
+                enable_target_res=enable_target_res,
+                target_h=new_target_h,
+                target_w=new_target_w,
+                target_res_mode=target_res_mode,
+                upscale_factor=upscale_factor,
+                image_upscaler_model=image_upscaler_model,
+                enable_auto_aspect_resolution=enable_auto_aspect_resolution
+            )
+            
+            # Append resolution preview to the existing status message
+            enhanced_status_msg = status_msg + "\n\n" + compact_resolution_preview
+        else:
+            enhanced_status_msg = status_msg
+        
+        return enhanced_status_msg, new_target_h, new_target_w, auto_status, resolution_preview
+
     input_video.change(
-        fn=handle_video_change_with_auto_resolution,
-        inputs=[input_video, enable_auto_aspect_resolution_check, target_h_num, target_w_num],
-        outputs=[status_textbox, target_h_num, target_w_num, auto_resolution_status_display]
+        fn=enhanced_video_change_handler,
+        inputs=[
+            input_video, 
+            enable_auto_aspect_resolution_check, 
+            target_h_num, 
+            target_w_num,
+            upscaler_type_radio,
+            enable_target_res_check,
+            target_res_mode_radio,
+            upscale_factor_slider,
+            image_upscaler_model_dropdown
+        ],
+        outputs=[
+            status_textbox, 
+            target_h_num, 
+            target_w_num, 
+            auto_resolution_status_display,
+            output_resolution_preview
+        ]
     )
+
+    # Function to update both resolution preview and log section
+    def update_both_resolution_displays(
+        video_path,
+        upscaler_type,
+        enable_target_res,
+        target_h,
+        target_w,
+        target_res_mode,
+        upscale_factor,
+        image_upscaler_model,
+        enable_auto_aspect_resolution,
+        current_status_text
+    ):
+        """
+        Update both the detailed resolution preview and add compact preview to log.
+        
+        Returns:
+            tuple: (updated_status_text, detailed_resolution_preview)
+        """
+        # Get the detailed resolution preview
+        detailed_preview = update_resolution_preview_wrapper(
+            video_path=video_path,
+            upscaler_type=upscaler_type,
+            enable_target_res=enable_target_res,
+            target_h=target_h,
+            target_w=target_w,
+            target_res_mode=target_res_mode,
+            upscale_factor=upscale_factor,
+            image_upscaler_model=image_upscaler_model,
+            enable_auto_aspect_resolution=enable_auto_aspect_resolution
+        )
+        
+        # Get the compact preview for the log
+        compact_preview = calculate_compact_resolution_preview(
+            video_path=video_path,
+            upscaler_type=upscaler_type,
+            enable_target_res=enable_target_res,
+            target_h=target_h,
+            target_w=target_w,
+            target_res_mode=target_res_mode,
+            upscale_factor=upscale_factor,
+            image_upscaler_model=image_upscaler_model,
+            enable_auto_aspect_resolution=enable_auto_aspect_resolution
+        )
+        
+        # Update the status text with new compact preview if we have one
+        if video_path and compact_preview and current_status_text:
+            # Remove any existing "Expected Output" section from the log
+            lines = current_status_text.split('\n')
+            new_lines = []
+            skip_next_lines = False
+            
+            for line in lines:
+                if line.startswith('🎯 **Expected Output'):
+                    skip_next_lines = True
+                    continue
+                elif skip_next_lines and line.startswith('•'):
+                    continue
+                else:
+                    skip_next_lines = False
+                    new_lines.append(line)
+            
+            # Add the new compact preview
+            updated_status = '\n'.join(new_lines).rstrip() + '\n\n' + compact_preview
+        elif not video_path and current_status_text:
+            # If no video is loaded but we have existing status text, just return it unchanged
+            updated_status = current_status_text
+        else:
+            # Fallback
+            updated_status = current_status_text if current_status_text else ""
+        
+        return updated_status, detailed_preview
+
+    # Add resolution preview update handlers for all relevant settings
+    resolution_preview_components = [
+        upscaler_type_radio,
+        enable_target_res_check,
+        target_h_num,
+        target_w_num,
+        target_res_mode_radio,
+        upscale_factor_slider,
+        image_upscaler_model_dropdown,
+        enable_auto_aspect_resolution_check
+    ]
+    
+    for component in resolution_preview_components:
+        component.change(
+            fn=update_both_resolution_displays,
+            inputs=[
+                input_video,
+                upscaler_type_radio,
+                enable_target_res_check,
+                target_h_num,
+                target_w_num,
+                target_res_mode_radio,
+                upscale_factor_slider,
+                image_upscaler_model_dropdown,
+                enable_auto_aspect_resolution_check,
+                status_textbox
+            ],
+            outputs=[status_textbox, output_resolution_preview]
+        )
 
     for component in [input_video ,fps_decrease_mode ,fps_multiplier_preset ,fps_multiplier_custom ,target_fps ]:
         component .change (
@@ -4236,6 +4690,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         enable_seedvr2_check: ('seedvr2', 'enable'), seedvr2_model_dropdown: ('seedvr2', 'model'), seedvr2_quality_preset_radio: ('seedvr2', 'quality_preset'), seedvr2_batch_size_slider: ('seedvr2', 'batch_size'), seedvr2_use_gpu_check: ('seedvr2', 'use_gpu'),
         gpu_selector: ('gpu', 'device'),
         enable_direct_image_upscaling: ('batch', 'enable_direct_image_upscaling'),
+        # Note: output_resolution_preview is intentionally excluded from presets as it's a calculated display field
     }
 
     def save_preset_wrapper(preset_name, *all_ui_values):
@@ -4421,6 +4876,9 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         inputs=[preset_dropdown] + click_inputs,
         outputs=[preset_status, preset_dropdown]
     )
+
+    # Note: Resolution preview will automatically update when presets are loaded 
+    # due to the change handlers registered for resolution-related components
 
     preset_dropdown.change(
         fn=safe_load_preset_wrapper,
