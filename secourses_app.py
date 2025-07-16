@@ -112,6 +112,11 @@ scan_for_models as util_scan_for_models,
 get_model_info as util_get_model_info
 )
 
+from logic .preview_utils import (
+preview_single_model as util_preview_single_model,
+preview_all_models as util_preview_all_models
+)
+
 from logic .video_editor import (
 parse_time_ranges as util_parse_time_ranges,
 parse_frame_ranges as util_parse_frame_ranges,
@@ -805,6 +810,34 @@ The total combined prompt length is limited to 77 tokens."""
                         step =1 ,
                         info ="Number of frames to process simultaneously. Higher values = faster processing but more VRAM usage. Adjust based on your GPU memory.",
                         interactive =True 
+                        )
+                        
+                    with gr .Group ():
+                        gr .Markdown ("### 🔍 Quick Preview & Model Testing")
+                        gr .Markdown ("**Test upscaler models on the first frame of your video**")
+                        
+                        with gr .Row ():
+                            preview_single_btn = gr .Button ("🖼️ Preview Current Model", variant ="secondary", size ="sm")
+                            preview_all_models_btn = gr .Button ("🔬 Test All Models & Save", variant ="secondary", size ="sm")
+                        
+                        preview_status = gr .Textbox (
+                            label ="Preview Status",
+                            interactive =False ,
+                            lines =2 ,
+                            visible =True ,
+                            value ="Upload a video and click a preview button to test upscaler models",
+                            show_label =True 
+                        )
+                        
+                        preview_slider = gr .ImageSlider (
+                            label ="Before/After Comparison (Original ← Slider → Upscaled)",
+                            interactive =True ,
+                            visible =False ,
+                            height =400 ,
+                            show_label =True ,
+                            show_download_button =True ,
+                            show_fullscreen_button =True ,
+                            slider_position =0.5 
                         )
 
                 with gr .Column (scale =1 ):
@@ -1675,6 +1708,193 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         inputs=[image_upscaler_model_dropdown],
         outputs=[model_info_display]
     )
+    
+    def preview_single_model_wrapper(
+        input_video_val, model_dropdown_val, 
+        enable_target_res_val, target_h_val, target_w_val, target_res_mode_val,
+        gpu_selector_val, progress=gr.Progress(track_tqdm=True)
+    ):
+        """Wrapper for single model preview."""
+        try:
+            # Check if video is provided
+            if not input_video_val:
+                return (
+                    gr.update(visible=True, value="❌ Please upload a video first"),
+                    gr.update(visible=False)
+                )
+            
+            # Update status to show processing started
+            progress(0.0, "🚀 Starting preview generation...")
+            
+            # Get current device
+            available_gpus = util_get_available_gpus()
+            if available_gpus and gpu_selector_val:
+                device = "cuda" if "cuda" in str(gpu_selector_val).lower() else "cpu"
+            else:
+                device = "cpu"
+            
+            progress(0.2, f"📹 Extracting first frame from video...")
+            
+            # Create temporary directory
+            import tempfile
+            temp_dir = tempfile.mkdtemp(prefix="preview_single_")
+            
+            progress(0.4, f"🔧 Loading {model_dropdown_val} model...")
+            
+            progress(0.6, f"🎨 Upscaling frame with {model_dropdown_val}...")
+            
+            # Call preview function
+            result = util_preview_single_model(
+                video_path=input_video_val,
+                model_name=model_dropdown_val,
+                upscale_models_dir=APP_CONFIG.paths.upscale_models_dir,
+                temp_dir=temp_dir,
+                device=device,
+                apply_resolution_constraints=enable_target_res_val,
+                target_h=target_h_val,
+                target_w=target_w_val,
+                target_res_mode=target_res_mode_val,
+                logger=logger
+            )
+            
+            progress(0.9, "✨ Finalizing preview...")
+            
+            if result['success']:
+                progress(1.0, "✅ Preview generation complete!")
+                status_msg = f"✅ {result['message']}\n📊 {result['original_resolution']} → {result['output_resolution']} in {result['processing_time']:.2f}s"
+                # Create image slider tuple (original, processed)
+                slider_images = (result['original_image_path'], result['preview_image_path'])
+                return (
+                    gr.update(visible=True, value=status_msg),
+                    gr.update(visible=True, value=slider_images)
+                )
+            else:
+                return (
+                    gr.update(visible=True, value=f"❌ {result['error']}"),
+                    gr.update(visible=False)
+                )
+                
+        except Exception as e:
+            logger.error(f"Preview single model error: {e}")
+            return (
+                gr.update(visible=True, value=f"❌ Error: {str(e)}"),
+                gr.update(visible=False)
+            )
+    
+    def preview_all_models_wrapper(
+        input_video_val, 
+        enable_target_res_val, target_h_val, target_w_val, target_res_mode_val,
+        gpu_selector_val, progress=gr.Progress(track_tqdm=True)
+    ):
+        """Wrapper for all models preview."""
+        try:
+            # Check if video is provided
+            if not input_video_val:
+                return (
+                    gr.update(visible=True, value="❌ Please upload a video first"),
+                    gr.update(visible=False)
+                )
+            
+            progress(0.0, "🚀 Initializing model comparison test...")
+            
+            # Get current device
+            available_gpus = util_get_available_gpus()
+            if available_gpus and gpu_selector_val:
+                device = "cuda" if "cuda" in str(gpu_selector_val).lower() else "cpu"
+            else:
+                device = "cpu"
+            
+            progress(0.1, f"🔍 Scanning for upscaler models...")
+            
+            def progress_callback(prog_val, desc):
+                mapped_progress = 0.2 + (prog_val * 0.7)  # Leave room for final steps
+                progress(mapped_progress, f"🎨 {desc}")
+            
+            # Call preview all models function
+            result = util_preview_all_models(
+                video_path=input_video_val,
+                upscale_models_dir=APP_CONFIG.paths.upscale_models_dir,
+                output_dir=APP_CONFIG.paths.outputs_dir,
+                device=device,
+                apply_resolution_constraints=enable_target_res_val,
+                target_h=target_h_val,
+                target_w=target_w_val,
+                target_res_mode=target_res_mode_val,
+                logger=logger,
+                progress_callback=progress_callback
+            )
+            
+            progress(0.95, "📁 Organizing results...")
+            
+            if result['success']:
+                progress(1.0, "✅ Model comparison test complete!")
+                status_msg = f"✅ {result['message']}\n⏱️ Processed in {result['processing_time']:.1f}s"
+                if result['failed_models']:
+                    status_msg += f"\n⚠️ {len(result['failed_models'])} models failed"
+                
+                # Create image slider with original and first processed result
+                original_frame_path = os.path.join(result['output_folder'], "00_original.png")
+                if os.path.exists(original_frame_path):
+                    # Find the first processed model result to show as comparison
+                    import glob
+                    processed_files = glob.glob(os.path.join(result['output_folder'], "[0-9][0-9]_*.png"))
+                    if processed_files:
+                        processed_files.sort()  # Get first processed model
+                        first_processed = processed_files[0]
+                        slider_images = (original_frame_path, first_processed)
+                        return (
+                            gr.update(visible=True, value=status_msg),
+                            gr.update(visible=True, value=slider_images)
+                        )
+                    else:
+                        # Only show original if no processed images found
+                        slider_images = (original_frame_path, original_frame_path)
+                        return (
+                            gr.update(visible=True, value=status_msg),
+                            gr.update(visible=True, value=slider_images)
+                        )
+                else:
+                    return (
+                        gr.update(visible=True, value=status_msg),
+                        gr.update(visible=False)
+                    )
+            else:
+                return (
+                    gr.update(visible=True, value=f"❌ {result['error']}"),
+                    gr.update(visible=False)
+                )
+                
+        except Exception as e:
+            logger.error(f"Preview all models error: {e}")
+            return (
+                gr.update(visible=True, value=f"❌ Error: {str(e)}"),
+                gr.update(visible=False)
+            )
+    
+    # Preview button handlers
+    preview_single_btn.click(
+        fn=preview_single_model_wrapper,
+        inputs=[
+            input_video, image_upscaler_model_dropdown,
+            enable_target_res_check, target_h_num, target_w_num, target_res_mode_radio,
+            gpu_selector
+        ],
+        outputs=[preview_status, preview_slider],
+        show_progress_on=[preview_status]
+    )
+    
+    preview_all_models_btn.click(
+        fn=preview_all_models_wrapper,
+        inputs=[
+            input_video,
+            enable_target_res_check, target_h_num, target_w_num, target_res_mode_radio,
+            gpu_selector
+        ],
+        outputs=[preview_status, preview_slider],
+        show_progress_on=[preview_status]
+    )
+    
+
     
     def update_context_overlap_max (max_chunk_len ):
         new_max =max (0 ,int (max_chunk_len )-1 )
