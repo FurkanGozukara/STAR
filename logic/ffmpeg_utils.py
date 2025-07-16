@@ -98,52 +98,156 @@ def extract_frames(video_path, temp_dir, logger=None):
     if logger:
         logger.info(f"Extracting frames from '{video_path}' to '{temp_dir}'")
     os.makedirs(temp_dir, exist_ok=True)
-    fps = 30.0
-    try:
-        probe_cmd = f'ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of default=noprint_wrappers=1:nokey=1 "{video_path}"'
-        process = subprocess.run(probe_cmd, shell=True, check=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
-        rate_str = process.stdout.strip()
-        if '/' in rate_str:
-            num, den = map(int, rate_str.split('/'))
-            if den != 0:
-                fps = num / den
-        elif rate_str:
-            fps = float(rate_str)
-        if logger:
-            logger.info(f"Detected FPS: {fps}")
-    except Exception as e:
-        if logger:
-            logger.warning(f"Could not get FPS using ffprobe for '{video_path}': {e}. Using default {fps} FPS.")
+    
+    # Use the improved FPS detection function
+    fps = get_video_fps(video_path, logger)
 
-    cmd = f'ffmpeg -i "{video_path}" -vsync vfr -qscale:v 2 "{os.path.join(temp_dir, "frame_%06d.png")}"'
+    # Fix: Use -vsync 0 (passthrough) instead of -vsync vfr to preserve all frames including duplicates
+    # This ensures the extracted frame count matches the video's actual frame count and preserves duration
+    cmd = f'ffmpeg -i "{video_path}" -vsync 0 -qscale:v 2 "{os.path.join(temp_dir, "frame_%06d.png")}"'
     run_ffmpeg_command(cmd, "Frame Extraction", logger)
 
     frame_files = sorted([f for f in os.listdir(temp_dir) if f.startswith('frame_') and f.endswith('.png')], key=natural_sort_key)
     frame_count = len(frame_files)
+    
+    # Enhanced logging to help detect frame count mismatches
     if logger:
         logger.info(f"Extracted {frame_count} frames.")
+        
+        # Get expected frame count for comparison
+        video_info = get_video_info_fast(video_path, logger)
+        if video_info and video_info.get('frames', 0) > 0:
+            expected_frames = video_info['frames']
+            if abs(frame_count - expected_frames) > 1:  # Allow for 1 frame difference due to rounding
+                logger.warning(f"Frame count mismatch detected! Expected {expected_frames} frames based on video analysis, but extracted {frame_count} frames.")
+                logger.warning(f"This may indicate duration mismatch in the final output. Video FPS: {fps:.3f}, Duration: {video_info.get('duration', 0):.2f}s")
+                
+                # Try alternative extraction method if significant mismatch
+                if abs(frame_count - expected_frames) > max(5, expected_frames * 0.05):  # More than 5 frames or 5% difference
+                    logger.info("Significant frame count mismatch detected. Consider using extract_frames_robust() for critical applications.")
+    
     if frame_count == 0:
         raise gr.Error("Failed to extract any frames. Check video file and ffmpeg installation.")
     return frame_count, fps, frame_files
 
+def extract_frames_robust(video_path, temp_dir, logger=None, preserve_duration=True):
+    """
+    More robust frame extraction that can handle edge cases better.
+    
+    Args:
+        video_path: Path to input video
+        temp_dir: Directory to extract frames to
+        logger: Logger instance
+        preserve_duration: If True, ensures extracted frames match video duration exactly
+        
+    Returns:
+        Tuple of (frame_count, fps, frame_files)
+    """
+    if logger:
+        logger.info(f"Robust frame extraction from '{video_path}' to '{temp_dir}'")
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    # Get comprehensive video info first
+    video_info = get_video_info(video_path, logger)
+    if not video_info:
+        raise gr.Error("Could not analyze video for robust frame extraction.")
+    
+    fps = video_info['fps']
+    duration = video_info['duration']
+    expected_frames = video_info['frames']
+    
+    if preserve_duration and expected_frames > 0:
+        # Use fps filter to ensure exact frame count
+        target_fps = expected_frames / duration if duration > 0 else fps
+        cmd = f'ffmpeg -i "{video_path}" -vf "fps={target_fps}" -vsync 0 -qscale:v 2 "{os.path.join(temp_dir, "frame_%06d.png")}"'
+        if logger:
+            logger.info(f"Using duration-preserving extraction: target_fps={target_fps:.6f} to get {expected_frames} frames")
+    else:
+        # Standard extraction with passthrough
+        cmd = f'ffmpeg -i "{video_path}" -vsync 0 -qscale:v 2 "{os.path.join(temp_dir, "frame_%06d.png")}"'
+    
+    run_ffmpeg_command(cmd, "Robust Frame Extraction", logger)
+
+    frame_files = sorted([f for f in os.listdir(temp_dir) if f.startswith('frame_') and f.endswith('.png')], key=natural_sort_key)
+    frame_count = len(frame_files)
+    
+    if logger:
+        logger.info(f"Robust extraction completed: {frame_count} frames (expected: {expected_frames})")
+        if abs(frame_count - expected_frames) > 1:
+            logger.warning(f"Frame count still differs from expected by {abs(frame_count - expected_frames)} frames")
+    
+    if frame_count == 0:
+        raise gr.Error("Robust frame extraction failed to extract any frames.")
+    
+    return frame_count, fps, frame_files
+
 def get_video_fps(video_path, logger=None):
-    """Get the FPS of a video file using FFprobe."""
+    """Get the FPS of a video file using FFprobe with improved VFR support."""
     fps = 30.0  # Default fallback
     try:
-        probe_cmd = f'ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of default=noprint_wrappers=1:nokey=1 "{video_path}"'
+        # Try to get both r_frame_rate and avg_frame_rate for better VFR support
+        probe_cmd = f'ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate,avg_frame_rate -of csv=s=,:p=0 "{video_path}"'
         process = subprocess.run(probe_cmd, shell=True, check=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
-        rate_str = process.stdout.strip()
-        if '/' in rate_str:
-            num, den = map(int, rate_str.split('/'))
-            if den != 0:
-                fps = num / den
-        elif rate_str:
-            fps = float(rate_str)
-        if logger:
-            logger.info(f"Detected FPS: {fps}")
+        output = process.stdout.strip()
+        
+        if output:
+            parts = output.split(',')
+            r_frame_rate = parts[0] if len(parts) > 0 else ""
+            avg_frame_rate = parts[1] if len(parts) > 1 else ""
+            
+            # Parse avg_frame_rate first (better for VFR videos)
+            if avg_frame_rate and avg_frame_rate != "0/0":
+                if '/' in avg_frame_rate:
+                    num, den = map(int, avg_frame_rate.split('/'))
+                    if den != 0:
+                        fps = num / den
+                        if logger:
+                            logger.info(f"Detected FPS using avg_frame_rate: {fps:.3f}")
+                        return fps
+                elif avg_frame_rate:
+                    fps = float(avg_frame_rate)
+                    if logger:
+                        logger.info(f"Detected FPS using avg_frame_rate: {fps:.3f}")
+                    return fps
+            
+            # Fallback to r_frame_rate
+            if r_frame_rate and r_frame_rate != "0/0":
+                if '/' in r_frame_rate:
+                    num, den = map(int, r_frame_rate.split('/'))
+                    if den != 0:
+                        calculated_fps = num / den
+                        # Sanity check: if r_frame_rate gives unrealistic values (>120fps), try OpenCV
+                        if calculated_fps <= 120.0:
+                            fps = calculated_fps
+                            if logger:
+                                logger.info(f"Detected FPS using r_frame_rate: {fps:.3f}")
+                        else:
+                            if logger:
+                                logger.warning(f"r_frame_rate gave unrealistic value ({calculated_fps:.3f}), trying OpenCV fallback")
+                            # Try OpenCV as fallback for unrealistic r_frame_rate values
+                            try:
+                                cap = cv2.VideoCapture(video_path)
+                                if cap.isOpened():
+                                    cv_fps = cap.get(cv2.CAP_PROP_FPS)
+                                    if cv_fps > 0 and cv_fps <= 120.0:
+                                        fps = cv_fps
+                                        if logger:
+                                            logger.info(f"Detected FPS using OpenCV fallback: {fps:.3f}")
+                                    cap.release()
+                            except Exception as cv_e:
+                                if logger:
+                                    logger.warning(f"OpenCV fallback failed: {cv_e}")
+                elif r_frame_rate:
+                    fps = float(r_frame_rate)
+                    if logger:
+                        logger.info(f"Detected FPS using r_frame_rate: {fps:.3f}")
+            
     except Exception as e:
         if logger:
             logger.warning(f"Could not get FPS using ffprobe for '{video_path}': {e}. Using default {fps} FPS.")
+    
+    if logger:
+        logger.info(f"Final detected FPS: {fps:.3f}")
     return fps
 
 def calculate_target_fps_from_multiplier(input_video_path, multiplier, logger=None):
@@ -452,9 +556,10 @@ def get_video_info_fast(video_path, logger=None):
     
     try:
         # Single efficient ffprobe call to get essential info (no frame counting, no bitrate)
+        # Include both r_frame_rate and avg_frame_rate for better VFR support
         probe_cmd = (
             f'ffprobe -v error -select_streams v:0 '
-            f'-show_entries stream=width,height,r_frame_rate,duration '
+            f'-show_entries stream=width,height,r_frame_rate,avg_frame_rate,duration '
             f'-show_entries format=format_name,duration '
             f'-of csv=s=,:p=0 "{video_path}"'
         )
@@ -465,21 +570,53 @@ def get_video_info_fast(video_path, logger=None):
         # Parse stream information (first line)
         if len(lines) >= 1 and lines[0]:
             stream_parts = lines[0].split(',')
-            if len(stream_parts) >= 4:
+            if len(stream_parts) >= 4:  # Minimum required fields
                 try:
                     video_info['width'] = int(stream_parts[0]) if stream_parts[0] else 0
                     video_info['height'] = int(stream_parts[1]) if stream_parts[1] else 0
                     
-                    # Parse frame rate
-                    if '/' in stream_parts[2]:
-                        num, den = map(int, stream_parts[2].split('/'))
-                        video_info['fps'] = num / den if den != 0 else 0.0
-                    elif stream_parts[2]:
-                        video_info['fps'] = float(stream_parts[2])
+                    # Parse frame rate with improved VFR support
+                    r_frame_rate = stream_parts[2] if len(stream_parts) > 2 else ""
+                    avg_frame_rate = stream_parts[3] if len(stream_parts) > 3 else ""
                     
-                    # Parse duration from stream
-                    if stream_parts[3]:
-                        video_info['duration'] = float(stream_parts[3])
+                    # Try avg_frame_rate first (better for VFR videos)
+                    fps_parsed = False
+                    if avg_frame_rate and avg_frame_rate != "0/0":
+                        if '/' in avg_frame_rate:
+                            num, den = map(int, avg_frame_rate.split('/'))
+                            if den != 0:
+                                video_info['fps'] = num / den
+                                fps_parsed = True
+                                if logger:
+                                    logger.debug(f"Parsed FPS using avg_frame_rate: {video_info['fps']:.3f}")
+                        elif avg_frame_rate:
+                            video_info['fps'] = float(avg_frame_rate)
+                            fps_parsed = True
+                            if logger:
+                                logger.debug(f"Parsed FPS using avg_frame_rate: {video_info['fps']:.3f}")
+                    
+                    # Fallback to r_frame_rate if avg_frame_rate didn't work
+                    if not fps_parsed and r_frame_rate and r_frame_rate != "0/0":
+                        if '/' in r_frame_rate:
+                            num, den = map(int, r_frame_rate.split('/'))
+                            if den != 0:
+                                calculated_fps = num / den
+                                # Sanity check for unrealistic r_frame_rate values
+                                if calculated_fps <= 120.0:
+                                    video_info['fps'] = calculated_fps
+                                    if logger:
+                                        logger.debug(f"Parsed FPS using r_frame_rate: {video_info['fps']:.3f}")
+                                else:
+                                    if logger:
+                                        logger.warning(f"r_frame_rate gave unrealistic value ({calculated_fps:.3f}), will try OpenCV fallback")
+                        elif r_frame_rate:
+                            video_info['fps'] = float(r_frame_rate)
+                            if logger:
+                                logger.debug(f"Parsed FPS using r_frame_rate: {video_info['fps']:.3f}")
+                    
+                    # Parse duration from stream (now at index 4)
+                    if len(stream_parts) > 4 and stream_parts[4]:
+                        video_info['duration'] = float(stream_parts[4])
                     
                 except (ValueError, IndexError) as e:
                     if logger:
@@ -586,9 +723,10 @@ def get_video_info(video_path, logger=None):
                 logger.debug("Direct frame count failed, will use alternative methods")
         
         # Use ffprobe to get comprehensive video information
+        # Include both r_frame_rate and avg_frame_rate for better VFR support
         probe_cmd = (
             f'ffprobe -v error -select_streams v:0 '
-            f'-show_entries stream=width,height,r_frame_rate,duration,bit_rate '
+            f'-show_entries stream=width,height,r_frame_rate,avg_frame_rate,duration,bit_rate '
             f'-show_entries format=format_name,duration,bit_rate '
             f'-of csv=s=,:p=0 "{video_path}"'
         )
@@ -599,25 +737,57 @@ def get_video_info(video_path, logger=None):
         # Parse stream information (first line)
         if len(lines) >= 1 and lines[0]:
             stream_parts = lines[0].split(',')
-            if len(stream_parts) >= 4:
+            if len(stream_parts) >= 4:  # Minimum required fields
                 try:
                     video_info['width'] = int(stream_parts[0]) if stream_parts[0] else 0
                     video_info['height'] = int(stream_parts[1]) if stream_parts[1] else 0
                     
-                    # Parse frame rate
-                    if '/' in stream_parts[2]:
-                        num, den = map(int, stream_parts[2].split('/'))
-                        video_info['fps'] = num / den if den != 0 else 0.0
-                    elif stream_parts[2]:
-                        video_info['fps'] = float(stream_parts[2])
+                    # Parse frame rate with improved VFR support
+                    r_frame_rate = stream_parts[2] if len(stream_parts) > 2 else ""
+                    avg_frame_rate = stream_parts[3] if len(stream_parts) > 3 else ""
                     
-                    # Parse duration from stream
-                    if stream_parts[3]:
-                        video_info['duration'] = float(stream_parts[3])
+                    # Try avg_frame_rate first (better for VFR videos)
+                    fps_parsed = False
+                    if avg_frame_rate and avg_frame_rate != "0/0":
+                        if '/' in avg_frame_rate:
+                            num, den = map(int, avg_frame_rate.split('/'))
+                            if den != 0:
+                                video_info['fps'] = num / den
+                                fps_parsed = True
+                                if logger:
+                                    logger.debug(f"Parsed FPS using avg_frame_rate: {video_info['fps']:.3f}")
+                        elif avg_frame_rate:
+                            video_info['fps'] = float(avg_frame_rate)
+                            fps_parsed = True
+                            if logger:
+                                logger.debug(f"Parsed FPS using avg_frame_rate: {video_info['fps']:.3f}")
                     
-                    # Parse bitrate from stream
+                    # Fallback to r_frame_rate if avg_frame_rate didn't work
+                    if not fps_parsed and r_frame_rate and r_frame_rate != "0/0":
+                        if '/' in r_frame_rate:
+                            num, den = map(int, r_frame_rate.split('/'))
+                            if den != 0:
+                                calculated_fps = num / den
+                                # Sanity check for unrealistic r_frame_rate values
+                                if calculated_fps <= 120.0:
+                                    video_info['fps'] = calculated_fps
+                                    if logger:
+                                        logger.debug(f"Parsed FPS using r_frame_rate: {video_info['fps']:.3f}")
+                                else:
+                                    if logger:
+                                        logger.warning(f"r_frame_rate gave unrealistic value ({calculated_fps:.3f}), will try OpenCV fallback")
+                        elif r_frame_rate:
+                            video_info['fps'] = float(r_frame_rate)
+                            if logger:
+                                logger.debug(f"Parsed FPS using r_frame_rate: {video_info['fps']:.3f}")
+                    
+                    # Parse duration from stream (now at index 4)
                     if len(stream_parts) > 4 and stream_parts[4]:
-                        bitrate_bps = int(stream_parts[4])
+                        video_info['duration'] = float(stream_parts[4])
+                    
+                    # Parse bitrate from stream (now at index 5)
+                    if len(stream_parts) > 5 and stream_parts[5]:
+                        bitrate_bps = int(stream_parts[5])
                         video_info['bitrate'] = f"{bitrate_bps // 1000} kbps"
                 except (ValueError, IndexError) as e:
                     if logger:
@@ -861,3 +1031,65 @@ def create_video_from_input_frames(
         if logger:
             logger.error(f"Error creating video from input frames: {e}")
         return False 
+
+def validate_frame_extraction_consistency(video_path, extracted_frame_count, logger=None):
+    """
+    Validate that extracted frame count is consistent with video analysis.
+    
+    Args:
+        video_path: Path to the video file
+        extracted_frame_count: Number of frames that were actually extracted
+        logger: Logger instance
+        
+    Returns:
+        Dict with validation results: {'is_consistent': bool, 'expected_frames': int, 'difference': int, 'warnings': list}
+    """
+    result = {
+        'is_consistent': True,
+        'expected_frames': 0,
+        'difference': 0,
+        'warnings': []
+    }
+    
+    try:
+        # Get video info to compare
+        video_info = get_video_info_fast(video_path, logger)
+        if not video_info:
+            result['warnings'].append("Could not analyze video for frame validation")
+            return result
+        
+        expected_frames = video_info.get('frames', 0)
+        result['expected_frames'] = expected_frames
+        result['difference'] = abs(extracted_frame_count - expected_frames)
+        
+        # Define consistency thresholds
+        max_allowed_difference = max(1, expected_frames * 0.02)  # 2% or 1 frame, whichever is larger
+        
+        if result['difference'] > max_allowed_difference:
+            result['is_consistent'] = False
+            result['warnings'].append(f"Significant frame count mismatch: expected {expected_frames}, got {extracted_frame_count} (difference: {result['difference']})")
+            
+            # Add duration impact warning
+            fps = video_info.get('fps', 30)
+            duration_impact = result['difference'] / fps if fps > 0 else 0
+            result['warnings'].append(f"This may affect video duration by ~{duration_impact:.2f} seconds")
+            
+            # Suggest solutions
+            if result['difference'] > expected_frames * 0.1:  # More than 10% difference
+                result['warnings'].append("Consider using extract_frames_robust() for better accuracy")
+        
+        elif result['difference'] > 1:
+            result['warnings'].append(f"Minor frame count difference detected: {result['difference']} frames")
+        
+        if logger:
+            for warning in result['warnings']:
+                logger.warning(warning)
+            if result['is_consistent']:
+                logger.info(f"Frame extraction validation passed: {extracted_frame_count} frames")
+                
+    except Exception as e:
+        result['warnings'].append(f"Frame validation error: {e}")
+        if logger:
+            logger.error(f"Frame validation failed: {e}")
+    
+    return result 

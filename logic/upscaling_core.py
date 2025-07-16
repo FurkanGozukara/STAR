@@ -21,7 +21,8 @@ from .ffmpeg_utils import (
     extract_frames as util_extract_frames,
     create_video_from_frames as util_create_video_from_frames,
     decrease_fps as util_decrease_fps,
-    get_common_fps_multipliers as util_get_common_fps_multipliers
+    get_common_fps_multipliers as util_get_common_fps_multipliers,
+    validate_frame_extraction_consistency
 )
 from .file_utils import (
     get_batch_filename as util_get_batch_filename,
@@ -633,6 +634,15 @@ def run_upscale (
             frame_extraction_start_time =time .time ()
             frame_count ,input_fps_val ,frame_files =util_extract_frames (current_input_video_for_frames ,input_frames_dir ,logger =logger )
             params_for_metadata ["input_fps"]=input_fps_val
+
+            # Add frame validation to detect potential duration mismatches early
+            validation_result = validate_frame_extraction_consistency(current_input_video_for_frames, frame_count, logger)
+            if not validation_result['is_consistent']:
+                warning_msg = f"⚠️ Frame count inconsistency detected: expected {validation_result['expected_frames']}, extracted {frame_count}"
+                status_log.append(warning_msg)
+                logger.warning(warning_msg)
+                for warning in validation_result['warnings']:
+                    logger.warning(f"Frame validation: {warning}")
 
             frame_extract_msg =f"Extracted {frame_count} frames at {input_fps_val:.2f} FPS. Time: {format_time(time.time() - frame_extraction_start_time)}"
             status_log .append (frame_extract_msg )

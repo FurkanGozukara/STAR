@@ -115,6 +115,9 @@ def process_batch_videos(
     codeformer_model_val=None,
     face_restoration_batch_size_val=4,
 
+    # NEW: Direct image upscaling parameter
+    enable_direct_image_upscaling_val=False,
+
     progress=gr.Progress(track_tqdm=True)
 ):
     """
@@ -160,15 +163,35 @@ def process_batch_videos(
         raise gr.Error("Please provide an output folder.")
 
     try:
-        video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v']
-        video_files = []
+        # Define file extensions based on processing mode
+        if enable_direct_image_upscaling_val:
+            # Process image files directly
+            image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp']
+            input_files = []
+            
+            for file in os.listdir(batch_input_folder_val):
+                if any(file.lower().endswith(ext) for ext in image_extensions):
+                    input_files.append(os.path.join(batch_input_folder_val, file))
+            
+            if not input_files:
+                raise gr.Error(f"No image files found in: {batch_input_folder_val}")
+            
+            file_type = "image"
+            logger.info(f"Direct image upscaling mode: Found {len(input_files)} image files")
+        else:
+            # Process video files (existing logic)
+            video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v']
+            input_files = []
 
-        for file in os.listdir(batch_input_folder_val):
-            if any(file.lower().endswith(ext) for ext in video_extensions):
-                video_files.append(os.path.join(batch_input_folder_val, file))
+            for file in os.listdir(batch_input_folder_val):
+                if any(file.lower().endswith(ext) for ext in video_extensions):
+                    input_files.append(os.path.join(batch_input_folder_val, file))
 
-        if not video_files:
-            raise gr.Error(f"No video files found in: {batch_input_folder_val}")
+            if not input_files:
+                raise gr.Error(f"No video files found in: {batch_input_folder_val}")
+            
+            file_type = "video"
+            logger.info(f"Video processing mode: Found {len(input_files)} video files")
 
         os.makedirs(batch_output_folder_val, exist_ok=True)
 
@@ -177,54 +200,128 @@ def process_batch_videos(
         skipped_files = []
         caption_stats = {"saved": 0, "skipped": 0, "failed": 0}
 
-        for i, video_file in enumerate(video_files):
+        for i, input_file in enumerate(input_files):
             try:
-                # Check for cancellation at the start of each video
+                # Check for cancellation at the start of each file
                 cancellation_manager.check_cancel()
                 
-                video_name = Path(video_file).name
-                progress((i / len(video_files)) * 0.9, desc=f"Processing {i + 1}/{len(video_files)}: {video_name}")
-
-                # 1. Check if output exists and skip if requested
-                if batch_skip_existing_val:
-                    expected_output = get_expected_output_path(video_file, batch_output_folder_val)
-                    if os.path.exists(expected_output):
-                        logger.info(f"Skipping {video_name} - output already exists: {expected_output}")
-                        skipped_files.append(video_file)
+                file_name = Path(input_file).name
+                progress((i / len(input_files)) * 0.9, desc=f"Processing {i + 1}/{len(input_files)}: {file_name}")
+                
+                # Handle direct image upscaling
+                if enable_direct_image_upscaling_val and file_type == "image":
+                    # Process image file directly with image upscaler
+                    try:
+                        from .image_upscaler_utils import process_single_image_direct
+                        
+                        # Generate output path for image
+                        input_stem = Path(input_file).stem
+                        input_ext = Path(input_file).suffix
+                        output_image_path = os.path.join(batch_output_folder_val, f"{input_stem}_upscaled{input_ext}")
+                        
+                        # Check if output exists and skip if requested
+                        if batch_skip_existing_val and os.path.exists(output_image_path):
+                            logger.info(f"Skipping {file_name} - output already exists: {output_image_path}")
+                            skipped_files.append(input_file)
+                            continue
+                        
+                        # Force image upscaler mode for direct image processing
+                        if not enable_image_upscaler_val:
+                            logger.info(f"Auto-enabling image upscaler for direct image processing of {file_name}")
+                        
+                        # Determine upscale models directory
+                        # Look for upscale_models in parent directories
+                        potential_models_dirs = [
+                            os.path.join(os.path.dirname(batch_input_folder_val), '..', 'upscale_models'),
+                            os.path.join(os.path.dirname(batch_input_folder_val), 'upscale_models'),
+                            'upscale_models'
+                        ]
+                        models_dir = None
+                        for potential_dir in potential_models_dirs:
+                            if os.path.exists(potential_dir):
+                                models_dir = potential_dir
+                                break
+                        
+                        if not models_dir:
+                            models_dir = potential_models_dirs[0]  # Use first option as fallback
+                        
+                        # Process the image directly
+                        success, result_path, processing_time = process_single_image_direct(
+                            image_path=input_file,
+                            output_path=output_image_path,
+                            model_name=image_upscaler_model_val,
+                            upscale_models_dir=models_dir,
+                            apply_target_resolution=enable_target_res_check_val,
+                            target_h=target_h_num_val,
+                            target_w=target_w_num_val,
+                            target_res_mode=target_res_mode_radio_val,
+                            device="cuda" if torch.cuda.is_available() else "cpu",
+                            logger=logger
+                        )
+                        
+                        if success and result_path and os.path.exists(result_path):
+                            processed_files.append({
+                                "input": input_file,
+                                "output": result_path,
+                                "status": "success",
+                                "prompt_source": "not_applicable",
+                                "caption_saved": False,
+                                "auto_resolution_used": False,
+                                "effective_resolution": None,
+                                "processing_time": processing_time
+                            })
+                            logger.info(f"Successfully processed image {file_name} in {processing_time:.2f}s")
+                        else:
+                            failed_files.append((input_file, "Image processing failed or output not created"))
+                            logger.error(f"Failed to process image {file_name}")
+                        
+                        continue  # Skip to next file
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing image {file_name}: {e}")
+                        failed_files.append((input_file, f"Image processing error: {str(e)}"))
                         continue
 
-                # 2. Determine prompt to use (priority: prompt file > auto-caption > user prompt)
+                # 1. Check if output exists and skip if requested (for video files)
+                if batch_skip_existing_val:
+                    expected_output = get_expected_output_path(input_file, batch_output_folder_val)
+                    if os.path.exists(expected_output):
+                        logger.info(f"Skipping {file_name} - output already exists: {expected_output}")
+                        skipped_files.append(input_file)
+                        continue
+
+                # 2. Determine prompt to use (priority: prompt file > auto-caption > user prompt) - for video files only
                 effective_prompt = user_prompt_val
                 prompt_source = "user_input"
                 
-                if batch_use_prompt_files_val:
-                    prompt_file_path = get_prompt_file_path(video_file)
+                if batch_use_prompt_files_val and file_type == "video":
+                    prompt_file_path = get_prompt_file_path(input_file)
                     file_prompt = load_prompt_from_file(prompt_file_path, logger)
                     if file_prompt:
                         effective_prompt = file_prompt
                         prompt_source = "prompt_file"
-                        logger.info(f"Using prompt from file for {video_name}: '{effective_prompt[:50]}...'")
+                        logger.info(f"Using prompt from file for {file_name}: '{effective_prompt[:50]}...'")
 
-                # 3. Handle auto-captioning if enabled and no prompt file exists
+                # 3. Handle auto-captioning if enabled and no prompt file exists (for video files only)
                 # Note: Auto-captioning is disabled when using image upscaler since it doesn't use prompts
                 enable_auto_caption_for_this_video = False
-                if batch_enable_auto_caption_val and prompt_source != "prompt_file" and not enable_image_upscaler_val:
+                if batch_enable_auto_caption_val and prompt_source != "prompt_file" and not enable_image_upscaler_val and file_type == "video":
                     enable_auto_caption_for_this_video = True
                     prompt_source = "auto_caption"
-                    logger.info(f"Will auto-caption {video_name} (no prompt file found)")
+                    logger.info(f"Will auto-caption {file_name} (no prompt file found)")
                 elif enable_image_upscaler_val and batch_enable_auto_caption_val:
-                    logger.info(f"Auto-captioning disabled for {video_name} (using image upscaler - prompts not used)")
+                    logger.info(f"Auto-captioning disabled for {file_name} (using image upscaler - prompts not used)")
 
-                # 3.5. Calculate auto-resolution for this video if enabled
+                # 3.5. Calculate auto-resolution for this file if enabled (for video files only)
                 effective_target_h = target_h_num_val
                 effective_target_w = target_w_num_val
                 auto_resolution_used = False
                 
-                if enable_auto_aspect_resolution_check_val:
+                if enable_auto_aspect_resolution_check_val and file_type == "video":
                     try:
                         from .auto_resolution_utils import update_resolution_from_video
                         result = update_resolution_from_video(
-                            video_file, target_w_num_val, target_h_num_val, logger
+                            input_file, target_w_num_val, target_h_num_val, logger
                         )
                         if result['success']:
                             effective_target_h = result['optimal_height']
@@ -233,24 +330,24 @@ def process_batch_videos(
                             
                             if effective_target_h != target_h_num_val or effective_target_w != target_w_num_val:
                                 auto_resolution_used = True
-                                logger.info(f"Auto-resolution for {video_name}: {target_w_num_val}x{target_h_num_val} → {effective_target_w}x{effective_target_h}")
+                                logger.info(f"Auto-resolution for {file_name}: {target_w_num_val}x{target_h_num_val} → {effective_target_w}x{effective_target_h}")
                                 logger.info(f"Auto-resolution status: {auto_status}")
                             else:
-                                logger.info(f"Auto-resolution for {video_name}: No change needed ({auto_status})")
+                                logger.info(f"Auto-resolution for {file_name}: No change needed ({auto_status})")
                         else:
-                            logger.warning(f"Auto-resolution calculation failed for {video_name}: {result.get('error', 'Unknown error')}")
+                            logger.warning(f"Auto-resolution calculation failed for {file_name}: {result.get('error', 'Unknown error')}")
                             # Fall back to original target resolution
                             effective_target_h = target_h_num_val
                             effective_target_w = target_w_num_val
                     except Exception as e:
-                        logger.warning(f"Auto-resolution calculation failed for {video_name}: {e}")
+                        logger.warning(f"Auto-resolution calculation failed for {file_name}: {e}")
                         # Fall back to original target resolution
                         effective_target_h = target_h_num_val
                         effective_target_w = target_w_num_val
 
-                # 4. Process the video
+                # 4. Process the file (video processing)
                 upscale_generator = run_upscale_func(
-                    input_video_path=video_file, 
+                    input_video_path=input_file, 
                     user_prompt=effective_prompt, 
                     positive_prompt=pos_prompt_val, 
                     negative_prompt=neg_prompt_val, 
@@ -262,6 +359,7 @@ def process_batch_videos(
                     max_chunk_len=max_chunk_len_slider_val, 
                     enable_chunk_optimization=enable_chunk_optimization_check_val,
                     vae_chunk=vae_chunk_slider_val, 
+                    enable_vram_optimization=enable_vram_optimization_check_val,  # FIX: Added missing parameter
                     color_fix_method=color_fix_dropdown_val,
                     enable_tiling=enable_tiling_check_val, 
                     tile_size=tile_size_num_val, 
@@ -281,7 +379,7 @@ def process_batch_videos(
                     save_chunk_frames=save_chunk_frames_checkbox_val,
 
                     enable_scene_split=enable_scene_split_check_val, 
-                    scene_split_mode=scene_split_mode_radio_val, 
+                    scene_split_mode=scene_split_mode_radio_val,
                     scene_min_scene_len=scene_min_scene_len_num_val, 
                     scene_drop_short=scene_drop_short_check_val, 
                     scene_merge_last=scene_merge_last_check_val,
@@ -301,6 +399,9 @@ def process_batch_videos(
 
                     # FPS decrease parameters for batch processing
                     enable_fps_decrease=enable_fps_decrease_val,
+                    fps_decrease_mode=fps_decrease_mode_val,
+                    fps_multiplier_preset=fps_multiplier_preset_val,
+                    fps_multiplier_custom=fps_multiplier_custom_val,
                     target_fps=target_fps_val,
                     fps_interpolation_method=fps_interpolation_method_val,
 
@@ -313,14 +414,14 @@ def process_batch_videos(
                     rife_skip_static=rife_skip_static_val, 
                     rife_enable_fps_limit=rife_enable_fps_limit_val, 
                     rife_max_fps_limit=rife_max_fps_limit_val,
-                    rife_apply_to_chunks=rife_apply_to_chunks_val, 
+                    rife_apply_to_chunks=rife_apply_to_chunks_val,
                     rife_apply_to_scenes=rife_apply_to_scenes_val, 
                     rife_keep_original=rife_keep_original_val, 
                     rife_overwrite_original=rife_overwrite_original_val,
 
                     is_batch_mode=True,
                     batch_output_dir=batch_output_folder_val,
-                    original_filename=video_name,
+                    original_filename=file_name,
                     
                     enable_auto_caption_per_scene=enable_auto_caption_for_this_video,
                     cogvlm_quant=batch_cogvlm_quant_val if enable_auto_caption_for_this_video else 0,
@@ -360,11 +461,11 @@ def process_batch_videos(
                             if caption_line:
                                 generated_caption = caption_line
                         except Exception as e:
-                            logger.warning(f"Failed to extract caption from status for {video_name}: {e}")
+                            logger.warning(f"Failed to extract caption from status for {file_name}: {e}")
 
                 # 6. Save caption to input folder if requested and available
                 if batch_save_captions_val and generated_caption and prompt_source == "auto_caption":
-                    prompt_file_path = get_prompt_file_path(video_file)
+                    prompt_file_path = get_prompt_file_path(input_file)
                     if save_caption_to_file(generated_caption, prompt_file_path, overwrite=False, logger=logger):
                         caption_stats["saved"] += 1
                     else:
@@ -373,7 +474,7 @@ def process_batch_videos(
                 # 7. Record results
                 if final_output and os.path.exists(final_output):
                     processed_files.append({
-                        "input": video_file, 
+                        "input": input_file, 
                         "output": final_output, 
                         "status": "success",
                         "prompt_source": prompt_source,
@@ -382,22 +483,23 @@ def process_batch_videos(
                         "effective_resolution": f"{effective_target_w}x{effective_target_h}" if auto_resolution_used else None
                     })
                 else:
-                    failed_files.append((video_file, "Output file not created"))
-                    logger.warning(f"Failed to get final output path for {video_file} or file does not exist.")
+                    failed_files.append((input_file, "Output file not created"))
+                    logger.warning(f"Failed to get final output path for {input_file} or file does not exist.")
 
 
             except Exception as e:
-                logger.error(f"Failed to process {video_file}: {e}", exc_info=True)
-                failed_files.append((video_file, str(e)))
+                logger.error(f"Failed to process {input_file}: {e}", exc_info=True)
+                failed_files.append((input_file, str(e)))
 
         progress(1.0, desc=f"Batch complete: {len(processed_files)} processed, {len(skipped_files)} skipped, {len(failed_files)} failed")
 
         # Enhanced status reporting
+        file_type_display = "images" if file_type == "image" else "videos"
         status_msg = f"🎉 Batch processing complete!\n\n"
         status_msg += f"📊 **Summary:**\n"
-        status_msg += f"  ✅ Successfully processed: {len(processed_files)} videos\n"
-        status_msg += f"  ⏩ Skipped (existing): {len(skipped_files)} videos\n"
-        status_msg += f"  ❌ Failed: {len(failed_files)} videos\n"
+        status_msg += f"  ✅ Successfully processed: {len(processed_files)} {file_type_display}\n"
+        status_msg += f"  ⏩ Skipped (existing): {len(skipped_files)} {file_type_display}\n"
+        status_msg += f"  ❌ Failed: {len(failed_files)} {file_type_display}\n"
         status_msg += f"  📁 Output folder: {batch_output_folder_val}\n"
         
         # Add upscaler mode information
@@ -495,6 +597,7 @@ def process_batch_videos_from_app_config(app_config, run_upscale_func, logger, p
         max_chunk_len_slider_val=app_config.performance.max_chunk_len,
         enable_chunk_optimization_check_val=app_config.performance.enable_chunk_optimization,
         vae_chunk_slider_val=app_config.performance.vae_chunk,
+        enable_vram_optimization_check_val=app_config.performance.enable_vram_optimization,  # FIX: Added missing parameter
         color_fix_dropdown_val=app_config.star_model.color_fix_method,
         enable_tiling_check_val=app_config.tiling.enable,
         tile_size_num_val=app_config.tiling.tile_size,
@@ -532,6 +635,9 @@ def process_batch_videos_from_app_config(app_config, run_upscale_func, logger, p
         scene_manual_split_type_radio_val=app_config.scene_split.manual_split_type,
         scene_manual_split_value_num_val=app_config.scene_split.manual_split_value,
         enable_fps_decrease_val=app_config.fps_decrease.enable,
+        fps_decrease_mode_val=app_config.fps_decrease.mode,  # FIX: Added missing parameter
+        fps_multiplier_preset_val=app_config.fps_decrease.multiplier_preset,  # FIX: Added missing parameter
+        fps_multiplier_custom_val=app_config.fps_decrease.multiplier_custom,  # FIX: Added missing parameter
         target_fps_val=app_config.fps_decrease.target_fps,
         fps_interpolation_method_val=app_config.fps_decrease.interpolation_method,
         enable_rife_interpolation_val=app_config.rife.enable,
@@ -565,5 +671,6 @@ def process_batch_videos_from_app_config(app_config, run_upscale_func, logger, p
         face_restoration_when_val=app_config.face_restoration.when,
         codeformer_model_val=app_config.face_restoration.model,
         face_restoration_batch_size_val=app_config.face_restoration.batch_size,
+        enable_direct_image_upscaling_val=app_config.batch.enable_direct_image_upscaling,  # NEW: Direct image upscaling parameter
         progress=progress
     )

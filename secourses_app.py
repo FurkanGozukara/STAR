@@ -1091,6 +1091,12 @@ This helps visualize the quality improvement from upscaling."""
                     info ="Enable to process subfolders containing frame sequences instead of video files. Each subfolder with images will be converted to video first."
                     )
 
+                    enable_direct_image_upscaling =gr .Checkbox (
+                    label ="Direct Image Upscaling",
+                    value =False ,
+                    info ="Process individual image files (JPG, PNG, etc.) directly with selected image upscaler model. Ideal for batch upscaling photos/images."
+                    )
+
                 with gr .Row ():
 
                     batch_skip_existing =gr .Checkbox (
@@ -1639,11 +1645,35 @@ This helps visualize the quality improvement from upscaling."""
         else:
             return gr.update(visible=False)
     
+    def update_direct_image_upscaling_info(enable_direct_upscaling, upscaler_type):
+        """Update UI hints when direct image upscaling is enabled."""
+        if enable_direct_upscaling:
+            if upscaler_type != "Use Image Based Upscalers":
+                return gr.update(
+                    info="⚠️ Direct Image Upscaling enabled: Automatically uses Image Based Upscalers. Switch to 'Use Image Based Upscalers' in Core Settings for optimal results."
+                )
+            else:
+                return gr.update(
+                    info="✅ Direct Image Upscaling enabled: Will process JPG, PNG, etc. files directly with the selected image upscaler model."
+                )
+        else:
+            return gr.update(
+                info="Process individual image files (JPG, PNG, etc.) directly with selected image upscaler model. Ideal for batch upscaling photos/images."
+            )
+    
     face_restoration_mode.change(
         fn=update_face_restoration_mode_controls,
         inputs=face_restoration_mode,
         outputs=batch_folder_controls
     )
+    
+    # Update direct image upscaling info when checkbox or upscaler type changes
+    for component in [enable_direct_image_upscaling, upscaler_type_radio]:
+        component.change(
+            fn=update_direct_image_upscaling_info,
+            inputs=[enable_direct_image_upscaling, upscaler_type_radio],
+            outputs=[enable_direct_image_upscaling]
+        )
     
     def refresh_upscaler_models():
         try:
@@ -3088,6 +3118,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
             input_frames_folder_val, frame_folder_fps_slider_val,
             gpu_selector_val,
             batch_input_folder_val, batch_output_folder_val, enable_batch_frame_folders_val,
+            enable_direct_image_upscaling_val,
             batch_skip_existing_val, batch_use_prompt_files_val, batch_save_captions_val, batch_enable_auto_caption_val
         ) = args
         
@@ -3222,7 +3253,8 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
                 save_captions=batch_save_captions_val,
                 use_prompt_files=batch_use_prompt_files_val,
                 enable_auto_caption=batch_enable_auto_caption_val,
-                enable_frame_folders=enable_batch_frame_folders_val
+                enable_frame_folders=enable_batch_frame_folders_val,
+                enable_direct_image_upscaling=enable_direct_image_upscaling_val
             ),
             upscaler_type=UpscalerTypeConfig(
                 upscaler_type=selected_upscaler_type
@@ -3260,6 +3292,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
     # Create batch inputs list that includes batch-specific parameters
     batch_click_inputs = click_inputs + [
         batch_input_folder, batch_output_folder, enable_batch_frame_folders,
+        enable_direct_image_upscaling,
         batch_skip_existing, batch_use_prompt_files, batch_save_captions, batch_enable_auto_caption
     ]
 
@@ -4176,7 +4209,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
     
     # Create preset_components by copying click_inputs and excluding input_video (first component)
     # This ensures exact order matching between save and load operations
-    preset_components = click_inputs[1:]  # Skip input_video which is at index 0
+    preset_components = click_inputs[1:] + [enable_direct_image_upscaling]  # Skip input_video which is at index 0, add the new checkbox
 
     # Define preset helper functions before they are used
 
@@ -4202,6 +4235,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         enable_face_restoration_check: ('face_restoration', 'enable'), face_restoration_fidelity_slider: ('face_restoration', 'fidelity_weight'), enable_face_colorization_check: ('face_restoration', 'enable_colorization'), face_restoration_when_radio: ('face_restoration', 'when'), codeformer_model_dropdown: ('face_restoration', 'model'), face_restoration_batch_size_slider: ('face_restoration', 'batch_size'),
         enable_seedvr2_check: ('seedvr2', 'enable'), seedvr2_model_dropdown: ('seedvr2', 'model'), seedvr2_quality_preset_radio: ('seedvr2', 'quality_preset'), seedvr2_batch_size_slider: ('seedvr2', 'batch_size'), seedvr2_use_gpu_check: ('seedvr2', 'use_gpu'),
         gpu_selector: ('gpu', 'device'),
+        enable_direct_image_upscaling: ('batch', 'enable_direct_image_upscaling'),
     }
 
     def save_preset_wrapper(preset_name, *all_ui_values):

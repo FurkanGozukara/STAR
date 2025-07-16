@@ -812,6 +812,138 @@ def get_recommended_batch_size(model: Any, device: str = "cuda") -> int:
     except:
         return 4  # Safe default 
 
+def process_single_image_direct(
+    image_path: str,
+    output_path: str,
+    model_name: str,
+    upscale_models_dir: str,
+    apply_target_resolution: bool = False,
+    target_h: int = 1024,
+    target_w: int = 1024,
+    target_res_mode: str = "Ratio Upscale",
+    device: str = "cuda",
+    logger: logging.Logger = None
+) -> Tuple[bool, Optional[str], float]:
+    """
+    Process a single image file directly with an image upscaler model.
+    
+    Args:
+        image_path: Path to the input image file
+        output_path: Path where the upscaled image should be saved
+        model_name: Name of the upscaler model to use
+        upscale_models_dir: Directory containing upscaler models
+        apply_target_resolution: Whether to apply target resolution constraints
+        target_h: Target height (if apply_target_resolution=True)
+        target_w: Target width (if apply_target_resolution=True)
+        target_res_mode: How to apply target resolution ("Ratio Upscale" or "Downscale then Upscale")
+        device: Device to use for processing
+        logger: Logger instance
+        
+    Returns:
+        Tuple of (success, result_path, processing_time)
+    """
+    start_time = time.time()
+    
+    try:
+        # Validate input
+        if not os.path.exists(image_path):
+            if logger:
+                logger.error(f"Input image not found: {image_path}")
+            return False, None, 0.0
+        
+        if not model_name:
+            if logger:
+                logger.error("No model name provided")
+            return False, None, 0.0
+        
+        # Build model path
+        model_path = os.path.join(upscale_models_dir, model_name)
+        if not os.path.exists(model_path):
+            if logger:
+                logger.error(f"Model not found: {model_path}")
+            return False, None, 0.0
+        
+        # Load the model
+        model = load_model(model_path, device, logger)
+        if model is None:
+            if logger:
+                logger.error(f"Failed to load model: {model_name}")
+            return False, None, 0.0
+        
+        # Load the input image
+        try:
+            input_image = Image.open(image_path).convert("RGB")
+            input_w, input_h = input_image.size
+            
+            if logger:
+                logger.info(f"Processing image {os.path.basename(image_path)}: {input_w}x{input_h}")
+        except Exception as e:
+            if logger:
+                logger.error(f"Failed to load image {image_path}: {e}")
+            return False, None, time.time() - start_time
+        
+        # Convert to tensor
+        input_tensor = prepare_image_tensor(image_path, device)
+        
+        # Add batch dimension
+        input_batch = input_tensor.unsqueeze(0)  # CHW -> NCHW
+        
+        # Run upscaling
+        with torch.no_grad():
+            output_batch = model(input_batch)
+        
+        if output_batch is None:
+            if logger:
+                logger.error("Model returned None output")
+            return False, None, time.time() - start_time
+        
+        # Convert back to image
+        output_image = tensor_to_pil(output_batch)
+        output_w, output_h = output_image.size
+        
+        # Apply target resolution constraints if enabled
+        final_image = output_image
+        if apply_target_resolution:
+            if target_res_mode == "Ratio Upscale":
+                # Scale down proportionally if output exceeds target
+                if output_w > target_w or output_h > target_h:
+                    # Calculate scale to fit within target bounds
+                    scale_w = target_w / output_w
+                    scale_h = target_h / output_h
+                    scale = min(scale_w, scale_h)
+                    
+                    new_w = int(output_w * scale)
+                    new_h = int(output_h * scale)
+                    
+                    final_image = output_image.resize((new_w, new_h), Image.LANCZOS)
+                    
+                    if logger:
+                        logger.info(f"Applied ratio upscale: {output_w}x{output_h} -> {new_w}x{new_h}")
+            
+            elif target_res_mode == "Downscale then Upscale":
+                # Resize to target resolution exactly
+                final_image = output_image.resize((target_w, target_h), Image.LANCZOS)
+                
+                if logger:
+                    logger.info(f"Applied downscale then upscale: {output_w}x{output_h} -> {target_w}x{target_h}")
+        
+        # Save the result
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        final_image.save(output_path, quality=95, optimize=True)
+        
+        processing_time = time.time() - start_time
+        final_w, final_h = final_image.size
+        
+        if logger:
+            logger.info(f"Successfully processed {os.path.basename(image_path)}: {input_w}x{input_h} -> {final_w}x{final_h} in {processing_time:.2f}s")
+        
+        return True, output_path, processing_time
+        
+    except Exception as e:
+        if logger:
+            logger.error(f"Error processing image {image_path}: {e}")
+        return False, None, time.time() - start_time
+
 def extract_model_filename_from_dropdown(dropdown_value: str) -> str:
     """
     Extract the actual model filename from the dropdown display value.

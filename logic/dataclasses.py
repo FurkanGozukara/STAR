@@ -311,6 +311,7 @@ class BatchConfig:
     use_prompt_files: bool = DEFAULT_BATCH_USE_PROMPT_FILES
     enable_auto_caption: bool = True
     enable_frame_folders: bool = False
+    enable_direct_image_upscaling: bool = False  # NEW: Process individual images directly with image upscaler
     original_filename: Optional[str] = None
 
 @dataclass
