@@ -173,7 +173,7 @@ def run_upscale (
     "fps_decrease":0.05 if enable_fps_decrease else 0.0, # Added FPS decrease stage
     "scene_split":0.05 if enable_scene_split else 0.0 ,
     "downscale":0.07 , # This will be set to 0 if no downscale needed later
-    "model_load":0.05 ,
+    "model_load":0.05 if not enable_image_upscaler else 0.0, # Only load STAR model if not using image upscaler
     "extract_frames":0.10 ,
     "copy_input_frames":0.05 if save_frames and not enable_scene_split else 0.0, # Adjusted
     "face_restoration_before":0.08 if enable_face_restoration and face_restoration_when == "before" else 0.0,
