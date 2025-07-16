@@ -19,6 +19,7 @@ from easydict import EasyDict
 from argparse import ArgumentParser ,Namespace 
 import logging 
 import re 
+import webbrowser
 from pathlib import Path 
 from functools import partial 
 
@@ -29,7 +30,7 @@ from logic.dataclasses import (
     PathConfig, PromptConfig, StarModelConfig, PerformanceConfig, ResolutionConfig,
     ContextWindowConfig, TilingConfig, FfmpegConfig, FrameFolderConfig, SceneSplitConfig,
     CogVLMConfig, OutputConfig, SeedConfig, RifeConfig, FpsDecreaseConfig, BatchConfig,
-    ImageUpscalerConfig, FaceRestorationConfig, GpuConfig
+    ImageUpscalerConfig, FaceRestorationConfig, GpuConfig, UpscalerTypeConfig, SeedVR2Config
 )
 from logic import metadata_handler
 from logic import config as app_config_module 
@@ -290,7 +291,7 @@ progress =gr .Progress (track_tqdm =True )
     )
 
 with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
-    gr .Markdown ("# Ultimate SECourses STAR Video Upscaler V100 Pre Release")
+    gr .Markdown ("# SECourses Video Upscaler Pro V1")
 
     with gr .Tabs ()as main_tabs :
         with gr .Tab ("Main",id ="main_tab"):
@@ -317,8 +318,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             placeholder ="e.g., A panda playing guitar by a lake at sunset.",
                             value=INITIAL_APP_CONFIG.prompts.user,
                             info ="""Describe the main subject and action in the video. This guides the upscaling process.
-Combined with the Positive Prompt below, the effective text length influencing the model is limited to 77 tokens.
-If CogVLM2 is available, you can use the button below to generate a caption automatically."""
+Combined with the Positive Prompt below, the effective text length influencing the model is limited to 77 tokens (STAR Model)."""
                             )
                         with gr .Row ():
                             auto_caption_then_upscale_check =gr .Checkbox (label ="Auto-caption then Upscale (Useful only for STAR Model)",value =INITIAL_APP_CONFIG.cogvlm.auto_caption_then_upscale ,info ="If checked, clicking 'Upscale Video' will first generate a caption and use it as the prompt.")
@@ -401,6 +401,12 @@ The total combined prompt length is limited to 77 tokens."""
 
                 with gr .Column (scale =1 ):
                     output_video =gr .Video (label ="Upscaled Video",interactive =False ,height =512 )
+                    
+                    # Documentation and Version History buttons
+                    with gr .Row ():
+                        how_to_use_button = gr .Button ("📖 How To Use Documentation", variant ="secondary", icon ="icons/folder.png")
+                        version_history_button = gr .Button ("📋 Version History V1", variant ="secondary", icon ="icons/folder.png")
+                    
                     status_textbox =gr .Textbox (label ="Log",interactive =False ,lines =8 ,max_lines =15 )
                     
                     with gr.Accordion("Save/Load Presets", open=True):
@@ -443,9 +449,9 @@ The total combined prompt length is limited to 77 tokens."""
                         )
                         target_res_mode_radio =gr .Radio (
                         label ="Target Resolution Mode",
-                        choices =['Ratio Upscale','Downscale then 4x'],value =INITIAL_APP_CONFIG.resolution.target_res_mode ,
+                        choices =['Ratio Upscale','Downscale then Upscale'],value =INITIAL_APP_CONFIG.resolution.target_res_mode ,
                         info ="""How to apply the target H/W limits.
-'Ratio Upscale': Upscales by the largest factor possible without exceeding Target H/W, preserving aspect ratio.
+'Ratio Upscale': Upscales by the largest factor possible without exceeding Target H/W, preserving aspect ratio. Ratio upscale doesn't work for Image Based Upscaler and yields very poor results for STAR model.
 'Downscale then 4x': For STAR models, downscales towards Target H/W ÷ 4, then applies 4x upscale. For image upscalers, adapts to model scale (e.g., 2x model = Target H/W ÷ 2). Can clean noisy high-res input before upscaling."""
                         )
                         with gr .Row ():
@@ -491,12 +497,12 @@ The total combined prompt length is limited to 77 tokens."""
                     split_only_button =gr .Button ("Split Video Only (No Upscaling)",icon ="icons/split.png",variant ="primary")
                     with gr .Accordion ("Scene Splitting",open =True ):
                         enable_scene_split_check =gr .Checkbox (
-                        label ="Enable Scene Splitting",
+                        label ="Enable Scene Splitting - Recommended",
                         value =INITIAL_APP_CONFIG.scene_split.enable ,
-                        info ="""Split video into scenes and process each scene individually. This can improve quality and speed by processing similar content together.
-- Quality Impact: Better temporal consistency within scenes, improved auto-captioning per scene.
-- Speed Impact: Can be faster for long videos with distinct scenes.
-- Memory Impact: Reduces peak memory usage by processing smaller segments."""
+                        info ="""Split video into scenes and process each scene individually.
+- Quality Impact: Better temporal consistency within scenes, and excellent quality with auto-captioning per scene.
+- You can also cancel and use processed scenes later, saves each scene individually as well
+- Not useful for Image Based Upscalers since no prompt or temporal consistency is utilized."""
                         )
                         with gr .Row ():
                             scene_split_mode_radio =gr .Radio (
@@ -536,7 +542,114 @@ The total combined prompt length is limited to 77 tokens."""
             with gr .Row ():
                 with gr .Column (scale =1 ):
                     with gr .Group ():
-                        gr .Markdown ("### Core Upscaling Settings for STAR Model - Temporal Upscaling")
+                        gr .Markdown ("### Upscaler Selection")
+                        upscaler_type_radio =gr .Radio (
+                        label ="Choose Your Upscaler Type",
+                        choices =["Use STAR Model Upscaler", "Use Image Based Upscalers", "Use SeedVR2 Video Upscaler"],
+                        value ="Use Image Based Upscalers",  # Default selection as requested
+                        info ="""Select the upscaling method:
+• STAR Model: AI temporal upscaler with prompts and advanced settings
+• Image Based: Fast deterministic spatial upscaling (RealESRGAN, etc.)  
+• SeedVR2: Upcoming advanced video upscaler (coming soon)"""
+                        )
+
+                    if UTIL_COG_VLM_AVAILABLE :
+                        with gr .Accordion ("Auto-Captioning Settings (CogVLM2) (Only for STAR Model)",open =True ):
+                            cogvlm_quant_choices_map =get_cogvlm_quant_choices_map (torch .cuda .is_available (),UTIL_BITSANDBYTES_AVAILABLE )
+                            cogvlm_quant_radio_choices_display =list (cogvlm_quant_choices_map .values ())
+                            default_quant_display_val =get_default_cogvlm_quant_display (cogvlm_quant_choices_map )
+
+                            with gr .Row ():
+                                cogvlm_quant_radio =gr .Radio (
+                                label ="CogVLM2 Quantization",
+                                choices =cogvlm_quant_radio_choices_display ,
+                                value =INITIAL_APP_CONFIG.cogvlm.quant_display ,
+                                info ="Quantization for the CogVLM2 captioning model (uses less VRAM). INT4/8 require CUDA & bitsandbytes.",
+                                interactive =True if len (cogvlm_quant_radio_choices_display )>1 else False 
+                                )
+                                cogvlm_unload_radio =gr .Radio (
+                                label ="CogVLM2 After-Use",
+                                choices =['full','cpu'],value =INITIAL_APP_CONFIG.cogvlm.unload_after_use ,
+                                info ="""Memory management after captioning.
+'full': Unload model completely from VRAM/RAM (frees most memory).
+'cpu': Move model to RAM (faster next time, uses RAM, not for quantized models)."""
+                                )
+                    else :
+                        gr .Markdown ("_(Auto-captioning disabled as CogVLM2 components are not fully available.)_")
+
+                with gr .Column (scale =1 ):
+                    with gr .Group ():
+                        gr .Markdown ("### Face Restoration (CodeFormer)")
+                        enable_face_restoration_check =gr .Checkbox (
+                        label ="Enable Face Restoration",
+                        value =INITIAL_APP_CONFIG.face_restoration.enable ,
+                        info ="""Enhance faces in the video using CodeFormer. Works with all upscaler types.
+- Detects and restores faces automatically
+- Can be applied before or after upscaling
+- Supports both face restoration and colorization
+- Requires CodeFormer models in pretrained_weight/ directory"""
+                        )
+                        
+                        face_restoration_fidelity_slider =gr .Slider (
+                        label ="Fidelity Weight",
+                        minimum =0.0 ,
+                        maximum =1.0 ,
+                        value =INITIAL_APP_CONFIG.face_restoration.fidelity_weight ,
+                        step =0.1 ,
+                        info ="""Balance between quality and identity preservation:
+- 0.0-0.3: Prioritize quality/detail (may change facial features)
+- 0.4-0.6: Balanced approach
+- 0.7-1.0: Prioritize identity preservation (may reduce enhancement)""",
+                        interactive =True 
+                        )
+                        
+                        with gr .Row ():
+                            enable_face_colorization_check =gr .Checkbox (
+                            label ="Enable Colorization",
+                            value =INITIAL_APP_CONFIG.face_restoration.enable_colorization ,
+                            info ="Apply colorization to grayscale faces (experimental feature)",
+                            interactive =True 
+                            )
+                            
+                            face_restoration_when_radio =gr .Radio (
+                            label ="Apply Timing",
+                            choices =['before','after'],
+                            value =INITIAL_APP_CONFIG.face_restoration.when ,
+                            info ="""When to apply face restoration:
+'before': Apply before upscaling (may be enhanced further)
+'after': Apply after upscaling (final enhancement)""",
+                            interactive =True 
+                            )
+                        
+                        with gr .Row ():
+                            model_choices = ["Auto (Default)", "codeformer.pth (359.2MB)"]
+                            default_model_choice = "Auto (Default)"
+                            if INITIAL_APP_CONFIG.face_restoration.model and "codeformer.pth" in INITIAL_APP_CONFIG.face_restoration.model:
+                                default_model_choice = "codeformer.pth (359.2MB)"
+
+                            codeformer_model_dropdown =gr .Dropdown (
+                            label ="CodeFormer Model",
+                            choices =model_choices ,
+                            value =default_model_choice ,
+                            info ="Select the CodeFormer model. 'Auto' uses the default model. Models should be in pretrained_weight/ directory.",
+                            interactive =True 
+                            )
+                        
+                        face_restoration_batch_size_slider =gr .Slider (
+                        label ="Face Restoration Batch Size",
+                        minimum =1 ,
+                        maximum =32 ,
+                        value =INITIAL_APP_CONFIG.face_restoration.batch_size ,
+                        step =1 ,
+                        info ="Number of frames to process simultaneously for face restoration. Higher values = faster processing but more VRAM usage.",
+                        interactive =True 
+                        )
+
+        with gr .Tab ("Star Upscaler",id ="star_tab"):
+            with gr .Row ():
+                with gr .Column (scale =1 ):
+                    with gr .Group ():
+                        gr .Markdown ("### STAR Model Settings - Temporal Upscaling")
                         model_selector =gr .Dropdown (
                         label ="STAR Model - Temporal Upscaling",
                         choices =["Light Degradation","Heavy Degradation"],
@@ -576,185 +689,8 @@ The total combined prompt length is limited to 77 tokens."""
 'AdaIN' / 'Wavelet': Different algorithms for color matching. AdaIN is often a good default.
 'None': Disables color correction."""
                         )
-                    
-                    with gr .Accordion ("QUALITY: Performance & VRAM Optimization (Only for STAR Model)",open =True ):
-                        max_chunk_len_slider =gr .Slider (
-                        label ="Max Frames per Chunk (VRAM) - Bigger = Better QUALITY",
-                        minimum =1 ,maximum =1000 ,value =INITIAL_APP_CONFIG.performance.max_chunk_len ,step =1 ,
-                        info ="""IMPORTANT for VRAM. This is the standard way the application manages VRAM. It divides the entire sequence of video frames into sequential, non-overlapping chunks.
-- Mechanism: The STAR model processes one complete chunk (of this many frames) at a time.
-- VRAM Impact: High Reduction (Lower value = Less VRAM).
-- Bigger Chunk + Bigger VRAM = Faster Processing and Better Quality 
-- Quality Impact: Can reduce Temporal Consistency (flicker/motion issues) between chunks if too low, as the model doesn't have context across chunk boundaries. Keep as high as VRAM allows.
-- Speed Impact: Slower (Lower value = Slower, as more chunks are processed)."""
-                        )
-                        enable_chunk_optimization_check =gr .Checkbox (
-                        label ="Optimize Last Chunk Quality",
-                        value =INITIAL_APP_CONFIG.performance.enable_chunk_optimization ,
-                        info ="""Process extra frames for small last chunks to improve quality. When the last chunk has fewer frames than target size (causing quality drops), this processes additional frames but only keeps the necessary output.
-- Example: For 70 frames with 32-frame chunks, instead of processing only 6 frames for the last chunk (poor quality), it processes 23 frames (48-70) but keeps only the last 6 (65-70).
-- Quality Impact: Significantly improves quality for small last chunks.
-- Speed Impact: Minimal impact on total processing time.
-- VRAM Impact: No additional VRAM usage."""
-                        )
-                        vae_chunk_slider =gr .Slider (
-                        label ="VAE Decode Chunk (VRAM)",
-                        minimum =1 ,maximum =16 ,value =INITIAL_APP_CONFIG.performance.vae_chunk ,step =1 ,
-                        info ="""Controls max latent frames decoded back to pixels by VAE simultaneously.
-- VRAM Impact: High Reduction (Lower value = Less VRAM during decode stage).
-- Quality Impact: Minimal / Negligible. Safe to lower.
-- Speed Impact: Slower (Lower value = Slower decoding)."""
-                        )
-                        enable_vram_optimization_check =gr .Checkbox (
-                        label ="Enable Advanced VRAM Optimization",
-                        value =True ,
-                        info ="""Advanced memory management for STAR model components. Automatically moves models to CPU/unloads when not in use.
-- Text Encoder: Completely unloaded after encoding, reloaded only for new prompts
-- VAE: Moved to CPU when not actively encoding/decoding
-- VRAM Impact: Significant reduction (2-6GB saved depending on model)
-- Quality Impact: None - identical results with optimized memory usage
-- Speed Impact: Minimal - slight overhead from model loading/moving"""
-                        )
 
-                with gr .Column (scale =1 ):
-                    with gr .Group ():
-                        gr .Markdown ("### Image-Based Upscaler (Alternative to STAR) - Spatial Upscaling")
-                        enable_image_upscaler_check =gr .Checkbox (
-                        label ="Enable Image-Based Upscaling (Disables STAR Model)",
-                        value =INITIAL_APP_CONFIG.image_upscaler.enable ,
-                        info ="""Use deterministic image upscaler models instead of STAR. When enabled:
-- Processes frames individually using spandrel-compatible models
-- Ignores prompts, auto-caption, context window, and tiling settings
-- Supports various architectures: DAT-2, ESRGAN, HAT, RCAN, OmniSR, CUGAN
-- Much faster processing with batch support
-- Uses way lesser VRAM
-- Lower quality compared to high Max Frames per Chunk STAR model upscale"""
-                        )
-                        
-                        try:
-                            available_model_files = util_scan_for_models(APP_CONFIG.paths.upscale_models_dir, logger)
-                            if available_model_files:
-                                model_choices = available_model_files
-                                default_model_choice = INITIAL_APP_CONFIG.image_upscaler.model if INITIAL_APP_CONFIG.image_upscaler.model in model_choices else model_choices[0]
-                            else:
-                                model_choices = ["No models found - place models in upscale_models/"]
-                                default_model_choice = model_choices[0]
-                        except Exception as e:
-                            logger.warning(f"Failed to scan for upscaler models: {e}")
-                            model_choices = ["Error scanning models - check upscale_models/ directory"]
-                            default_model_choice = model_choices[0]
-                        
-                        image_upscaler_model_dropdown =gr .Dropdown (
-                        label ="Select Upscaler Model - Spatial Upscaling",
-                        choices =model_choices ,
-                        value =default_model_choice ,
-                        info ="Select the image upscaler model. Models should be placed in the 'upscale_models/' directory.",
-                        interactive =True 
-                        )
-                        
-                        image_upscaler_batch_size_slider =gr .Slider (
-                        label ="Batch Size",
-                        minimum =1 ,
-                        maximum =1000 ,
-                        value =INITIAL_APP_CONFIG.image_upscaler.batch_size ,
-                        step =1 ,
-                        info ="Number of frames to process simultaneously. Higher values = faster processing but more VRAM usage. Adjust based on your GPU memory.",
-                        interactive =True 
-                        )
-                    
-                    with gr .Group ():
-                        gr .Markdown ("### Face Restoration (CodeFormer)")
-                        enable_face_restoration_check =gr .Checkbox (
-                        label ="Enable Face Restoration",
-                        value =INITIAL_APP_CONFIG.face_restoration.enable ,
-                        info ="""Enhance faces in the video using CodeFormer. Works with both STAR and image-based upscaling.
-- Detects and restores faces automatically
-- Can be applied before or after upscaling
-- Supports both face restoration and colorization
-- Requires CodeFormer models in pretrained_weight/ directory"""
-                        )
-                        
-                        face_restoration_fidelity_slider =gr .Slider (
-                        label ="Fidelity Weight",
-                        minimum =0.0 ,
-                        maximum =1.0 ,
-                        value =INITIAL_APP_CONFIG.face_restoration.fidelity_weight ,
-                        step =0.1 ,
-                        info ="""Balance between quality and identity preservation:
-- 0.0-0.3: Prioritize quality/detail (may change facial features)
-- 0.4-0.6: Balanced approach
-- 0.7-1.0: Prioritize identity preservation (may reduce enhancement)""",
-                        interactive =True 
-                        )
-                        
-                        with gr .Row ():
-                            enable_face_colorization_check =gr .Checkbox (
-                            label ="Enable Colorization",
-                            value =INITIAL_APP_CONFIG.face_restoration.enable_colorization ,
-                            info ="Apply colorization to grayscale faces (experimental feature)",
-                            interactive =True 
-                            )
-                            
-                            face_restoration_when_radio =gr .Radio (
-                            label ="Apply Timing",
-                            choices =['before','after'],
-                            value =INITIAL_APP_CONFIG.face_restoration.when ,
-                            info ="""When to apply face restoration:
-'before': Apply before upscaling (may be enhanced further)
-'after': Apply after upscaling (final enhancement)""",
-                            interactive =True 
-                            )
-                        
-                        with gr .Row ():
-                            with gr .Row ():
-                                model_choices = ["Auto (Default)", "codeformer.pth (359.2MB)"]
-                                default_model_choice = "Auto (Default)"
-                                if INITIAL_APP_CONFIG.face_restoration.model and "codeformer.pth" in INITIAL_APP_CONFIG.face_restoration.model:
-                                    default_model_choice = "codeformer.pth (359.2MB)"
-
-                                codeformer_model_dropdown =gr .Dropdown (
-                                label ="CodeFormer Model",
-                                choices =model_choices ,
-                                value =default_model_choice ,
-                                info ="Select the CodeFormer model. 'Auto' uses the default model. Models should be in pretrained_weight/ directory.",
-                                interactive =True 
-                                )
-                        
-                        face_restoration_batch_size_slider =gr .Slider (
-                        label ="Face Restoration Batch Size",
-                        minimum =1 ,
-                        maximum =32 ,
-                        value =INITIAL_APP_CONFIG.face_restoration.batch_size ,
-                        step =1 ,
-                        info ="Number of frames to process simultaneously for face restoration. Higher values = faster processing but more VRAM usage.",
-                        interactive =True 
-                        )
-
-                    if UTIL_COG_VLM_AVAILABLE :
-                        with gr .Accordion ("Auto-Captioning Settings (CogVLM2) (Only for STAR Model)",open =True ):
-                            cogvlm_quant_choices_map =get_cogvlm_quant_choices_map (torch .cuda .is_available (),UTIL_BITSANDBYTES_AVAILABLE )
-                            cogvlm_quant_radio_choices_display =list (cogvlm_quant_choices_map .values ())
-                            default_quant_display_val =get_default_cogvlm_quant_display (cogvlm_quant_choices_map )
-
-                            with gr .Row ():
-                                cogvlm_quant_radio =gr .Radio (
-                                label ="CogVLM2 Quantization",
-                                choices =cogvlm_quant_radio_choices_display ,
-                                value =INITIAL_APP_CONFIG.cogvlm.quant_display ,
-                                info ="Quantization for the CogVLM2 captioning model (uses less VRAM). INT4/8 require CUDA & bitsandbytes.",
-                                interactive =True if len (cogvlm_quant_radio_choices_display )>1 else False 
-                                )
-                                cogvlm_unload_radio =gr .Radio (
-                                label ="CogVLM2 After-Use",
-                                choices =['full','cpu'],value =INITIAL_APP_CONFIG.cogvlm.unload_after_use ,
-                                info ="""Memory management after captioning.
-'full': Unload model completely from VRAM/RAM (frees most memory).
-'cpu': Move model to RAM (faster next time, uses RAM, not for quantized models)."""
-                                )
-                    else :
-                        gr .Markdown ("_(Auto-captioning disabled as CogVLM2 components are not fully available.)_")
-
-                    with gr .Accordion ("Context Window - Previous Frames for Better Consistency (Only for STAR Model)",open =True ):
+                    with gr .Accordion ("Context Window - Previous Frames for Better Consistency - Experimental Probably Not Needed",open =True ):
                         enable_context_window_check =gr .Checkbox (
                         label ="Enable Context Window",
                         value =INITIAL_APP_CONFIG.context_window.enable ,
@@ -769,15 +705,49 @@ The total combined prompt length is limited to 77 tokens."""
                         value =INITIAL_APP_CONFIG.context_window.overlap ,minimum =0 ,maximum =31 ,step =1 ,
                         info ="Number of previous frames to include as context for each chunk (except first). 0 = disabled (same as normal chunking). Higher values = better consistency but more VRAM and slower processing. Recommend: 25-50% of Max Frames per Chunk."
                         )
+                    
+
+
+                with gr .Column (scale =1 ):
+                    with gr .Accordion ("Performance & VRAM Optimization - 32 Frames Yields Best Quality",open =True ):
+                        max_chunk_len_slider =gr .Slider (
+                        label ="Max Frames per Chunk (VRAM)",
+                        minimum =1 ,maximum =1000 ,value =INITIAL_APP_CONFIG.performance.max_chunk_len ,step =1 ,
+                        info ="""IMPORTANT for VRAM. This is the standard way the application manages VRAM. It divides the entire sequence of video frames into sequential, non-overlapping chunks.
+- Mechanism: The STAR model processes one complete chunk (of this many frames) at a time.
+- 32 Frames is best quality and uses a lot of VRAM. So reduce frame count if you get Out of Memory Error"""
+                        )
+                        enable_chunk_optimization_check =gr .Checkbox (
+                        label ="Optimize Last Chunk Quality",
+                        value =INITIAL_APP_CONFIG.performance.enable_chunk_optimization ,
+                        info ="""Process extra frames for small last chunks to improve quality. When the last chunk has fewer frames than target size (causing quality drops), this processes additional frames but only keeps the necessary output.
+- Example: For 70 frames with 32-frame chunks, instead of processing only 6 frames for the last chunk (poor quality), it processes 23 frames (48-70) but keeps only the last 6 (65-70).
+- Quality Impact: Significantly improves quality for small last chunks."""
+                        )
+                        vae_chunk_slider =gr .Slider (
+                        label ="VAE Decode Chunk (VRAM)",
+                        minimum =1 ,maximum =16 ,value =INITIAL_APP_CONFIG.performance.vae_chunk ,step =1 ,
+                        info ="""Controls max latent frames decoded back to pixels by VAE simultaneouslyç
+- No quality impact.
+- Higher may yield faster decoding but uses more VRAM."""
+                        )
+                        enable_vram_optimization_check =gr .Checkbox (
+                        label ="Enable Advanced VRAM Optimization",
+                        value =INITIAL_APP_CONFIG.performance.enable_vram_optimization ,
+                        info ="""Advanced memory management for STAR model components. Automatically moves models to CPU/unloads when not in use.
+- Text Encoder: Completely unloaded after encoding, reloaded only for new prompts
+- VAE: Moved to CPU when not actively encoding/decoding
+- VRAM Impact: Slightly reduces peak VRAM
+- Quality Impact: None - identical results with optimized memory usage"""
+                        )
 
                     with gr .Accordion ("Advanced: Tiling (Very High Res / Low VRAM)",open =True, visible=False ):
                         enable_tiling_check =gr .Checkbox (
                         label ="Enable Tiled Upscaling",
                         value =INITIAL_APP_CONFIG.tiling.enable ,
-                        info ="""Processes each frame in small spatial patches (tiles). Use ONLY if necessary for extreme resolutions or very low VRAM.
-- VRAM Impact: Very High Reduction.
-- Quality Impact: High risk of tile seams/artifacts. Can harm global coherence and severely reduce temporal consistency.
-- Speed Impact: Extremely Slow."""
+                        info ="""Processes each frame in small spatial patches (tiles).
+- Speed Impact: Extremely Slow.
+- I didn't find use case for this but still implemented"""
                         )
                         with gr .Row ():
                             tile_size_num =gr .Number (
@@ -790,6 +760,151 @@ The total combined prompt length is limited to 77 tokens."""
                             value =INITIAL_APP_CONFIG.tiling.tile_overlap ,minimum =0 ,step =16 ,
                             info ="How much the tiles overlap (in input resolution pixels). Higher overlap helps reduce seams but increases processing time. Recommend 1/4 to 1/2 of Tile Size."
                             )
+
+        with gr .Tab ("Image Based Upscalers",id ="image_upscaler_tab"):
+            with gr .Row ():
+                with gr .Column (scale =1 ):
+                    with gr .Group ():
+                        gr .Markdown ("### Image-Based Upscaler Settings - Spatial Upscaling")
+                        gr .Markdown ("**High-speed deterministic upscaling using specialized image upscaler models**")
+                        gr .Markdown ("*⚙️ Enable Image-Based Upscaling in the Core Settings tab first*")
+                        
+                        try:
+                            available_model_files = util_scan_for_models(APP_CONFIG.paths.upscale_models_dir, logger)
+                            if available_model_files:
+                                model_choices = available_model_files
+                                # Try to set 2xLiveActionV1_SPAN_490000.pth as default if available
+                                if "2xLiveActionV1_SPAN_490000.pth" in model_choices:
+                                    default_model_choice = "2xLiveActionV1_SPAN_490000.pth"
+                                elif INITIAL_APP_CONFIG.image_upscaler.model in model_choices:
+                                    default_model_choice = INITIAL_APP_CONFIG.image_upscaler.model
+                                else:
+                                    default_model_choice = model_choices[0]
+                            else:
+                                model_choices = ["No models found - place models in upscale_models/"]
+                                default_model_choice = model_choices[0]
+                        except Exception as e:
+                            logger.warning(f"Failed to scan for upscaler models: {e}")
+                            model_choices = ["Error scanning models - check upscale_models/ directory"]
+                            default_model_choice = model_choices[0]
+                        
+                        image_upscaler_model_dropdown =gr .Dropdown (
+                        label ="Select Upscaler Model - Spatial Upscaling",
+                        choices =model_choices ,
+                        value =default_model_choice ,
+                        info ="Select the image upscaler model. Models should be placed in the 'upscale_models/' directory. Recommended: 2xLiveActionV1_SPAN_490000.pth for video content.",
+                        interactive =True 
+                        )
+                        
+                        image_upscaler_batch_size_slider =gr .Slider (
+                        label ="Batch Size",
+                        minimum =1 ,
+                        maximum =1000 ,
+                        value =INITIAL_APP_CONFIG.image_upscaler.batch_size ,
+                        step =1 ,
+                        info ="Number of frames to process simultaneously. Higher values = faster processing but more VRAM usage. Adjust based on your GPU memory.",
+                        interactive =True 
+                        )
+
+                with gr .Column (scale =1 ):
+                    with gr .Group ():
+                        gr .Markdown ("### Model Information & Performance")
+                        
+                        model_info_display = gr .Textbox (
+                        label ="Selected Model Info",
+                        value ="Select a model to see its information",
+                        interactive =False ,
+                        lines =4 ,
+                        info ="Shows architecture, scale factor, and other model details"
+                        )
+                        
+                        refresh_models_btn = gr .Button ("🔄 Refresh Model List", variant="secondary")
+                        
+                        gr .Markdown ("""
+**💡 Optimization Tips:**
+- **Batch Size**: Start with 2-4, increase if you have more VRAM
+- **2x Models**: Significantly faster and uses lesser VRAM
+- **4x Models**: Better for very low resolution videos to upscale like 960p to 3840p
+- **Popular Models**: 
+  - 2xLiveActionV1_SPAN_490000: Excellent for live-action video
+  - RealESRGAN_x4plus: Good general-purpose 4x upscaler
+  - DAT-2 series: High quality but slower
+""")
+
+        with gr .Tab ("SeedVR2 Upscaler",id ="seedvr2_tab"):
+            with gr .Row ():
+                with gr .Column (scale =1 ):
+                    with gr .Group ():
+                        gr .Markdown ("### SeedVR2 Video Upscaler - Upcoming")
+                        gr .Markdown ("**🚧 This upscaler is in development and will be available soon!**")
+                        
+                        enable_seedvr2_check =gr .Checkbox (
+                        label ="Enable SeedVR2 Upscaling (Coming Soon)",
+                        value =False ,
+                        interactive =False ,
+                        info ="Advanced video upscaler with temporal consistency. Currently in development."
+                        )
+                        
+                        seedvr2_model_dropdown =gr .Dropdown (
+                        label ="SeedVR2 Model",
+                        choices =["Model will be available soon"],
+                        value ="Model will be available soon",
+                        interactive =False ,
+                        info ="SeedVR2 models will be available when the upscaler is released."
+                        )
+                        
+                        seedvr2_quality_preset_radio =gr .Radio (
+                        label ="Quality Preset",
+                        choices =["Fast","Balanced","Quality"],
+                        value ="Balanced",
+                        interactive =False ,
+                        info ="""Quality vs Speed trade-off:
+- Fast: Quick processing, good quality
+- Balanced: Best balance of speed and quality  
+- Quality: Highest quality, slower processing"""
+                        )
+                        
+                        seedvr2_batch_size_slider =gr .Slider (
+                        label ="Batch Size",
+                        minimum =1 ,
+                        maximum =32 ,
+                        value =4 ,
+                        step =1 ,
+                        interactive =False ,
+                        info ="Number of frames to process simultaneously."
+                        )
+
+                with gr .Column (scale =1 ):
+                    with gr .Group ():
+                        gr .Markdown ("### Expected Features")
+                        gr .Markdown ("""
+**🎯 Planned SeedVR2 Features:**
+- **Temporal Consistency**: Advanced inter-frame coherence
+- **Variable Scale Factors**: 2x, 4x, and custom scaling
+- **Multiple Architectures**: Optimized for different content types
+- **Real-time Preview**: Live preview during processing
+- **Batch Processing**: Efficient multi-video processing
+- **Custom Training**: Fine-tune on your own data
+
+**📅 Development Status:**
+- Core architecture: In development
+- Model training: Planned
+- Integration: Upcoming
+- Release timeline: TBD
+
+**💡 Stay Updated:**
+This will be a major addition to the upscaling toolkit, combining the best of both temporal and spatial upscaling approaches.
+""")
+                        
+                        gr .Markdown ("### Placeholder Settings")
+                        gr .Markdown ("*These settings will become functional when SeedVR2 is released.*")
+                        
+                        seedvr2_use_gpu_check =gr .Checkbox (
+                        label ="Use GPU Acceleration",
+                        value =True ,
+                        interactive =False ,
+                        info ="GPU acceleration for SeedVR2 processing."
+                        )
 
         with gr .Tab ("Output & Comparison",id ="output_tab"):
             with gr .Row ():
@@ -1449,15 +1564,17 @@ This helps visualize the quality improvement from upscaling."""
         outputs=[frames_folder_status]
     )
 
-    def update_image_upscaler_controls(enable_image_upscaler):
+    def update_image_upscaler_controls(upscaler_type_selection):
+        # Enable image upscaler controls when "Use Image Based Upscalers" is selected
+        enable_controls = (upscaler_type_selection == "Use Image Based Upscalers")
         return [
-            gr.update(interactive=enable_image_upscaler),
-            gr.update(interactive=enable_image_upscaler)
+            gr.update(interactive=enable_controls),
+            gr.update(interactive=enable_controls)
         ]
     
-    enable_image_upscaler_check.change(
+    upscaler_type_radio.change(
         fn=update_image_upscaler_controls,
-        inputs=enable_image_upscaler_check,
+        inputs=upscaler_type_radio,
         outputs=[image_upscaler_model_dropdown, image_upscaler_batch_size_slider]
     )
     
@@ -1509,6 +1626,55 @@ This helps visualize the quality improvement from upscaling."""
             return gr.update(choices=["Error scanning models - check upscale_models/ directory"], 
                            value="Error scanning models - check upscale_models/ directory")
     
+    refresh_models_btn.click(
+        fn=refresh_upscaler_models,
+        inputs=[],
+        outputs=[image_upscaler_model_dropdown]
+    )
+    
+    def update_model_info_display(selected_model):
+        """Update model info display when a model is selected."""
+        if not selected_model or selected_model.startswith("No models") or selected_model.startswith("Error"):
+            return "Select a model to see its information"
+        
+        try:
+            model_path = os.path.join(APP_CONFIG.paths.upscale_models_dir, selected_model)
+            model_info = util_get_model_info(model_path, logger)
+            if model_info and "error" not in model_info:
+                # Calculate file size
+                try:
+                    file_size = os.path.getsize(model_path)
+                    file_size_mb = file_size / (1024 * 1024)
+                    file_size_str = f"{file_size_mb:.1f} MB"
+                except:
+                    file_size_str = "Unknown"
+                
+                # Use filename as name
+                model_name = os.path.splitext(selected_model)[0]
+                
+                info_text = f"""**{model_name}**
+Architecture: {model_info.get('architecture_name', model_info.get('architecture', 'Unknown'))}
+Scale Factor: {model_info.get('scale', 'Unknown')}x
+Input Channels: {model_info.get('input_channels', 'Unknown')}
+Output Channels: {model_info.get('output_channels', 'Unknown')}
+File Size: {file_size_str}
+Supports Half Precision: {model_info.get('supports_half', False)}
+Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
+                return info_text
+            elif model_info and "error" in model_info:
+                return f"Error loading model: {model_info['error']}"
+            else:
+                return f"Could not load information for {selected_model}"
+        except Exception as e:
+            logger.warning(f"Failed to get model info for {selected_model}: {e}")
+            return f"Error loading model info: {str(e)}"
+    
+    image_upscaler_model_dropdown.change(
+        fn=update_model_info_display,
+        inputs=[image_upscaler_model_dropdown],
+        outputs=[model_info_display]
+    )
+    
     def update_context_overlap_max (max_chunk_len ):
         new_max =max (0 ,int (max_chunk_len )-1 )
         return gr .update (maximum =new_max )
@@ -1547,6 +1713,43 @@ This helps visualize the quality improvement from upscaling."""
     fn =lambda :util_open_folder (APP_CONFIG.paths.outputs_dir ,logger =logger ),
     inputs =[],
     outputs =[]
+    )
+
+    # Documentation and Version History button handlers
+    def open_how_to_use():
+        """Open How To Use documentation in default browser."""
+        try:
+            how_to_use_path = os.path.join(base_path, "How_To_Use.html")
+            if os.path.exists(how_to_use_path):
+                webbrowser.open(f"file://{os.path.abspath(how_to_use_path)}")
+                logger.info(f"Opened How To Use documentation: {how_to_use_path}")
+            else:
+                logger.warning(f"How To Use documentation not found: {how_to_use_path}")
+        except Exception as e:
+            logger.error(f"Failed to open How To Use documentation: {e}")
+
+    def open_version_history():
+        """Open Version History in default browser."""
+        try:
+            version_history_path = os.path.join(base_path, "Version_History.html")
+            if os.path.exists(version_history_path):
+                webbrowser.open(f"file://{os.path.abspath(version_history_path)}")
+                logger.info(f"Opened Version History: {version_history_path}")
+            else:
+                logger.warning(f"Version History not found: {version_history_path}")
+        except Exception as e:
+            logger.error(f"Failed to open Version History: {e}")
+
+    how_to_use_button.click(
+        fn=open_how_to_use,
+        inputs=[],
+        outputs=[]
+    )
+
+    version_history_button.click(
+        fn=open_version_history,
+        inputs=[],
+        outputs=[]
     )
 
     cogvlm_display_to_quant_val_map_global ={}
@@ -1662,9 +1865,11 @@ This helps visualize the quality improvement from upscaling."""
             rife_apply_to_chunks_val, rife_apply_to_scenes_val, rife_keep_original_val, rife_overwrite_original_val,
             cogvlm_quant_radio_val, cogvlm_unload_radio_val, do_auto_caption_first_val,
             seed_num_val, random_seed_check_val,
-            enable_image_upscaler_val, image_upscaler_model_val, image_upscaler_batch_size_val,
+            upscaler_type_radio_val,  # New: upscaler type selection
+            image_upscaler_model_val, image_upscaler_batch_size_val,
             enable_face_restoration_val, face_restoration_fidelity_val, enable_face_colorization_val,
             face_restoration_when_val, codeformer_model_val, face_restoration_batch_size_val,
+            enable_seedvr2_val, seedvr2_model_val, seedvr2_quality_preset_val, seedvr2_batch_size_val, seedvr2_use_gpu_val,  # New: SeedVR2 parameters
             input_frames_folder_val, frame_folder_fps_slider_val,
             gpu_selector_val
         ) = args
@@ -1679,6 +1884,17 @@ This helps visualize the quality improvement from upscaling."""
                 logger.info(f"Auto-detected frames folder: {input_frames_folder_val}")
             elif input_type == "video_file":
                 logger.info(f"Auto-detected video file: {input_frames_folder_val}")
+
+        # Map upscaler type radio selection to config value
+        upscaler_type_map = {
+            "Use STAR Model Upscaler": "star",
+            "Use Image Based Upscalers": "image_upscaler", 
+            "Use SeedVR2 Video Upscaler": "seedvr2"
+        }
+        selected_upscaler_type = upscaler_type_map.get(upscaler_type_radio_val, "image_upscaler")
+        
+        # Automatically enable image upscaler if selected in Core Settings
+        enable_image_upscaler_from_type = (selected_upscaler_type == "image_upscaler")
 
         config = AppConfig(
             input_video_path=input_video_val,
@@ -1795,8 +2011,11 @@ This helps visualize the quality improvement from upscaling."""
                 enable_auto_caption=False,
                 enable_frame_folders=False
             ),
+            upscaler_type=UpscalerTypeConfig(
+                upscaler_type=selected_upscaler_type
+            ),
             image_upscaler=ImageUpscalerConfig(
-                enable=enable_image_upscaler_val,
+                enable=enable_image_upscaler_from_type,
                 model=image_upscaler_model_val,
                 batch_size=image_upscaler_batch_size_val
             ),
@@ -1807,6 +2026,13 @@ This helps visualize the quality improvement from upscaling."""
                 when=face_restoration_when_val,
                 model=extract_codeformer_model_path_from_dropdown(codeformer_model_val),
                 batch_size=face_restoration_batch_size_val
+            ),
+            seedvr2=SeedVR2Config(
+                enable=enable_seedvr2_val,
+                model=seedvr2_model_val,
+                batch_size=seedvr2_batch_size_val,
+                quality_preset=seedvr2_quality_preset_val,
+                use_gpu=seedvr2_use_gpu_val
             ),
             gpu=GpuConfig(
                 device=str(extract_gpu_index_from_dropdown(gpu_selector_val))
@@ -2372,9 +2598,11 @@ This helps visualize the quality improvement from upscaling."""
 
     click_inputs.extend([
         seed_num, random_seed_check,
-        enable_image_upscaler_check, image_upscaler_model_dropdown, image_upscaler_batch_size_slider,
+        upscaler_type_radio,  # New: upscaler type selection
+        image_upscaler_model_dropdown, image_upscaler_batch_size_slider,
         enable_face_restoration_check, face_restoration_fidelity_slider, enable_face_colorization_check,
         face_restoration_when_radio, codeformer_model_dropdown, face_restoration_batch_size_slider,
+        enable_seedvr2_check, seedvr2_model_dropdown, seedvr2_quality_preset_radio, seedvr2_batch_size_slider, seedvr2_use_gpu_check,  # New: SeedVR2 components
         input_frames_folder, frame_folder_fps_slider,
         gpu_selector
     ])
@@ -2631,9 +2859,11 @@ This helps visualize the quality improvement from upscaling."""
             rife_apply_to_chunks_val, rife_apply_to_scenes_val, rife_keep_original_val, rife_overwrite_original_val,
             cogvlm_quant_radio_val, cogvlm_unload_radio_val, do_auto_caption_first_val,
             seed_num_val, random_seed_check_val,
-            enable_image_upscaler_val, image_upscaler_model_val, image_upscaler_batch_size_val,
+            upscaler_type_radio_val,  # New: upscaler type selection
+            image_upscaler_model_val, image_upscaler_batch_size_val,
             enable_face_restoration_val, face_restoration_fidelity_val, enable_face_colorization_val,
             face_restoration_when_val, codeformer_model_val, face_restoration_batch_size_val,
+            enable_seedvr2_val, seedvr2_model_val, seedvr2_quality_preset_val, seedvr2_batch_size_val, seedvr2_use_gpu_val,  # New: SeedVR2 parameters
             input_frames_folder_val, frame_folder_fps_slider_val,
             gpu_selector_val,
             batch_input_folder_val, batch_output_folder_val, enable_batch_frame_folders_val,
@@ -2646,6 +2876,17 @@ This helps visualize the quality improvement from upscaling."""
             from logic.frame_folder_utils import detect_input_type
             input_type, _, _ = detect_input_type(input_frames_folder_val, logger)
             frame_folder_enable = (input_type == "frames_folder")
+        
+        # Map upscaler type radio selection to config value
+        upscaler_type_map = {
+            "Use STAR Model Upscaler": "star",
+            "Use Image Based Upscalers": "image_upscaler", 
+            "Use SeedVR2 Video Upscaler": "seedvr2"
+        }
+        selected_upscaler_type = upscaler_type_map.get(upscaler_type_radio_val, "image_upscaler")
+        
+        # Automatically enable image upscaler if selected in Core Settings
+        enable_image_upscaler_from_type = (selected_upscaler_type == "image_upscaler")
         
         config = AppConfig(
             input_video_path=input_video_val,
@@ -2762,8 +3003,11 @@ This helps visualize the quality improvement from upscaling."""
                 enable_auto_caption=batch_enable_auto_caption_val,
                 enable_frame_folders=enable_batch_frame_folders_val
             ),
+            upscaler_type=UpscalerTypeConfig(
+                upscaler_type=selected_upscaler_type
+            ),
             image_upscaler=ImageUpscalerConfig(
-                enable=enable_image_upscaler_val,
+                enable=enable_image_upscaler_from_type,
                 model=image_upscaler_model_val,
                 batch_size=image_upscaler_batch_size_val
             ),
@@ -2774,6 +3018,13 @@ This helps visualize the quality improvement from upscaling."""
                 when=face_restoration_when_val,
                 model=extract_codeformer_model_path_from_dropdown(codeformer_model_val),
                 batch_size=face_restoration_batch_size_val
+            ),
+            seedvr2=SeedVR2Config(
+                enable=enable_seedvr2_val,
+                model=seedvr2_model_val,
+                batch_size=seedvr2_batch_size_val,
+                quality_preset=seedvr2_quality_preset_val,
+                use_gpu=seedvr2_use_gpu_val
             ),
             gpu=GpuConfig(
                 device=str(extract_gpu_index_from_dropdown(gpu_selector_val))
@@ -3712,7 +3963,7 @@ This helps visualize the quality improvement from upscaling."""
     component_key_map = {
         user_prompt: ('prompts', 'user'), pos_prompt: ('prompts', 'positive'), neg_prompt: ('prompts', 'negative'),
         model_selector: ('star_model', 'model_choice'), cfg_slider: ('star_model', 'cfg_scale'), steps_slider: ('star_model', 'steps'), solver_mode_radio: ('star_model', 'solver_mode'), color_fix_dropdown: ('star_model', 'color_fix_method'),
-        max_chunk_len_slider: ('performance', 'max_chunk_len'), enable_chunk_optimization_check: ('performance', 'enable_chunk_optimization'), vae_chunk_slider: ('performance', 'vae_chunk'),
+        max_chunk_len_slider: ('performance', 'max_chunk_len'), enable_chunk_optimization_check: ('performance', 'enable_chunk_optimization'), vae_chunk_slider: ('performance', 'vae_chunk'), enable_vram_optimization_check: ('performance', 'enable_vram_optimization'),
         enable_target_res_check: ('resolution', 'enable_target_res'), target_h_num: ('resolution', 'target_h'), target_w_num: ('resolution', 'target_w'), target_res_mode_radio: ('resolution', 'target_res_mode'), upscale_factor_slider: ('resolution', 'upscale_factor'),
         enable_auto_aspect_resolution_check: ('resolution', 'enable_auto_aspect_resolution'), auto_resolution_status_display: ('resolution', 'auto_resolution_status'),
         enable_context_window_check: ('context_window', 'enable'), context_overlap_num: ('context_window', 'overlap'),
@@ -3725,8 +3976,10 @@ This helps visualize the quality improvement from upscaling."""
         seed_num: ('seed', 'seed'), random_seed_check: ('seed', 'use_random'),
         enable_rife_interpolation: ('rife', 'enable'), rife_multiplier: ('rife', 'multiplier'), rife_fp16: ('rife', 'fp16'), rife_uhd: ('rife', 'uhd'), rife_scale: ('rife', 'scale'), rife_skip_static: ('rife', 'skip_static'), rife_enable_fps_limit: ('rife', 'enable_fps_limit'), rife_max_fps_limit: ('rife', 'max_fps_limit'), rife_apply_to_chunks: ('rife', 'apply_to_chunks'), rife_apply_to_scenes: ('rife', 'apply_to_scenes'), rife_keep_original: ('rife', 'keep_original'), rife_overwrite_original: ('rife', 'overwrite_original'),
         enable_fps_decrease: ('fps_decrease', 'enable'), fps_decrease_mode: ('fps_decrease', 'mode'), fps_multiplier_preset: ('fps_decrease', 'multiplier_preset'), fps_multiplier_custom: ('fps_decrease', 'multiplier_custom'), target_fps: ('fps_decrease', 'target_fps'), fps_interpolation_method: ('fps_decrease', 'interpolation_method'),
-        enable_image_upscaler_check: ('image_upscaler', 'enable'), image_upscaler_model_dropdown: ('image_upscaler', 'model'), image_upscaler_batch_size_slider: ('image_upscaler', 'batch_size'),
+        upscaler_type_radio: ('upscaler_type', 'upscaler_type'),
+        image_upscaler_model_dropdown: ('image_upscaler', 'model'), image_upscaler_batch_size_slider: ('image_upscaler', 'batch_size'),
         enable_face_restoration_check: ('face_restoration', 'enable'), face_restoration_fidelity_slider: ('face_restoration', 'fidelity_weight'), enable_face_colorization_check: ('face_restoration', 'enable_colorization'), face_restoration_when_radio: ('face_restoration', 'when'), codeformer_model_dropdown: ('face_restoration', 'model'), face_restoration_batch_size_slider: ('face_restoration', 'batch_size'),
+        enable_seedvr2_check: ('seedvr2', 'enable'), seedvr2_model_dropdown: ('seedvr2', 'model'), seedvr2_quality_preset_radio: ('seedvr2', 'quality_preset'), seedvr2_batch_size_slider: ('seedvr2', 'batch_size'), seedvr2_use_gpu_check: ('seedvr2', 'use_gpu'),
         gpu_selector: ('gpu', 'device'),
     }
 
@@ -3800,8 +4053,19 @@ This helps visualize the quality improvement from upscaling."""
             if "codeformer.pth" in path: return "codeformer.pth (359.2MB)"
             return "Auto (Default)"
 
+        def reverse_upscaler_type_mapping(internal_value):
+            """Convert internal upscaler type value back to UI display value"""
+            reverse_map = {
+                "star": "Use STAR Model Upscaler",
+                "image_upscaler": "Use Image Based Upscalers", 
+                "seedvr2": "Use SeedVR2 Video Upscaler"
+            }
+            return reverse_map.get(internal_value, "Use Image Based Upscalers")
+
         # Extract checkbox values for conditional control updates
-        enable_image_upscaler_val = config_dict.get('image_upscaler', {}).get('enable', default_config.image_upscaler.enable)
+        # Derive image upscaler enable state from upscaler type selection
+        upscaler_type_val = config_dict.get('upscaler_type', {}).get('upscaler_type', default_config.upscaler_type.upscaler_type)
+        enable_image_upscaler_val = (upscaler_type_val == "image_upscaler")
         enable_face_restoration_val = config_dict.get('face_restoration', {}).get('enable', default_config.face_restoration.enable)
         enable_target_res_val = config_dict.get('resolution', {}).get('enable_target_res', default_config.resolution.enable_target_res)
         enable_tiling_val = config_dict.get('tiling', {}).get('enable', default_config.tiling.enable)
@@ -3828,6 +4092,9 @@ This helps visualize the quality improvement from upscaling."""
                 if component is codeformer_model_dropdown:
                     # The saved value is a path, we need to convert it back to the dropdown choice
                     value = reverse_extract_codeformer_model_path(value)
+                elif component is upscaler_type_radio:
+                    # The saved value is an internal value, we need to convert it back to the display value
+                    value = reverse_upscaler_type_mapping(value)
                 elif component is gpu_selector:
                     # The saved value is a GPU index, we need to convert it back to the dropdown format
                     available_gpus = util_get_available_gpus()

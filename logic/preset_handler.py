@@ -129,6 +129,9 @@ def load_preset(preset_name: str) -> (Dict[str, Any], str):
         with open(filepath, 'r') as f:
             config_dict = json.load(f)
         
+        # Migration logic for backward compatibility
+        config_dict = migrate_preset_data(config_dict)
+        
         # Set this loaded preset as the last used one only if loading was successful
         save_last_used_preset_name(preset_name)
         
@@ -137,3 +140,17 @@ def load_preset(preset_name: str) -> (Dict[str, Any], str):
     except Exception as e:
         logger.error(f"Failed to load preset '{preset_name}': {e}", exc_info=True)
         return None, f"Error loading preset: {e}"
+
+def migrate_preset_data(config_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Migrate old preset data to new format for backward compatibility."""
+    # Handle choice name changes
+    if 'resolution' in config_dict and 'target_res_mode' in config_dict['resolution']:
+        old_mode = config_dict['resolution']['target_res_mode']
+        # Migrate old choice name to new one
+        if old_mode == 'Downscale then 4x':
+            config_dict['resolution']['target_res_mode'] = 'Downscale then Upscale'
+            logger.info(f"Migrated target_res_mode from '{old_mode}' to 'Downscale then Upscale'")
+    
+    # Add any other migrations here as needed in the future
+    
+    return config_dict

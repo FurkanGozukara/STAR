@@ -132,13 +132,23 @@ DEFAULT_BATCH_SAVE_CAPTIONS = True
 DEFAULT_BATCH_USE_PROMPT_FILES = True
 
 # Image Upscaler
-DEFAULT_ENABLE_IMAGE_UPSCALER = False
-DEFAULT_IMAGE_UPSCALER_MODEL = None
+DEFAULT_ENABLE_IMAGE_UPSCALER = True  # Changed to True by default
+DEFAULT_IMAGE_UPSCALER_MODEL = "2xLiveActionV1_SPAN_490000.pth"  # Set default model
 DEFAULT_IMAGE_UPSCALER_BATCH_SIZE = 1
 DEFAULT_IMAGE_UPSCALER_MIN_BATCH_SIZE = 1
 DEFAULT_IMAGE_UPSCALER_MAX_BATCH_SIZE = 1000
 DEFAULT_IMAGE_UPSCALER_DEVICE = "cuda"
 DEFAULT_IMAGE_UPSCALER_CACHE_MODELS = True
+
+# Upscaler Type Selection
+DEFAULT_UPSCALER_TYPE = "image_upscaler"  # Options: "star", "image_upscaler", "seedvr2"
+
+# SeedVR2 Upscaler (Upcoming)
+DEFAULT_ENABLE_SEEDVR2 = False
+DEFAULT_SEEDVR2_MODEL = None
+DEFAULT_SEEDVR2_BATCH_SIZE = 1
+DEFAULT_SEEDVR2_QUALITY_PRESET = "balanced"  # Options: "fast", "balanced", "quality"
+DEFAULT_SEEDVR2_USE_GPU = True
 
 # Face Restoration
 DEFAULT_ENABLE_FACE_RESTORATION = False
@@ -325,6 +335,20 @@ class GpuConfig:
     device: str = DEFAULT_GPU_DEVICE
 
 @dataclass
+class UpscalerTypeConfig:
+    """Configuration for upscaler type selection."""
+    upscaler_type: str = DEFAULT_UPSCALER_TYPE  # "star", "image_upscaler", "seedvr2"
+
+@dataclass
+class SeedVR2Config:
+    """Configuration for SeedVR2 upscaler (upcoming)."""
+    enable: bool = DEFAULT_ENABLE_SEEDVR2
+    model: Optional[str] = DEFAULT_SEEDVR2_MODEL
+    batch_size: int = DEFAULT_SEEDVR2_BATCH_SIZE
+    quality_preset: str = DEFAULT_SEEDVR2_QUALITY_PRESET
+    use_gpu: bool = DEFAULT_SEEDVR2_USE_GPU
+
+@dataclass
 class AppConfig:
     input_video_path: Optional[str] = None
     paths: PathConfig = field(default_factory=PathConfig)
@@ -346,6 +370,8 @@ class AppConfig:
     image_upscaler: ImageUpscalerConfig = field(default_factory=ImageUpscalerConfig)
     face_restoration: FaceRestorationConfig = field(default_factory=FaceRestorationConfig)
     gpu: GpuConfig = field(default_factory=GpuConfig)
+    upscaler_type: UpscalerTypeConfig = field(default_factory=UpscalerTypeConfig)
+    seedvr2: SeedVR2Config = field(default_factory=SeedVR2Config)
 
 def create_app_config(base_path: str, outputs_folder: str, star_cfg: Optional[Any]) -> AppConfig:
     """Factory function to create and initialize the main AppConfig object."""

@@ -18,7 +18,8 @@ def calculate_upscale_params(orig_h, orig_w, target_h, target_w, target_res_mode
     needs_downscale = False
     downscale_h, downscale_w = orig_h, orig_w
 
-    if target_res_mode == 'Downscale then 4x':
+    # Handle both old and new choice names for backward compatibility
+    if target_res_mode in ['Downscale then 4x', 'Downscale then Upscale']:
         # Determine actual upscale factor based on model type
         if image_upscaler_model is not None:
             # Get scale factor from image upscaler model
