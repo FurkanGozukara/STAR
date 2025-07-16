@@ -223,7 +223,7 @@ input[type='range'] { accent-color: black; }
 """
 
 def load_initial_preset():
-    """Loads the last used preset, or the 'Default' preset, or returns a fresh config."""
+    """Loads the last used preset, or the 'Default' preset, or 'Image_Upscaler_Fast_Low_VRAM' preset, or returns a fresh config."""
     base_config = create_app_config(base_path, args.outputs_folder, star_cfg)
     
     # Always ensure GPU is set to 0 as default
@@ -266,8 +266,41 @@ def load_initial_preset():
                             setattr(section_obj, key, value)
         return base_config
     else:
-        logger.warning(f"Could not load initial preset '{preset_to_load}'. Reason: {message}. Starting with application defaults.")
-        return base_config
+        # Try fallback to "Image_Upscaler_Fast_Low_VRAM" if last used/Default preset failed
+        logger.warning(f"Could not load initial preset '{preset_to_load}'. Reason: {message}. Trying fallback preset 'Image_Upscaler_Fast_Low_VRAM'.")
+        
+        fallback_config_dict, fallback_message = preset_handler.load_preset("Image_Upscaler_Fast_Low_VRAM")
+        
+        if fallback_config_dict:
+            logger.info("Successfully loaded fallback preset 'Image_Upscaler_Fast_Low_VRAM'.")
+            # Robustly update the base_config with loaded fallback values
+            for section_name, section_data in fallback_config_dict.items():
+                if hasattr(base_config, section_name):
+                    section_obj = getattr(base_config, section_name)
+                    for key, value in section_data.items():
+                        if hasattr(section_obj, key):
+                            # Special handling for GPU device to ensure it's valid
+                            if section_name == 'gpu' and key == 'device':
+                                available_gpus = util_get_available_gpus()
+                                if available_gpus:
+                                    try:
+                                        gpu_num = int(value) if value != "Auto" else 0
+                                        if 0 <= gpu_num < len(available_gpus):
+                                            setattr(section_obj, key, str(gpu_num))
+                                        else:
+                                            logger.warning(f"GPU index {gpu_num} out of range. Defaulting to GPU 0.")
+                                            setattr(section_obj, key, "0")
+                                    except (ValueError, TypeError):
+                                        logger.warning(f"Invalid GPU device value '{value}'. Defaulting to GPU 0.")
+                                        setattr(section_obj, key, "0")
+                                else:
+                                    setattr(section_obj, key, "0")
+                            else:
+                                setattr(section_obj, key, value)
+            return base_config
+        else:
+            logger.warning(f"Could not load fallback preset 'Image_Upscaler_Fast_Low_VRAM'. Reason: {fallback_message}. Starting with application defaults.")
+            return base_config
 
 # Load initial settings from presets or defaults
 INITIAL_APP_CONFIG = load_initial_preset()
