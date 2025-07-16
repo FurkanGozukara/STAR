@@ -497,6 +497,10 @@ def process_frames_batch(
     total_steps = math.ceil(total_frames / batch_size) if batch_size else 1
     current_step = 0  # Will be incremented at the start of each batch
     
+    # Timing tracking for ETA calculation
+    processing_start_time = time.time()
+    batch_times = []  # Store time for each batch
+    
     # Group frames by size for efficient batching
     frames_by_size = group_frames_by_size(frame_files, input_dir, logger)
     
@@ -526,12 +530,15 @@ def process_frames_batch(
                 
             # Increment the global step counter *before* processing so that step numbers start at 1
             current_step += 1
+            
+            # Start timing this batch
+            batch_start_time = time.time()
 
             batch_files = size_frame_files[i:i + batch_size]
             
             # Track how many frames get successfully written in this particular batch so we
             # can accurately update failure counts even if an unexpected exception occurs
-            processed_in_current_batch = 0  # reset for every batch
+            processed_in_current_batch = 0
             
             try:
                 # Load frame tensors
@@ -637,16 +644,39 @@ def process_frames_batch(
                     if logger:
                         logger.warning(f"Could not process {unprocessed_count} frames due to batch processing failure")
                 
+                # Record batch processing time
+                batch_end_time = time.time()
+                batch_duration = batch_end_time - batch_start_time
+                batch_times.append(batch_duration)
+                
+                # Calculate ETA after the first 5 steps for more stable timing
+                eta_str = ""
+                if current_step >= 5:
+                    # Use average of last 5 batches for more accurate estimation
+                    recent_times = batch_times[-5:]
+                    avg_batch_time = sum(recent_times) / len(recent_times)
+                    remaining_batches = total_steps - current_step
+                    eta_seconds = remaining_batches * avg_batch_time
+                    
+                    # Format ETA time
+                    if eta_seconds >= 3600:  # More than 1 hour
+                        eta_str = f" | ETA: {int(eta_seconds // 3600)}h {int((eta_seconds % 3600) // 60)}m"
+                    elif eta_seconds >= 60:  # More than 1 minute
+                        eta_str = f" | ETA: {int(eta_seconds // 60)}m {int(eta_seconds % 60)}s"
+                    else:  # Less than 1 minute
+                        eta_str = f" | ETA: {int(eta_seconds)}s"
+                
                 # Update progress
                 if progress_callback:
                     # Guard against progress values going slightly over 1.0 due to rounding issues.
                     progress_value = (processed_count + failed_count) / total_frames if total_frames else 1.0
                     progress_value = min(progress_value, 1.0)
 
-                    # Build a richer description including step/frame counts
+                    # Build a richer description including step/frame counts and ETA
                     progress_desc = (
                         f"Step {current_step}/{total_steps} | "
                         f"Frames {processed_count}/{total_frames} processed"
+                        f"{eta_str}"
                     )
 
                     try:
@@ -659,11 +689,19 @@ def process_frames_batch(
                 if logger:
                     remaining_steps = max(total_steps - current_step, 0)
                     remaining_frames = max(total_frames - processed_count, 0)
-                    logger.info(
-                        f"Image Upscaler Progress — Step {current_step}/{total_steps} complete. "
+                    batch_time_str = f"({batch_duration:.2f}s/batch)"
+                    
+                    log_msg = (
+                        f"Image Upscaler Progress — Step {current_step}/{total_steps} complete {batch_time_str}. "
                         f"Processed frames: {processed_count}/{total_frames}. "
                         f"Remaining steps: {remaining_steps}, Remaining frames: {remaining_frames}."
                     )
+                    
+                    # Add ETA to log message as well
+                    if eta_str:
+                        log_msg += f" {eta_str.strip(' |')}"
+                    
+                    logger.info(log_msg)
                 
                 # Check for cancellation after each batch completion
                 try:
@@ -689,7 +727,8 @@ def process_frames_batch(
                 failed_count += failed_in_this_batch
     
     if logger:
-        logger.info(f"Frame processing complete: {processed_count} processed, {failed_count} failed")
+        total_processing_time = time.time() - processing_start_time
+        logger.info(f"Frame processing complete: {processed_count} processed, {failed_count} failed in {total_processing_time:.2f}s")
     
     return processed_count, failed_count
 
