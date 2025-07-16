@@ -321,21 +321,33 @@
         }
         
         .badge-feature {
-            background: var(--accent-color);
-            color: white;
-            padding: 0.25rem 0.75rem;
-            border-radius: 50px;
-            font-size: 0.8rem;
-            font-weight: 500;
+            font-size: 0.7rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 1rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
             margin-left: 0.5rem;
         }
         
         .badge-new {
-            background: var(--success-color);
+            background: linear-gradient(135deg, var(--success-color), #059669);
+            color: white;
         }
         
         .badge-experimental {
-            background: var(--warning-color);
+            background: linear-gradient(135deg, var(--warning-color), #d97706);
+            color: white;
+        }
+        
+        .badge-advanced {
+            background: linear-gradient(135deg, var(--primary-color), #1d4ed8);
+            color: white;
+        }
+        
+        .badge-pro {
+            background: linear-gradient(135deg, #7c3aed, #5b21b6);
+            color: white;
         }
         
         .code-block {
@@ -449,6 +461,293 @@
                 padding: 1.5rem;
             }
         }
+        
+        /* Progress Stack for Impact Assessment */
+        .progress-stack {
+            margin: 1rem 0;
+        }
+        
+        .progress-item {
+            margin-bottom: 0.75rem;
+        }
+        
+        .progress-item span:first-child {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 0.25rem;
+            font-size: 0.9rem;
+        }
+        
+        .progress {
+            height: 1.25rem;
+            background-color: #e5e7eb;
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 500;
+            font-size: 0.8rem;
+            transition: width 0.6s ease;
+        }
+        
+        /* VRAM Optimization Levels */
+        .optimization-levels {
+            margin: 1rem 0;
+        }
+        
+        .level-item {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            background: #f8fafc;
+            border-radius: 0.5rem;
+            border-left: 4px solid var(--primary-color);
+        }
+        
+        .level-number {
+            background: var(--primary-color);
+            color: white;
+            width: 2rem;
+            height: 2rem;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 1rem;
+            flex-shrink: 0;
+        }
+        
+        .level-content {
+            flex: 1;
+        }
+        
+        .level-content strong {
+            display: block;
+            margin-bottom: 0.25rem;
+            color: var(--dark-color);
+        }
+        
+        .level-content p {
+            margin: 0;
+            color: var(--secondary-color);
+            font-size: 0.9rem;
+        }
+        
+        /* Workflow Steps */
+        .workflow-steps {
+            margin: 1rem 0;
+        }
+        
+        .workflow-step {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+            position: relative;
+        }
+        
+        .workflow-step:not(:last-child)::after {
+            content: '';
+            position: absolute;
+            left: 1rem;
+            top: 2rem;
+            width: 2px;
+            height: calc(100% + 0.5rem);
+            background: var(--border-color);
+            z-index: 1;
+        }
+        
+        .step-number {
+            background: var(--accent-color);
+            color: white;
+            width: 2rem;
+            height: 2rem;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 1rem;
+            flex-shrink: 0;
+            position: relative;
+            z-index: 2;
+        }
+        
+        .step-content {
+            flex: 1;
+            padding-top: 0.25rem;
+        }
+        
+        .step-content strong {
+            display: block;
+            margin-bottom: 0.25rem;
+            color: var(--dark-color);
+        }
+        
+        .step-content p {
+            margin: 0;
+            color: var(--secondary-color);
+            font-size: 0.9rem;
+        }
+        
+        /* Priority Hierarchy */
+        .prompt-hierarchy {
+            margin: 1.5rem 0;
+        }
+        
+        .priority-item {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            border-radius: 0.75rem;
+            position: relative;
+        }
+        
+        .priority-1 {
+            background: linear-gradient(135deg, #fef3c7, #fde68a);
+            border: 2px solid #f59e0b;
+        }
+        
+        .priority-2 {
+            background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+            border: 2px solid #3b82f6;
+        }
+        
+        .priority-3 {
+            background: linear-gradient(135deg, #f3f4f6, #e5e7eb);
+            border: 2px solid #6b7280;
+        }
+        
+        .priority-badge {
+            background: var(--primary-color);
+            color: white;
+            width: 2.5rem;
+            height: 2.5rem;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-right: 1rem;
+            flex-shrink: 0;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .priority-content {
+            flex: 1;
+        }
+        
+        .priority-content h6 {
+            margin-bottom: 0.5rem;
+            color: var(--dark-color);
+            font-weight: 600;
+        }
+        
+        .priority-content p {
+            margin-bottom: 0.5rem;
+            color: var(--secondary-color);
+        }
+        
+        .code-example {
+            background: rgba(0, 0, 0, 0.05);
+            padding: 0.5rem;
+            border-radius: 0.25rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            margin-top: 0.5rem;
+        }
+        
+        /* Stats Display */
+        .stats-display {
+            background: #f8fafc;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        
+        .stat-item:last-child {
+            border-bottom: none;
+        }
+        
+        .stat-label {
+            font-weight: 500;
+            color: var(--secondary-color);
+        }
+        
+        .stat-value {
+            font-weight: bold;
+            font-size: 1.1rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+        }
+        
+        .stat-success {
+            background: #dcfce7;
+            color: #166534;
+        }
+        
+        .stat-warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        
+        .stat-danger {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        
+        .stat-info {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+        
+        /* Feature Matrix Table */
+        .feature-matrix {
+            margin-top: 1rem;
+        }
+        
+        .feature-matrix th {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            font-weight: 600;
+            text-align: center;
+            padding: 1rem 0.75rem;
+        }
+        
+        .feature-matrix td {
+            text-align: center;
+            padding: 0.75rem;
+            vertical-align: middle;
+            border-color: var(--border-color);
+        }
+        
+        .feature-matrix td:first-child {
+            text-align: left;
+            font-weight: 500;
+            background: #f8fafc;
+        }
+        
+        .feature-matrix tbody tr:hover {
+            background: #f1f5f9;
+        }
     </style>
 </head>
 <body>
@@ -490,6 +789,7 @@
                         <li><a href="#fps-control" class="nav-link"><i class="fas fa-tachometer-alt"></i>FPS Control</a></li>
                         <li><a href="#video-editor" class="nav-link"><i class="fas fa-cut"></i>Video Editor</a></li>
                         <li><a href="#face-restoration" class="nav-link"><i class="fas fa-user"></i>Face Restoration</a></li>
+                        <li><a href="#advanced-features" class="nav-link"><i class="fas fa-flask"></i>Advanced Features</a></li>
                         <li><a href="#presets" class="nav-link"><i class="fas fa-save"></i>Presets</a></li>
                         <li><a href="#troubleshooting" class="nav-link"><i class="fas fa-wrench"></i>Troubleshooting</a></li>
                         <li><a href="#advanced-tips" class="nav-link"><i class="fas fa-lightbulb"></i>Advanced Tips</a></li>
@@ -2241,6 +2541,667 @@
                             </div>
                         </div>
                     </section>
+
+                    <!-- Advanced Features Section -->
+                    <section id="advanced-features" class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Advanced & Experimental Features</h2>
+                            <p class="section-subtitle">Professional-grade capabilities for demanding workflows</p>
+                        </div>
+
+                        <!-- Context Window Processing -->
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-window-maximize"></i></span>
+                                Context Window Processing
+                                <span class="badge-feature badge-experimental">EXPERIMENTAL</span>
+                            </h3>
+                            
+                            <div class="row">
+                                <div class="col-lg-8">
+                                    <p>Advanced temporal consistency system that uses previous frames as context for better inter-chunk quality. Unlike traditional chunking, each chunk (except the first) includes previous frames as context but only outputs new frames.</p>
+                                    
+                                    <h5>How It Works</h5>
+                                    <div class="code-block">
+                                        <strong>Example with 16-frame chunks and 8-frame context:</strong><br>
+                                        • Chunk 1: Process frames 1-16, Output frames 1-16 (16 frames)<br>
+                                        • Chunk 2: Process frames 9-24, Output frames 17-24 (8 new, 8 context)<br>
+                                        • Chunk 3: Process frames 17-32, Output frames 25-32 (8 new, 8 context)<br>
+                                        • Chunk 4: Process frames 25-40, Output frames 33-40 (8 new, 8 context)
+                                    </div>
+                                    
+                                    <h5>Configuration Guidelines</h5>
+                                    <ul>
+                                        <li><strong>Context Overlap:</strong> Use 25-50% of Max Frames per Chunk</li>
+                                        <li><strong>VRAM Impact:</strong> Medium increase due to processing context frames</li>
+                                        <li><strong>Speed Impact:</strong> Slower but more predictable than sliding window</li>
+                                        <li><strong>Quality Impact:</strong> Better temporal consistency, reduced flickering</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="col-lg-4">
+                                    <div class="alert-warning">
+                                        <h6><i class="fas fa-exclamation-triangle"></i> Experimental Feature</h6>
+                                        <p>This feature is still being refined. Test carefully with your content before using in production workflows.</p>
+                                    </div>
+                                    
+                                    <h6>Recommended Settings</h6>
+                                    <ul>
+                                        <li><strong>Short videos (&lt;60 frames):</strong> Context overlap 4</li>
+                                        <li><strong>Medium videos (60-300 frames):</strong> Context overlap 8</li>
+                                        <li><strong>Long videos (&gt;300 frames):</strong> Context overlap 12-16</li>
+                                        <li><strong>Low VRAM (&lt;8GB):</strong> Context overlap ≤6</li>
+                                        <li><strong>High VRAM (&gt;16GB):</strong> Context overlap up to 24</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tiling Mode -->
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-th"></i></span>
+                                Tiling Mode - Ultra High Resolution Processing
+                                <span class="badge-feature badge-advanced">ADVANCED</span>
+                            </h3>
+                            
+                            <div class="alert-danger">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                <strong>Use with Caution:</strong> Tiling mode is extremely slow and can introduce artifacts. Only use for resolutions that cannot be processed normally.
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-lg-6">
+                                    <h5>What is Tiling Mode?</h5>
+                                    <p>Processes each frame in small spatial patches (tiles) rather than processing the entire frame at once. This dramatically reduces VRAM requirements but significantly impacts quality and speed.</p>
+                                    
+                                    <h5>When to Use</h5>
+                                    <ul>
+                                        <li>Extremely high input resolutions (4K+ with large upscale factors)</li>
+                                        <li>Very low VRAM systems (4GB or less)</li>
+                                        <li>Last resort when normal processing fails</li>
+                                    </ul>
+                                    
+                                    <h5>Configuration Parameters</h5>
+                                    <ul>
+                                        <li><strong>Tile Size:</strong> Size of square patches (input resolution pixels)</li>
+                                        <li><strong>Tile Overlap:</strong> Overlap between adjacent tiles to reduce seams</li>
+                                        <li><strong>Recommended Overlap:</strong> 1/4 to 1/2 of tile size</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="col-lg-6">
+                                    <h5>Impact Assessment</h5>
+                                    <div class="progress-stack">
+                                        <div class="progress-item">
+                                            <span>VRAM Reduction</span>
+                                            <div class="progress">
+                                                <div class="progress-bar bg-success" style="width: 90%">Very High</div>
+                                            </div>
+                                        </div>
+                                        <div class="progress-item">
+                                            <span>Speed Impact</span>
+                                            <div class="progress">
+                                                <div class="progress-bar bg-danger" style="width: 95%">Extremely Slow</div>
+                                            </div>
+                                        </div>
+                                        <div class="progress-item">
+                                            <span>Quality Risk</span>
+                                            <div class="progress">
+                                                <div class="progress-bar bg-warning" style="width: 80%">High Risk</div>
+                                            </div>
+                                        </div>
+                                        <div class="progress-item">
+                                            <span>Temporal Consistency</span>
+                                            <div class="progress">
+                                                <div class="progress-bar bg-danger" style="width: 85%">Severely Reduced</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <h6>Recommended Tile Sizes</h6>
+                                    <ul>
+                                        <li><strong>4GB VRAM:</strong> 128-192px tiles</li>
+                                        <li><strong>6GB VRAM:</strong> 192-256px tiles</li>
+                                        <li><strong>8GB+ VRAM:</strong> 256-384px tiles</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Chunk Optimization -->
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-puzzle-piece"></i></span>
+                                Intelligent Chunk Optimization
+                                <span class="badge-feature badge-new">AUTO-ENABLED</span>
+                            </h3>
+                            
+                            <div class="row">
+                                <div class="col-lg-8">
+                                    <p>Automatically optimizes chunk boundaries to prevent small final chunks that can cause quality issues. The system redistributes frames intelligently to ensure all chunks have sufficient frames for optimal neural network processing.</p>
+                                    
+                                    <h5>How It Works</h5>
+                                    <ol>
+                                        <li><strong>Analysis:</strong> Calculates total frames and chunk distribution</li>
+                                        <li><strong>Detection:</strong> Identifies if the last chunk would be too small</li>
+                                        <li><strong>Redistribution:</strong> Adjusts chunk sizes to meet minimum ratio requirements</li>
+                                        <li><strong>Optimization:</strong> Ensures balanced processing load across chunks</li>
+                                    </ol>
+                                    
+                                    <h5>Benefits</h5>
+                                    <ul>
+                                        <li>Prevents poor-quality final chunks</li>
+                                        <li>Maintains consistent processing quality</li>
+                                        <li>Automatic with no user configuration needed</li>
+                                        <li>Works with all processing modes</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="col-lg-4">
+                                    <div class="code-block">
+                                        <strong>Example Optimization:</strong><br>
+                                        <em>Before:</em><br>
+                                        Chunk 1: 32 frames<br>
+                                        Chunk 2: 32 frames<br>
+                                        Chunk 3: 8 frames (poor)<br><br>
+                                        
+                                        <em>After:</em><br>
+                                        Chunk 1: 24 frames<br>
+                                        Chunk 2: 24 frames<br>
+                                        Chunk 3: 24 frames (optimal)
+                                    </div>
+                                    
+                                    <div class="alert-info">
+                                        <strong>Minimum Ratio:</strong> Last chunk must be at least 50% of the target chunk size for optimal results.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Advanced VRAM Management -->
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-memory"></i></span>
+                                Advanced VRAM Management
+                                <span class="badge-feature badge-pro">PROFESSIONAL</span>
+                            </h3>
+                            
+                            <div class="row">
+                                <div class="col-lg-6">
+                                    <h5>Multi-Layer Memory Optimization</h5>
+                                    <p>Sophisticated memory management system with multiple optimization strategies working together to maximize processing efficiency.</p>
+                                    
+                                    <h6>Optimization Layers</h6>
+                                    <ul>
+                                        <li><strong>Dynamic Model Loading:</strong> Models loaded/unloaded as needed</li>
+                                        <li><strong>Garbage Collection:</strong> Automatic cleanup between chunks</li>
+                                        <li><strong>CUDA Cache Management:</strong> Strategic cache clearing</li>
+                                        <li><strong>CPU Fallback:</strong> Automatic fallback for memory-intensive operations</li>
+                                        <li><strong>Batch Size Adaptation:</strong> Dynamic batch size adjustment</li>
+                                    </ul>
+                                    
+                                    <h6>Memory Monitoring</h6>
+                                    <ul>
+                                        <li>Real-time VRAM usage tracking</li>
+                                        <li>Automatic memory warnings</li>
+                                        <li>Processing adaptation based on available memory</li>
+                                        <li>Out-of-memory prevention mechanisms</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="col-lg-6">
+                                    <h5>VRAM Optimization Hierarchy</h5>
+                                    <div class="optimization-levels">
+                                        <div class="level-item">
+                                            <span class="level-number">1</span>
+                                            <div class="level-content">
+                                                <strong>Reduce Chunk Size</strong>
+                                                <p>Lower Max Frames per Chunk (32→16→8)</p>
+                                            </div>
+                                        </div>
+                                        <div class="level-item">
+                                            <span class="level-number">2</span>
+                                            <div class="level-content">
+                                                <strong>Reduce VAE Chunk</strong>
+                                                <p>Lower VAE decode batch size (8→4→2→1)</p>
+                                            </div>
+                                        </div>
+                                        <div class="level-item">
+                                            <span class="level-number">3</span>
+                                            <div class="level-content">
+                                                <strong>Enable Context Window</strong>
+                                                <p>Use context processing with small overlap</p>
+                                            </div>
+                                        </div>
+                                        <div class="level-item">
+                                            <span class="level-number">4</span>
+                                            <div class="level-content">
+                                                <strong>Use Tiling Mode</strong>
+                                                <p>Last resort: tile-based processing</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="alert-success">
+                                        <strong>Auto-Optimization:</strong> The system automatically applies these optimizations when VRAM constraints are detected.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Comprehensive Metadata System -->
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-file-alt"></i></span>
+                                Comprehensive Metadata System
+                                <span class="badge-feature badge-pro">PROFESSIONAL</span>
+                            </h3>
+                            
+                            <div class="row">
+                                <div class="col-lg-8">
+                                    <p>Extensive parameter tracking and documentation system that records every aspect of the processing pipeline for reproducibility and analysis.</p>
+                                    
+                                    <h5>Metadata Categories</h5>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <h6>🎯 Processing Parameters</h6>
+                                            <ul>
+                                                <li>All UI settings and selections</li>
+                                                <li>Model choices and configurations</li>
+                                                <li>Resolution and scaling parameters</li>
+                                                <li>Prompts and guidance settings</li>
+                                                <li>Performance optimization choices</li>
+                                            </ul>
+                                            
+                                            <h6>⏱️ Performance Metrics</h6>
+                                            <ul>
+                                                <li>Total processing time</li>
+                                                <li>Per-chunk processing times</li>
+                                                <li>RIFE interpolation timing</li>
+                                                <li>Memory usage statistics</li>
+                                                <li>GPU utilization data</li>
+                                            </ul>
+                                        </div>
+                                        
+                                        <div class="col-md-6">
+                                            <h6>🎬 Video Information</h6>
+                                            <ul>
+                                                <li>Original and final resolutions</li>
+                                                <li>Frame counts and ranges</li>
+                                                <li>FPS information and changes</li>
+                                                <li>File paths and locations</li>
+                                                <li>Codec and encoding details</li>
+                                            </ul>
+                                            
+                                            <h6>🔧 Processing Details</h6>
+                                            <ul>
+                                                <li>Chunk boundaries and optimization</li>
+                                                <li>Scene splitting information</li>
+                                                <li>Context window usage</li>
+                                                <li>Tiling configuration (if used)</li>
+                                                <li>Face restoration results</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                    
+                                    <h5>Metadata Files Generated</h5>
+                                    <ul>
+                                        <li><strong>Main Metadata:</strong> Complete processing summary</li>
+                                        <li><strong>Chunk Metadata:</strong> Per-chunk processing details</li>
+                                        <li><strong>Scene Metadata:</strong> Scene-specific information</li>
+                                        <li><strong>RIFE Metadata:</strong> Frame interpolation details</li>
+                                        <li><strong>Batch Metadata:</strong> Batch processing summaries</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="col-lg-4">
+                                    <div class="code-block">
+                                        <strong>Example Metadata Extract:</strong><br>
+                                        <code>
+                                        input_video_path: /path/to/input.mp4<br>
+                                        model_choice: Heavy Degradation<br>
+                                        processing_time: 45.67 seconds<br>
+                                        original_resolution: 720x480<br>
+                                        final_resolution: 2880x1920<br>
+                                        upscale_factor: 4.00<br>
+                                        chunks_processed: 8<br>
+                                        context_window_enabled: true<br>
+                                        context_overlap: 8<br>
+                                        rife_enabled: true<br>
+                                        rife_multiplier: 2x<br>
+                                        scene_splitting: automatic<br>
+                                        scenes_detected: 3
+                                        </code>
+                                    </div>
+                                    
+                                    <h6>Benefits</h6>
+                                    <ul>
+                                        <li><strong>Reproducibility:</strong> Exact settings for reprocessing</li>
+                                        <li><strong>Analysis:</strong> Performance benchmarking</li>
+                                        <li><strong>Troubleshooting:</strong> Detailed processing information</li>
+                                        <li><strong>Optimization:</strong> Settings comparison</li>
+                                        <li><strong>Documentation:</strong> Processing history</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Frame Folder Processing -->
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-folder-open"></i></span>
+                                Advanced Frame Folder Processing
+                                <span class="badge-feature badge-new">ENHANCED</span>
+                            </h3>
+                            
+                            <div class="row">
+                                <div class="col-lg-6">
+                                    <h5>Direct Frame Sequence Processing</h5>
+                                    <p>Process image sequences directly without manual video conversion. Supports professional workflows where frames are extracted from editing software.</p>
+                                    
+                                    <h6>Supported Formats</h6>
+                                    <ul>
+                                        <li><strong>Common:</strong> PNG, JPG, JPEG, BMP, TIFF</li>
+                                        <li><strong>Professional:</strong> TGA, JP2, DPX, EXR</li>
+                                        <li><strong>Raw Formats:</strong> Various camera raw formats</li>
+                                    </ul>
+                                    
+                                    <h6>Intelligent Sorting</h6>
+                                    <ul>
+                                        <li><strong>Natural Sorting:</strong> frame_2.png before frame_12.png</li>
+                                        <li><strong>Sequence Detection:</strong> Automatic frame numbering detection</li>
+                                        <li><strong>Missing Frame Handling:</strong> Gap detection and reporting</li>
+                                        <li><strong>Format Consistency:</strong> Mixed format support</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="col-lg-6">
+                                    <h5>Batch Frame Folder Mode</h5>
+                                    <p>Process multiple frame folders in batch mode with automatic video conversion using global encoding settings.</p>
+                                    
+                                    <div class="workflow-steps">
+                                        <div class="workflow-step">
+                                            <span class="step-number">1</span>
+                                            <div class="step-content">
+                                                <strong>Folder Discovery</strong>
+                                                <p>Scans input directory for subfolders containing frame sequences</p>
+                                            </div>
+                                        </div>
+                                        <div class="workflow-step">
+                                            <span class="step-number">2</span>
+                                            <div class="step-content">
+                                                <strong>Video Conversion</strong>
+                                                <p>Converts each frame folder to temporary video using global FPS and encoding settings</p>
+                                            </div>
+                                        </div>
+                                        <div class="workflow-step">
+                                            <span class="step-number">3</span>
+                                            <div class="step-content">
+                                                <strong>Batch Processing</strong>
+                                                <p>Processes converted videos through normal batch upscaling pipeline</p>
+                                            </div>
+                                        </div>
+                                        <div class="workflow-step">
+                                            <span class="step-number">4</span>
+                                            <div class="step-content">
+                                                <strong>Cleanup</strong>
+                                                <p>Automatically removes temporary video files after processing</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="alert-info">
+                                        <strong>FPS Configuration:</strong> Set global FPS in Frame Folder settings to control the output video frame rate for all processed sequences.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Advanced Batch Processing -->
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-tasks"></i></span>
+                                Professional Batch Processing System
+                                <span class="badge-feature badge-pro">PROFESSIONAL</span>
+                            </h3>
+                            
+                            <div class="row">
+                                <div class="col-lg-8">
+                                    <h5>Intelligent Prompt System</h5>
+                                    <p>Three-tier prompt selection system with automatic fallback and per-video customization capabilities.</p>
+                                    
+                                    <div class="prompt-hierarchy">
+                                        <div class="priority-item priority-1">
+                                            <span class="priority-badge">1</span>
+                                            <div class="priority-content">
+                                                <h6>📄 Prompt Files (Highest Priority)</h6>
+                                                <p>Individual .txt files named to match video files</p>
+                                                <div class="code-example">
+                                                    video.mp4 → video.txt<br>
+                                                    movie_scene.mkv → movie_scene.txt
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="priority-item priority-2">
+                                            <span class="priority-badge">2</span>
+                                            <div class="priority-content">
+                                                <h6>🤖 Auto-Caption (Medium Priority)</h6>
+                                                <p>AI-generated descriptions using CogVLM2</p>
+                                                <ul>
+                                                    <li>Only for videos without prompt files</li>
+                                                    <li>Multiple quantization options</li>
+                                                    <li>Automatically saved as .txt files</li>
+                                                </ul>
+                                            </div>
+                                        </div>
+                                        <div class="priority-item priority-3">
+                                            <span class="priority-badge">3</span>
+                                            <div class="priority-content">
+                                                <h6>👤 User Prompt (Fallback)</h6>
+                                                <p>Global prompt from Main tab settings</p>
+                                                <ul>
+                                                    <li>Applied to all videos without specific prompts</li>
+                                                    <li>Consistent baseline for batch processing</li>
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <h5>Advanced Batch Features</h5>
+                                    <ul>
+                                        <li><strong>Skip Existing:</strong> Resume interrupted batch jobs</li>
+                                        <li><strong>Caption Saving:</strong> Store AI-generated descriptions</li>
+                                        <li><strong>Progress Tracking:</strong> Per-video progress and statistics</li>
+                                        <li><strong>Error Recovery:</strong> Continue processing after individual failures</li>
+                                        <li><strong>Organized Output:</strong> Structured folder hierarchy</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="col-lg-4">
+                                    <h6>Batch Processing Statistics</h6>
+                                    <div class="stats-display">
+                                        <div class="stat-item">
+                                            <span class="stat-label">Processed</span>
+                                            <span class="stat-value stat-success">15</span>
+                                        </div>
+                                        <div class="stat-item">
+                                            <span class="stat-label">Skipped</span>
+                                            <span class="stat-value stat-warning">3</span>
+                                        </div>
+                                        <div class="stat-item">
+                                            <span class="stat-label">Failed</span>
+                                            <span class="stat-value stat-danger">1</span>
+                                        </div>
+                                        <div class="stat-item">
+                                            <span class="stat-label">Captions Saved</span>
+                                            <span class="stat-value stat-info">12</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <h6>Output Organization</h6>
+                                    <div class="code-block">
+                                        <code>
+                                        batch_output/<br>
+                                        ├── video1_upscaled.mp4<br>
+                                        ├── video1/<br>
+                                        │   ├── input_frames/<br>
+                                        │   ├── processed_frames/<br>
+                                        │   ├── chunks/<br>
+                                        │   └── metadata/<br>
+                                        ├── video2_upscaled.mp4<br>
+                                        └── video2/<br>
+                                        &nbsp;&nbsp;&nbsp;&nbsp;└── ...
+                                        </code>
+                                    </div>
+                                    
+                                    <div class="alert-success">
+                                        <strong>Automation Ready:</strong> Perfect for unattended overnight processing of large video libraries.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Hidden and Experimental Features -->
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-flask"></i></span>
+                                Hidden & Experimental Features
+                                <span class="badge-feature badge-experimental">EXPERIMENTAL</span>
+                            </h3>
+                            
+                            <div class="alert-warning">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                <strong>Developer Features:</strong> These features are not exposed in the UI by default or are marked as experimental. Use with caution and test thoroughly.
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-lg-6">
+                                    <h5>🔬 Sliding Window Alternative</h5>
+                                    <p>Alternative context-based processing implementation found in <code>context_sliding_window.py</code></p>
+                                    <ul>
+                                        <li><strong>Status:</strong> Implemented but not active in UI</li>
+                                        <li><strong>Purpose:</strong> Advanced context processing research</li>
+                                        <li><strong>Features:</strong> Sophisticated overlap calculations</li>
+                                        <li><strong>Use Case:</strong> Very long video processing</li>
+                                    </ul>
+                                    
+                                    <h5>🧪 Advanced Context Processor</h5>
+                                    <p>Enhanced context processing with validation and optimization</p>
+                                    <ul>
+                                        <li><strong>Validation:</strong> Chunk plan verification</li>
+                                        <li><strong>Optimization:</strong> Parameter suggestion system</li>
+                                        <li><strong>Debugging:</strong> Detailed chunk boundary logging</li>
+                                        <li><strong>Format:</strong> Comprehensive chunk summaries</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="col-lg-6">
+                                    <h5>⚙️ Advanced Cancellation System</h5>
+                                    <p>Comprehensive cancellation management throughout the pipeline</p>
+                                    <ul>
+                                        <li><strong>Granularity:</strong> Check points in every major operation</li>
+                                        <li><strong>Cleanup:</strong> Automatic resource cleanup on cancel</li>
+                                        <li><strong>Recovery:</strong> Safe model unloading</li>
+                                        <li><strong>Partial Saves:</strong> Preserve completed work</li>
+                                    </ul>
+                                    
+                                    <h5>🔧 Developer Configuration</h5>
+                                    <p>Advanced configuration options for developers and power users</p>
+                                    <ul>
+                                        <li><strong>FP16 Processing:</strong> Half-precision optimization</li>
+                                        <li><strong>Memory Profiling:</strong> Detailed VRAM tracking</li>
+                                        <li><strong>Debug Outputs:</strong> Intermediate result saving</li>
+                                        <li><strong>Custom Models:</strong> Model loading flexibility</li>
+                                    </ul>
+                                    
+                                    <div class="alert-info">
+                                        <strong>Access:</strong> These features require code modification or special configuration files to enable.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Feature Comparison Matrix -->
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-table"></i></span>
+                                Complete Feature Matrix
+                            </h3>
+                            
+                            <div class="table-responsive">
+                                <table class="table table-striped feature-matrix">
+                                    <thead>
+                                        <tr>
+                                            <th>Feature Category</th>
+                                            <th>Basic</th>
+                                            <th>Advanced</th>
+                                            <th>Professional</th>
+                                            <th>Experimental</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td><strong>Upscaling Methods</strong></td>
+                                            <td>Image Upscalers</td>
+                                            <td>STAR Model</td>
+                                            <td>Context Window</td>
+                                            <td>SeedVR2 (Coming)</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Resolution Handling</strong></td>
+                                            <td>Simple Scaling</td>
+                                            <td>Target Resolution</td>
+                                            <td>Auto-Aspect</td>
+                                            <td>Tiling Mode</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Processing Modes</strong></td>
+                                            <td>Single Video</td>
+                                            <td>Scene Splitting</td>
+                                            <td>Batch Processing</td>
+                                            <td>Frame Folders</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Memory Management</strong></td>
+                                            <td>Basic VRAM</td>
+                                            <td>Chunk Optimization</td>
+                                            <td>Multi-layer VRAM</td>
+                                            <td>Dynamic Adaptation</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>AI Integration</strong></td>
+                                            <td>Basic Prompts</td>
+                                            <td>Auto-Captioning</td>
+                                            <td>Per-Scene Captions</td>
+                                            <td>Advanced CogVLM</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Post-Processing</strong></td>
+                                            <td>Basic Output</td>
+                                            <td>Face Restoration</td>
+                                            <td>RIFE Interpolation</td>
+                                            <td>Multi-stage Pipeline</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Workflow Tools</strong></td>
+                                            <td>Video Upload</td>
+                                            <td>Video Editor</td>
+                                            <td>Preset System</td>
+                                            <td>Metadata Analytics</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Output Options</strong></td>
+                                            <td>Basic Video</td>
+                                            <td>Comparison Videos</td>
+                                            <td>Comprehensive Saves</td>
+                                            <td>Debug Outputs</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </section>
                     
                     <!-- Footer Section -->
                     <section class="section">
@@ -2316,6 +3277,7 @@
             { id: 'output-comparison', title: 'Output & Comparison', icon: 'fas fa-file-export', description: 'Output settings and comparison videos' },
             { id: 'batch-processing', title: 'Batch Processing', icon: 'fas fa-layer-group', description: 'Multi-video automation' },
             { id: 'fps-control', title: 'FPS Control & Frame Interpolation', icon: 'fas fa-tachometer-alt', description: 'RIFE interpolation and FPS manipulation' },
+            { id: 'advanced-features', title: 'Advanced & Experimental Features', icon: 'fas fa-flask', description: 'Professional capabilities and experimental features' },
             { id: 'video-editor', title: 'Video Editor & Cutting Tools', icon: 'fas fa-cut', description: 'Precise video cutting and editing' },
             { id: 'face-restoration', title: 'Standalone Face Restoration', icon: 'fas fa-user', description: 'CodeFormer face enhancement' },
             { id: 'presets', title: 'Presets Management', icon: 'fas fa-save', description: 'Save and load configurations' },
