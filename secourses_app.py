@@ -2261,7 +2261,16 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
             face_restoration_when_val, codeformer_model_val, face_restoration_batch_size_val,
             enable_seedvr2_val, seedvr2_model_val, seedvr2_quality_preset_val, seedvr2_batch_size_val, seedvr2_use_gpu_val,  # New: SeedVR2 parameters
             input_frames_folder_val, frame_folder_fps_slider_val,
-            gpu_selector_val
+            gpu_selector_val,
+            # New: Standalone face restoration settings
+            standalone_face_restoration_fidelity_val, standalone_enable_face_colorization_val, standalone_face_restoration_batch_size_val,
+            standalone_save_frames_val, standalone_create_comparison_val, standalone_preserve_audio_val,
+            # New: Video editing settings
+            precise_cutting_mode_val, preview_first_segment_val,
+            # New: Manual comparison settings
+            manual_video_count_val,
+            # New: Batch processing settings
+            enable_batch_frame_folders_val, enable_direct_image_upscaling_val, batch_enable_auto_caption_val
         ) = args
 
         # Auto-detect if frame folder processing should be enabled based on input path
@@ -2994,7 +3003,16 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         face_restoration_when_radio, codeformer_model_dropdown, face_restoration_batch_size_slider,
         enable_seedvr2_check, seedvr2_model_dropdown, seedvr2_quality_preset_radio, seedvr2_batch_size_slider, seedvr2_use_gpu_check,  # New: SeedVR2 components
         input_frames_folder, frame_folder_fps_slider,
-        gpu_selector
+        gpu_selector,
+        # New: Standalone face restoration settings
+        standalone_face_restoration_fidelity, standalone_enable_face_colorization, standalone_face_restoration_batch_size,
+        standalone_save_frames, standalone_create_comparison, standalone_preserve_audio,
+        # New: Video editing settings
+        precise_cutting_mode, preview_first_segment,
+        # New: Manual comparison settings
+        manual_video_count,
+        # New: Batch processing settings
+        enable_batch_frame_folders, enable_direct_image_upscaling, batch_enable_auto_caption
     ])
 
     click_outputs_list =[output_video ,status_textbox ,user_prompt ]

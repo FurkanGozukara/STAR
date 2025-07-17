@@ -131,8 +131,23 @@
     "seedvr2": {
         "enable": false,
         "model": "Model will be available soon",
-        "batch_size": 4,
+        "batch_size": 1,
         "quality_preset": "Balanced",
         "use_gpu": true
+    },
+    "standalone_face_restoration": {
+        "fidelity_weight": 0.7,
+        "enable_colorization": false,
+        "batch_size": 1,
+        "save_frames": false,
+        "create_comparison": true,
+        "preserve_audio": true
+    },
+    "video_editing": {
+        "precise_cutting_mode": "precise",
+        "preview_first_segment": true
+    },
+    "manual_comparison": {
+        "video_count": 2
     }
 }

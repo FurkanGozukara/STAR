@@ -162,6 +162,21 @@ DEFAULT_FACE_RESTORATION_MAX_BATCH_SIZE = 50
 # Default constants for GPU configuration
 DEFAULT_GPU_DEVICE = "0"
 
+# Standalone Face Restoration Settings
+DEFAULT_STANDALONE_FACE_RESTORATION_FIDELITY = 0.7
+DEFAULT_STANDALONE_ENABLE_FACE_COLORIZATION = False
+DEFAULT_STANDALONE_FACE_RESTORATION_BATCH_SIZE = 1
+DEFAULT_STANDALONE_SAVE_FRAMES = False
+DEFAULT_STANDALONE_CREATE_COMPARISON = True
+DEFAULT_STANDALONE_PRESERVE_AUDIO = True
+
+# Video Editing Settings
+DEFAULT_PRECISE_CUTTING_MODE = "precise"
+DEFAULT_PREVIEW_FIRST_SEGMENT = True
+
+# Manual Comparison Settings
+DEFAULT_MANUAL_VIDEO_COUNT = 2
+
 # --- Dataclasses ---
 
 @dataclass
@@ -348,6 +363,27 @@ class SeedVR2Config:
     use_gpu: bool = DEFAULT_SEEDVR2_USE_GPU
 
 @dataclass
+class StandaloneFaceRestorationConfig:
+    """Configuration for standalone face restoration settings."""
+    fidelity_weight: float = DEFAULT_STANDALONE_FACE_RESTORATION_FIDELITY
+    enable_colorization: bool = DEFAULT_STANDALONE_ENABLE_FACE_COLORIZATION
+    batch_size: int = DEFAULT_STANDALONE_FACE_RESTORATION_BATCH_SIZE
+    save_frames: bool = DEFAULT_STANDALONE_SAVE_FRAMES
+    create_comparison: bool = DEFAULT_STANDALONE_CREATE_COMPARISON
+    preserve_audio: bool = DEFAULT_STANDALONE_PRESERVE_AUDIO
+
+@dataclass
+class VideoEditingConfig:
+    """Configuration for video editing settings."""
+    precise_cutting_mode: str = DEFAULT_PRECISE_CUTTING_MODE
+    preview_first_segment: bool = DEFAULT_PREVIEW_FIRST_SEGMENT
+
+@dataclass
+class ManualComparisonConfig:
+    """Configuration for manual comparison settings."""
+    video_count: int = DEFAULT_MANUAL_VIDEO_COUNT
+
+@dataclass
 class AppConfig:
     input_video_path: Optional[str] = None
     paths: PathConfig = field(default_factory=PathConfig)
@@ -371,6 +407,9 @@ class AppConfig:
     gpu: GpuConfig = field(default_factory=GpuConfig)
     upscaler_type: UpscalerTypeConfig = field(default_factory=UpscalerTypeConfig)
     seedvr2: SeedVR2Config = field(default_factory=SeedVR2Config)
+    standalone_face_restoration: StandaloneFaceRestorationConfig = field(default_factory=StandaloneFaceRestorationConfig)
+    video_editing: VideoEditingConfig = field(default_factory=VideoEditingConfig)
+    manual_comparison: ManualComparisonConfig = field(default_factory=ManualComparisonConfig)
 
 def create_app_config(base_path: str, outputs_folder: str, star_cfg: Optional[Any]) -> AppConfig:
     """Factory function to create and initialize the main AppConfig object."""
