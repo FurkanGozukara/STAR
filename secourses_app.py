@@ -32,7 +32,10 @@ from logic.dataclasses import (
     PathConfig, PromptConfig, StarModelConfig, PerformanceConfig, ResolutionConfig,
     ContextWindowConfig, TilingConfig, FfmpegConfig, FrameFolderConfig, SceneSplitConfig,
     CogVLMConfig, OutputConfig, SeedConfig, RifeConfig, FpsDecreaseConfig, BatchConfig,
-    ImageUpscalerConfig, FaceRestorationConfig, GpuConfig, UpscalerTypeConfig, SeedVR2Config
+    ImageUpscalerConfig, FaceRestorationConfig, GpuConfig, UpscalerTypeConfig, SeedVR2Config,
+    # Add the new constants
+    DEFAULT_GPU_DEVICE, DEFAULT_VIDEO_COUNT_THRESHOLD_3, DEFAULT_VIDEO_COUNT_THRESHOLD_4,
+    DEFAULT_PROGRESS_OFFSET, DEFAULT_PROGRESS_SCALE, DEFAULT_BATCH_PROGRESS_OFFSET, DEFAULT_BATCH_PROGRESS_SCALE
 )
 from logic import metadata_handler
 from logic import config as app_config_module 
@@ -230,14 +233,14 @@ def load_initial_preset():
     base_config = create_app_config(base_path, args.outputs_folder, star_cfg)
     
     # Always ensure GPU is set to 0 as default
-    base_config.gpu.device = "0"
+    base_config.gpu.device = DEFAULT_GPU_DEVICE
     
     preset_to_load = preset_handler.get_last_used_preset_name()
     if preset_to_load:
         logger.info(f"Found last used preset: '{preset_to_load}'. Attempting to load.")
     else:
         logger.info("No last used preset found. Looking for 'Default' preset.")
-        preset_to_load = "Default"
+        preset_to_load = "Default"  # Could be made configurable in the future
 
     config_dict, message = preset_handler.load_preset(preset_to_load)
     
@@ -257,17 +260,17 @@ def load_initial_preset():
                             available_gpus = util_get_available_gpus()
                             if available_gpus:
                                 try:
-                                    gpu_num = int(value) if value != "Auto" else 0
+                                    gpu_num = int(value) if value != "Auto" else int(DEFAULT_GPU_DEVICE)
                                     if 0 <= gpu_num < len(available_gpus):
                                         setattr(section_obj, key, str(gpu_num))
                                     else:
-                                        logger.warning(f"GPU index {gpu_num} out of range. Defaulting to GPU 0.")
-                                        setattr(section_obj, key, "0")
+                                        logger.warning(f"GPU index {gpu_num} out of range. Defaulting to GPU {DEFAULT_GPU_DEVICE}.")
+                                        setattr(section_obj, key, DEFAULT_GPU_DEVICE)
                                 except (ValueError, TypeError):
-                                    logger.warning(f"Invalid GPU device value '{value}'. Defaulting to GPU 0.")
-                                    setattr(section_obj, key, "0")
+                                    logger.warning(f"Invalid GPU device value '{value}'. Defaulting to GPU {DEFAULT_GPU_DEVICE}.")
+                                    setattr(section_obj, key, DEFAULT_GPU_DEVICE)
                             else:
-                                setattr(section_obj, key, "0")
+                                setattr(section_obj, key, DEFAULT_GPU_DEVICE)
                         else:
                             setattr(section_obj, key, value)
         return base_config
@@ -280,7 +283,7 @@ def load_initial_preset():
         # Try fallback to "Image_Upscaler_Fast_Low_VRAM" if last used/Default preset failed
         logger.warning(f"Could not load initial preset '{preset_to_load}'. Reason: {message}. Trying fallback preset 'Image_Upscaler_Fast_Low_VRAM'.")
         
-        fallback_config_dict, fallback_message = preset_handler.load_preset("Image_Upscaler_Fast_Low_VRAM")
+        fallback_config_dict, fallback_message = preset_handler.load_preset("Image_Upscaler_Fast_Low_VRAM")  # Could be made configurable
         
         if fallback_config_dict:
             logger.info("Successfully loaded fallback preset 'Image_Upscaler_Fast_Low_VRAM'.")
@@ -298,17 +301,17 @@ def load_initial_preset():
                                 available_gpus = util_get_available_gpus()
                                 if available_gpus:
                                     try:
-                                        gpu_num = int(value) if value != "Auto" else 0
+                                        gpu_num = int(value) if value != "Auto" else int(DEFAULT_GPU_DEVICE)
                                         if 0 <= gpu_num < len(available_gpus):
                                             setattr(section_obj, key, str(gpu_num))
                                         else:
-                                            logger.warning(f"GPU index {gpu_num} out of range. Defaulting to GPU 0.")
-                                            setattr(section_obj, key, "0")
+                                            logger.warning(f"GPU index {gpu_num} out of range. Defaulting to GPU {DEFAULT_GPU_DEVICE}.")
+                                            setattr(section_obj, key, DEFAULT_GPU_DEVICE)
                                     except (ValueError, TypeError):
-                                        logger.warning(f"Invalid GPU device value '{value}'. Defaulting to GPU 0.")
-                                        setattr(section_obj, key, "0")
+                                        logger.warning(f"Invalid GPU device value '{value}'. Defaulting to GPU {DEFAULT_GPU_DEVICE}.")
+                                        setattr(section_obj, key, DEFAULT_GPU_DEVICE)
                                 else:
-                                    setattr(section_obj, key, "0")
+                                    setattr(section_obj, key, DEFAULT_GPU_DEVICE)
                             else:
                                 setattr(section_obj, key, value)
             return base_config
@@ -338,17 +341,17 @@ def load_initial_preset():
                                         available_gpus = util_get_available_gpus()
                                         if available_gpus:
                                             try:
-                                                gpu_num = int(value) if value != "Auto" else 0
+                                                gpu_num = int(value) if value != "Auto" else int(DEFAULT_GPU_DEVICE)
                                                 if 0 <= gpu_num < len(available_gpus):
                                                     setattr(section_obj, key, str(gpu_num))
                                                 else:
-                                                    logger.warning(f"GPU index {gpu_num} out of range. Defaulting to GPU 0.")
-                                                    setattr(section_obj, key, "0")
+                                                    logger.warning(f"GPU index {gpu_num} out of range. Defaulting to GPU {DEFAULT_GPU_DEVICE}.")
+                                                    setattr(section_obj, key, DEFAULT_GPU_DEVICE)
                                             except (ValueError, TypeError):
-                                                logger.warning(f"Invalid GPU device value '{value}'. Defaulting to GPU 0.")
-                                                setattr(section_obj, key, "0")
+                                                logger.warning(f"Invalid GPU device value '{value}'. Defaulting to GPU {DEFAULT_GPU_DEVICE}.")
+                                                setattr(section_obj, key, DEFAULT_GPU_DEVICE)
                                         else:
-                                            setattr(section_obj, key, "0")
+                                            setattr(section_obj, key, DEFAULT_GPU_DEVICE)
                                     else:
                                         setattr(section_obj, key, value)
                     return base_config
@@ -1976,7 +1979,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
             progress(0.1, f"🔍 Scanning for upscaler models...")
             
             def progress_callback(prog_val, desc):
-                mapped_progress = 0.2 + (prog_val * 0.7)  # Leave room for final steps
+                mapped_progress = DEFAULT_PROGRESS_OFFSET + (prog_val * DEFAULT_PROGRESS_SCALE)  # Leave room for final steps
                 progress(mapped_progress, f"🎨 {desc}")
             
             # Call preview all models function
@@ -2270,7 +2273,9 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
             # New: Manual comparison settings
             manual_video_count_val,
             # New: Batch processing settings
-            enable_batch_frame_folders_val, enable_direct_image_upscaling_val, batch_enable_auto_caption_val
+            enable_batch_frame_folders_val, enable_direct_image_upscaling_val, batch_enable_auto_caption_val,
+            # Add batch processing components to main preset system
+            batch_input_folder_val, batch_output_folder_val, batch_skip_existing_val, batch_use_prompt_files_val, batch_save_captions_val
         ) = args
 
         # Auto-detect if frame folder processing should be enabled based on input path
@@ -2402,13 +2407,13 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
                 interpolation_method=fps_interpolation_method_val
             ),
             batch=BatchConfig(
-                input_folder="",
-                output_folder="",
-                skip_existing=True,
-                save_captions=True,
-                use_prompt_files=True,
-                enable_auto_caption=False,
-                enable_frame_folders=False
+                input_folder=batch_input_folder_val,
+                output_folder=batch_output_folder_val,
+                skip_existing=batch_skip_existing_val,
+                save_captions=batch_save_captions_val,
+                use_prompt_files=batch_use_prompt_files_val,
+                enable_auto_caption=batch_enable_auto_caption_val,
+                enable_frame_folders=enable_batch_frame_folders_val
             ),
             upscaler_type=UpscalerTypeConfig(
                 upscaler_type=selected_upscaler_type
@@ -3012,7 +3017,9 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         # New: Manual comparison settings
         manual_video_count,
         # New: Batch processing settings
-        enable_batch_frame_folders, enable_direct_image_upscaling, batch_enable_auto_caption
+        enable_batch_frame_folders, enable_direct_image_upscaling, batch_enable_auto_caption,
+        # Add batch processing components to main preset system
+        batch_input_folder, batch_output_folder, batch_skip_existing, batch_use_prompt_files, batch_save_captions
     ])
 
     click_outputs_list =[output_video ,status_textbox ,user_prompt ]
@@ -3525,7 +3532,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
                 progress(0.1, "📹 Processing single video...")
                 
                 def progress_callback(current_progress, status_msg):
-                    mapped_progress = 0.1 + (current_progress * 0.8)
+                    mapped_progress = DEFAULT_BATCH_PROGRESS_OFFSET + (current_progress * DEFAULT_BATCH_PROGRESS_SCALE)
                     progress(mapped_progress, f"🎭 {status_msg}")
                 
                 result = restore_video_frames(
@@ -3582,12 +3589,12 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
                 for i, video_file in enumerate(video_files):
                     video_name = os.path.basename(video_file)
                     file_progress = i / total_files
-                    base_progress = 0.1 + (file_progress * 0.8)
+                    base_progress = DEFAULT_BATCH_PROGRESS_OFFSET + (file_progress * DEFAULT_BATCH_PROGRESS_SCALE)
                     
                     progress(base_progress, f"🎭 Processing {video_name} ({i+1}/{total_files})...")
                     
                     def batch_progress_callback(current_progress, status_msg):
-                        file_progress_range = 0.8 / total_files
+                        file_progress_range = DEFAULT_BATCH_PROGRESS_SCALE / total_files
                         mapped_progress = base_progress + (current_progress * file_progress_range)
                         progress(mapped_progress, f"🎭 [{i+1}/{total_files}] {video_name}: {status_msg}")
                     
@@ -3692,12 +3699,12 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         layout_update = gr.update(choices=choices, value="auto", info=info)
         
         # Update video visibility
-        if video_count >= 3:
+        if video_count >= DEFAULT_VIDEO_COUNT_THRESHOLD_3:
             third_video_update = gr.update(visible=True)
         else:
             third_video_update = gr.update(visible=False)
             
-        if video_count >= 4:
+        if video_count >= DEFAULT_VIDEO_COUNT_THRESHOLD_4:
             fourth_video_update = gr.update(visible=True)
         else:
             fourth_video_update = gr.update(visible=False)
@@ -3728,9 +3735,9 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         # Validate required videos based on count
         video_paths = [manual_original_video_val, manual_upscaled_video_val]
         
-        if manual_video_count_val >= 3:
+        if manual_video_count_val >= DEFAULT_VIDEO_COUNT_THRESHOLD_3:
             video_paths.append(manual_third_video_val)
-        if manual_video_count_val >= 4:
+        if manual_video_count_val >= DEFAULT_VIDEO_COUNT_THRESHOLD_4:
             video_paths.append(manual_fourth_video_val)
 
         # Filter out None values and validate
@@ -4050,10 +4057,10 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
                     effective_upscale_factor = upscale_factor
                     model_name = f"{image_upscaler_model} (error reading scale, using {upscale_factor}x)"
             elif internal_upscaler_type == "star":
-                effective_upscale_factor = 4.0  # STAR model default
+                effective_upscale_factor = app_config.resolution.upscale_factor  # Use config value
                 model_name = "STAR Model (4x)"
             elif internal_upscaler_type == "seedvr2":
-                effective_upscale_factor = 4.0  # SeedVR2 default (placeholder)
+                effective_upscale_factor = app_config.resolution.upscale_factor  # Use config value
                 model_name = "SeedVR2 (4x - Coming Soon)"
             else:
                 effective_upscale_factor = upscale_factor
@@ -4213,10 +4220,10 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
                     effective_upscale_factor = upscale_factor
                     model_name = f"Image Upscaler ({upscale_factor}x)"
             elif internal_upscaler_type == "star":
-                effective_upscale_factor = 4.0
+                effective_upscale_factor = upscale_factor  # Use config value
                 model_name = "STAR Model (4x)"
             elif internal_upscaler_type == "seedvr2":
-                effective_upscale_factor = 4.0
+                effective_upscale_factor = upscale_factor  # Use config value
                 model_name = "SeedVR2 (4x)"
             else:
                 effective_upscale_factor = upscale_factor
@@ -4842,6 +4849,24 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         enable_seedvr2_check: ('seedvr2', 'enable'), seedvr2_model_dropdown: ('seedvr2', 'model'), seedvr2_quality_preset_radio: ('seedvr2', 'quality_preset'), seedvr2_batch_size_slider: ('seedvr2', 'batch_size'), seedvr2_use_gpu_check: ('seedvr2', 'use_gpu'),
         gpu_selector: ('gpu', 'device'),
         enable_direct_image_upscaling: ('batch', 'enable_direct_image_upscaling'),
+        # Add missing components for complete preset support
+        standalone_face_restoration_fidelity: ('standalone_face_restoration', 'fidelity_weight'),
+        standalone_enable_face_colorization: ('standalone_face_restoration', 'enable_colorization'),
+        standalone_face_restoration_batch_size: ('standalone_face_restoration', 'batch_size'),
+        standalone_save_frames: ('standalone_face_restoration', 'save_frames'),
+        standalone_create_comparison: ('standalone_face_restoration', 'create_comparison'),
+        standalone_preserve_audio: ('standalone_face_restoration', 'preserve_audio'),
+        precise_cutting_mode: ('video_editing', 'precise_cutting_mode'),
+        preview_first_segment: ('video_editing', 'preview_first_segment'),
+        manual_video_count: ('manual_comparison', 'video_count'),
+        enable_batch_frame_folders: ('batch', 'enable_frame_folders'),
+        batch_enable_auto_caption: ('batch', 'enable_auto_caption'),
+        # Add batch processing components to main preset system
+        batch_input_folder: ('batch', 'input_folder'),
+        batch_output_folder: ('batch', 'output_folder'),
+        batch_skip_existing: ('batch', 'skip_existing'),
+        batch_use_prompt_files: ('batch', 'use_prompt_files'),
+        batch_save_captions: ('batch', 'save_captions'),
         # Note: output_resolution_preview is intentionally excluded from presets as it's a calculated display field
     }
 
@@ -4890,7 +4915,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         
         # Try to load the preset with retry logic to handle timing issues
         config_dict, message = None, None
-        max_retries = 3
+        max_retries = 3  # Could be made configurable in the future
         
         for attempt in range(max_retries):
             config_dict, message = preset_handler.load_preset(preset_name)
