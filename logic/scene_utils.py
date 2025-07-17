@@ -6,7 +6,7 @@ import numpy as np
 import gradio as gr
 from pathlib import Path
 from .ffmpeg_utils import run_ffmpeg_command
-from .nvenc_utils import should_fallback_to_cpu_encoding
+
 from .file_utils import get_next_filename, cleanup_temp_dir
 from .cogvlm_utils import auto_caption, COG_VLM_AVAILABLE
 from .cancellation_manager import cancellation_manager, CancelledError
@@ -247,52 +247,32 @@ def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, prog
                 # Try to include audio but don't fail if not present
                 ffmpeg_args = "-map 0:v:0 -map 0:a? -map 0:s? -c:v copy -c:a copy -avoid_negative_ts make_zero"
             else:
-                # Check if GPU encoding is requested and available
-                if scene_split_params.get('use_gpu', False):
-                    # Get video resolution to check if it's too small for NVENC
-                    try:
-                        from .file_utils import get_video_resolution
-                        orig_h, orig_w = get_video_resolution(input_video_path, logger)
-                        use_cpu_fallback = should_fallback_to_cpu_encoding(orig_w, orig_h, logger)
-                    except Exception as e:
-                        if logger:
-                            logger.warning(f"Could not get video resolution for NVENC check: {e}, using CPU fallback")
-                        use_cpu_fallback = True
-                    
-                    # Additional NVENC availability check for Linux compatibility
-                    nvenc_available = False
-                    if not use_cpu_fallback:
-                        try:
-                            # Test if NVENC is available by running a quick ffmpeg command
-                            # Use 512x512 resolution to ensure compatibility with all NVENC hardware generations
-                            test_cmd = 'ffmpeg -loglevel error -f lavfi -i color=c=black:s=512x512:d=0.1:r=1 -c:v h264_nvenc -preset fast -f null -'
-                            test_result = run_ffmpeg_command(test_cmd, "NVENC Test", logger, raise_on_error=False)
-                            nvenc_available = test_result
-                            if logger:
-                                logger.info(f"NVENC availability test: {'PASSED' if nvenc_available else 'FAILED'}")
-                        except Exception as e:
-                            if logger:
-                                logger.warning(f"NVENC availability test failed: {e}")
-                            nvenc_available = False
-                    
-                    if not use_cpu_fallback and nvenc_available:
-                        nvenc_preset = scene_split_params['preset']
-                        if scene_split_params['preset'] in ["ultrafast", "superfast", "veryfast", "faster", "fast"]:
-                            nvenc_preset = "fast"
-                        elif scene_split_params['preset'] in ["slower", "veryslow"]:
-                            nvenc_preset = "slow"
-                        
-                        # Use safer audio mapping with ? suffix for cross-platform compatibility
-                        ffmpeg_args = f"-map 0:v:0 -map 0:a? -map 0:s? -c:v h264_nvenc -preset:v {nvenc_preset} -cq:v {scene_split_params['rate_factor']} -pix_fmt yuv420p -c:a aac -avoid_negative_ts make_zero"
-                    else:
-                        if logger:
-                            reason = "resolution constraints" if use_cpu_fallback else "NVENC not available"
-                            logger.info(f"Falling back to CPU encoding for scene splitting due to {reason}: {orig_w}x{orig_h}")
-                        # Use safer audio mapping with ? suffix for cross-platform compatibility
-                        ffmpeg_args = f"-map 0:v:0 -map 0:a? -map 0:s? -c:v libx264 -preset {scene_split_params['preset']} -crf {scene_split_params['rate_factor']} -c:a aac -avoid_negative_ts make_zero"
+                # Get video resolution for encoding configuration
+                orig_w, orig_h = None, None
+                try:
+                    from .file_utils import get_video_resolution
+                    orig_h, orig_w = get_video_resolution(input_video_path, logger)
+                except Exception as e:
+                    if logger:
+                        logger.warning(f"Could not get video resolution for NVENC check: {e}, using CPU fallback")
+
+                # Get encoding configuration with automatic NVENC fallback
+                from .nvenc_utils import get_nvenc_fallback_encoding_config
+                
+                encoding_config = get_nvenc_fallback_encoding_config(
+                    use_gpu=scene_split_params.get('use_gpu', False),
+                    ffmpeg_preset=scene_split_params['preset'],
+                    ffmpeg_quality=scene_split_params['rate_factor'],
+                    width=orig_w,
+                    height=orig_h,
+                    logger=logger
+                )
+                
+                # Build ffmpeg args based on encoding config
+                if encoding_config['codec'] == 'h264_nvenc':
+                    ffmpeg_args = f"-map 0:v:0 -map 0:a? -map 0:s? -c:v {encoding_config['codec']} -preset:v {encoding_config['preset']} -{encoding_config['quality_param']} {encoding_config['quality_value']} -pix_fmt yuv420p -c:a aac -avoid_negative_ts make_zero"
                 else:
-                    # Use safer audio mapping with ? suffix for cross-platform compatibility
-                    ffmpeg_args = f"-map 0:v:0 -map 0:a? -map 0:s? -c:v libx264 -preset {scene_split_params['preset']} -crf {scene_split_params['rate_factor']} -c:a aac -avoid_negative_ts make_zero"
+                    ffmpeg_args = f"-map 0:v:0 -map 0:a? -map 0:s? -c:v {encoding_config['codec']} -preset {encoding_config['preset']} -{encoding_config['quality_param']} {encoding_config['quality_value']} -c:a aac -avoid_negative_ts make_zero"
 
             # Debug: Log the parameters being passed to PySceneDetect
             if logger:
@@ -410,30 +390,33 @@ def merge_scene_videos(scene_video_paths, output_path, temp_dir, ffmpeg_preset="
                 scene_path_normalized = scene_path.replace('\\', '/')
                 f.write(f"file '{scene_path_normalized}'\n")
 
-        # Check if we need to fallback to CPU due to small resolution
-        use_cpu_fallback = False
-        if use_gpu and scene_video_paths:
+        # Get video resolution for encoding configuration
+        scene_w, scene_h = None, None
+        if scene_video_paths:
             try:
                 from .file_utils import get_video_resolution
                 scene_h, scene_w = get_video_resolution(scene_video_paths[0], logger)
-                use_cpu_fallback = should_fallback_to_cpu_encoding(scene_w, scene_h, logger)
             except Exception as e:
                 if logger:
                     logger.warning(f"Could not get scene video resolution for NVENC check: {e}, using CPU fallback")
-                use_cpu_fallback = True
 
-        if use_gpu and not use_cpu_fallback:
-            nvenc_preset = ffmpeg_preset
-            if ffmpeg_preset in ["ultrafast", "superfast", "veryfast", "faster", "fast"]:
-                nvenc_preset = "fast"
-            elif ffmpeg_preset in ["slower", "veryslow"]:
-                nvenc_preset = "slow"
-
-            ffmpeg_opts = f'-c:v h264_nvenc -preset:v {nvenc_preset} -cq:v {ffmpeg_quality} -pix_fmt yuv420p'
+        # Get encoding configuration with automatic NVENC fallback
+        from .nvenc_utils import get_nvenc_fallback_encoding_config
+        
+        encoding_config = get_nvenc_fallback_encoding_config(
+            use_gpu=use_gpu,
+            ffmpeg_preset=ffmpeg_preset,
+            ffmpeg_quality=ffmpeg_quality,
+            width=scene_w,
+            height=scene_h,
+            logger=logger
+        )
+        
+        # Build ffmpeg options based on encoding config
+        if encoding_config['codec'] == 'h264_nvenc':
+            ffmpeg_opts = f'-c:v {encoding_config["codec"]} -preset:v {encoding_config["preset"]} -{encoding_config["quality_param"]} {encoding_config["quality_value"]} -pix_fmt yuv420p'
         else:
-            if use_cpu_fallback and logger:
-                logger.info(f"Falling back to CPU encoding for scene merging due to resolution constraints: {scene_w}x{scene_h}")
-            ffmpeg_opts = f'-c:v libx264 -preset {ffmpeg_preset} -crf {ffmpeg_quality} -pix_fmt yuv420p'
+            ffmpeg_opts = f'-c:v {encoding_config["codec"]} -preset {encoding_config["preset"]} -{encoding_config["quality_param"]} {encoding_config["quality_value"]} -pix_fmt yuv420p'
 
         cmd = f'ffmpeg -y -f concat -safe 0 -i "{concat_file}" {ffmpeg_opts} -c:a copy "{output_path}"'
 
