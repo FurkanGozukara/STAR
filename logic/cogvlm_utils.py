@@ -104,26 +104,31 @@ def load_cogvlm_model(quantization, device, cog_vlm_model_path, logger=None):
                         model_loading_complete.set()
                         return
 
-                    ### START OF FIX ###
                     # Build arguments for from_pretrained conditionally
                     from_pretrained_kwargs = {
                         "trust_remote_code": True,
-                        "quantization_config": bnb_config,
                         "low_cpu_mem_usage": effective_low_cpu_mem_usage,
-                        "device_map": current_device_map
                     }
 
-                    # Only specify torch_dtype for non-quantized models.
-                    # For BNB models, the dtype is handled by the quantization_config
-                    # and passing it explicitly can cause conflicts.
-                    if not bnb_config:
+                    # For quantized models, use quantization_config and device_map
+                    if bnb_config:
+                        from_pretrained_kwargs["quantization_config"] = bnb_config
+                        from_pretrained_kwargs["device_map"] = current_device_map
+                    else:
+                        # For non-quantized models, specify torch_dtype and device
                         from_pretrained_kwargs["torch_dtype"] = model_dtype if device == 'cuda' else torch.float32
+                        # Don't use device_map for non-quantized models to avoid the dispatch_model issue
+                        # Instead, we'll manually move the model to the device after loading
+                        pass
 
                     model = AutoModelForCausalLM.from_pretrained(
                         cog_vlm_model_path,
                         **from_pretrained_kwargs
                     )
-                    ### END OF FIX ###
+        
+                    # For non-quantized models, manually move to device after loading
+                    if not bnb_config and device != 'cpu':
+                        model = model.to(device)
 
                     model_loading_result["model"] = model
                 except Exception as e:
