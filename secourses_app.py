@@ -3705,7 +3705,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
             import random 
             current_seed =random .randint (0 ,2 **32 -1 )
         else :
-            current_seed =seed_num_val if seed_num_val >=0 else 99 
+            current_seed =seed_num_val if seed_num_val >=0 else DEFAULT_SEED 
 
         # Validate required videos based on count
         video_paths = [manual_original_video_val, manual_upscaled_video_val]
@@ -3883,7 +3883,9 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
 
         try :
 
-            input_fps =30.0 
+            # Get actual video FPS instead of hard-coded value
+            video_info = util_get_video_info_fast(input_video, logger)
+            input_fps = video_info.get('fps', 30.0) if video_info else 30.0 
 
             if fps_mode =="multiplier":
 
@@ -4587,7 +4589,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
     
     def cut_video_wrapper(
         input_video_val, ranges_input, cutting_mode_val, precise_cutting_mode_val, 
-        preview_first_segment_val, seed_num_val=99, random_seed_check_val=False, 
+        preview_first_segment_val, seed_num_val, random_seed_check_val, 
         progress=gr.Progress(track_tqdm=True)
     ):
         if input_video_val is None:
@@ -4674,7 +4676,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
     
     def cut_and_move_to_upscale(
         input_video_val, ranges_input, cutting_mode_val, precise_cutting_mode_val, 
-        preview_first_segment_val, seed_num_val=99, random_seed_check_val=False, 
+        preview_first_segment_val, seed_num_val, random_seed_check_val, 
         progress=gr.Progress(track_tqdm=True)
     ):
         final_output, preview_path, status_msg = cut_video_wrapper(
@@ -4710,8 +4712,8 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
     
     def enhanced_cut_and_move_to_upscale(
         input_video_val, time_ranges_val, frame_ranges_val, cutting_mode_val, 
-        precise_cutting_mode_val, preview_first_segment_val, seed_num_val=99, 
-        random_seed_check_val=False, progress=gr.Progress(track_tqdm=True)
+        precise_cutting_mode_val, preview_first_segment_val, seed_num_val, 
+        random_seed_check_val, progress=gr.Progress(track_tqdm=True)
     ):
         ranges_input = time_ranges_val if cutting_mode_val == "time_ranges" else frame_ranges_val
         
