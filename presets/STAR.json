@@ -130,7 +130,7 @@
     },
     "seedvr2": {
         "enable": false,
-        "model": "Model will be available soon",
+        "model": null,
         "batch_size": 1,
         "quality_preset": "Balanced",
         "use_gpu": true

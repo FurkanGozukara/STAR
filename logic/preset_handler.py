@@ -225,6 +225,13 @@ def migrate_preset_data(config_dict: Dict[str, Any]) -> Dict[str, Any]:
             'codeformer_model': None
         }
         logger.info("Added missing standalone_face_restoration section to preset")
+    else:
+        # Ensure consistent values for string fields
+        section = config_dict['standalone_face_restoration']
+        if section.get('batch_input_folder') is None:
+            section['batch_input_folder'] = ''
+        if section.get('batch_output_folder') is None:
+            section['batch_output_folder'] = ''
     
     if 'preset_system' not in config_dict:
         config_dict['preset_system'] = {
@@ -242,6 +249,22 @@ def migrate_preset_data(config_dict: Dict[str, Any]) -> Dict[str, Any]:
             'preview_first_segment': True
         }
         logger.info("Added missing video_editing section to preset")
+    
+    # Add missing seedvr2 section if not present
+    if 'seedvr2' not in config_dict:
+        config_dict['seedvr2'] = {
+            'enable': False,
+            'model': None,
+            'batch_size': 1,
+            'quality_preset': 'Balanced',
+            'use_gpu': True
+        }
+        logger.info("Added missing seedvr2 section to preset")
+    else:
+        # Ensure seedvr2 model is null for consistency
+        if config_dict['seedvr2'].get('model') == "Model will be available soon":
+            config_dict['seedvr2']['model'] = None
+            logger.info("Migrated seedvr2 model from placeholder to null")
     
     # Add any other migrations here as needed in the future
     

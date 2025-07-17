@@ -144,8 +144,8 @@
         "preserve_audio": true,
         "input_video": null,
         "mode": "Single Video",
-        "batch_input_folder": null,
-        "batch_output_folder": null,
+        "batch_input_folder": "",
+        "batch_output_folder": "",
         "codeformer_model": null
     },
     "video_editing": {

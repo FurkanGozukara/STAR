@@ -5097,10 +5097,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
                         continue
                     
                     default_value = getattr(section_obj, key, None)
-                    if default_value is None:
-                        logger.warning(f"Key '{key}' not found in section '{section}', skipping component")
-                        updates.append(gr.update())
-                        continue
+                    # Note: default_value can be None for Optional fields, which is valid
                     
                     # Get value from loaded dict, falling back to the default
                     value = config_dict.get(section, {}).get(key, default_value)
@@ -5113,7 +5110,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
                         value = 0.7 if key == 'fidelity_weight' else 1
                     elif key in ['enable_colorization', 'save_frames', 'create_comparison', 'preserve_audio']:
                         value = False if key in ['enable_colorization', 'save_frames'] else True
-                    elif key in ['input_video', 'original_video', 'upscaled_video', 'third_video', 'fourth_video', 'batch_input_folder', 'batch_output_folder', 'codeformer_model']:
+                    elif key in ['input_video', 'original_video', 'upscaled_video', 'third_video', 'fourth_video', 'batch_input_folder', 'batch_output_folder', 'codeformer_model', 'model']:
                         value = None
                     elif key == 'mode':
                         value = "Single Video"
