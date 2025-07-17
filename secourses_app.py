@@ -4786,36 +4786,6 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         inputs=input_video,
         outputs=integration_status
     )
-    
-    face_restoration_process_btn.click(
-        fn=standalone_face_restoration_wrapper,
-        inputs=[
-            input_video_face_restoration,
-            face_restoration_mode,
-            batch_input_folder_face,
-            batch_output_folder_face,
-            standalone_enable_face_restoration,
-            standalone_face_restoration_fidelity,
-            standalone_enable_face_colorization,
-            standalone_codeformer_model_dropdown,
-            standalone_face_restoration_batch_size,
-            standalone_save_frames,
-            standalone_create_comparison,
-            standalone_preserve_audio,
-            seed_num,
-            random_seed_check,
-            ffmpeg_preset_dropdown,
-            ffmpeg_quality_slider,
-            ffmpeg_use_gpu_check
-        ],
-        outputs=[
-            output_video_face_restoration,
-            comparison_video_face_restoration,
-            face_restoration_status,
-            face_restoration_stats
-        ],
-        show_progress_on=[output_video_face_restoration]
-    )
 
     # --- PRESET LOGIC ---
 
