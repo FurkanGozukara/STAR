@@ -649,11 +649,11 @@ def process_frames_batch(
                 batch_duration = batch_end_time - batch_start_time
                 batch_times.append(batch_duration)
                 
-                # Calculate ETA after the first 5 steps for more stable timing
+                # Calculate ETA after the first 2 steps for more stable timing
                 eta_str = ""
-                if current_step >= 5:
-                    # Use average of last 5 batches for more accurate estimation
-                    recent_times = batch_times[-5:]
+                if current_step >= 2:
+                    # Use average of last 2 batches for more accurate estimation
+                    recent_times = batch_times[-2:]
                     avg_batch_time = sum(recent_times) / len(recent_times)
                     remaining_batches = total_steps - current_step
                     eta_seconds = remaining_batches * avg_batch_time
