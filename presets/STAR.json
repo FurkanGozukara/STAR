@@ -141,13 +141,30 @@
         "batch_size": 1,
         "save_frames": false,
         "create_comparison": true,
-        "preserve_audio": true
+        "preserve_audio": true,
+        "input_video": null,
+        "mode": "Single Video",
+        "batch_input_folder": "",
+        "batch_output_folder": "",
+        "codeformer_model": null
     },
     "video_editing": {
         "precise_cutting_mode": "precise",
         "preview_first_segment": true
     },
     "manual_comparison": {
-        "video_count": 2
+        "video_count": 2,
+        "original_video": null,
+        "upscaled_video": null,
+        "third_video": null,
+        "fourth_video": null,
+        "layout": "auto"
+    },
+    "preset_system": {
+        "load_retries": 3,
+        "save_delay": 0.1,
+        "retry_delay": 0.2,
+        "load_delay": 0.1,
+        "conditional_updates_count": 20
     }
 }

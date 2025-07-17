@@ -74,6 +74,53 @@ def save_preset(app_config: AppConfig, preset_name: str) -> (bool, str):
         # Convert AppConfig to a dictionary
         config_dict = dataclasses.asdict(app_config)
         
+        # Ensure all sections are present in the saved preset
+        # This is important for backward compatibility and complete preset saving
+        required_sections = [
+            'manual_comparison', 'standalone_face_restoration', 
+            'preset_system', 'video_editing'
+        ]
+        
+        for section in required_sections:
+            if section not in config_dict:
+                logger.warning(f"Section '{section}' missing from AppConfig, adding default values")
+                if section == 'manual_comparison':
+                    config_dict[section] = {
+                        'video_count': 2,
+                        'original_video': None,
+                        'upscaled_video': None,
+                        'third_video': None,
+                        'fourth_video': None,
+                        'layout': 'auto'
+                    }
+                elif section == 'standalone_face_restoration':
+                    config_dict[section] = {
+                        'fidelity_weight': 0.7,
+                        'enable_colorization': False,
+                        'batch_size': 1,
+                        'save_frames': False,
+                        'create_comparison': True,
+                        'preserve_audio': True,
+                        'input_video': None,
+                        'mode': 'Single Video',
+                        'batch_input_folder': '',
+                        'batch_output_folder': '',
+                        'codeformer_model': None
+                    }
+                elif section == 'preset_system':
+                    config_dict[section] = {
+                        'load_retries': 3,
+                        'save_delay': 0.1,
+                        'retry_delay': 0.2,
+                        'load_delay': 0.1,
+                        'conditional_updates_count': 20
+                    }
+                elif section == 'video_editing':
+                    config_dict[section] = {
+                        'precise_cutting_mode': 'precise',
+                        'preview_first_segment': True
+                    }
+        
         # Remove fields that should not be in a preset
         # These are instance-specific and not part of a general configuration.
         config_dict.pop('paths', None)
@@ -150,6 +197,51 @@ def migrate_preset_data(config_dict: Dict[str, Any]) -> Dict[str, Any]:
         if old_mode == 'Downscale then 4x':
             config_dict['resolution']['target_res_mode'] = 'Downscale then Upscale'
             logger.info(f"Migrated target_res_mode from '{old_mode}' to 'Downscale then Upscale'")
+    
+    # Add missing sections for new preset format
+    if 'manual_comparison' not in config_dict:
+        config_dict['manual_comparison'] = {
+            'video_count': 2,
+            'original_video': None,
+            'upscaled_video': None,
+            'third_video': None,
+            'fourth_video': None,
+            'layout': 'auto'
+        }
+        logger.info("Added missing manual_comparison section to preset")
+    
+    if 'standalone_face_restoration' not in config_dict:
+        config_dict['standalone_face_restoration'] = {
+            'fidelity_weight': 0.7,
+            'enable_colorization': False,
+            'batch_size': 1,
+            'save_frames': False,
+            'create_comparison': True,
+            'preserve_audio': True,
+            'input_video': None,
+            'mode': 'Single Video',
+            'batch_input_folder': '',
+            'batch_output_folder': '',
+            'codeformer_model': None
+        }
+        logger.info("Added missing standalone_face_restoration section to preset")
+    
+    if 'preset_system' not in config_dict:
+        config_dict['preset_system'] = {
+            'load_retries': 3,
+            'save_delay': 0.1,
+            'retry_delay': 0.2,
+            'load_delay': 0.1,
+            'conditional_updates_count': 20
+        }
+        logger.info("Added missing preset_system section to preset")
+    
+    if 'video_editing' not in config_dict:
+        config_dict['video_editing'] = {
+            'precise_cutting_mode': 'precise',
+            'preview_first_segment': True
+        }
+        logger.info("Added missing video_editing section to preset")
     
     # Add any other migrations here as needed in the future
     

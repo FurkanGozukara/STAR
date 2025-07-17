@@ -172,6 +172,13 @@ DEFAULT_PROGRESS_SCALE = 0.7
 DEFAULT_BATCH_PROGRESS_OFFSET = 0.1
 DEFAULT_BATCH_PROGRESS_SCALE = 0.8
 
+# Preset system constants
+DEFAULT_PRESET_LOAD_RETRIES = 3
+DEFAULT_PRESET_SAVE_DELAY = 0.1
+DEFAULT_PRESET_RETRY_DELAY = 0.2
+DEFAULT_PRESET_LOAD_DELAY = 0.1
+DEFAULT_CONDITIONAL_UPDATES_COUNT = 20  # Matches the number of conditional updates in load_preset_wrapper
+
 # Standalone Face Restoration Settings
 DEFAULT_STANDALONE_FACE_RESTORATION_FIDELITY = 0.7
 DEFAULT_STANDALONE_ENABLE_FACE_COLORIZATION = False
@@ -381,17 +388,38 @@ class StandaloneFaceRestorationConfig:
     save_frames: bool = DEFAULT_STANDALONE_SAVE_FRAMES
     create_comparison: bool = DEFAULT_STANDALONE_CREATE_COMPARISON
     preserve_audio: bool = DEFAULT_STANDALONE_PRESERVE_AUDIO
+    input_video: Optional[str] = None
+    mode: str = "Single Video"
+    batch_input_folder: str = ""
+    batch_output_folder: str = ""
+    codeformer_model: Optional[str] = None
 
 @dataclass
 class VideoEditingConfig:
     """Configuration for video editing settings."""
     precise_cutting_mode: str = DEFAULT_PRECISE_CUTTING_MODE
     preview_first_segment: bool = DEFAULT_PREVIEW_FIRST_SEGMENT
+    # Note: Video editing components like ranges_input are handled separately
+    # as they are complex objects that don't fit well in the preset system
+
+@dataclass
+class PresetSystemConfig:
+    """Configuration for preset system settings."""
+    load_retries: int = DEFAULT_PRESET_LOAD_RETRIES
+    save_delay: float = DEFAULT_PRESET_SAVE_DELAY
+    retry_delay: float = DEFAULT_PRESET_RETRY_DELAY
+    load_delay: float = DEFAULT_PRESET_LOAD_DELAY
+    conditional_updates_count: int = DEFAULT_CONDITIONAL_UPDATES_COUNT
 
 @dataclass
 class ManualComparisonConfig:
     """Configuration for manual comparison settings."""
     video_count: int = DEFAULT_MANUAL_VIDEO_COUNT
+    original_video: Optional[str] = None
+    upscaled_video: Optional[str] = None
+    third_video: Optional[str] = None
+    fourth_video: Optional[str] = None
+    layout: str = "auto"
 
 @dataclass
 class AppConfig:
@@ -419,7 +447,8 @@ class AppConfig:
     seedvr2: SeedVR2Config = field(default_factory=SeedVR2Config)
     standalone_face_restoration: StandaloneFaceRestorationConfig = field(default_factory=StandaloneFaceRestorationConfig)
     video_editing: VideoEditingConfig = field(default_factory=VideoEditingConfig)
-    manual_comparison: ManualComparisonConfig = field(default_factory=ManualComparisonConfig)
+    manual_comparison: ManualComparisonConfig = field(default_factory=ManualComparisonConfig),
+    preset_system: PresetSystemConfig = field(default_factory=PresetSystemConfig)
 
 def create_app_config(base_path: str, outputs_folder: str, star_cfg: Optional[Any]) -> AppConfig:
     """Factory function to create and initialize the main AppConfig object."""
@@ -443,10 +472,27 @@ def create_app_config(base_path: str, outputs_folder: str, star_cfg: Optional[An
     else:
         print("Warning: star_cfg not provided to config factory. Using placeholder prompts.")
 
-    return AppConfig(
+    # Create a complete AppConfig with all sections properly initialized
+    app_config = AppConfig(
         paths=path_config,
         prompts=prompt_config
     )
+    
+    # Ensure all sections are properly initialized with default values
+    # This is important for preset saving to include all sections
+    if not hasattr(app_config, 'manual_comparison') or app_config.manual_comparison is None:
+        app_config.manual_comparison = ManualComparisonConfig()
+    
+    if not hasattr(app_config, 'standalone_face_restoration') or app_config.standalone_face_restoration is None:
+        app_config.standalone_face_restoration = StandaloneFaceRestorationConfig()
+    
+    if not hasattr(app_config, 'preset_system') or app_config.preset_system is None:
+        app_config.preset_system = PresetSystemConfig()
+    
+    if not hasattr(app_config, 'video_editing') or app_config.video_editing is None:
+        app_config.video_editing = VideoEditingConfig()
+    
+    return app_config
 
 def get_cogvlm_quant_choices_map(torch_cuda_available: bool, bitsandbytes_available: bool) -> Dict[int, str]:
     choices_map = {0: DEFAULT_COGVLM_QUANT_DISPLAY_FP16}

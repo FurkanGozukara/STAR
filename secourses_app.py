@@ -33,6 +33,7 @@ from logic.dataclasses import (
     ContextWindowConfig, TilingConfig, FfmpegConfig, FrameFolderConfig, SceneSplitConfig,
     CogVLMConfig, OutputConfig, SeedConfig, RifeConfig, FpsDecreaseConfig, BatchConfig,
     ImageUpscalerConfig, FaceRestorationConfig, GpuConfig, UpscalerTypeConfig, SeedVR2Config,
+    ManualComparisonConfig, StandaloneFaceRestorationConfig, PresetSystemConfig,
     # Add the new constants
     DEFAULT_GPU_DEVICE, DEFAULT_VIDEO_COUNT_THRESHOLD_3, DEFAULT_VIDEO_COUNT_THRESHOLD_4,
     DEFAULT_PROGRESS_OFFSET, DEFAULT_PROGRESS_SCALE, DEFAULT_BATCH_PROGRESS_OFFSET, DEFAULT_BATCH_PROGRESS_SCALE
@@ -2275,8 +2276,64 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
             # New: Batch processing settings
             enable_batch_frame_folders_val, enable_direct_image_upscaling_val, batch_enable_auto_caption_val,
             # Add batch processing components to main preset system
-            batch_input_folder_val, batch_output_folder_val, batch_skip_existing_val, batch_use_prompt_files_val, batch_save_captions_val
+            batch_input_folder_val, batch_output_folder_val, batch_skip_existing_val, batch_use_prompt_files_val, batch_save_captions_val,
+            # Add missing manual comparison components (with backward compatibility)
+            manual_original_video_val, manual_upscaled_video_val, manual_third_video_val, manual_fourth_video_val, manual_comparison_layout_val,
+            # Add missing standalone face restoration components (with backward compatibility)
+            input_video_face_restoration_val, face_restoration_mode_val, batch_input_folder_face_val, batch_output_folder_face_val, standalone_codeformer_model_val
         ) = args
+
+        # Backward compatibility: handle cases where new components might not be present
+        if len(args) < 95:  # Expected number of arguments
+            logger.warning(f"Expected 95 UI arguments, got {len(args)}. Adding default values for missing components.")
+            # Extend args with default values for missing components
+            missing_count = 95 - len(args)
+            args = list(args) + [None] * missing_count
+            # Re-unpack with the extended args
+            (
+                input_video_val, user_prompt_val, pos_prompt_val, neg_prompt_val, model_selector_val,
+                upscale_factor_slider_val, cfg_slider_val, steps_slider_val, solver_mode_radio_val,
+                max_chunk_len_slider_val, enable_chunk_optimization_check_val, vae_chunk_slider_val, enable_vram_optimization_check_val, color_fix_dropdown_val,
+                enable_tiling_check_val, tile_size_num_val, tile_overlap_num_val,
+                enable_context_window_check_val, context_overlap_num_val,
+                enable_target_res_check_val, target_h_num_val, target_w_num_val, target_res_mode_radio_val,
+                enable_auto_aspect_resolution_check_val, auto_resolution_status_display_val,
+                ffmpeg_preset_dropdown_val, ffmpeg_quality_slider_val, ffmpeg_use_gpu_check_val,
+                save_frames_checkbox_val, save_metadata_checkbox_val, save_chunks_checkbox_val, save_chunk_frames_checkbox_val,
+                create_comparison_video_check_val,
+                enable_scene_split_check_val, scene_split_mode_radio_val, scene_min_scene_len_num_val, scene_drop_short_check_val, scene_merge_last_check_val,
+                scene_frame_skip_num_val, scene_threshold_num_val, scene_min_content_val_num_val, scene_frame_window_num_val,
+                scene_copy_streams_check_val, scene_use_mkvmerge_check_val, scene_rate_factor_num_val, scene_preset_dropdown_val, scene_quiet_ffmpeg_check_val,
+                scene_manual_split_type_radio_val, scene_manual_split_value_num_val,
+                enable_fps_decrease_val, fps_decrease_mode_val, fps_multiplier_preset_val, fps_multiplier_custom_val, target_fps_val, fps_interpolation_method_val,
+                enable_rife_interpolation_val, rife_multiplier_val, rife_fp16_val, rife_uhd_val, rife_scale_val,
+                rife_skip_static_val, rife_enable_fps_limit_val, rife_max_fps_limit_val,
+                rife_apply_to_chunks_val, rife_apply_to_scenes_val, rife_keep_original_val, rife_overwrite_original_val,
+                cogvlm_quant_radio_val, cogvlm_unload_radio_val, do_auto_caption_first_val,
+                seed_num_val, random_seed_check_val,
+                upscaler_type_radio_val,  # New: upscaler type selection
+                image_upscaler_model_val, image_upscaler_batch_size_val,
+                enable_face_restoration_val, face_restoration_fidelity_val, enable_face_colorization_val,
+                face_restoration_when_val, codeformer_model_val, face_restoration_batch_size_val,
+                enable_seedvr2_val, seedvr2_model_val, seedvr2_quality_preset_val, seedvr2_batch_size_val, seedvr2_use_gpu_val,  # New: SeedVR2 parameters
+                input_frames_folder_val, frame_folder_fps_slider_val,
+                gpu_selector_val,
+                # New: Standalone face restoration settings
+                standalone_face_restoration_fidelity_val, standalone_enable_face_colorization_val, standalone_face_restoration_batch_size_val,
+                standalone_save_frames_val, standalone_create_comparison_val, standalone_preserve_audio_val,
+                # New: Video editing settings
+                precise_cutting_mode_val, preview_first_segment_val,
+                # New: Manual comparison settings
+                manual_video_count_val,
+                # New: Batch processing settings
+                enable_batch_frame_folders_val, enable_direct_image_upscaling_val, batch_enable_auto_caption_val,
+                # Add batch processing components to main preset system
+                batch_input_folder_val, batch_output_folder_val, batch_skip_existing_val, batch_use_prompt_files_val, batch_save_captions_val,
+                # Add missing manual comparison components (with backward compatibility)
+                manual_original_video_val, manual_upscaled_video_val, manual_third_video_val, manual_fourth_video_val, manual_comparison_layout_val,
+                # Add missing standalone face restoration components (with backward compatibility)
+                input_video_face_restoration_val, face_restoration_mode_val, batch_input_folder_face_val, batch_output_folder_face_val, standalone_codeformer_model_val
+            ) = args
 
         # Auto-detect if frame folder processing should be enabled based on input path
         frame_folder_enable = False
@@ -2440,8 +2497,43 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
             ),
             gpu=GpuConfig(
                 device=str(extract_gpu_index_from_dropdown(gpu_selector_val))
+            ),
+            manual_comparison=ManualComparisonConfig(
+                video_count=manual_video_count_val or 2,
+                original_video=manual_original_video_val,
+                upscaled_video=manual_upscaled_video_val,
+                third_video=manual_third_video_val,
+                fourth_video=manual_fourth_video_val,
+                layout=manual_comparison_layout_val or "auto"
+            ),
+            standalone_face_restoration=StandaloneFaceRestorationConfig(
+                fidelity_weight=standalone_face_restoration_fidelity_val or 0.7,
+                enable_colorization=standalone_enable_face_colorization_val or False,
+                batch_size=standalone_face_restoration_batch_size_val or 1,
+                save_frames=standalone_save_frames_val or False,
+                create_comparison=standalone_create_comparison_val or True,
+                preserve_audio=standalone_preserve_audio_val or True,
+                input_video=input_video_face_restoration_val,
+                mode=face_restoration_mode_val or "Single Video",
+                batch_input_folder=batch_input_folder_face_val or "",
+                batch_output_folder=batch_output_folder_face_val or "",
+                codeformer_model=extract_codeformer_model_path_from_dropdown(standalone_codeformer_model_val) if standalone_codeformer_model_val else None
             )
         )
+        
+        # Ensure all sections are properly initialized for preset saving
+        if not hasattr(config, 'manual_comparison') or config.manual_comparison is None:
+            config.manual_comparison = ManualComparisonConfig()
+        
+        if not hasattr(config, 'standalone_face_restoration') or config.standalone_face_restoration is None:
+            config.standalone_face_restoration = StandaloneFaceRestorationConfig()
+        
+        if not hasattr(config, 'preset_system') or config.preset_system is None:
+            config.preset_system = PresetSystemConfig()
+        
+        if not hasattr(config, 'video_editing') or config.video_editing is None:
+            config.video_editing = VideoEditingConfig()
+        
         return config
 
     def upscale_director_logic (app_config: AppConfig, progress =gr .Progress (track_tqdm =True )):
@@ -3019,7 +3111,11 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         # New: Batch processing settings
         enable_batch_frame_folders, enable_direct_image_upscaling, batch_enable_auto_caption,
         # Add batch processing components to main preset system
-        batch_input_folder, batch_output_folder, batch_skip_existing, batch_use_prompt_files, batch_save_captions
+        batch_input_folder, batch_output_folder, batch_skip_existing, batch_use_prompt_files, batch_save_captions,
+        # Add missing manual comparison components
+        manual_original_video, manual_upscaled_video, manual_third_video, manual_fourth_video, manual_comparison_layout,
+        # Add missing standalone face restoration components
+        input_video_face_restoration, face_restoration_mode, batch_input_folder_face, batch_output_folder_face, standalone_codeformer_model_dropdown
     ])
 
     click_outputs_list =[output_video ,status_textbox ,user_prompt ]
@@ -4867,6 +4963,18 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         batch_skip_existing: ('batch', 'skip_existing'),
         batch_use_prompt_files: ('batch', 'use_prompt_files'),
         batch_save_captions: ('batch', 'save_captions'),
+        # Add missing manual comparison components
+        manual_original_video: ('manual_comparison', 'original_video'),
+        manual_upscaled_video: ('manual_comparison', 'upscaled_video'),
+        manual_third_video: ('manual_comparison', 'third_video'),
+        manual_fourth_video: ('manual_comparison', 'fourth_video'),
+        manual_comparison_layout: ('manual_comparison', 'layout'),
+        # Add missing standalone face restoration components
+        input_video_face_restoration: ('standalone_face_restoration', 'input_video'),
+        face_restoration_mode: ('standalone_face_restoration', 'mode'),
+        batch_input_folder_face: ('standalone_face_restoration', 'batch_input_folder'),
+        batch_output_folder_face: ('standalone_face_restoration', 'batch_output_folder'),
+        standalone_codeformer_model_dropdown: ('standalone_face_restoration', 'codeformer_model'),
         # Note: output_resolution_preview is intentionally excluded from presets as it's a calculated display field
     }
 
@@ -4880,15 +4988,15 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
             # Sanitize name for dropdown value
             safe_preset_name = "".join(c for c in preset_name if c.isalnum() or c in (' ', '_', '-')).rstrip()
             
-            # Ensure file system has committed the file before updating dropdown
-            time.sleep(0.1)  # Small delay to ensure file is written
-            
-            # Verify the file was actually written
-            presets_dir = preset_handler.get_presets_dir()
-            filepath = os.path.join(presets_dir, f"{safe_preset_name}.json")
-            if not os.path.exists(filepath):
-                logger.warning(f"Preset file not immediately available after save: {filepath}")
-                time.sleep(0.2)  # Additional delay if file not found
+                    # Ensure file system has committed the file before updating dropdown
+        time.sleep(APP_CONFIG.preset_system.save_delay)  # Small delay to ensure file is written
+        
+        # Verify the file was actually written
+        presets_dir = preset_handler.get_presets_dir()
+        filepath = os.path.join(presets_dir, f"{safe_preset_name}.json")
+        if not os.path.exists(filepath):
+            logger.warning(f"Preset file not immediately available after save: {filepath}")
+            time.sleep(APP_CONFIG.preset_system.retry_delay)  # Additional delay if file not found
             
             new_choices = get_filtered_preset_list()
             
@@ -4904,18 +5012,18 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         
         # Skip loading if preset_name is None, empty, or just whitespace
         if not preset_name or not preset_name.strip():
-            return [gr.update(value="No preset selected")] + [gr.update() for _ in preset_components] + [gr.update() for _ in range(20)]
+            return [gr.update(value="No preset selected")] + [gr.update() for _ in preset_components] + [gr.update() for _ in range(APP_CONFIG.preset_system.conditional_updates_count)]
         
         # Sanitize preset name to prevent issues
         preset_name = preset_name.strip()
         
         # Check if this is the system file that should be excluded
         if preset_name == "last_preset":
-            return [gr.update(value="Cannot load 'last_preset' - this is a system file")] + [gr.update() for _ in preset_components] + [gr.update() for _ in range(20)]
+            return [gr.update(value="Cannot load 'last_preset' - this is a system file")] + [gr.update() for _ in preset_components] + [gr.update() for _ in range(APP_CONFIG.preset_system.conditional_updates_count)]
         
         # Try to load the preset with retry logic to handle timing issues
         config_dict, message = None, None
-        max_retries = 3  # Could be made configurable in the future
+        max_retries = APP_CONFIG.preset_system.load_retries
         
         for attempt in range(max_retries):
             config_dict, message = preset_handler.load_preset(preset_name)
@@ -4923,13 +5031,13 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
                 break
             
             if attempt < max_retries - 1:  # Don't sleep on the last attempt
-                logger.debug(f"Preset load attempt {attempt + 1} failed, retrying in 0.1s...")
-                time.sleep(0.1)
+                logger.debug(f"Preset load attempt {attempt + 1} failed, retrying in {APP_CONFIG.preset_system.load_delay}s...")
+                time.sleep(APP_CONFIG.preset_system.load_delay)
         
         if not config_dict:
             # Suppress error logging for expected failures (file might not exist yet)
             logger.debug(f"Failed to load preset '{preset_name}' after {max_retries} attempts: {message}")
-            return [gr.update(value=f"Could not load preset: {preset_name}")] + [gr.update() for _ in preset_components] + [gr.update() for _ in range(20)]  # Additional outputs for conditional controls
+            return [gr.update(value=f"Could not load preset: {preset_name}")] + [gr.update() for _ in preset_components] + [gr.update() for _ in range(APP_CONFIG.preset_system.conditional_updates_count)]  # Additional outputs for conditional controls
 
         # Get a fresh AppConfig with default values for any missing keys in the preset file
         default_config = create_app_config(base_path, args.outputs_folder, star_cfg)
@@ -4942,6 +5050,8 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
 
         def reverse_upscaler_type_mapping(internal_value):
             """Convert internal upscaler type value back to UI display value"""
+            if not internal_value:
+                return "Use Image Based Upscalers"
             reverse_map = {
                 "star": "Use STAR Model Upscaler",
                 "image_upscaler": "Use Image Based Upscalers", 
@@ -4968,12 +5078,48 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
                 updates.append(gr.update())
                 continue
             
+            # Safety check: ensure component exists
+            if not hasattr(component, 'label'):
+                logger.warning(f"Component without label attribute found, skipping")
+                updates.append(gr.update())
+                continue
+            
             if component in component_key_map:
                 section, key = component_key_map[component]
-                # Get the default value from a fresh config object
-                default_value = getattr(getattr(default_config, section), key)
-                # Get value from loaded dict, falling back to the default
-                value = config_dict.get(section, {}).get(key, default_value)
+                
+                # Handle backward compatibility for missing sections
+                try:
+                    # Get the default value from a fresh config object
+                    section_obj = getattr(default_config, section, None)
+                    if section_obj is None:
+                        logger.warning(f"Section '{section}' not found in default config, skipping component")
+                        updates.append(gr.update())
+                        continue
+                    
+                    default_value = getattr(section_obj, key, None)
+                    if default_value is None:
+                        logger.warning(f"Key '{key}' not found in section '{section}', skipping component")
+                        updates.append(gr.update())
+                        continue
+                    
+                    # Get value from loaded dict, falling back to the default
+                    value = config_dict.get(section, {}).get(key, default_value)
+                except AttributeError as e:
+                    logger.warning(f"Error accessing {section}.{key}: {e}. Using default value.")
+                    # Try to get a reasonable default value
+                    if key in ['video_count', 'layout']:
+                        value = 2 if key == 'video_count' else "auto"
+                    elif key in ['fidelity_weight', 'batch_size']:
+                        value = 0.7 if key == 'fidelity_weight' else 1
+                    elif key in ['enable_colorization', 'save_frames', 'create_comparison', 'preserve_audio']:
+                        value = False if key in ['enable_colorization', 'save_frames'] else True
+                    elif key in ['input_video', 'original_video', 'upscaled_video', 'third_video', 'fourth_video', 'batch_input_folder', 'batch_output_folder', 'codeformer_model']:
+                        value = None
+                    elif key == 'mode':
+                        value = "Single Video"
+                    else:
+                        value = None
+                    logger.info(f"Using fallback value for {section}.{key}: {value}")
                 
                 # Special handling for components that need it
                 if component is codeformer_model_dropdown:
@@ -4984,15 +5130,22 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
                     value = reverse_upscaler_type_mapping(value)
                 elif component is gpu_selector:
                     # The saved value is a GPU index, we need to convert it back to the dropdown format
-                    available_gpus = util_get_available_gpus()
-                    # Handle legacy "Auto" values by converting to "0"
-                    if value == "Auto":
-                        value = 0
-                    # Convert string index to integer if needed
-                    if isinstance(value, str) and value.isdigit():
-                        value = int(value)
-                    value = convert_gpu_index_to_dropdown(value, available_gpus)
-                    logger.info(f"Loading preset: {preset_name}")
+                    try:
+                        available_gpus = util_get_available_gpus()
+                        # Handle legacy "Auto" values by converting to "0"
+                        if value == "Auto":
+                            value = 0
+                        # Convert string index to integer if needed
+                        if isinstance(value, str) and value.isdigit():
+                            value = int(value)
+                        value = convert_gpu_index_to_dropdown(value, available_gpus)
+                        logger.info(f"Loading preset: {preset_name}")
+                    except Exception as e:
+                        logger.warning(f"Error converting GPU index: {e}. Using default.")
+                        value = "GPU 0: Default" if util_get_available_gpus() else "No CUDA GPUs detected"
+                elif component is standalone_codeformer_model_dropdown:
+                    # The saved value is a path, we need to convert it back to the dropdown choice
+                    value = reverse_extract_codeformer_model_path(value)
                 
                 updates.append(gr.update(value=value))
             else:
@@ -5048,7 +5201,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         # Skip if this is the same preset we just loaded
         if preset_name == last_loaded_preset[0]:
             logger.debug(f"Skipping reload of already loaded preset: '{preset_name}' (cache match)")
-            return [gr.update()] + [gr.update() for _ in preset_components] + [gr.update() for _ in range(20)]
+            return [gr.update()] + [gr.update() for _ in preset_components] + [gr.update() for _ in range(APP_CONFIG.preset_system.conditional_updates_count)]
         
         last_loaded_preset[0] = preset_name
         return load_preset_wrapper(preset_name)
