@@ -447,7 +447,7 @@ class AppConfig:
     seedvr2: SeedVR2Config = field(default_factory=SeedVR2Config)
     standalone_face_restoration: StandaloneFaceRestorationConfig = field(default_factory=StandaloneFaceRestorationConfig)
     video_editing: VideoEditingConfig = field(default_factory=VideoEditingConfig)
-    manual_comparison: ManualComparisonConfig = field(default_factory=ManualComparisonConfig),
+    manual_comparison: ManualComparisonConfig = field(default_factory=ManualComparisonConfig)
     preset_system: PresetSystemConfig = field(default_factory=PresetSystemConfig)
 
 def create_app_config(base_path: str, outputs_folder: str, star_cfg: Optional[Any]) -> AppConfig:

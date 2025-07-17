@@ -1045,7 +1045,7 @@ The total combined prompt length is limited to 77 tokens."""
                         label ="Batch Size",
                         minimum =1 ,
                         maximum =50 ,
-                        value =1 ,
+                        value =INITIAL_APP_CONFIG.seedvr2.batch_size ,
                         step =1 ,
                         interactive =False ,
                         info ="Number of frames to process simultaneously."
@@ -1078,7 +1078,7 @@ This will be a major addition to the upscaling toolkit, combining the best of bo
                         
                         seedvr2_use_gpu_check =gr .Checkbox (
                         label ="Use GPU Acceleration",
-                        value =True ,
+                        value =INITIAL_APP_CONFIG.seedvr2.use_gpu ,
                         interactive =False ,
                         info ="GPU acceleration for SeedVR2 processing."
                         )
@@ -1151,7 +1151,7 @@ This helps visualize the quality improvement from upscaling."""
                         manual_video_count =gr .Radio (
                         label ="Number of Videos",
                         choices =[2 , 3 , 4 ],
-                        value =2 ,
+                        value =INITIAL_APP_CONFIG.manual_comparison.video_count ,
                         info ="Select how many videos you want to compare. Additional video inputs will appear based on your selection."
                         )
 
@@ -1264,7 +1264,7 @@ This helps visualize the quality improvement from upscaling."""
                     with gr .Row ():
                         batch_enable_auto_caption =gr .Checkbox (
                         label ="Enable Auto-Caption for Batch",
-                        value =True ,
+                        value =INITIAL_APP_CONFIG.batch.enable_auto_caption ,
                         info ="Generate automatic captions for videos that don't have prompt files. Uses the same CogVLM2 settings as Core Settings tab."
                         )
                 else :
@@ -1491,7 +1491,7 @@ This helps visualize the quality improvement from upscaling."""
                         
                         preview_first_segment =gr .Checkbox (
                         label ="Generate Preview of First Segment",
-                        value =True ,
+                        value =INITIAL_APP_CONFIG.video_editing.preview_first_segment ,
                         info ="Create a preview video of the first cut segment for verification"
                         )
                         
@@ -1588,19 +1588,19 @@ This helps visualize the quality improvement from upscaling."""
                     with gr .Accordion ("Face Restoration Settings",open =True ):
                         standalone_enable_face_restoration =gr .Checkbox (
                         label ="Enable Face Restoration",
-                        value =True ,
+                        value =INITIAL_APP_CONFIG.face_restoration.enable ,
                         info ="Enable CodeFormer face restoration processing. Must be enabled for any processing to occur."
                         )
                         
                         standalone_face_restoration_fidelity =gr .Slider (
                         label ="Face Restoration Fidelity Weight",
-                        minimum =0.0 ,maximum =1.0 ,value =0.7 ,step =0.05 ,
+                        minimum =0.0 ,maximum =1.0 ,value =INITIAL_APP_CONFIG.standalone_face_restoration.fidelity_weight ,step =0.05 ,
                         info ="Balance between quality (0.3) and identity preservation (0.8). 0.7 is recommended for most videos."
                         )
                         
                         standalone_enable_face_colorization =gr .Checkbox (
                         label ="Enable Face Colorization",
-                        value =False ,
+                        value =INITIAL_APP_CONFIG.standalone_face_restoration.enable_colorization ,
                         info ="Enable colorization for grayscale faces. Useful for old black & white videos or grayscale content."
                         )
                         
@@ -1617,7 +1617,7 @@ This helps visualize the quality improvement from upscaling."""
                         
                         standalone_face_restoration_batch_size =gr .Slider (
                         label ="Processing Batch Size",
-                        minimum =1 ,maximum =50 ,value =1 ,step =1 ,
+                        minimum =1 ,maximum =50 ,value =INITIAL_APP_CONFIG.standalone_face_restoration.batch_size ,step =1 ,
                         info ="Number of frames to process simultaneously. Higher values = faster processing but more VRAM usage."
                         )
 
@@ -1626,19 +1626,19 @@ This helps visualize the quality improvement from upscaling."""
                     with gr .Accordion ("Advanced Options",open =True ):
                         standalone_save_frames =gr .Checkbox (
                         label ="Save Individual Frames",
-                        value =False ,
+                        value =INITIAL_APP_CONFIG.standalone_face_restoration.save_frames ,
                         info ="Save processed frames as individual image files alongside the video"
                         )
                         
                         standalone_create_comparison =gr .Checkbox (
                         label ="Create Before/After Comparison Video",
-                        value =True ,
+                        value =INITIAL_APP_CONFIG.standalone_face_restoration.create_comparison ,
                         info ="Create a side-by-side comparison video showing original vs face-restored results"
                         )
                         
                         standalone_preserve_audio =gr .Checkbox (
                         label ="Preserve Original Audio",
-                        value =True ,
+                        value =INITIAL_APP_CONFIG.standalone_face_restoration.preserve_audio ,
                         info ="Keep the original audio track in the processed video"
                         )
 
