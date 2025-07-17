@@ -15,7 +15,6 @@
         "max_chunk_len": 32,
         "vae_chunk": 1,
         "enable_chunk_optimization": true,
-        "chunk_optimization_min_ratio": 0.5,
         "enable_vram_optimization": true,
         "enable_fp16_processing": true
     },
@@ -89,7 +88,7 @@
     "rife": {
         "enable": false,
         "multiplier": 2,
-        "fp16": true,
+        "fp16": false,
         "uhd": false,
         "scale": 1,
         "skip_static": false,
@@ -132,7 +131,7 @@
     "seedvr2": {
         "enable": false,
         "model": "Model will be available soon",
-        "batch_size": 4,
+        "batch_size": 1,
         "quality_preset": "Balanced",
         "use_gpu": true
     }

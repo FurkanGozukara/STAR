@@ -3082,18 +3082,18 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
 
         def rife_fps_increase_wrapper (
         input_video_val ,
-        rife_multiplier_val =2 ,
-        rife_fp16_val =True ,
-        rife_uhd_val =False ,
-        rife_scale_val =1.0 ,
-        rife_skip_static_val =False ,
-        rife_enable_fps_limit_val =False ,
-        rife_max_fps_limit_val =60 ,
-        ffmpeg_preset_dropdown_val ="medium",
-        ffmpeg_quality_slider_val =18 ,
-        ffmpeg_use_gpu_check_val =True ,
-        seed_num_val =99 ,
-        random_seed_check_val =False ,
+        rife_multiplier_val ,
+        rife_fp16_val ,
+        rife_uhd_val ,
+        rife_scale_val ,
+        rife_skip_static_val ,
+        rife_enable_fps_limit_val ,
+        rife_max_fps_limit_val ,
+        ffmpeg_preset_dropdown_val ,
+        ffmpeg_quality_slider_val ,
+        ffmpeg_use_gpu_check_val ,
+        seed_num_val ,
+        random_seed_check_val ,
         progress =gr .Progress (track_tqdm =True )
         ):
 
@@ -3461,8 +3461,11 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         save_frames_val,
         create_comparison_val,
         preserve_audio_val,
-        seed_num_val=99,
-        random_seed_check_val=False,
+        seed_num_val,
+        random_seed_check_val,
+        ffmpeg_preset_val,
+        ffmpeg_quality_val,
+        ffmpeg_use_gpu_val,
         progress=gr.Progress(track_tqdm=True)
     ):
         try:
@@ -3475,7 +3478,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
                 actual_seed = random.randint(0, 2**32 - 1)
                 logger.info(f"Generated random seed: {actual_seed}")
             else:
-                actual_seed = seed_num_val if seed_num_val >= 0 else 99
+                actual_seed = seed_num_val
             
             if not enable_face_restoration_val:
                 return None, None, "⚠️ Face restoration is disabled. Please enable it to process videos.", "❌ Processing disabled"
@@ -3517,9 +3520,9 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
                     save_frames=save_frames_val,
                     create_comparison=create_comparison_val,
                     preserve_audio=preserve_audio_val,
-                    ffmpeg_preset=ffmpeg_preset_dropdown.value if 'ffmpeg_preset_dropdown' in globals() else "medium",
-                    ffmpeg_quality=ffmpeg_quality_slider.value if 'ffmpeg_quality_slider' in globals() else 23,
-                    ffmpeg_use_gpu=ffmpeg_use_gpu_check.value if 'ffmpeg_use_gpu_check' in globals() else False,
+                    ffmpeg_preset=ffmpeg_preset_val,
+                    ffmpeg_quality=ffmpeg_quality_val,
+                    ffmpeg_use_gpu=ffmpeg_use_gpu_val,
                     progress_callback=progress_callback,
                     logger=logger
                 )
@@ -3580,9 +3583,9 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
                         save_frames=save_frames_val,
                         create_comparison=create_comparison_val,
                         preserve_audio=preserve_audio_val,
-                        ffmpeg_preset=ffmpeg_preset_dropdown.value if 'ffmpeg_preset_dropdown' in globals() else "medium",
-                        ffmpeg_quality=ffmpeg_quality_slider.value if 'ffmpeg_quality_slider' in globals() else 23,
-                        ffmpeg_use_gpu=ffmpeg_use_gpu_check.value if 'ffmpeg_use_gpu_check' in globals() else False,
+                        ffmpeg_preset=ffmpeg_preset_val,
+                        ffmpeg_quality=ffmpeg_quality_val,
+                        ffmpeg_use_gpu=ffmpeg_use_gpu_val,
                         progress_callback=batch_progress_callback,
                         logger=logger
                     )
@@ -3614,6 +3617,37 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         except Exception as e:
             logger.error(f"Standalone face restoration error: {str(e)}")
             return None, None, f"❌ Error during face restoration: {str(e)}", "❌ Processing error"
+
+    # Update the click handler to pass ffmpeg_preset_dropdown, ffmpeg_quality_slider, ffmpeg_use_gpu_check as inputs
+    face_restoration_process_btn.click(
+        fn=standalone_face_restoration_wrapper,
+        inputs=[
+            input_video_face_restoration,
+            face_restoration_mode,
+            batch_input_folder_face,
+            batch_output_folder_face,
+            standalone_enable_face_restoration,
+            standalone_face_restoration_fidelity,
+            standalone_enable_face_colorization,
+            standalone_codeformer_model_dropdown,
+            standalone_face_restoration_batch_size,
+            standalone_save_frames,
+            standalone_create_comparison,
+            standalone_preserve_audio,
+            seed_num,
+            random_seed_check,
+            ffmpeg_preset_dropdown,
+            ffmpeg_quality_slider,
+            ffmpeg_use_gpu_check
+        ],
+        outputs=[
+            output_video_face_restoration,
+            comparison_video_face_restoration,
+            face_restoration_status,
+            face_restoration_stats
+        ],
+        show_progress_on=[output_video_face_restoration]
+    )
 
     def update_multi_video_ui(video_count):
         """Update UI components based on selected video count."""
@@ -4769,7 +4803,10 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
             standalone_create_comparison,
             standalone_preserve_audio,
             seed_num,
-            random_seed_check
+            random_seed_check,
+            ffmpeg_preset_dropdown,
+            ffmpeg_quality_slider,
+            ffmpeg_use_gpu_check
         ],
         outputs=[
             output_video_face_restoration,
