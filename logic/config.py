@@ -168,7 +168,7 @@ def initialize_paths_and_prompts(base_path_from_app, outputs_folder_from_args, s
 
     APP_BASE_PATH = base_path_from_app
     DEFAULT_OUTPUT_DIR = os.path.abspath(outputs_folder_from_args)
-    COG_VLM_MODEL_PATH = os.path.join(APP_BASE_PATH, 'models', 'cogvlm2-video-llama3-chat')
+    COG_VLM_MODEL_PATH = os.path.join(APP_BASE_PATH, 'models', 'CogVLMFixed')
     LIGHT_DEG_MODEL_PATH = os.path.join(APP_BASE_PATH, 'pretrained_weight', 'light_deg.pt')
     HEAVY_DEG_MODEL_PATH = os.path.join(APP_BASE_PATH, 'pretrained_weight', 'heavy_deg.pt')
     RIFE_MODEL_PATH = os.path.join(APP_BASE_PATH, '..', 'Practical-RIFE', 'train_log')
