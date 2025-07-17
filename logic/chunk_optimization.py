@@ -13,16 +13,14 @@ from typing import Tuple, List, Dict
 def calculate_optimized_chunk_boundaries(
     total_frames: int, 
     max_chunk_len: int,
-    min_last_chunk_ratio: float = 0.5,
     logger: logging.Logger = None
 ) -> List[Dict[str, int]]:
     """
-    Calculate optimized chunk boundaries to prevent small last chunks that cause quality issues.
+    Calculate optimized chunk boundaries to ensure last chunk has optimal quality.
     
     Args:
         total_frames: Total number of frames in the video
         max_chunk_len: Maximum chunk length (user-specified chunk size)
-        min_last_chunk_ratio: Minimum ratio of last chunk size to max_chunk_len (default: 0.5)
         logger: Logger instance for debugging info
     
     Returns:
@@ -62,15 +60,13 @@ def calculate_optimized_chunk_boundaries(
     last_chunk_start = (standard_num_chunks - 1) * max_chunk_len
     last_chunk_size = total_frames - last_chunk_start
     
-    min_acceptable_last_chunk_size = int(max_chunk_len * min_last_chunk_ratio)
-    
     chunks = []
     
-    # Check if last chunk needs optimization
-    if last_chunk_size < min_acceptable_last_chunk_size and standard_num_chunks > 1:
+    # Check if last chunk needs optimization (trigger when last chunk is not equal to max_chunk_len)
+    if last_chunk_size != max_chunk_len and standard_num_chunks > 1:
         if logger:
             logger.info(f"Optimizing chunks: Last chunk has {last_chunk_size} frames "
-                       f"(< {min_acceptable_last_chunk_size} minimum). Applying optimization.")
+                       f"(not equal to {max_chunk_len} frames). Applying optimization.")
         
         # Create all chunks except the last one normally
         for chunk_idx in range(standard_num_chunks - 1):
@@ -120,11 +116,11 @@ def calculate_optimized_chunk_boundaries(
     
     else:
         # No optimization needed, create all chunks normally
-        if logger and last_chunk_size < min_acceptable_last_chunk_size:
+        if logger and last_chunk_size != max_chunk_len:
             logger.info(f"Last chunk has {last_chunk_size} frames but only 1 chunk total, no optimization possible.")
         elif logger:
             logger.info(f"No chunk optimization needed: Last chunk has {last_chunk_size} frames "
-                       f"(>= {min_acceptable_last_chunk_size} minimum).")
+                       f"(equal to {max_chunk_len} frames).")
         
         for chunk_idx in range(standard_num_chunks):
             start_idx = chunk_idx * max_chunk_len

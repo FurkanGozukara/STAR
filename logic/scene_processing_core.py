@@ -791,7 +791,6 @@ def process_single_scene(
                 chunk_boundaries = calculate_optimized_chunk_boundaries(
                     total_frames=scene_frame_count,
                     max_chunk_len=max_chunk_len,
-                    min_last_chunk_ratio=app_config_module_param.DEFAULT_CHUNK_OPTIMIZATION_MIN_RATIO,
                     logger=logger
                 )
                 

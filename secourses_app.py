@@ -865,9 +865,9 @@ The total combined prompt length is limited to 77 tokens."""
                         enable_chunk_optimization_check =gr .Checkbox (
                         label ="Optimize Last Chunk Quality",
                         value =INITIAL_APP_CONFIG.performance.enable_chunk_optimization ,
-                        info ="""Process extra frames for small last chunks to improve quality. When the last chunk has fewer frames than target size (causing quality drops), this processes additional frames but only keeps the necessary output.
-- Example: For 70 frames with 32-frame chunks, instead of processing only 6 frames for the last chunk (poor quality), it processes 23 frames (48-70) but keeps only the last 6 (65-70).
-- Quality Impact: Significantly improves quality for small last chunks."""
+                        info ="""Process extra frames for last chunks to ensure optimal quality. When the last chunk is not equal to the user-set chunk size, this processes additional frames but only keeps the necessary output.
+- Example: For 70 frames with 32-frame chunks, instead of processing only 6 frames for the last chunk (poor quality), it processes 32 frames (38-69) but keeps only the last 6 (64-69).
+- Quality Impact: Ensures all chunks have optimal processing conditions by always processing the full user-set chunk size."""
                         )
                         vae_chunk_slider =gr .Slider (
                         label ="VAE Decode Chunk (VRAM)",

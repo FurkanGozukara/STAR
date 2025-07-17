@@ -34,7 +34,6 @@ DEFAULT_ENABLE_FP16_PROCESSING = True  # Use fp16 tensors to reduce VRAM usage b
 
 # Chunk Optimization
 DEFAULT_ENABLE_CHUNK_OPTIMIZATION = True
-DEFAULT_CHUNK_OPTIMIZATION_MIN_RATIO = 0.5
 
 # Target Resolution
 DEFAULT_ENABLE_TARGET_RES = True
@@ -196,7 +195,6 @@ class PerformanceConfig:
     max_chunk_len: int = DEFAULT_MAX_CHUNK_LEN
     vae_chunk: int = DEFAULT_VAE_CHUNK
     enable_chunk_optimization: bool = DEFAULT_ENABLE_CHUNK_OPTIMIZATION
-    chunk_optimization_min_ratio: float = DEFAULT_CHUNK_OPTIMIZATION_MIN_RATIO
     enable_vram_optimization: bool = DEFAULT_ENABLE_VRAM_OPTIMIZATION
     enable_fp16_processing: bool = DEFAULT_ENABLE_FP16_PROCESSING
 
