@@ -783,7 +783,7 @@ The total combined prompt length is limited to 77 tokens."""
                         face_restoration_batch_size_slider =gr .Slider (
                         label ="Face Restoration Batch Size",
                         minimum =1 ,
-                        maximum =32 ,
+                        maximum =50 ,
                         value =INITIAL_APP_CONFIG.face_restoration.batch_size ,
                         step =1 ,
                         info ="Number of frames to process simultaneously for face restoration. Higher values = faster processing but more VRAM usage.",
@@ -944,7 +944,7 @@ The total combined prompt length is limited to 77 tokens."""
                         image_upscaler_batch_size_slider =gr .Slider (
                         label ="Batch Size",
                         minimum =1 ,
-                        maximum =1000 ,
+                        maximum =50 ,
                         value =INITIAL_APP_CONFIG.image_upscaler.batch_size ,
                         step =1 ,
                         info ="Number of frames to process simultaneously. Higher values = faster processing but more VRAM usage. Adjust based on your GPU memory.",
@@ -1040,8 +1040,8 @@ The total combined prompt length is limited to 77 tokens."""
                         seedvr2_batch_size_slider =gr .Slider (
                         label ="Batch Size",
                         minimum =1 ,
-                        maximum =32 ,
-                        value =4 ,
+                        maximum =50 ,
+                        value =1 ,
                         step =1 ,
                         interactive =False ,
                         info ="Number of frames to process simultaneously."
@@ -1613,7 +1613,7 @@ This helps visualize the quality improvement from upscaling."""
                         
                         standalone_face_restoration_batch_size =gr .Slider (
                         label ="Processing Batch Size",
-                        minimum =1 ,maximum =16 ,value =4 ,step =1 ,
+                        minimum =1 ,maximum =50 ,value =1 ,step =1 ,
                         info ="Number of frames to process simultaneously. Higher values = faster processing but more VRAM usage."
                         )
 
