@@ -5,7 +5,7 @@ from decord import cpu, VideoReader, bridge
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 import argparse
 
-MODEL_PATH = "THUDM/cogvlm2-video-llama3-chat"
+MODEL_PATH = "MonsterMMORPG/CogVLMFixed"
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 TORCH_TYPE = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.get_device_capability()[
     0] >= 8 else torch.float16

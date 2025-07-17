@@ -380,7 +380,7 @@ def create_app_config(base_path: str, outputs_folder: str, star_cfg: Optional[An
     path_config = PathConfig(
         app_base_path=base_path,
         outputs_dir=os.path.abspath(outputs_folder),
-        cogvlm_model_path=os.path.join(base_path, 'models', 'cogvlm2-video-llama3-chat'),
+        cogvlm_model_path=os.path.join(base_path, 'models', 'CogVLMFixed'),
         light_deg_model_path=os.path.join(base_path, 'pretrained_weight', 'light_deg.pt'),
         heavy_deg_model_path=os.path.join(base_path, 'pretrained_weight', 'heavy_deg.pt'),
         rife_model_path=os.path.join(base_path, '..', 'Practical-RIFE', 'train_log'),
