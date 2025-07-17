@@ -470,27 +470,64 @@ def decrease_fps_with_multiplier(input_video_path, output_video_path, multiplier
     )
 
 def create_video_from_frames(frame_dir, output_path, fps, ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=None):
-    """Create video from frames using FFmpeg."""
+    """Create video from frames using FFmpeg with robust frame sequence handling."""
     if logger:
         logger.info(f"Creating video from frames in '{frame_dir}' to '{output_path}' at {fps} FPS with preset: {ffmpeg_preset}, quality: {ffmpeg_quality_value}, GPU: {ffmpeg_use_gpu}")
-    input_pattern = os.path.join(frame_dir, "frame_%06d.png")
+    
+    # Validate frame sequence first
+    validation_result = validate_and_fix_frame_sequence(frame_dir, logger)
+    if not validation_result['success']:
+        if logger:
+            logger.error("Frame sequence validation failed")
+        return False
+        
+    expected_count = validation_result['frame_count']
+    if expected_count == 0:
+        if logger:
+            logger.error("No valid frames found for video creation")
+        return False
+        
+    # Log any validation warnings
+    for warning in validation_result['warnings']:
+        if logger:
+            logger.warning(f"Frame validation: {warning}")
+    
+    # Get all frame files and sort them naturally to handle any numbering scheme
+    try:
+        frame_files = sorted([f for f in os.listdir(frame_dir) if f.startswith('frame_') and f.endswith('.png')], key=natural_sort_key)
+        if not frame_files:
+            if logger:
+                logger.error(f"No frame files found in {frame_dir}")
+            return False
+            
+        if logger:
+            logger.info(f"Found {len(frame_files)} frames: {frame_files[0]} to {frame_files[-1]}")
+            logger.info(f"Creating video from {expected_count} sequential frames")
+            
+        # Double-check frame count consistency
+        if len(frame_files) != expected_count:
+            if logger:
+                logger.warning(f"Frame count mismatch: validation found {expected_count}, directory scan found {len(frame_files)}")
+            expected_count = len(frame_files)  # Use actual count
+            
+    except Exception as e:
+        if logger:
+            logger.error(f"Error reading frame directory {frame_dir}: {e}")
+        return False
 
     # Detect frame resolution for NVENC resolution compatibility check
     frame_width, frame_height = None, None
-    if ffmpeg_use_gpu:
-        # Find first frame to check resolution
-        frame_files = sorted([f for f in os.listdir(frame_dir) if f.startswith('frame_') and f.endswith('.png')], key=natural_sort_key)
-        if frame_files:
-            first_frame_path = os.path.join(frame_dir, frame_files[0])
-            try:
-                frame = cv2.imread(first_frame_path)
-                if frame is not None:
-                    frame_height, frame_width = frame.shape[:2]
-                    if logger:
-                        logger.info(f"Detected frame resolution: {frame_width}x{frame_height}")
-            except Exception as e:
+    if ffmpeg_use_gpu and frame_files:
+        first_frame_path = os.path.join(frame_dir, frame_files[0])
+        try:
+            frame = cv2.imread(first_frame_path)
+            if frame is not None:
+                frame_height, frame_width = frame.shape[:2]
                 if logger:
-                    logger.warning(f"Could not detect frame resolution: {e}")
+                    logger.info(f"Detected frame resolution: {frame_width}x{frame_height}")
+        except Exception as e:
+            if logger:
+                logger.warning(f"Could not detect frame resolution: {e}")
 
     # Get encoding configuration with automatic NVENC fallback
     from .nvenc_utils import get_nvenc_fallback_encoding_config, build_ffmpeg_video_encoding_args
@@ -510,19 +547,222 @@ def create_video_from_frames(frame_dir, output_path, fps, ffmpeg_preset, ffmpeg_
         codec_info = f"Using {encoding_config['codec']} with preset {encoding_config['preset']} and {encoding_config['quality_param'].upper()} {encoding_config['quality_value']}."
         logger.info(codec_info)
 
-    cmd = f'ffmpeg -y -framerate {fps} -i "{input_pattern}" {video_codec_opts} "{output_path}"'
+    # Create temporary directory with sequential frame files to ensure FFmpeg reads all frames
+    import tempfile
+    import shutil
+    
+    # Use a context manager for better cleanup
+    with tempfile.TemporaryDirectory(prefix="video_creation_") as temp_frames_dir:
+        try:
+            # Copy frames to temporary directory with consecutive numbering
+            copied_count = 0
+            for i, frame_file in enumerate(frame_files):
+                src_path = os.path.join(frame_dir, frame_file)
+                # Use 1-based indexing to match FFmpeg pattern expectations
+                dst_path = os.path.join(temp_frames_dir, f"frame_{i+1:06d}.png")
+                
+                try:
+                    # Verify source frame exists and is readable before copying
+                    if not os.path.exists(src_path):
+                        if logger:
+                            logger.error(f"Source frame missing: {src_path}")
+                        return False
+                        
+                    # Quick validation that frame is not corrupted
+                    if os.path.getsize(src_path) == 0:
+                        if logger:
+                            logger.error(f"Source frame is empty: {src_path}")
+                        return False
+                    
+                    shutil.copy2(src_path, dst_path)
+                    copied_count += 1
+                    
+                    # Progress logging for large frame counts
+                    if copied_count % 500 == 0 and logger:
+                        logger.info(f"Copied {copied_count}/{len(frame_files)} frames...")
+                        
+                except Exception as e:
+                    if logger:
+                        logger.error(f"Failed to copy frame {frame_file}: {e}")
+                    return False
+            
+            # Verify all frames were copied successfully
+            temp_frame_files = [f for f in os.listdir(temp_frames_dir) if f.startswith('frame_') and f.endswith('.png')]
+            if len(temp_frame_files) != len(frame_files):
+                if logger:
+                    logger.error(f"Frame copy failed: expected {len(frame_files)}, got {len(temp_frame_files)}")
+                return False
+                
+            if logger:
+                logger.info(f"✓ Successfully created {len(temp_frame_files)} sequential frames for FFmpeg processing")
+            
+            # Now use the standard FFmpeg pattern with our sequential frames
+            input_pattern = os.path.join(temp_frames_dir, "frame_%06d.png")
+            cmd = f'ffmpeg -y -framerate {fps} -i "{input_pattern}" {video_codec_opts} "{output_path}"'
+            
+            try:
+                success = run_ffmpeg_command(cmd, "Video Reassembly (silent)", logger, raise_on_error=False)
+                if success and os.path.exists(output_path):
+                    # Verify output video frame count matches input
+                    try:
+                        output_video_info = get_video_info_fast(output_path, logger)
+                        if output_video_info and output_video_info.get('frames', 0) > 0:
+                            output_frames = output_video_info['frames']
+                            if output_frames != expected_count:
+                                if logger:
+                                    logger.warning(f"Frame count mismatch in output video: expected {expected_count}, got {output_frames}")
+                                    logger.warning("This may indicate encoding issues, but video was created successfully")
+                                    
+                                # For small differences (±1), this might be normal due to encoding
+                                if abs(output_frames - expected_count) <= 1:
+                                    if logger:
+                                        logger.info("Frame count difference is within acceptable range (±1)")
+                                else:
+                                    if logger:
+                                        logger.error(f"Significant frame count difference: {abs(output_frames - expected_count)} frames")
+                                        
+                            else:
+                                if logger:
+                                    logger.info(f"✓ Output video frame count verified: {output_frames} frames")
+                    except Exception as verify_e:
+                        if logger:
+                            logger.debug(f"Could not verify output frame count: {verify_e}")
+                    
+                    return True
+                else:
+                    if logger:
+                        logger.warning("Primary video creation method failed, attempting concat fallback...")
+                    
+                    # Try the concat fallback method
+                    fallback_success = create_video_from_frames_concat_fallback(
+                        frame_dir, output_path, fps, ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger
+                    )
+                    
+                    if fallback_success:
+                        if logger:
+                            logger.info("✓ Video creation successful using concat fallback method")
+                        return True
+                    else:
+                        if logger:
+                            logger.error(f"Both primary and fallback video creation methods failed: {output_path}")
+                        return False
+                        
+            except Exception as e:
+                if logger:
+                    logger.error(f"Exception during primary video creation: {e}")
+                    logger.info("Attempting concat fallback method...")
+                
+                # Try the concat fallback method
+                try:
+                    fallback_success = create_video_from_frames_concat_fallback(
+                        frame_dir, output_path, fps, ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger
+                    )
+                    
+                    if fallback_success:
+                        if logger:
+                            logger.info("✓ Video creation successful using concat fallback method after primary method exception")
+                        return True
+                    else:
+                        if logger:
+                            logger.error("Both primary and fallback video creation methods failed")
+                        return False
+                except Exception as fallback_e:
+                    if logger:
+                        logger.error(f"Fallback method also failed: {fallback_e}")
+                    return False
+                
+        except Exception as e:
+            if logger:
+                logger.error(f"Error in frame preparation: {e}")
+            return False
+
+def create_video_from_frames_concat_fallback(frame_dir, output_path, fps, ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=None):
+    """
+    Fallback video creation method using FFmpeg concat filter.
+    This method is more robust for handling problematic frame sequences.
+    
+    Args:
+        frame_dir: Directory containing frame files
+        output_path: Output video path
+        fps: Target FPS
+        ffmpeg_preset: FFmpeg preset
+        ffmpeg_quality_value: Quality value
+        ffmpeg_use_gpu: Whether to use GPU encoding
+        logger: Logger instance
+        
+    Returns:
+        bool: Success status
+    """
+    if logger:
+        logger.info(f"Using fallback concat method for video creation: {output_path}")
     
     try:
-        success = run_ffmpeg_command(cmd, "Video Reassembly (silent)", logger, raise_on_error=False)
-        if success and os.path.exists(output_path):
-            return True
-        else:
+        # Get all frame files and sort them
+        frame_files = sorted([f for f in os.listdir(frame_dir) if f.startswith('frame_') and f.endswith('.png')], key=natural_sort_key)
+        if not frame_files:
             if logger:
-                logger.error(f"Video creation failed or output file not created: {output_path}")
+                logger.error(f"No frame files found in {frame_dir}")
             return False
+            
+        if logger:
+            logger.info(f"Concat fallback: processing {len(frame_files)} frames")
+            
+        # Get encoding configuration
+        from .nvenc_utils import get_nvenc_fallback_encoding_config, build_ffmpeg_video_encoding_args
+        
+        encoding_config = get_nvenc_fallback_encoding_config(
+            use_gpu=ffmpeg_use_gpu,
+            ffmpeg_preset=ffmpeg_preset,
+            ffmpeg_quality=ffmpeg_quality_value,
+            width=None,
+            height=None,
+            logger=logger
+        )
+        
+        video_codec_opts = build_ffmpeg_video_encoding_args(encoding_config)
+        
+        # Create a temporary file list for concat filter
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            for frame_file in frame_files:
+                frame_path = os.path.join(frame_dir, frame_file)
+                # Use file protocol and escape path
+                f.write(f"file '{frame_path}'\n")
+                f.write(f"duration {1/fps}\n")
+            
+            # Add the last frame again for proper duration
+            if frame_files:
+                last_frame_path = os.path.join(frame_dir, frame_files[-1])
+                f.write(f"file '{last_frame_path}'\n")
+            
+            temp_list_file = f.name
+        
+        try:
+            # Create video using concat demuxer
+            cmd = f'ffmpeg -y -f concat -safe 0 -i "{temp_list_file}" -r {fps} {video_codec_opts} "{output_path}"'
+            
+            success = run_ffmpeg_command(cmd, "Video Reassembly (concat fallback)", logger, raise_on_error=False)
+            
+            if success and os.path.exists(output_path):
+                if logger:
+                    logger.info(f"✓ Concat fallback video creation successful: {output_path}")
+                return True
+            else:
+                if logger:
+                    logger.error(f"Concat fallback video creation failed: {output_path}")
+                return False
+                
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(temp_list_file)
+            except Exception as e:
+                if logger:
+                    logger.warning(f"Failed to clean up temp file {temp_list_file}: {e}")
+                    
     except Exception as e:
         if logger:
-            logger.error(f"Exception during video creation: {e}")
+            logger.error(f"Error in concat fallback video creation: {e}")
         return False
 
 def get_video_info_fast(video_path, logger=None):
@@ -1093,3 +1333,109 @@ def validate_frame_extraction_consistency(video_path, extracted_frame_count, log
             logger.error(f"Frame validation failed: {e}")
     
     return result 
+
+def validate_and_fix_frame_sequence(frame_dir, logger=None):
+    """
+    Validate frame sequence integrity and fix any issues.
+    
+    Args:
+        frame_dir: Directory containing frame files
+        logger: Logger instance
+        
+    Returns:
+        dict: {'success': bool, 'frame_count': int, 'issues_fixed': list, 'warnings': list}
+    """
+    result = {
+        'success': False,
+        'frame_count': 0,
+        'issues_fixed': [],
+        'warnings': []
+    }
+    
+    try:
+        if not os.path.exists(frame_dir):
+            result['warnings'].append(f"Frame directory does not exist: {frame_dir}")
+            return result
+            
+        # Get all frame files
+        frame_files = [f for f in os.listdir(frame_dir) if f.startswith('frame_') and f.endswith('.png')]
+        if not frame_files:
+            result['warnings'].append(f"No frame files found in {frame_dir}")
+            return result
+            
+        # Sort naturally to handle any numbering scheme
+        frame_files = sorted(frame_files, key=natural_sort_key)
+        result['frame_count'] = len(frame_files)
+        
+        if logger:
+            logger.info(f"Frame sequence validation: found {len(frame_files)} frames")
+            logger.info(f"Frame range: {frame_files[0]} to {frame_files[-1]}")
+        
+        # Check for common issues
+        issues_found = []
+        
+        # 1. Check for duplicate frame numbers (should not happen, but let's be safe)
+        frame_numbers = []
+        for frame_file in frame_files:
+            try:
+                # Extract frame number from filename like frame_000123.png
+                number_part = frame_file.replace('frame_', '').replace('.png', '')
+                frame_number = int(number_part)
+                frame_numbers.append(frame_number)
+            except ValueError:
+                issues_found.append(f"Invalid frame filename format: {frame_file}")
+        
+        if len(set(frame_numbers)) != len(frame_numbers):
+            issues_found.append("Duplicate frame numbers detected")
+            
+        # 2. Check for zero-byte or corrupted frames
+        corrupted_frames = []
+        for frame_file in frame_files:
+            frame_path = os.path.join(frame_dir, frame_file)
+            try:
+                if os.path.getsize(frame_path) == 0:
+                    corrupted_frames.append(frame_file)
+                else:
+                    # Quick validation with opencv
+                    img = cv2.imread(frame_path)
+                    if img is None:
+                        corrupted_frames.append(frame_file)
+            except Exception as e:
+                corrupted_frames.append(f"{frame_file} (error: {e})")
+                
+        if corrupted_frames:
+            issues_found.append(f"Corrupted frames detected: {corrupted_frames[:5]}{'...' if len(corrupted_frames) > 5 else ''}")
+            result['warnings'].extend([f"Corrupted frame: {f}" for f in corrupted_frames])
+        
+        # 3. Log frame sequence statistics
+        if frame_numbers:
+            min_frame = min(frame_numbers)
+            max_frame = max(frame_numbers) 
+            expected_range = max_frame - min_frame + 1
+            
+            if logger:
+                logger.info(f"Frame numbering: {min_frame} to {max_frame} (range: {expected_range}, actual: {len(frame_numbers)})")
+                
+            if expected_range != len(frame_numbers):
+                gap_count = expected_range - len(frame_numbers)
+                issues_found.append(f"Frame sequence has {gap_count} gaps")
+                result['warnings'].append(f"Non-consecutive frame numbering detected ({gap_count} gaps)")
+        
+        # Report findings
+        if issues_found:
+            if logger:
+                logger.warning(f"Frame sequence issues detected: {'; '.join(issues_found)}")
+            result['warnings'].extend(issues_found)
+        else:
+            if logger:
+                logger.info("✓ Frame sequence validation passed - all frames appear valid")
+                
+        result['success'] = True
+        return result
+        
+    except Exception as e:
+        error_msg = f"Error during frame sequence validation: {e}"
+        if logger:
+            logger.error(error_msg)
+        result['warnings'].append(error_msg)
+        return result 

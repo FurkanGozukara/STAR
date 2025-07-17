@@ -49,9 +49,9 @@ def calculate_optimized_chunk_boundaries(
         return [{
             'chunk_idx': 0,
             'start_idx': 0,
-            'end_idx': total_frames,
+            'end_idx': total_frames,  # exclusive
             'process_start_idx': 0,
-            'process_end_idx': total_frames,
+            'process_end_idx': total_frames,  # exclusive
             'output_start_offset': 0,
             'output_end_offset': total_frames,
             'actual_output_frames': total_frames
@@ -76,13 +76,12 @@ def calculate_optimized_chunk_boundaries(
         for chunk_idx in range(standard_num_chunks - 1):
             start_idx = chunk_idx * max_chunk_len
             end_idx = min((chunk_idx + 1) * max_chunk_len, total_frames)
-            
             chunks.append({
                 'chunk_idx': chunk_idx,
                 'start_idx': start_idx,
-                'end_idx': end_idx,
+                'end_idx': end_idx,  # exclusive
                 'process_start_idx': start_idx,
-                'process_end_idx': end_idx,
+                'process_end_idx': end_idx,  # exclusive
                 'output_start_offset': 0,
                 'output_end_offset': end_idx - start_idx,
                 'actual_output_frames': end_idx - start_idx
@@ -91,12 +90,12 @@ def calculate_optimized_chunk_boundaries(
         # Optimize the last chunk
         last_chunk_idx = standard_num_chunks - 1
         original_start = last_chunk_start
-        original_end = total_frames
+        original_end = total_frames  # exclusive
         
         # Calculate how many frames to extend backwards
         frames_needed = max_chunk_len
         extended_start = max(0, total_frames - frames_needed)
-        extended_end = total_frames
+        extended_end = total_frames  # exclusive
         
         # Calculate which part of the processed result we need
         frames_to_skip = original_start - extended_start
@@ -105,13 +104,13 @@ def calculate_optimized_chunk_boundaries(
         
         chunks.append({
             'chunk_idx': last_chunk_idx,
-            'start_idx': original_start,  # Original position for frame naming
-            'end_idx': original_end,      # Original end for frame naming
-            'process_start_idx': extended_start,  # Extended start for processing
-            'process_end_idx': extended_end,      # Extended end for processing
-            'output_start_offset': output_start_offset,  # Which frames to keep from result
-            'output_end_offset': output_end_offset,      # End of frames to keep
-            'actual_output_frames': last_chunk_size      # Number of output frames
+            'start_idx': original_start,  # for naming
+            'end_idx': original_end,      # exclusive
+            'process_start_idx': extended_start,  # inclusive
+            'process_end_idx': extended_end,      # exclusive
+            'output_start_offset': output_start_offset,
+            'output_end_offset': output_end_offset,
+            'actual_output_frames': last_chunk_size
         })
         
         if logger:
@@ -130,13 +129,14 @@ def calculate_optimized_chunk_boundaries(
         for chunk_idx in range(standard_num_chunks):
             start_idx = chunk_idx * max_chunk_len
             end_idx = min((chunk_idx + 1) * max_chunk_len, total_frames)
-            
+            # Ensure end_idx never exceeds the last valid frame index
+            end_idx = min(end_idx, total_frames)
             chunks.append({
                 'chunk_idx': chunk_idx,
                 'start_idx': start_idx,
-                'end_idx': end_idx,
+                'end_idx': end_idx,  # exclusive
                 'process_start_idx': start_idx,
-                'process_end_idx': end_idx,
+                'process_end_idx': end_idx,  # exclusive
                 'output_start_offset': 0,
                 'output_end_offset': end_idx - start_idx,
                 'actual_output_frames': end_idx - start_idx
@@ -198,7 +198,15 @@ def get_output_frame_names(
     Returns:
         List of frame names corresponding to output frames
     """
-    return all_frame_names[chunk_info['start_idx']:chunk_info['end_idx']]
+    start_idx = chunk_info['start_idx']
+    end_idx = chunk_info['end_idx']
+    
+    # Ensure end_idx never exceeds the length of all_frame_names
+    # This prevents IndexError when end_idx is set to total_frames
+    max_valid_index = len(all_frame_names)
+    end_idx = min(end_idx, max_valid_index)
+    
+    return all_frame_names[start_idx:end_idx]
 
 
 def log_chunk_optimization_summary(

@@ -1811,7 +1811,8 @@ progress =gr .Progress (track_tqdm =True )
 
         else :
             if os.path.exists(silent_upscaled_video_path):
-                 util_run_ffmpeg_command (f'ffmpeg -y -i "{silent_upscaled_video_path}" -i "{audio_source_video}" -c:v copy -c:a copy -map 0:v:0 -map 1:a:0? -shortest "{final_output_path}"',"Final Video and Audio Merge",logger =logger )
+                 # Remove -shortest flag to preserve full video length, use -avoid_negative_ts for robust merging
+                 util_run_ffmpeg_command (f'ffmpeg -y -i "{silent_upscaled_video_path}" -i "{audio_source_video}" -c:v copy -c:a copy -map 0:v:0 -map 1:a:0? -avoid_negative_ts make_zero "{final_output_path}"',"Final Video and Audio Merge",logger =logger )
             else:
                 logger.error(f"Silent upscaled video path {silent_upscaled_video_path} not found for audio merge.")
                 raise gr.Error("Silent video not found for audio merge.")

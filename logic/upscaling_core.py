@@ -1924,7 +1924,8 @@ def run_upscale (
             if os .path .exists (silent_upscaled_video_path ):
                 # Use a temporary file for the merge to avoid FFmpeg "same input/output file" error
                 temp_merged_video = os .path .join (temp_dir ,"temp_merged_with_audio.mp4")
-                util_run_ffmpeg_command (f'ffmpeg -y -i "{silent_upscaled_video_path}" -i "{audio_source_video}" -c:v copy -c:a copy -map 0:v:0 -map 1:a:0? -shortest "{temp_merged_video}"',"Final Video and Audio Merge",logger =logger )
+                # Remove -shortest flag to preserve full video length, use -avoid_negative_ts for robust merging
+                util_run_ffmpeg_command (f'ffmpeg -y -i "{silent_upscaled_video_path}" -i "{audio_source_video}" -c:v copy -c:a copy -map 0:v:0 -map 1:a:0? -avoid_negative_ts make_zero "{temp_merged_video}"',"Final Video and Audio Merge",logger =logger )
                 
                 # Move the temporary merged file to the final output path
                 if os .path .exists (temp_merged_video ):
