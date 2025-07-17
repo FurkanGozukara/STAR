@@ -2,6 +2,8 @@
 
 import gradio as gr 
 import os 
+# Fix for Hugging Face model download errors with HF_TRANSFER
+os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
 import platform 
 import sys 
 import torch 
@@ -224,6 +226,7 @@ input[type='range'] { accent-color: black; }
 
 def load_initial_preset():
     """Loads the last used preset, or the 'Default' preset, or 'Image_Upscaler_Fast_Low_VRAM' preset, or returns a fresh config."""
+    global LOADED_PRESET_NAME
     base_config = create_app_config(base_path, args.outputs_folder, star_cfg)
     
     # Always ensure GPU is set to 0 as default
@@ -240,6 +243,9 @@ def load_initial_preset():
     
     if config_dict:
         logger.info(f"Successfully loaded initial preset '{preset_to_load}'.")
+        # Store the successfully loaded preset name globally for UI synchronization
+        LOADED_PRESET_NAME = preset_to_load
+        
         # Robustly update the base_config with loaded values
         for section_name, section_data in config_dict.items():
             if hasattr(base_config, section_name):
@@ -266,6 +272,11 @@ def load_initial_preset():
                             setattr(section_obj, key, value)
         return base_config
     else:
+        # Clear the last used preset if it failed to load to prevent endless retry loops
+        if preset_to_load != "Default":
+            logger.warning(f"Clearing last used preset '{preset_to_load}' because it failed to load.")
+            preset_handler.save_last_used_preset_name("")  # Clear the last used preset
+        
         # Try fallback to "Image_Upscaler_Fast_Low_VRAM" if last used/Default preset failed
         logger.warning(f"Could not load initial preset '{preset_to_load}'. Reason: {message}. Trying fallback preset 'Image_Upscaler_Fast_Low_VRAM'.")
         
@@ -273,6 +284,9 @@ def load_initial_preset():
         
         if fallback_config_dict:
             logger.info("Successfully loaded fallback preset 'Image_Upscaler_Fast_Low_VRAM'.")
+            # Store the successfully loaded preset name globally for UI synchronization
+            LOADED_PRESET_NAME = "Image_Upscaler_Fast_Low_VRAM"
+            
             # Robustly update the base_config with loaded fallback values
             for section_name, section_data in fallback_config_dict.items():
                 if hasattr(base_config, section_name):
@@ -299,8 +313,55 @@ def load_initial_preset():
                                 setattr(section_obj, key, value)
             return base_config
         else:
-            logger.warning(f"Could not load fallback preset 'Image_Upscaler_Fast_Low_VRAM'. Reason: {fallback_message}. Starting with application defaults.")
+            logger.warning(f"Could not load fallback preset 'Image_Upscaler_Fast_Low_VRAM'. Reason: {fallback_message}.")
+            
+            # Try to load any available preset as a last resort
+            available_presets = preset_handler.get_preset_list()
+            filtered_presets = [p for p in available_presets if p not in ["last_preset", preset_to_load, "Image_Upscaler_Fast_Low_VRAM"]]
+            
+            if filtered_presets:
+                first_available = filtered_presets[0]
+                logger.info(f"Trying to load first available preset: '{first_available}'")
+                last_resort_config, last_resort_message = preset_handler.load_preset(first_available)
+                
+                if last_resort_config:
+                    logger.info(f"Successfully loaded last resort preset '{first_available}'.")
+                    LOADED_PRESET_NAME = first_available
+                    
+                    # Update base_config with last resort preset values
+                    for section_name, section_data in last_resort_config.items():
+                        if hasattr(base_config, section_name):
+                            section_obj = getattr(base_config, section_name)
+                            for key, value in section_data.items():
+                                if hasattr(section_obj, key):
+                                    if section_name == 'gpu' and key == 'device':
+                                        available_gpus = util_get_available_gpus()
+                                        if available_gpus:
+                                            try:
+                                                gpu_num = int(value) if value != "Auto" else 0
+                                                if 0 <= gpu_num < len(available_gpus):
+                                                    setattr(section_obj, key, str(gpu_num))
+                                                else:
+                                                    logger.warning(f"GPU index {gpu_num} out of range. Defaulting to GPU 0.")
+                                                    setattr(section_obj, key, "0")
+                                            except (ValueError, TypeError):
+                                                logger.warning(f"Invalid GPU device value '{value}'. Defaulting to GPU 0.")
+                                                setattr(section_obj, key, "0")
+                                        else:
+                                            setattr(section_obj, key, "0")
+                                    else:
+                                        setattr(section_obj, key, value)
+                    return base_config
+                else:
+                    logger.warning(f"Last resort preset '{first_available}' also failed to load: {last_resort_message}")
+            
+            logger.warning("No presets could be loaded. Starting with application defaults.")
+            # Store that no preset was loaded
+            LOADED_PRESET_NAME = None
             return base_config
+
+# Global variable to track which preset was actually loaded successfully
+LOADED_PRESET_NAME = None
 
 # Load initial settings from presets or defaults
 INITIAL_APP_CONFIG = load_initial_preset()
@@ -311,6 +372,19 @@ def get_filtered_preset_list():
     filtered_presets = [preset for preset in all_presets if preset != "last_preset"]
     logger.debug(f"All presets: {all_presets}, Filtered presets: {filtered_presets}")
     return filtered_presets
+
+def get_initial_preset_name():
+    """Get the initial preset name that was actually loaded during startup"""
+    if LOADED_PRESET_NAME:
+        logger.info(f"Initial preset for dropdown: '{LOADED_PRESET_NAME}' (actually loaded)")
+        return LOADED_PRESET_NAME
+    else:
+        logger.info("No preset was successfully loaded, dropdown will show default")
+        # Return None if no preset was loaded, dropdown will handle this gracefully
+        return None
+
+# Store the initially loaded preset name for proper UI synchronization
+INITIAL_PRESET_NAME = get_initial_preset_name()
 
 def wrapper_split_video_only_for_gradio (
 input_video_val ,scene_split_mode_radio_val ,scene_min_scene_len_num_val ,scene_drop_short_check_val ,scene_merge_last_check_val ,
@@ -454,14 +528,21 @@ The total combined prompt length is limited to 77 tokens."""
                             preset_dropdown = gr.Dropdown(
                                 label="Select or Create Preset",
                                 choices=get_filtered_preset_list(),
-                                value=preset_handler.get_last_used_preset_name() or "Default",
+                                value=INITIAL_PRESET_NAME or "Default",
                                 allow_custom_value=True,
                                 scale=3,
                                 info="Select a preset to auto-load, or type a new name and click Save."
                             )
                             refresh_presets_btn = gr.Button("🔄", scale=1, variant="secondary")
                             save_preset_btn = gr.Button("Save", variant="primary", scale=1)
-                        preset_status = gr.Textbox(label="Preset Status", show_label=False, interactive=False, lines=1, placeholder="...")
+                        preset_status = gr.Textbox(
+                            label="Preset Status", 
+                            show_label=False, 
+                            interactive=False, 
+                            lines=1, 
+                            value=f"✅ Loaded on startup: {LOADED_PRESET_NAME}" if LOADED_PRESET_NAME else "⚠️ No preset loaded on startup - using defaults",
+                            placeholder="..."
+                        )
 
                     with gr .Accordion ("Last Processed Chunk",open =True ):
                         last_chunk_video =gr .Video (
@@ -596,10 +677,21 @@ The total combined prompt length is limited to 77 tokens."""
                 with gr .Column (scale =1 ):
                     with gr .Group ():
                         gr .Markdown ("### Upscaler Selection")
+                        # Convert internal upscaler type to display value
+                        def get_upscaler_display_value(internal_value):
+                            reverse_map = {
+                                "star": "Use STAR Model Upscaler",
+                                "image_upscaler": "Use Image Based Upscalers", 
+                                "seedvr2": "Use SeedVR2 Video Upscaler"
+                            }
+                            return reverse_map.get(internal_value, "Use Image Based Upscalers")
+                        
+                        initial_upscaler_display = get_upscaler_display_value(INITIAL_APP_CONFIG.upscaler_type.upscaler_type)
+                        
                         upscaler_type_radio =gr .Radio (
                         label ="Choose Your Upscaler Type",
                         choices =["Use STAR Model Upscaler", "Use Image Based Upscalers", "Use SeedVR2 Video Upscaler"],
-                        value ="Use Image Based Upscalers",  # Default selection as requested
+                        value =initial_upscaler_display,
                         info ="""Select the upscaling method:
 • STAR Model: AI temporal upscaler with prompts and advanced settings
 • Image Based: Fast deterministic spatial upscaling (RealESRGAN, etc.)  
@@ -4893,12 +4985,17 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         return gr.update(choices=updated_choices)
     
     # Cache the last loaded preset to prevent unnecessary reloads
+    # Initialize as empty so the first dropdown interaction will load the preset properly
     last_loaded_preset = [None]
+    
+    # This ensures that even though the preset was loaded during startup,
+    # the dropdown change handler will fire when the UI is interacted with,
+    # properly syncing all UI components with the loaded preset values
     
     def safe_load_preset_wrapper(preset_name):
         # Skip if this is the same preset we just loaded
         if preset_name == last_loaded_preset[0]:
-            logger.debug(f"Skipping reload of already loaded preset: '{preset_name}'")
+            logger.debug(f"Skipping reload of already loaded preset: '{preset_name}' (cache match)")
             return [gr.update()] + [gr.update() for _ in preset_components] + [gr.update() for _ in range(20)]
         
         last_loaded_preset[0] = preset_name
