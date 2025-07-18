@@ -5010,10 +5010,169 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
 
         if preset_name ==last_loaded_preset [0 ]:
             logger .debug (f"Skipping reload of already loaded preset: '{preset_name}' (cache match)")
-            return [gr .update ()]+[gr .update ()for _ in preset_components ]+[gr .update ()for _ in range (APP_CONFIG .preset_system .conditional_updates_count )]
+            return [gr .update ()]+[gr .update ()for _ in preset_components ]+[gr .update ()for _ in range (APP_CONFIG .preset_system .conditional_updates_count )]+[gr .update (), gr .update ()]
 
         last_loaded_preset [0 ]=preset_name 
-        return load_preset_wrapper (preset_name )
+        preset_results = load_preset_wrapper (preset_name )
+        
+        # Get the new target resolution values from the preset to update resolution displays
+        if preset_name and preset_name.strip():
+            config_dict, message = preset_handler.load_preset(preset_name.strip())
+            if config_dict:
+                # Extract target resolution values from the loaded preset
+                resolution_config = config_dict.get('resolution', {})
+                new_target_h = resolution_config.get('target_h', 1080)
+                new_target_w = resolution_config.get('target_w', 1920)
+                new_enable_auto_aspect_resolution = resolution_config.get('enable_auto_aspect_resolution', False)
+                new_enable_target_res = resolution_config.get('enable_target_res', False)
+                new_target_res_mode = resolution_config.get('target_res_mode', 'Ratio Upscale')
+                new_upscale_factor = resolution_config.get('upscale_factor', 4.0)
+                
+                # Extract upscaler type if available
+                upscaler_config = config_dict.get('upscaler_type', {})
+                new_upscaler_type = upscaler_config.get('upscaler_type', 'star')
+                
+                # For now, we'll return empty updates for the resolution displays
+                # The resolution components will be updated by the preset loading, and their change events should trigger
+                return preset_results + [gr .update (), gr .update ()]
+        
+        return preset_results + [gr .update (), gr .update ()]
+
+    def load_preset_with_resolution_update (preset_name ,video_path ,upscaler_type ,enable_target_res ,target_h ,target_w ,target_res_mode ,upscale_factor ,image_upscaler_model ,enable_auto_aspect_resolution ,current_status_text ):
+        """
+        Load preset and immediately update resolution displays with the new values.
+        """
+        # First load the preset normally
+        preset_results = load_preset_wrapper (preset_name )
+        
+        # Get the new target resolution values from the preset
+        if preset_name and preset_name.strip():
+            config_dict, message = preset_handler.load_preset(preset_name.strip())
+            if config_dict:
+                # Extract target resolution values from the loaded preset
+                resolution_config = config_dict.get('resolution', {})
+                new_target_h = resolution_config.get('target_h', target_h)
+                new_target_w = resolution_config.get('target_w', target_w)
+                new_enable_auto_aspect_resolution = resolution_config.get('enable_auto_aspect_resolution', enable_auto_aspect_resolution)
+                new_enable_target_res = resolution_config.get('enable_target_res', enable_target_res)
+                new_target_res_mode = resolution_config.get('target_res_mode', target_res_mode)
+                new_upscale_factor = resolution_config.get('upscale_factor', upscale_factor)
+                
+                # Extract upscaler type if available and convert to UI display value
+                upscaler_config = config_dict.get('upscaler_type', {})
+                new_upscaler_type_internal = upscaler_config.get('upscaler_type', upscaler_type)
+                
+                # Convert internal upscaler type to UI display value
+                def reverse_upscaler_type_mapping(internal_value):
+                    if not internal_value:
+                        return "Use Image Based Upscalers"
+                    reverse_map = {
+                        "star": "Use STAR Model Upscaler",
+                        "image_upscaler": "Use Image Based Upscalers",
+                        "seedvr2": "Use SeedVR2 Video Upscaler"
+                    }
+                    return reverse_map.get(internal_value, "Use Image Based Upscalers")
+                
+                new_upscaler_type = reverse_upscaler_type_mapping(new_upscaler_type_internal)
+                
+                # Extract image upscaler model if available
+                image_upscaler_config = config_dict.get('image_upscaler', {})
+                new_image_upscaler_model = image_upscaler_config.get('model', image_upscaler_model)
+                
+                # Calculate new auto-resolution if enabled
+                if new_enable_auto_aspect_resolution and video_path:
+                    new_target_h, new_target_w, auto_status = calculate_auto_resolution(
+                        video_path, new_enable_auto_aspect_resolution, new_target_h, new_target_w
+                    )
+                else:
+                    auto_status = "Auto-resolution disabled" if not new_enable_auto_aspect_resolution else "No video loaded"
+
+                # Update both resolution displays using the NEW values from the preset
+                updated_status, detailed_preview = update_both_resolution_displays(
+                    video_path=video_path,
+                    upscaler_type=new_upscaler_type,
+                    enable_target_res=new_enable_target_res,
+                    target_h=new_target_h,
+                    target_w=new_target_w,
+                    target_res_mode=new_target_res_mode,
+                    upscale_factor=new_upscale_factor,
+                    image_upscaler_model=new_image_upscaler_model,
+                    enable_auto_aspect_resolution=new_enable_auto_aspect_resolution,
+                    current_status_text=current_status_text
+                )
+
+                # Return all the preset results plus the additional resolution display updates
+                return preset_results + [gr.update(value=updated_status), gr.update(value=detailed_preview)]
+        
+        # Fallback: return preset results with empty updates for resolution displays
+        return preset_results + [gr .update (), gr .update ()]
+
+    def enhanced_load_preset_wrapper (preset_name ,video_path ,upscaler_type ,enable_target_res ,target_h ,target_w ,target_res_mode ,upscale_factor ,image_upscaler_model ,enable_auto_aspect_resolution ,current_status_text ):
+        """
+        Enhanced preset loading that also updates resolution displays.
+        This ensures the log panel shows updated target resolution when preset changes.
+        """
+        # First load the preset normally
+        preset_results = load_preset_wrapper (preset_name )
+        
+        # Get the new target resolution values from the preset
+        # We need to load the preset data to get the actual values
+        if preset_name and preset_name.strip():
+            config_dict, message = preset_handler.load_preset(preset_name.strip())
+            if config_dict:
+                # Extract target resolution values from the loaded preset
+                resolution_config = config_dict.get('resolution', {})
+                new_target_h = resolution_config.get('target_h', target_h)
+                new_target_w = resolution_config.get('target_w', target_w)
+                new_enable_auto_aspect_resolution = resolution_config.get('enable_auto_aspect_resolution', enable_auto_aspect_resolution)
+                new_enable_target_res = resolution_config.get('enable_target_res', enable_target_res)
+                new_target_res_mode = resolution_config.get('target_res_mode', target_res_mode)
+                new_upscale_factor = resolution_config.get('upscale_factor', upscale_factor)
+                
+                # Extract upscaler type if available
+                upscaler_config = config_dict.get('upscaler_type', {})
+                new_upscaler_type = upscaler_config.get('upscaler_type', upscaler_type)
+            else:
+                new_target_h, new_target_w = target_h, target_w
+                new_enable_auto_aspect_resolution = enable_auto_aspect_resolution
+                new_enable_target_res = enable_target_res
+                new_target_res_mode = target_res_mode
+                new_upscale_factor = upscale_factor
+                new_upscaler_type = upscaler_type
+                new_image_upscaler_model = image_upscaler_model
+        else:
+            new_target_h, new_target_w = target_h, target_w
+            new_enable_auto_aspect_resolution = enable_auto_aspect_resolution
+            new_enable_target_res = enable_target_res
+            new_target_res_mode = target_res_mode
+            new_upscale_factor = upscale_factor
+            new_upscaler_type = upscaler_type
+            new_image_upscaler_model = image_upscaler_model
+        
+        # Calculate new auto-resolution if enabled
+        if new_enable_auto_aspect_resolution and video_path:
+            new_target_h, new_target_w, auto_status = calculate_auto_resolution(
+                video_path, new_enable_auto_aspect_resolution, new_target_h, new_target_w
+            )
+        else:
+            auto_status = "Auto-resolution disabled" if not new_enable_auto_aspect_resolution else "No video loaded"
+
+        # Update both resolution displays using the NEW values from the preset
+        updated_status, detailed_preview = update_both_resolution_displays(
+            video_path=video_path,
+            upscaler_type=new_upscaler_type,
+            enable_target_res=new_enable_target_res,
+            target_h=new_target_h,
+            target_w=new_target_w,
+            target_res_mode=new_target_res_mode,
+            upscale_factor=new_upscale_factor,
+            image_upscaler_model=image_upscaler_model,
+            enable_auto_aspect_resolution=new_enable_auto_aspect_resolution,
+            current_status_text=current_status_text
+        )
+
+        # Return all the preset results plus the additional resolution display updates
+        return preset_results + [gr.update(value=updated_status), gr.update(value=detailed_preview), gr.update(value=auto_status)]
 
     save_preset_btn .click (
     fn =save_preset_wrapper ,
@@ -5022,8 +5181,20 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
     )
 
     preset_dropdown .change (
-    fn =safe_load_preset_wrapper ,
-    inputs =[preset_dropdown ],
+    fn =load_preset_with_resolution_update ,
+    inputs =[
+    preset_dropdown ,
+    input_video ,
+    upscaler_type_radio ,
+    enable_target_res_check ,
+    target_h_num ,
+    target_w_num ,
+    target_res_mode_radio ,
+    upscale_factor_slider ,
+    image_upscaler_model_dropdown ,
+    enable_auto_aspect_resolution_check ,
+    status_textbox 
+    ],
     outputs =[preset_status ]+preset_components +[
 
     image_upscaler_model_dropdown ,image_upscaler_batch_size_slider ,
@@ -5040,9 +5211,15 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
     scene_split_mode_radio ,scene_min_scene_len_num ,scene_threshold_num ,
     scene_drop_short_check ,scene_merge_last_check ,
 
-    seed_num 
+    seed_num ,
+
+    # Additional outputs for resolution display updates
+    status_textbox ,
+    output_resolution_preview 
     ]
     )
+
+
 
     refresh_presets_btn .click (
     fn =refresh_presets_list ,
