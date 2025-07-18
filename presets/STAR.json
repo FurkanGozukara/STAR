@@ -138,7 +138,7 @@
     "standalone_face_restoration": {
         "fidelity_weight": 0.7,
         "enable_colorization": false,
-        "batch_size": 1,
+        "batch_size": 4,
         "save_frames": false,
         "create_comparison": true,
         "preserve_audio": true,
