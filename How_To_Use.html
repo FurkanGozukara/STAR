@@ -930,6 +930,20 @@
                                     <div class="alert-info">
                                         <strong>Auto-Detection:</strong> The app automatically detects whether your input is a video file or frames folder and processes accordingly.
                                     </div>
+                                    
+                                    <div class="alert-success">
+                                        <i class="fas fa-check-circle me-2"></i>
+                                        <strong>Frame Folder Auto-Detection:</strong> Enter a folder path containing image sequences, and the app will automatically convert it to a video for processing. Supported in both single and batch modes.
+                                    </div>
+                                    
+                                    <h5>Input Validation</h5>
+                                    <p>The app provides real-time validation and information about your input:</p>
+                                    <ul>
+                                        <li><strong>Video Files:</strong> Shows duration, resolution, and format details</li>
+                                        <li><strong>Frame Folders:</strong> Displays frame count, supported formats, and sequence info</li>
+                                        <li><strong>Auto-Detection:</strong> Automatically identifies input type and validates paths</li>
+                                        <li><strong>Error Reporting:</strong> Clear messages for invalid or missing files</li>
+                                    </ul>
                                 </div>
                             </div>
                             
@@ -982,6 +996,11 @@
                                 <div class="col-md-4">
                                     <h5><i class="fas fa-stop"></i> Cancel Processing</h5>
                                     <p>Safely stops processing at the next checkpoint. Partial results may be saved.</p>
+                                    
+                                    <div class="alert-info">
+                                        <i class="fas fa-info-circle me-2"></i>
+                                        <strong>Partial Results on Cancel:</strong> If you cancel processing, the app will attempt to save a partial video with <code>_partial_cancelled</code> in the filename. Check your output folder for these files to recover work-in-progress results.
+                                    </div>
                                 </div>
                                 
                                 <div class="col-md-4">
@@ -1202,6 +1221,48 @@
                                 </div>
                             </div>
                         </div>
+                        
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-microchip"></i></span>
+                                GPU Selection & Hardware Configuration
+                            </h3>
+                            
+                            <div class="row">
+                                <div class="col-lg-6">
+                                    <h5>GPU Selection</h5>
+                                    <p>Choose which GPU to use for processing. The app automatically detects available CUDA GPUs and provides a dropdown selection.</p>
+                                    
+                                    <div class="alert-info">
+                                        <i class="fas fa-info-circle me-2"></i>
+                                        <strong>GPU Selection & Fallback:</strong> If no CUDA GPU is detected, the app will use CPU mode automatically. For best performance, ensure your GPU drivers and CUDA are properly installed.
+                                    </div>
+                                    
+                                    <h5>Hardware Requirements</h5>
+                                    <ul>
+                                        <li><strong>GPU:</strong> NVIDIA GPU with CUDA support recommended</li>
+                                        <li><strong>VRAM:</strong> 8GB+ for optimal performance</li>
+                                        <li><strong>RAM:</strong> 16GB+ system memory</li>
+                                        <li><strong>Storage:</strong> Fast SSD for temporary files</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="col-lg-6">
+                                    <h5>Performance Optimization</h5>
+                                    <ul>
+                                        <li><strong>Multi-GPU:</strong> Select the most powerful GPU available</li>
+                                        <li><strong>VRAM Monitoring:</strong> Watch memory usage during processing</li>
+                                        <li><strong>Batch Size:</strong> Adjust based on available VRAM</li>
+                                        <li><strong>Chunk Size:</strong> Reduce for lower VRAM systems</li>
+                                    </ul>
+                                    
+                                    <div class="alert-warning">
+                                        <i class="fas fa-exclamation-triangle me-2"></i>
+                                        <strong>VRAM Management:</strong> If you encounter out-of-memory errors, reduce the Max Frames per Chunk setting or batch size. The app will automatically fall back to CPU mode if GPU memory is insufficient.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </section>
 
                     <!-- STAR Upscaler Section -->
@@ -1386,6 +1447,20 @@
                                     <div class="alert-warning">
                                         <strong>Note:</strong> Target resolution settings work with image upscalers and adapt to model scale factors.
                                     </div>
+                                    
+                                    <h5>Model Preview & Testing</h5>
+                                    <p>Use the preview buttons to test upscaler models on a sample frame before full processing:</p>
+                                    <ul>
+                                        <li><strong>Preview Current Model:</strong> Test selected model on first frame</li>
+                                        <li><strong>Test All Models:</strong> Compare all available models</li>
+                                        <li><strong>Before/After Slider:</strong> Interactive comparison view</li>
+                                        <li><strong>Model Details:</strong> Architecture and performance info</li>
+                                    </ul>
+                                    
+                                    <div class="alert-success">
+                                        <i class="fas fa-check-circle me-2"></i>
+                                        <strong>Model Preview & Info:</strong> Preview models and see architecture/scale details before processing. This helps you choose the best model for your content.
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1520,6 +1595,11 @@
                                         <li><strong>Random Seed:</strong> Generate new seed each time</li>
                                         <li><strong>Seed -1:</strong> Auto-generate random seed</li>
                                     </ul>
+                                    
+                                    <div class="alert-info">
+                                        <i class="fas fa-info-circle me-2"></i>
+                                        <strong>Comprehensive Metadata:</strong> All settings and seeds are saved for reproducibility in metadata files. This ensures you can recreate exact results or troubleshoot processing issues.
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1607,6 +1687,11 @@
                                                 <strong>2. Auto-Caption:</strong> CogVLM2 generated descriptions<br>
                                                 <strong>3. User Prompt:</strong> Main tab prompt (fallback)
                                             </div>
+                                            
+                                            <div class="alert-success">
+                                                <i class="fas fa-lightbulb me-2"></i>
+                                                <strong>Best Practice:</strong> Create prompt files for videos requiring specific descriptions to ensure best quality. The app automatically uses the most specific prompt available for each video.
+                                            </div>
                                         </li>
                                         
                                         <li>
@@ -1644,6 +1729,20 @@
                                         <li>Uses global FPS and encoding settings</li>
                                         <li>Preserves folder names</li>
                                     </ul>
+                                    
+                                    <h5>Direct Image Upscaling</h5>
+                                    <p>Process individual image files directly with image upscalers:</p>
+                                    <ul>
+                                        <li>Supports JPG, PNG, BMP, TIFF formats</li>
+                                        <li>Uses selected image upscaler model</li>
+                                        <li>Ideal for batch upscaling photos/artwork</li>
+                                        <li>No video conversion required</li>
+                                    </ul>
+                                    
+                                    <div class="alert-success">
+                                        <i class="fas fa-check-circle me-2"></i>
+                                        <strong>Direct Image Upscaling:</strong> Enable this option to process individual image files (JPG, PNG, etc.) directly with the selected image upscaler. This is ideal for batch upscaling photos or artwork.
+                                    </div>
                                     
                                     <div class="alert-warning">
                                         <strong>Tip:</strong> Create prompt files for videos requiring specific descriptions to ensure best quality.
@@ -2117,6 +2216,11 @@
                             <div class="alert-info">
                                 <strong>Smart Loading:</strong> Presets automatically update UI controls and enable/disable dependent settings for a seamless experience.
                             </div>
+                            
+                            <div class="alert-warning">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                <strong>Preset Recovery:</strong> If a preset fails to load (e.g., due to corruption), the app will automatically fall back to a default or another available preset. Check the log for details and consider recreating problematic presets.
+                            </div>
                         </div>
                         
                         <div class="row">
@@ -2311,6 +2415,11 @@
                                     
                                     <div class="alert-info">
                                         <strong>Debug Tip:</strong> Check the application logs for detailed error messages and stack traces.
+                                    </div>
+                                    
+                                    <div class="alert-info">
+                                        <i class="fas fa-info-circle me-2"></i>
+                                        <strong>Error Logs:</strong> Check the log panel in the app for detailed error messages. For persistent issues, review the log for troubleshooting tips and error patterns.
                                     </div>
                                 </div>
                             </div>
@@ -2533,6 +2642,11 @@
                                         <li>Use "Skip Existing" for resuming batch jobs</li>
                                         <li>Save chunks for manual assembly if needed</li>
                                     </ul>
+                                    
+                                    <div class="alert-info">
+                                        <i class="fas fa-info-circle me-2"></i>
+                                        <strong>Advanced Cancellation System:</strong> The app includes comprehensive cancellation management throughout the pipeline with granular checkpoints, automatic resource cleanup, and partial result preservation.
+                                    </div>
                                 </div>
                             </div>
                             
@@ -2714,6 +2828,11 @@
                                     
                                     <div class="alert-info">
                                         <strong>Minimum Ratio:</strong> Last chunk must be at least 50% of the target chunk size for optimal results.
+                                    </div>
+                                    
+                                    <div class="alert-success">
+                                        <i class="fas fa-check-circle me-2"></i>
+                                        <strong>Always Enabled:</strong> Chunk optimization is automatically enabled and cannot be disabled. This ensures consistent processing quality across all videos.
                                     </div>
                                 </div>
                             </div>
