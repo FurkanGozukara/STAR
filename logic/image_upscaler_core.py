@@ -687,10 +687,12 @@ def process_single_video_image_upscaler(
         
         # Create video from frames with proper error handling
         try:
-            video_success = util_create_video_from_frames(
+            # Use duration-preserved video creation to ensure exact timing match with input
+            from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
+            video_success = create_video_from_frames_with_duration_preservation(
                 output_frames_dir,
                 output_video_path,
-                input_fps,
+                input_video_path,
                 ffmpeg_preset,
                 ffmpeg_quality_value,
                 ffmpeg_use_gpu,
@@ -851,10 +853,12 @@ def process_single_scene_image_upscaler(
         # Create scene output video
         scene_output_path = os.path.join(temp_dir, f"{scene_name}_upscaled.mp4")
         
-        util_create_video_from_frames(
+        # Use duration-preserved video creation for scene
+        from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
+        create_video_from_frames_with_duration_preservation(
             scene_output_frames_dir,
             scene_output_path,
-            input_fps,
+            scene_video_path,
             ffmpeg_preset,
             ffmpeg_quality_value,
             ffmpeg_use_gpu,

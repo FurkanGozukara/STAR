@@ -469,6 +469,226 @@ def decrease_fps_with_multiplier(input_video_path, output_video_path, multiplier
         fps_multiplier=multiplier
     )
 
+def create_video_from_frames_with_duration_preservation(frame_dir, output_path, input_video_path, ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=None):
+    """
+    Create video from frames while preserving the exact duration of the input video.
+    This ensures no duration drift due to FPS precision issues.
+    
+    Args:
+        frame_dir: Directory containing frame files
+        output_path: Path for output video
+        input_video_path: Path to original input video (for duration reference)
+        ffmpeg_preset: FFmpeg encoding preset
+        ffmpeg_quality_value: Quality value for encoding
+        ffmpeg_use_gpu: Whether to use GPU encoding
+        logger: Logger instance
+    
+    Returns:
+        bool: Success status
+    """
+    if logger:
+        logger.info(f"Creating duration-preserved video from frames in '{frame_dir}' to '{output_path}'")
+    
+    # Get input video duration and frame count
+    input_video_info = get_video_info_fast(input_video_path, logger)
+    if not input_video_info:
+        if logger:
+            logger.error(f"Could not get input video info from {input_video_path}")
+        return False
+    
+    input_duration = input_video_info.get('duration', 0.0)
+    input_frames = input_video_info.get('frames', 0)
+    
+    if input_duration <= 0 or input_frames <= 0:
+        if logger:
+            logger.error(f"Invalid input video duration ({input_duration}s) or frame count ({input_frames})")
+        return False
+    
+    # Validate frame sequence
+    validation_result = validate_and_fix_frame_sequence(frame_dir, logger)
+    if not validation_result['success']:
+        if logger:
+            logger.error("Frame sequence validation failed")
+        return False
+        
+    extracted_frame_count = validation_result['frame_count']
+    if extracted_frame_count == 0:
+        if logger:
+            logger.error("No valid frames found for video creation")
+        return False
+    
+    # Check if frame counts match
+    if extracted_frame_count != input_frames:
+        if logger:
+            logger.warning(f"Frame count mismatch: input video has {input_frames} frames, extracted {extracted_frame_count} frames")
+            logger.warning("This may cause duration mismatch. Using extracted frame count for duration calculation.")
+        # Use extracted frame count for duration calculation
+        frame_count_for_duration = extracted_frame_count
+    else:
+        frame_count_for_duration = input_frames
+    
+    # Calculate the exact FPS needed to preserve duration
+    exact_fps = frame_count_for_duration / input_duration
+    
+    if logger:
+        logger.info(f"Duration preservation: {frame_count_for_duration} frames / {input_duration:.6f}s = {exact_fps:.6f} FPS")
+        logger.info(f"Target duration: {input_duration:.6f}s (from input video)")
+    
+    # Get all frame files and sort them naturally
+    try:
+        frame_files = sorted([f for f in os.listdir(frame_dir) if f.startswith('frame_') and f.endswith('.png')], key=natural_sort_key)
+        if not frame_files:
+            if logger:
+                logger.error(f"No frame files found in {frame_dir}")
+            return False
+            
+        if logger:
+            logger.info(f"Found {len(frame_files)} frames: {frame_files[0]} to {frame_files[-1]}")
+            
+    except Exception as e:
+        if logger:
+            logger.error(f"Error reading frame directory {frame_dir}: {e}")
+        return False
+
+    # Detect frame resolution for NVENC compatibility
+    frame_width, frame_height = None, None
+    if ffmpeg_use_gpu and frame_files:
+        first_frame_path = os.path.join(frame_dir, frame_files[0])
+        try:
+            frame = cv2.imread(first_frame_path)
+            if frame is not None:
+                frame_height, frame_width = frame.shape[:2]
+                if logger:
+                    logger.info(f"Detected frame resolution: {frame_width}x{frame_height}")
+        except Exception as e:
+            if logger:
+                logger.warning(f"Could not detect frame resolution: {e}")
+
+    # Get encoding configuration
+    from .nvenc_utils import get_nvenc_fallback_encoding_config, build_ffmpeg_video_encoding_args
+    
+    encoding_config = get_nvenc_fallback_encoding_config(
+        use_gpu=ffmpeg_use_gpu,
+        ffmpeg_preset=ffmpeg_preset,
+        ffmpeg_quality=ffmpeg_quality_value,
+        width=frame_width,
+        height=frame_height,
+        logger=logger
+    )
+    
+    video_codec_opts = build_ffmpeg_video_encoding_args(encoding_config)
+    
+    if logger:
+        codec_info = f"Using {encoding_config['codec']} with preset {encoding_config['preset']} and {encoding_config['quality_param'].upper()} {encoding_config['quality_value']}."
+        logger.info(codec_info)
+
+    # Create temporary directory with sequential frame files
+    import tempfile
+    import shutil
+    
+    with tempfile.TemporaryDirectory(prefix="video_creation_") as temp_frames_dir:
+        try:
+            # Copy frames to temporary directory with consecutive numbering
+            copied_count = 0
+            for i, frame_file in enumerate(frame_files):
+                src_path = os.path.join(frame_dir, frame_file)
+                dst_path = os.path.join(temp_frames_dir, f"frame_{i+1:06d}.png")
+                
+                try:
+                    if not os.path.exists(src_path):
+                        if logger:
+                            logger.error(f"Source frame missing: {src_path}")
+                        return False
+                        
+                    if os.path.getsize(src_path) == 0:
+                        if logger:
+                            logger.error(f"Source frame is empty: {src_path}")
+                        return False
+                    
+                    shutil.copy2(src_path, dst_path)
+                    copied_count += 1
+                    
+                    if copied_count % 500 == 0 and logger:
+                        logger.info(f"Copied {copied_count}/{len(frame_files)} frames...")
+                        
+                except Exception as e:
+                    if logger:
+                        logger.error(f"Failed to copy frame {frame_file}: {e}")
+                    return False
+            
+            # Verify all frames were copied successfully
+            temp_frame_files = [f for f in os.listdir(temp_frames_dir) if f.startswith('frame_') and f.endswith('.png')]
+            if len(temp_frame_files) != len(frame_files):
+                if logger:
+                    logger.error(f"Frame copy failed: expected {len(frame_files)}, got {len(temp_frame_files)}")
+                return False
+                
+            if logger:
+                logger.info(f"✓ Successfully created {len(temp_frame_files)} sequential frames for FFmpeg processing")
+            
+            # Use the exact FPS for duration preservation
+            input_pattern = os.path.join(temp_frames_dir, "frame_%06d.png")
+            cmd = f'ffmpeg -y -framerate {exact_fps:.6f} -i "{input_pattern}" {video_codec_opts} "{output_path}"'
+            
+            if logger:
+                logger.info(f"Running duration-preserved video creation: {cmd}")
+            
+            try:
+                success = run_ffmpeg_command(cmd, "Duration-Preserved Video Creation", logger, raise_on_error=False)
+                if success and os.path.exists(output_path):
+                    # Verify output video duration matches input
+                    try:
+                        output_video_info = get_video_info_fast(output_path, logger)
+                        if output_video_info:
+                            output_duration = output_video_info.get('duration', 0.0)
+                            output_frames = output_video_info.get('frames', 0)
+                            
+                            duration_diff = abs(output_duration - input_duration)
+                            frame_diff = abs(output_frames - frame_count_for_duration)
+                            
+                            if logger:
+                                logger.info(f"Duration verification: input={input_duration:.6f}s, output={output_duration:.6f}s, diff={duration_diff:.6f}s")
+                                logger.info(f"Frame verification: input={frame_count_for_duration}, output={output_frames}, diff={frame_diff}")
+                            
+                            # Check if duration is preserved within acceptable tolerance (0.01 seconds)
+                            if duration_diff <= 0.01:
+                                if logger:
+                                    logger.info(f"✓ Duration preserved successfully: {duration_diff:.6f}s difference")
+                            else:
+                                if logger:
+                                    logger.warning(f"⚠️ Duration difference detected: {duration_diff:.6f}s (target: ≤0.01s)")
+                            
+                            # Check frame count
+                            if frame_diff <= 1:
+                                if logger:
+                                    logger.info(f"✓ Frame count preserved: {frame_diff} frame difference")
+                            else:
+                                if logger:
+                                    logger.warning(f"⚠️ Frame count difference: {frame_diff} frames")
+                    
+                    except Exception as verify_e:
+                        if logger:
+                            logger.debug(f"Could not verify output video: {verify_e}")
+                    
+                    return True
+                else:
+                    if logger:
+                        logger.error("Duration-preserved video creation failed")
+                    return False
+                        
+            except Exception as e:
+                if logger:
+                    logger.error(f"Exception during duration-preserved video creation: {e}")
+                return False
+                
+        except Exception as e:
+            if logger:
+                logger.error(f"Exception during frame preparation: {e}")
+            return False
+    
+    return False
+
+
 def create_video_from_frames(frame_dir, output_path, fps, ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=None):
     """Create video from frames using FFmpeg with robust frame sequence handling."""
     if logger:
@@ -901,7 +1121,7 @@ def get_video_info_fast(video_path, logger=None):
         if logger:
             logger.info(f"Video info (fast) for '{os.path.basename(video_path)}': "
                        f"{video_info['frames']} frames, {video_info['fps']:.2f} FPS, "
-                       f"{video_info['duration']:.2f}s, {video_info['width']}x{video_info['height']}, "
+                       f"{video_info['duration']:.3f}s, {video_info['width']}x{video_info['height']}, "
                        f"{video_info['format']}")
         
         return video_info
@@ -914,6 +1134,60 @@ def get_video_info_fast(video_path, logger=None):
             logger.error(f"Error getting video info for '{video_path}': {e}")
     
     return None
+
+def get_video_info_with_exact_duration(video_path, logger=None):
+    """
+    Get video information with exact duration calculation that matches the duration preservation logic.
+    This ensures consistent timing display across the application.
+    
+    Args:
+        video_path: Path to the video file
+        logger: Logger instance for logging
+    
+    Returns:
+        dict: Dictionary containing video information with exact duration calculation
+    """
+    if not os.path.exists(video_path):
+        if logger:
+            logger.error(f"Video file not found: {video_path}")
+        return None
+    
+    # First get the basic video info
+    basic_info = get_video_info_fast(video_path, logger)
+    if not basic_info:
+        return None
+    
+    # Get the exact frame count using the same method as duration preservation
+    try:
+        frame_count_cmd = (
+            f'ffprobe -v error -select_streams v:0 '
+            f'-count_frames -show_entries stream=nb_read_frames '
+            f'-of csv=p=0 "{video_path}"'
+        )
+        
+        frame_count_process = subprocess.run(frame_count_cmd, shell=True, check=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
+        actual_frame_count = frame_count_process.stdout.strip()
+        
+        if actual_frame_count and actual_frame_count.isdigit():
+            exact_frame_count = int(actual_frame_count)
+            fps = basic_info.get('fps', 0.0)
+            
+            if fps > 0:
+                # Calculate exact duration using the same logic as duration preservation
+                exact_duration = exact_frame_count / fps
+                
+                # Update the info with exact values
+                basic_info['frames'] = exact_frame_count
+                basic_info['duration'] = exact_duration
+                
+                if logger:
+                    logger.debug(f"Exact duration calculation: {exact_frame_count} frames / {fps:.6f} FPS = {exact_duration:.6f}s")
+        
+    except Exception as e:
+        if logger:
+            logger.debug(f"Could not get exact frame count: {e}")
+    
+    return basic_info
 
 def get_video_info(video_path, logger=None):
     """
@@ -1090,7 +1364,7 @@ def get_video_info(video_path, logger=None):
         if logger:
             logger.info(f"Video info for '{os.path.basename(video_path)}': "
                        f"{video_info['frames']} frames, {video_info['fps']:.2f} FPS, "
-                       f"{video_info['duration']:.2f}s, {video_info['width']}x{video_info['height']}, "
+                       f"{video_info['duration']:.3f}s, {video_info['width']}x{video_info['height']}, "
                        f"{video_info['format']}, {video_info['bitrate']}")
         
         return video_info
@@ -1120,10 +1394,13 @@ def format_video_info_message(video_info, filename=None):
     
     filename_part = f" for '{filename}'" if filename else ""
     
-    # Format duration as MM:SS
+    # Format duration as MM:SS with higher precision
     duration_minutes = int(video_info['duration'] // 60)
-    duration_seconds = int(video_info['duration'] % 60)
-    duration_str = f"{duration_minutes}:{duration_seconds:02d}"
+    duration_seconds = video_info['duration'] % 60
+    if abs(duration_seconds - round(duration_seconds)) < 0.001:
+        duration_str = f"{duration_minutes}:{int(round(duration_seconds)):02d}"
+    else:
+        duration_str = f"{duration_minutes}:{duration_seconds:05.2f}"
     
     # Format file size info if available
     resolution_str = f"{video_info['width']}x{video_info['height']}"
@@ -1133,7 +1410,7 @@ def format_video_info_message(video_info, filename=None):
         f"📹 Video Information{filename_part}:",
         f"   • Frames: {video_info['frames']:,}",
         f"   • FPS: {video_info['fps']:.2f}",
-        f"   • Duration: {duration_str} ({video_info['duration']:.2f}s)",
+        f"   • Duration: {duration_str} ({video_info['duration']:.3f}s)",
         f"   • Resolution: {resolution_str}",
         f"   • Format: {video_info['format']}"
     ]

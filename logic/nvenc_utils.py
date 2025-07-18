@@ -176,6 +176,9 @@ def build_ffmpeg_video_encoding_args(encoding_config):
     quality_value = encoding_config['quality_value']
     
     if codec == 'h264_nvenc':
-        return f'-c:v {codec} -preset:v {preset} -{quality_param} {quality_value} -pix_fmt yuv420p'
+        # Disable B-frames and use small GOP for better compatibility with video editing software
+        # Use GOP size 2 to satisfy NVENC constraint: GOP > B-frames + 1 (2 > 0 + 1)
+        return f'-c:v {codec} -preset:v {preset} -{quality_param} {quality_value} -pix_fmt yuv420p -bf 0 -g 2 -keyint_min 2'
     else:
-        return f'-c:v {codec} -preset {preset} -{quality_param} {quality_value} -pix_fmt yuv420p' 
+        # For CPU encoding, we can use GOP size 1 since libx264 doesn't have the same constraint
+        return f'-c:v {codec} -preset {preset} -{quality_param} {quality_value} -pix_fmt yuv420p -bf 0 -g 1 -keyint_min 1' 

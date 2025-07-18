@@ -270,9 +270,9 @@ def split_video_into_scenes(input_video_path, temp_dir, scene_split_params, prog
                 
                 # Build ffmpeg args based on encoding config
                 if encoding_config['codec'] == 'h264_nvenc':
-                    ffmpeg_args = f"-map 0:v:0 -map 0:a? -map 0:s? -c:v {encoding_config['codec']} -preset:v {encoding_config['preset']} -{encoding_config['quality_param']} {encoding_config['quality_value']} -pix_fmt yuv420p -c:a aac -avoid_negative_ts make_zero"
+                    ffmpeg_args = f"-map 0:v:0 -map 0:a? -map 0:s? -c:v {encoding_config['codec']} -preset:v {encoding_config['preset']} -{encoding_config['quality_param']} {encoding_config['quality_value']} -pix_fmt yuv420p -bf 0 -g 2 -keyint_min 2 -c:a aac -avoid_negative_ts make_zero"
                 else:
-                    ffmpeg_args = f"-map 0:v:0 -map 0:a? -map 0:s? -c:v {encoding_config['codec']} -preset {encoding_config['preset']} -{encoding_config['quality_param']} {encoding_config['quality_value']} -c:a aac -avoid_negative_ts make_zero"
+                    ffmpeg_args = f"-map 0:v:0 -map 0:a? -map 0:s? -c:v {encoding_config['codec']} -preset {encoding_config['preset']} -{encoding_config['quality_param']} {encoding_config['quality_value']} -bf 0 -g 1 -keyint_min 1 -c:a aac -avoid_negative_ts make_zero"
 
             # Debug: Log the parameters being passed to PySceneDetect
             if logger:
@@ -414,9 +414,9 @@ def merge_scene_videos(scene_video_paths, output_path, temp_dir, ffmpeg_preset="
         
         # Build ffmpeg options based on encoding config
         if encoding_config['codec'] == 'h264_nvenc':
-            ffmpeg_opts = f'-c:v {encoding_config["codec"]} -preset:v {encoding_config["preset"]} -{encoding_config["quality_param"]} {encoding_config["quality_value"]} -pix_fmt yuv420p'
+            ffmpeg_opts = f'-c:v {encoding_config["codec"]} -preset:v {encoding_config["preset"]} -{encoding_config["quality_param"]} {encoding_config["quality_value"]} -pix_fmt yuv420p -bf 0 -g 2 -keyint_min 2'
         else:
-            ffmpeg_opts = f'-c:v {encoding_config["codec"]} -preset {encoding_config["preset"]} -{encoding_config["quality_param"]} {encoding_config["quality_value"]} -pix_fmt yuv420p'
+            ffmpeg_opts = f'-c:v {encoding_config["codec"]} -preset {encoding_config["preset"]} -{encoding_config["quality_param"]} {encoding_config["quality_value"]} -pix_fmt yuv420p -bf 0 -g 1 -keyint_min 1'
 
         cmd = f'ffmpeg -y -f concat -safe 0 -i "{concat_file}" {ffmpeg_opts} -c:a copy "{output_path}"'
 

@@ -679,8 +679,10 @@ def process_single_scene(
                             logger.warning(f"Src frame {src} not found for scene context chunk video.")
                     
                     if frames_for_this_video_chunk:
-                        util_create_video_from_frames(
-                            chunk_temp_assembly_dir, chunk_video_path, scene_fps,
+                        # Use duration-preserved video creation for context chunks
+                        from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
+                        create_video_from_frames_with_duration_preservation(
+                            chunk_temp_assembly_dir, chunk_video_path, scene_video_path,
                             ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger)
                         
                         # Apply RIFE interpolation to chunk if enabled
@@ -979,8 +981,10 @@ def process_single_scene(
                     logger.info(f"Scene {scene_index + 1} Chunk {chunk_idx+1}: Found {len(frames_for_this_video_chunk)} out of {len(output_frame_names)} expected frames")
                     
                     if frames_for_this_video_chunk:
-                        util_create_video_from_frames(
-                            chunk_temp_assembly_dir, chunk_video_path, scene_fps,
+                        # Use duration-preserved video creation for regular chunks
+                        from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
+                        create_video_from_frames_with_duration_preservation(
+                            chunk_temp_assembly_dir, chunk_video_path, scene_video_path,
                             ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger)
                         
                         # Apply RIFE interpolation to chunk if enabled
@@ -1121,8 +1125,10 @@ def process_single_scene(
         if progress_callback:
             progress_callback(0.9, f"Scene {scene_index + 1}: Creating video...")
         scene_output_video = os.path.join(scene_temp_dir, f"{scene_name}.mp4")
-        util_create_video_from_frames(
-            scene_output_frames_dir, scene_output_video, scene_fps,
+        # Use duration-preserved video creation for main scene video
+        from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
+        create_video_from_frames_with_duration_preservation(
+            scene_output_frames_dir, scene_output_video, scene_video_path,
             ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger)
         
         # Apply RIFE interpolation to scene if enabled

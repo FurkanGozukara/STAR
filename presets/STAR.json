@@ -41,7 +41,7 @@
         "tile_overlap": 64
     },
     "ffmpeg": {
-        "use_gpu": true,
+        "use_gpu": false,
         "preset": "slower",
         "quality": 12
     },

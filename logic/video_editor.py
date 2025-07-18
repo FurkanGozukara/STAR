@@ -116,8 +116,9 @@ def get_video_detailed_info(video_path: str, logger) -> Optional[Dict[str, Any]]
         return None
     
     try:
-        # Use fast version for UI responsiveness (detailed frame count not critical for editing preview)
-        basic_info = get_video_info_fast(video_path, logger)
+        # Use exact duration calculation for consistent timing display
+        from .ffmpeg_utils import get_video_info_with_exact_duration
+        basic_info = get_video_info_with_exact_duration(video_path, logger)
         if not basic_info:
             return None
         
@@ -164,11 +165,19 @@ def format_video_info_for_display(video_info: Dict[str, Any]) -> str:
         size_str = f"{file_size / 1024:.1f} KB"
     
     duration = video_info.get('accurate_duration') or video_info.get('duration', 0)
-    duration_str = f"{duration:.2f}s"
+    # Format duration with higher precision to avoid rounding errors
+    if abs(duration - round(duration)) < 0.001:
+        # If duration is very close to a whole number, display as integer
+        duration_str = f"{int(round(duration))}s"
+    else:
+        duration_str = f"{duration:.3f}s"
     if duration >= 60:
         minutes = int(duration // 60)
         seconds = duration % 60
-        duration_str = f"{minutes}m {seconds:.1f}s"
+        if abs(seconds - round(seconds)) < 0.001:
+            duration_str = f"{minutes}m {int(round(seconds))}s"
+        else:
+            duration_str = f"{minutes}m {seconds:.3f}s"
     
     info_lines = [
         f"📁 File: {video_info.get('filename', 'Unknown')}",
@@ -248,6 +257,13 @@ def cut_video_segments(
             else:
                 cmd.extend(["-preset", encoding_config['preset']])
                 cmd.extend(["-crf", str(encoding_config['quality_value'])])
+            cmd.extend(["-bf", "0"])  # Disable B-frames for better compatibility
+            if encoding_config['codec'] == 'h264_nvenc':
+                cmd.extend(["-g", "2"])   # GOP size 2 for NVENC (satisfies constraint)
+                cmd.extend(["-keyint_min", "2"])  # Minimum keyframe interval for NVENC
+            else:
+                cmd.extend(["-g", "1"])   # GOP size 1 for CPU encoding
+                cmd.extend(["-keyint_min", "1"])  # Minimum keyframe interval for CPU
             cmd.extend(["-c:a", "aac", "-b:a", "128k"])
             cmd.append(segment_path)
             

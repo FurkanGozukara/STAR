@@ -1132,27 +1132,27 @@ def _reassemble_video_from_frames(
                 has_audio = _check_video_has_audio(original_video_path, logger)
                 
                 if has_audio:
-                    # Create video with audio from original
+                    # Create video with audio from original (uses CPU encoding, so GOP size 1 is fine)
                     cmd = [
                         'ffmpeg', '-f', 'concat', '-safe', '0', '-i', temp_list_file,
                         '-i', original_video_path,
-                        '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+                        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-bf', '0', '-g', '1', '-keyint_min', '1',
                         '-c:a', 'aac', '-map', '0:v:0', '-map', '1:a:0',
                         '-r', str(fps), '-y', output_path
                     ]
                 else:
-                    # Original video has no audio, create video without audio
+                    # Original video has no audio, create video without audio (uses CPU encoding, so GOP size 1 is fine)
                     logger.info("Original video has no audio track, creating video without audio")
                     cmd = [
                         'ffmpeg', '-f', 'concat', '-safe', '0', '-i', temp_list_file,
-                        '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+                        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-bf', '0', '-g', '1', '-keyint_min', '1',
                         '-r', str(fps), '-y', output_path
                     ]
             else:
-                # Create video without audio
+                # Create video without audio (uses CPU encoding, so GOP size 1 is fine)
                 cmd = [
                     'ffmpeg', '-f', 'concat', '-safe', '0', '-i', temp_list_file,
-                    '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+                    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-bf', '0', '-g', '1', '-keyint_min', '1',
                     '-r', str(fps), '-y', output_path
                 ]
             

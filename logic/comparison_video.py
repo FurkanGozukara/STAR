@@ -321,11 +321,19 @@ def create_comparison_video(
                 else:
                     preset_param = f"-preset {actual_preset}"
                 
+                # Set GOP size based on encoder type
+                if encoding_config["codec"] == "h264_nvenc":
+                    gop_size = "2"
+                    keyint_min = "2"
+                else:
+                    gop_size = "1"
+                    keyint_min = "1"
+                
                 ffmpeg_cmd = (
                     f'ffmpeg -y -i "{original_video_path}" -i "{upscaled_video_path}" '
                     f'-filter_complex "{video_filter}" -map "[output]" '
                     f'-map 0:a? -c:v {encoding_config["codec"]} {encoding_config["quality_param"]} {preset_param} '
-                    f'-c:a copy "{output_path}"'
+                    f'-bf 0 -g {gop_size} -keyint_min {keyint_min} -c:a copy "{output_path}"'
                 )
                 
                 logger.info(f"Attempt {attempt_idx + 1}: {encoding_config['name']} encoding")
@@ -399,11 +407,11 @@ def create_comparison_video(
                     f"[top][bottom]vstack=inputs=2[output]"
                 )
             
-            # Conservative fallback command
+            # Conservative fallback command (uses CPU encoding, so GOP size 1 is fine)
             fallback_cmd = (
                 f'ffmpeg -y -i "{original_video_path}" -i "{upscaled_video_path}" '
                 f'-filter_complex "{fallback_filter}" -map "[output]" '
-                f'-c:v libx264 -crf 28 -preset ultrafast -pix_fmt yuv420p '
+                f'-c:v libx264 -crf 28 -preset ultrafast -pix_fmt yuv420p -bf 0 -g 1 -keyint_min 1 '
                 f'"{output_path}"'
             )
             

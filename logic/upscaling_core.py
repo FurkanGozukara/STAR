@@ -1233,8 +1233,11 @@ def run_upscale (
                             logger.warning(f"Src frame {src_frame} not found for context window chunk video.")
                     
                     if frames_for_chunk:
-                        util_create_video_from_frames(chunk_temp_dir, chunk_video_path, input_fps_val,
-                                                    ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger)
+                        # Use duration-preserved video creation for context window chunks
+                        from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
+                        create_video_from_frames_with_duration_preservation(
+                            chunk_temp_dir, chunk_video_path, current_input_video_for_frames,
+                            ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger)
                         
                         # Apply RIFE interpolation to context window chunk if enabled
                         final_chunk_video_path = chunk_video_path  # Default to original chunk
@@ -1661,8 +1664,10 @@ def run_upscale (
                             else:
                                 logger.warning(f"Src frame {src_direct} not found for direct upscale chunk video.")
                     if frames_for_this_video_chunk_direct:
-                        util_create_video_from_frames(
-                            chunk_temp_assembly_dir_direct, chunk_video_path_direct, input_fps_val,
+                        # Use duration-preserved video creation for direct chunks
+                        from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
+                        create_video_from_frames_with_duration_preservation(
+                            chunk_temp_assembly_dir_direct, chunk_video_path_direct, current_input_video_for_frames,
                             ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger)
                         
                         # Apply RIFE interpolation to direct upscale chunk if enabled
@@ -1852,8 +1857,12 @@ def run_upscale (
             
             # Create video with proper error handling for NVENC limitations
             try:
-                video_creation_success = util_create_video_from_frames (output_frames_dir ,silent_upscaled_video_path ,input_fps_val ,
-                ffmpeg_preset ,ffmpeg_quality_value ,ffmpeg_use_gpu ,logger =logger )
+                # Use duration-preserved video creation to ensure exact timing match with input
+                from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
+                video_creation_success = create_video_from_frames_with_duration_preservation(
+                    output_frames_dir, silent_upscaled_video_path, current_input_video_for_frames,
+                    ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger
+                )
                 
                 if not video_creation_success or not os.path.exists(silent_upscaled_video_path):
                     error_msg = "Silent video creation failed, possibly due to resolution constraints. Frames were processed successfully."
@@ -1862,8 +1871,10 @@ def run_upscale (
                     
                     # Try to create a basic video without GPU acceleration as fallback
                     logger.info("Attempting fallback video creation without GPU acceleration...")
-                    fallback_success = util_create_video_from_frames (output_frames_dir ,silent_upscaled_video_path ,input_fps_val ,
-                    ffmpeg_preset ,ffmpeg_quality_value ,False ,logger =logger )
+                    fallback_success = create_video_from_frames_with_duration_preservation(
+                        output_frames_dir, silent_upscaled_video_path, current_input_video_for_frames,
+                        ffmpeg_preset, ffmpeg_quality_value, False, logger=logger
+                    )
                     
                     if fallback_success and os.path.exists(silent_upscaled_video_path):
                         logger.info("Fallback video creation successful")
@@ -2256,8 +2267,10 @@ def run_upscale (
                     silent_partial_path = os.path.join(temp_dir, "silent_partial_video.mp4")
                     
                     logger.info(f"Creating silent partial video from {num_processed_frames} frames...")
-                    video_creation_success = util_create_video_from_frames(
-                        output_frames_dir, silent_partial_path, input_fps_val if 'input_fps_val' in locals() else 30.0,
+                    # Use duration-preserved video creation for partial video
+                    from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
+                    video_creation_success = create_video_from_frames_with_duration_preservation(
+                        output_frames_dir, silent_partial_path, current_input_video_for_frames,
                         ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger
                     )
                     

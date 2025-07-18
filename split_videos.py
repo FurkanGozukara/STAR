@@ -484,8 +484,8 @@ def main():
         final_ffmpeg_args = ""
         if args.ffmpeg_args: final_ffmpeg_args = args.ffmpeg_args
         elif args.copy_streams: final_ffmpeg_args = "-map 0:v:0 -map 0:a? -map 0:s? -c:v copy -c:a copy -avoid_negative_ts make_zero"
-        elif args.high_quality: final_ffmpeg_args = "-map 0:v:0 -map 0:a? -map 0:s? -c:v libx264 -preset slow -crf 17 -c:a aac -avoid_negative_ts make_zero"
-        else: final_ffmpeg_args = (f"-map 0:v:0 -map 0:a? -map 0:s? -c:v libx264 -preset {args.preset} -crf {args.rate_factor} -c:a aac -avoid_negative_ts make_zero")
+        elif args.high_quality: final_ffmpeg_args = "-map 0:v:0 -map 0:a? -map 0:s? -c:v libx264 -preset slow -crf 17 -bf 0 -g 1 -keyint_min 1 -c:a aac -avoid_negative_ts make_zero"
+        else: final_ffmpeg_args = (f"-map 0:v:0 -map 0:a? -map 0:s? -c:v libx264 -preset {args.preset} -crf {args.rate_factor} -bf 0 -g 1 -keyint_min 1 -c:a aac -avoid_negative_ts make_zero")
 
         if args.mkvmerge:
             logger.info("Using mkvmerge for splitting.")
