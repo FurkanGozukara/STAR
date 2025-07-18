@@ -121,7 +121,7 @@ def load_video(vid_path):
     return frame_list, _fps
 
 
-def save_video(video, save_dir, file_name, fps=16.0):
+def save_video(video, save_dir, file_name, fps=16.0, ffmpeg_preset="medium", ffmpeg_quality=23, ffmpeg_use_gpu=False):
     output_path = os.path.join(save_dir, file_name)
     images = [(img.numpy()).astype('uint8') for img in video]
     temp_dir = tempfile.mkdtemp()
@@ -131,12 +131,41 @@ def save_video(video, save_dir, file_name, fps=16.0):
         cv2.imwrite(tpth, frame[:, :, ::-1])
     
     tmp_path = os.path.join(save_dir, 'tmp.mp4')
-    cmd = f'ffmpeg -y -f image2 -framerate {fps} -i {temp_dir}/%06d.png \
-     -vcodec libx264 -preset ultrafast -crf 0 -pix_fmt yuv420p {tmp_path}'
     
-    status, output = subprocess.getstatusoutput(cmd)
-    if status != 0:
-        logger.error('Save Video Error with {}'.format(output))
+    # Get encoding configuration with automatic NVENC fallback
+    try:
+        from logic.nvenc_utils import get_nvenc_fallback_encoding_config, build_ffmpeg_video_encoding_args
+        
+        # Estimate video dimensions from first frame
+        if images:
+            height, width = images[0].shape[:2]
+        else:
+            width, height = 1920, 1080  # Default fallback
+        
+        encoding_config = get_nvenc_fallback_encoding_config(
+            use_gpu=ffmpeg_use_gpu,
+            ffmpeg_preset=ffmpeg_preset,
+            ffmpeg_quality=ffmpeg_quality,
+            width=width,
+            height=height
+        )
+        
+        video_codec_opts = build_ffmpeg_video_encoding_args(encoding_config)
+        
+        cmd = f'ffmpeg -y -f image2 -framerate {fps} -i {temp_dir}/%06d.png {video_codec_opts} "{tmp_path}"'
+        
+        # Use centralized ffmpeg command execution
+        from logic.ffmpeg_utils import run_ffmpeg_command
+        success = run_ffmpeg_command(cmd, "Video Save", raise_on_error=False)
+        
+        if not success:
+            logger.error('Save Video Error: FFmpeg command failed')
+            return
+        
+    except ImportError:
+        # If centralized system is not available, log error and return
+        logger.error('Save Video Error: Centralized ffmpeg system not available')
+        return
     
     os.system(f'rm -rf {temp_dir}')
     os.rename(tmp_path, output_path)

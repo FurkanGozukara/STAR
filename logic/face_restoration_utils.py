@@ -909,6 +909,9 @@ def restore_video_frames(
                 original_video_path=video_path if preserve_audio else None,
                 fps=video_fps,  # Use the correct FPS from metadata
                 preserve_audio=preserve_audio,
+                ffmpeg_preset=ffmpeg_preset,
+                ffmpeg_quality=ffmpeg_quality,
+                ffmpeg_use_gpu=ffmpeg_use_gpu,
                 logger=logger
             )
             
@@ -1082,6 +1085,9 @@ def _reassemble_video_from_frames(
     original_video_path: Optional[str] = None,
     fps: float = 30.0,
     preserve_audio: bool = True,
+    ffmpeg_preset: str = "medium",
+    ffmpeg_quality: int = 23,
+    ffmpeg_use_gpu: bool = False,
     logger: Optional[logging.Logger] = None
 ) -> Dict[str, Any]:
     """
@@ -1093,6 +1099,9 @@ def _reassemble_video_from_frames(
         original_video_path: Path to original video (for audio extraction)
         fps: Frame rate for output video
         preserve_audio: Whether to include audio from original video
+        ffmpeg_preset: FFmpeg encoding preset for comparison video
+        ffmpeg_quality: FFmpeg quality setting (CRF/CQ) for comparison video
+        ffmpeg_use_gpu: Whether to use GPU encoding for comparison video
         logger: Logger instance
         
     Returns:
@@ -1126,44 +1135,59 @@ def _reassemble_video_from_frames(
             temp_list_file = f.name
         
         try:
-            # Create video from frames
+            # Get encoding configuration with automatic NVENC fallback
+            from .nvenc_utils import get_nvenc_fallback_encoding_config, build_ffmpeg_video_encoding_args
+            
+            # Get video dimensions for encoding config (use first frame as reference)
+            if frame_paths:
+                first_frame = cv2.imread(frame_paths[0])
+                if first_frame is not None:
+                    height, width = first_frame.shape[:2]
+                else:
+                    width, height = 1920, 1080  # Default fallback
+            else:
+                width, height = 1920, 1080  # Default fallback
+            
+            encoding_config = get_nvenc_fallback_encoding_config(
+                use_gpu=ffmpeg_use_gpu,
+                ffmpeg_preset=ffmpeg_preset,
+                ffmpeg_quality=ffmpeg_quality,
+                width=width,
+                height=height,
+                logger=logger
+            )
+            
+            video_codec_opts = build_ffmpeg_video_encoding_args(encoding_config)
+            
+            if logger:
+                codec_info = f"Using {encoding_config['codec']} for face restoration video with preset {encoding_config['preset']} and {encoding_config['quality_param'].upper()} {encoding_config['quality_value']}."
+                logger.info(codec_info)
+
             if preserve_audio and original_video_path and os.path.exists(original_video_path):
                 # Check if original video has audio stream
                 has_audio = _check_video_has_audio(original_video_path, logger)
                 
                 if has_audio:
-                    # Create video with audio from original (uses CPU encoding, so GOP size 1 is fine)
-                    cmd = [
-                        'ffmpeg', '-f', 'concat', '-safe', '0', '-i', temp_list_file,
-                        '-i', original_video_path,
-                        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-bf', '0', '-g', '1', '-keyint_min', '1',
-                        '-c:a', 'aac', '-map', '0:v:0', '-map', '1:a:0',
-                        '-r', str(fps), '-y', output_path
-                    ]
+                    # Create video with audio from original
+                    cmd = f'ffmpeg -f concat -safe 0 -i "{temp_list_file}" -i "{original_video_path}" {video_codec_opts} -c:a aac -map 0:v:0 -map 1:a:0 -r {fps} -y "{output_path}"'
                 else:
-                    # Original video has no audio, create video without audio (uses CPU encoding, so GOP size 1 is fine)
+                    # Original video has no audio, create video without audio
                     logger.info("Original video has no audio track, creating video without audio")
-                    cmd = [
-                        'ffmpeg', '-f', 'concat', '-safe', '0', '-i', temp_list_file,
-                        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-bf', '0', '-g', '1', '-keyint_min', '1',
-                        '-r', str(fps), '-y', output_path
-                    ]
+                    cmd = f'ffmpeg -f concat -safe 0 -i "{temp_list_file}" {video_codec_opts} -r {fps} -y "{output_path}"'
             else:
-                # Create video without audio (uses CPU encoding, so GOP size 1 is fine)
-                cmd = [
-                    'ffmpeg', '-f', 'concat', '-safe', '0', '-i', temp_list_file,
-                    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-bf', '0', '-g', '1', '-keyint_min', '1',
-                    '-r', str(fps), '-y', output_path
-                ]
+                # Create video without audio
+                cmd = f'ffmpeg -f concat -safe 0 -i "{temp_list_file}" {video_codec_opts} -r {fps} -y "{output_path}"'
             
-            process = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            # Use centralized ffmpeg command execution
+            from .ffmpeg_utils import run_ffmpeg_command
+            success = run_ffmpeg_command(cmd, "Face Restoration Video Reassembly", logger, raise_on_error=False)
             
-            if process.returncode == 0:
+            if success:
                 result['success'] = True
                 logger.info(f"Successfully reassembled video: {output_path}")
             else:
-                result['error'] = f"FFmpeg failed: {process.stderr}"
-                logger.error(f"Video reassembly failed: {process.stderr}")
+                result['error'] = "FFmpeg failed to reassemble video"
+                logger.error("Video reassembly failed")
         
         finally:
             # Clean up temporary file

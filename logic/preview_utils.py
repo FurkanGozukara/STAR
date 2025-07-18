@@ -25,15 +25,15 @@ from .ffmpeg_utils import natural_sort_key
 
 def extract_first_frame(video_path: str, output_path: str, logger: Optional[logging.Logger] = None) -> bool:
     """
-    Extract the first frame from a video file.
+    Extract the first frame from a video file using FFmpeg.
     
     Args:
-        video_path: Path to the input video
+        video_path: Path to the input video file
         output_path: Path where the first frame should be saved
-        logger: Logger instance
+        logger: Logger instance for status messages
         
     Returns:
-        True if successful, False otherwise
+        bool: True if successful, False otherwise
     """
     try:
         if not os.path.exists(video_path):
@@ -45,23 +45,18 @@ def extract_first_frame(video_path: str, output_path: str, logger: Optional[logg
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
         # Use FFmpeg to extract the first frame
-        cmd = [
-            'ffmpeg', '-i', video_path,
-            '-vf', 'select=eq(n\\,0)',  # Select first frame (frame number 0)
-            '-frames:v', '1',  # Extract only 1 frame
-            '-y',  # Overwrite output file
-            output_path
-        ]
+        cmd = f'ffmpeg -i "{video_path}" -vf "select=eq(n\\,0)" -frames:v 1 -y "{output_path}"'
         
         if logger:
             logger.info(f"Extracting first frame from {os.path.basename(video_path)}")
         
-        process = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        # Use centralized ffmpeg command execution
+        from .ffmpeg_utils import run_ffmpeg_command
+        success = run_ffmpeg_command(cmd, "First Frame Extraction", logger, raise_on_error=False)
         
-        if process.returncode != 0:
-            error_msg = f"FFmpeg failed to extract first frame: {process.stderr}"
+        if not success:
             if logger:
-                logger.error(error_msg)
+                logger.error("FFmpeg failed to extract first frame")
             return False
         
         # Verify the frame was extracted
@@ -75,11 +70,6 @@ def extract_first_frame(video_path: str, output_path: str, logger: Optional[logg
         
         return True
         
-    except subprocess.TimeoutExpired:
-        error_msg = "Frame extraction timed out"
-        if logger:
-            logger.error(error_msg)
-        return False
     except Exception as e:
         error_msg = f"Error extracting first frame: {e}"
         if logger:
