@@ -21,7 +21,7 @@
 
 This comprehensive application provides state-of-the-art video upscaling capabilities using multiple AI models and techniques. Whether you're enhancing old videos, increasing resolution for modern displays, or processing large batches of content, this tool has everything you need.
 
-> ℹ️ **Version:** Pro V1 | **Updated:** Latest Features | **Support:** Windows & Linux
+> ℹ️ **Version:** Pro | **Updated:** Latest Features | **Support:** Windows & Linux
 
 ---
 
@@ -584,4 +584,4 @@ Pro tips for optimal results and efficient workflows.
 
 ## ❤️ Thank You
 
-Thank you for using SECourses Video Upscaler Pro V1. We hope this documentation helps you achieve amazing results with your video upscaling projects. Experiment with different settings, share your results, and stay tuned for new features!
+Thank you for using SECourses Video Upscaler Pro. We hope this documentation helps you achieve amazing results with your video upscaling projects. Experiment with different settings, share your results, and stay tuned for new features!

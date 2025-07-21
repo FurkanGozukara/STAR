@@ -989,6 +989,7 @@ def get_video_info_fast(video_path, logger=None):
     """
     Get essential video information quickly (without frame counting or bitrate calculation).
     This is optimized for speed when loading videos in the UI.
+    Includes special handling for MKV files that may return 'N/A' for certain fields.
     
     Args:
         video_path: Path to the video file
@@ -1017,6 +1018,7 @@ def get_video_info_fast(video_path, logger=None):
     try:
         # Single efficient ffprobe call to get essential info (no frame counting, no bitrate)
         # Include both r_frame_rate and avg_frame_rate for better VFR support
+        # Special handling for MKV files that may return 'N/A' for duration fields
         probe_cmd = (
             f'ffprobe -v error -select_streams v:0 '
             f'-show_entries stream=width,height,r_frame_rate,avg_frame_rate,duration '
@@ -1075,8 +1077,12 @@ def get_video_info_fast(video_path, logger=None):
                                 logger.debug(f"Parsed FPS using r_frame_rate: {video_info['fps']:.3f}")
                     
                     # Parse duration from stream (now at index 4)
-                    if len(stream_parts) > 4 and stream_parts[4]:
-                        video_info['duration'] = float(stream_parts[4])
+                    if len(stream_parts) > 4 and stream_parts[4] and stream_parts[4] != 'N/A':
+                        try:
+                            video_info['duration'] = float(stream_parts[4])
+                        except ValueError:
+                            if logger:
+                                logger.debug(f"Could not parse stream duration '{stream_parts[4]}', will try format duration")
                     
                 except (ValueError, IndexError) as e:
                     if logger:
@@ -1089,14 +1095,15 @@ def get_video_info_fast(video_path, logger=None):
                 video_info['format'] = format_parts[0]
                 
                 # Use format duration if stream duration not available
-                if video_info['duration'] == 0.0 and len(format_parts) > 1 and format_parts[1]:
+                if video_info['duration'] == 0.0 and len(format_parts) > 1 and format_parts[1] and format_parts[1] != 'N/A':
                     try:
                         video_info['duration'] = float(format_parts[1])
                     except ValueError:
-                        pass
+                        if logger:
+                            logger.debug(f"Could not parse format duration '{format_parts[1]}'")
         
         # Quick OpenCV fallback only for missing critical info
-        if video_info['width'] == 0 or video_info['height'] == 0 or video_info['fps'] == 0.0:
+        if video_info['width'] == 0 or video_info['height'] == 0 or video_info['fps'] == 0.0 or video_info['duration'] == 0.0:
             try:
                 cap = cv2.VideoCapture(video_path)
                 if cap.isOpened():
@@ -1106,6 +1113,12 @@ def get_video_info_fast(video_path, logger=None):
                         video_info['height'] = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                     if video_info['fps'] == 0.0:
                         video_info['fps'] = cap.get(cv2.CAP_PROP_FPS)
+                    if video_info['duration'] == 0.0:
+                        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                        if total_frames > 0 and video_info['fps'] > 0:
+                            video_info['duration'] = total_frames / video_info['fps']
+                            if logger:
+                                logger.debug(f"Calculated duration from OpenCV: {total_frames} frames / {video_info['fps']:.3f} FPS = {video_info['duration']:.3f}s")
                     cap.release()
             except Exception as cv_e:
                 if logger:
@@ -1117,6 +1130,25 @@ def get_video_info_fast(video_path, logger=None):
             video_info['frames'] = round(calculated_frames)  # Round to nearest integer instead of truncating
             if logger:
                 logger.debug(f"Calculated frame count from FPS×duration: {calculated_frames:.3f} -> {video_info['frames']}")
+        # If we still don't have frames but have FPS, try to get frame count directly
+        elif video_info['frames'] == 0 and video_info['fps'] > 0:
+            try:
+                frame_count_cmd = (
+                    f'ffprobe -v error -select_streams v:0 '
+                    f'-count_frames -show_entries stream=nb_read_frames '
+                    f'-of csv=p=0 "{video_path}"'
+                )
+                frame_count_process = subprocess.run(frame_count_cmd, shell=True, check=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
+                actual_frame_count = frame_count_process.stdout.strip()
+                if actual_frame_count and actual_frame_count.isdigit():
+                    video_info['frames'] = int(actual_frame_count)
+                    if video_info['duration'] == 0.0:
+                        video_info['duration'] = video_info['frames'] / video_info['fps']
+                        if logger:
+                            logger.debug(f"Calculated duration from frame count: {video_info['frames']} frames / {video_info['fps']:.3f} FPS = {video_info['duration']:.3f}s")
+            except Exception as e:
+                if logger:
+                    logger.debug(f"Could not get frame count directly: {e}")
         
         if logger:
             logger.info(f"Video info (fast) for '{os.path.basename(video_path)}': "
@@ -1296,13 +1328,21 @@ def get_video_info(video_path, logger=None):
                                 logger.debug(f"Parsed FPS using r_frame_rate: {video_info['fps']:.3f}")
                     
                     # Parse duration from stream (now at index 4)
-                    if len(stream_parts) > 4 and stream_parts[4]:
-                        video_info['duration'] = float(stream_parts[4])
+                    if len(stream_parts) > 4 and stream_parts[4] and stream_parts[4] != 'N/A':
+                        try:
+                            video_info['duration'] = float(stream_parts[4])
+                        except ValueError:
+                            if logger:
+                                logger.debug(f"Could not parse stream duration '{stream_parts[4]}', will try format duration")
                     
                     # Parse bitrate from stream (now at index 5)
-                    if len(stream_parts) > 5 and stream_parts[5]:
-                        bitrate_bps = int(stream_parts[5])
-                        video_info['bitrate'] = f"{bitrate_bps // 1000} kbps"
+                    if len(stream_parts) > 5 and stream_parts[5] and stream_parts[5] != 'N/A':
+                        try:
+                            bitrate_bps = int(stream_parts[5])
+                            video_info['bitrate'] = f"{bitrate_bps // 1000} kbps"
+                        except ValueError:
+                            if logger:
+                                logger.debug(f"Could not parse stream bitrate '{stream_parts[5]}', will try format bitrate")
                 except (ValueError, IndexError) as e:
                     if logger:
                         logger.warning(f"Error parsing stream info: {e}")
@@ -1314,19 +1354,21 @@ def get_video_info(video_path, logger=None):
                 video_info['format'] = format_parts[0]
                 
                 # Use format duration if stream duration not available
-                if video_info['duration'] == 0.0 and len(format_parts) > 1 and format_parts[1]:
+                if video_info['duration'] == 0.0 and len(format_parts) > 1 and format_parts[1] and format_parts[1] != 'N/A':
                     try:
                         video_info['duration'] = float(format_parts[1])
                     except ValueError:
-                        pass
+                        if logger:
+                            logger.debug(f"Could not parse format duration '{format_parts[1]}'")
                 
                 # Use format bitrate if stream bitrate not available
-                if video_info['bitrate'] == 'Unknown' and len(format_parts) > 2 and format_parts[2]:
+                if video_info['bitrate'] == 'Unknown' and len(format_parts) > 2 and format_parts[2] and format_parts[2] != 'N/A':
                     try:
                         bitrate_bps = int(format_parts[2])
                         video_info['bitrate'] = f"{bitrate_bps // 1000} kbps"
                     except ValueError:
-                        pass
+                        if logger:
+                            logger.debug(f"Could not parse format bitrate '{format_parts[2]}'")
         
         # Fallback to OpenCV if ffprobe didn't get all info
         if video_info['width'] == 0 or video_info['height'] == 0 or video_info['frames'] == 0:

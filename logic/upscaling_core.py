@@ -2183,8 +2183,13 @@ def run_upscale (
                         # Get duration of the partial video
                         duration_cmd = f'ffprobe -v error -show_entries format=duration -of csv=p=0 "{silent_partial_path}"'
                         result = subprocess.run(duration_cmd, shell=True, capture_output=True, text=True, check=True)
-                        partial_duration_seconds = float(result.stdout.strip())
-                        logger.info(f"Partial video duration from merged scenes: {partial_duration_seconds:.2f} seconds")
+                        duration_str = result.stdout.strip()
+                        if duration_str and duration_str != 'N/A':
+                            partial_duration_seconds = float(duration_str)
+                            logger.info(f"Partial video duration from merged scenes: {partial_duration_seconds:.2f} seconds")
+                        else:
+                            logger.warning(f"Could not parse duration from ffprobe output: '{duration_str}'")
+                            partial_duration_seconds = None
                     except Exception as e_duration:
                         logger.warning(f"Could not determine partial video duration: {e_duration}")
                         partial_duration_seconds = None
@@ -2222,8 +2227,13 @@ def run_upscale (
                                 import subprocess
                                 duration_cmd = f'ffprobe -v error -show_entries format=duration -of csv=p=0 "{silent_partial_path}"'
                                 result = subprocess.run(duration_cmd, shell=True, capture_output=True, text=True, check=True)
-                                partial_duration_seconds = float(result.stdout.strip())
-                                logger.info(f"Partial video duration from scene merging: {partial_duration_seconds:.2f} seconds")
+                                duration_str = result.stdout.strip()
+                                if duration_str and duration_str != 'N/A':
+                                    partial_duration_seconds = float(duration_str)
+                                    logger.info(f"Partial video duration from scene merging: {partial_duration_seconds:.2f} seconds")
+                                else:
+                                    logger.warning(f"Could not parse duration from ffprobe output: '{duration_str}'")
+                                    partial_duration_seconds = None
                             except Exception as e_duration:
                                 logger.warning(f"Could not determine partial video duration: {e_duration}")
                                 partial_duration_seconds = None
