@@ -799,7 +799,7 @@ def run_upscale (
                     
                     # Directory and file management
                     temp_dir=temp_dir,
-                    output_dir=app_config_module.DEFAULT_OUTPUT_DIR,
+                    output_dir=main_output_dir,
                     base_output_filename_no_ext=base_output_filename_no_ext,
                     
                     # FPS parameters
