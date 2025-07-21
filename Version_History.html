@@ -309,6 +309,7 @@
                 <div class="sidebar">
                     <ul class="sidebar-nav">
                         <li><a href="#overview" class="nav-link"><i class="fas fa-home"></i>Overview</a></li>
+                        <li><a href="#v4" class="nav-link"><i class="fas fa-crown"></i>Version 4.0</a></li>
                         <li><a href="#v3" class="nav-link"><i class="fas fa-fire"></i>Version 3.0</a></li>
                         <li><a href="#v2" class="nav-link"><i class="fas fa-star"></i>Version 2.0</a></li>
                         <li><a href="#v1" class="nav-link"><i class="fas fa-rocket"></i>Version 1.0</a></li>
@@ -336,7 +337,188 @@
                             
                             <div class="alert-info">
                                 <i class="fas fa-info-circle me-2"></i>
-                                <strong>Latest Version:</strong> 3.0 | <strong>Last Updated:</strong> 21 July 2025 | <strong>Support:</strong> Windows & Linux
+                                <strong>Latest Version:</strong> 4.0 | <strong>Last Updated:</strong> 21 July 2025 | <strong>Support:</strong> Windows & Linux
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Version 4.0 Section -->
+                    <section id="v4" class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Version 4.0</h2>
+                            <p class="section-subtitle">Critical Face Restoration Fixes & Enhanced Session Management</p>
+                        </div>
+                        
+                        <div class="version-card">
+                            <div class="version-header">
+                                <span class="version-badge">v4.0</span>
+                                <div>
+                                    <h3 class="version-title">Critical Face Restoration Fixes & Enhanced Session Management</h3>
+                                    <p class="version-date">July 2025</p>
+                                </div>
+                            </div>
+                            
+                            <p class="version-description">
+                                Version 4.0 addresses a critical bug in face restoration where only 3 frames were being output instead of the complete video (e.g., 1,257 frames → 3 frames). This release introduces organized session-based output management, live frame saving, and comprehensive improvements to the face restoration workflow to ensure reliable and complete video processing.
+                            </p>
+                            
+                            <div class="alert-success">
+                                <i class="fas fa-check-circle me-2"></i>
+                                <strong>Critical Fix:</strong> Face restoration now properly outputs ALL processed frames instead of just the first few frames, ensuring complete video reconstruction.
+                            </div>
+                            
+                            <h4><i class="fas fa-exclamation-triangle text-danger me-2"></i>Critical Bug Fixes</h4>
+                            <ul class="feature-list">
+                                <li>
+                                    <i class="fas fa-check feature-icon feature-fixed"></i>
+                                    <div>
+                                        <strong>Video Reassembly Failure:</strong> Fixed critical issue where face restoration produced videos with only 3 frames instead of the complete frame sequence (e.g., 1,257 frames → 3 frames)
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-check feature-icon feature-fixed"></i>
+                                    <div>
+                                        <strong>Frame Loss During Extraction:</strong> Eliminated frame loss by removing FPS filtering during extraction, ensuring ALL original frames are preserved
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-check feature-icon feature-fixed"></i>
+                                    <div>
+                                        <strong>Duration Preservation:</strong> Fixed video duration and timing issues by switching to duration-preservation video creation method
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-check feature-icon feature-fixed"></i>
+                                    <div>
+                                        <strong>Frame Count Verification:</strong> Added frame count verification to ensure output video matches input frame count
+                                    </div>
+                                </li>
+                            </ul>
+                            
+                            <h4><i class="fas fa-folder text-primary me-2"></i>Session Management & Organization</h4>
+                            <ul class="feature-list">
+                                <li>
+                                    <i class="fas fa-plus feature-icon feature-new"></i>
+                                    <div>
+                                        <strong>Numbered Session Folders:</strong> Face restoration now creates organized numbered session folders (e.g., "0003") similar to regular upscaling workflow
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-plus feature-icon feature-new"></i>
+                                    <div>
+                                        <strong>Organized Frame Storage:</strong> Separate subdirectories for extracted frames and processed frames within each session folder
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-plus feature-icon feature-new"></i>
+                                    <div>
+                                        <strong>Live Frame Saving:</strong> Frames are now saved to permanent storage immediately during processing, allowing users to monitor progress in real-time
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-plus feature-icon feature-new"></i>
+                                    <div>
+                                        <strong>Session Information Display:</strong> Enhanced UI to show session folder information, extracted frames location, and processed frames location
+                                    </div>
+                                </li>
+                            </ul>
+                            
+                            <h4><i class="fas fa-shield-alt text-success me-2"></i>Enhanced Error Handling & Fallbacks</h4>
+                            <ul class="feature-list">
+                                <li>
+                                    <i class="fas fa-arrow-up feature-icon feature-improved"></i>
+                                    <div>
+                                        <strong>No-Face Fallback:</strong> Frames without detected faces are now saved as original images instead of causing processing failures
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-arrow-up feature-icon feature-improved"></i>
+                                    <div>
+                                        <strong>Face Restoration Fallback:</strong> If face restoration fails on a frame, the system automatically falls back to saving the original frame
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-arrow-up feature-icon feature-improved"></i>
+                                    <div>
+                                        <strong>Comprehensive Error Recovery:</strong> Enhanced error recovery mechanisms ensure batch processing continues even when individual frames encounter issues
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-arrow-up feature-icon feature-improved"></i>
+                                    <div>
+                                        <strong>Better Temp File Management:</strong> Improved temporary file cleanup and management to prevent storage issues during long processing sessions
+                                    </div>
+                                </li>
+                            </ul>
+                            
+                            <h4><i class="fas fa-cogs text-info me-2"></i>Technical Improvements</h4>
+                            <ul class="feature-list">
+                                <li>
+                                    <i class="fas fa-cog feature-icon"></i>
+                                    <div>
+                                        <strong>Duration Preservation Method:</strong> Switched from `_reassemble_video_from_frames` to `create_video_from_frames_with_duration_preservation` for accurate video reconstruction
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-cog feature-icon"></i>
+                                    <div>
+                                        <strong>Enhanced Audio Merging:</strong> Improved audio preservation from original videos with better error handling for videos with/without audio tracks
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-cog feature-icon"></i>
+                                    <div>
+                                        <strong>Frame Extraction Optimization:</strong> Removed FPS filtering during frame extraction to preserve every single frame from the original video
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-cog feature-icon"></i>
+                                    <div>
+                                        <strong>Enhanced Logging:</strong> Comprehensive logging throughout the face restoration process with detailed progress tracking and verification
+                                    </div>
+                                </li>
+                            </ul>
+                            
+                            <h4><i class="fas fa-user-interface text-warning me-2"></i>User Experience Improvements</h4>
+                            <ul class="feature-list">
+                                <li>
+                                    <i class="fas fa-arrow-up feature-icon feature-improved"></i>
+                                    <div>
+                                        <strong>Real-time Progress Monitoring:</strong> Users can now see extracted and processed frames in real-time during face restoration processing
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-arrow-up feature-icon feature-improved"></i>
+                                    <div>
+                                        <strong>Organized Output Structure:</strong> Consistent session-based folder organization makes it easier to locate and manage face restoration results
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-arrow-up feature-icon feature-improved"></i>
+                                    <div>
+                                        <strong>Progress Indicators:</strong> Enhanced progress reporting with detailed information about frames processed vs. frames with faces detected vs. original frames preserved
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-arrow-up feature-icon feature-improved"></i>
+                                    <div>
+                                        <strong>Session Summary:</strong> Comprehensive session information displayed in the UI showing folder locations and processing statistics
+                                    </div>
+                                </li>
+                            </ul>
+                            
+                            <div class="alert-warning">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                <strong>Important:</strong> This update fixes a critical bug that was causing face restoration to produce incomplete videos. All previous face restoration results should be re-processed with this version for complete video reconstruction.
+                            </div>
+                            
+                            <div class="code-block">
+# Technical Details: Video Reassembly Fix
+# Previous (buggy) method:
+_reassemble_video_from_frames() # Only processed ~3 frames
+
+# New (fixed) method:
+create_video_from_frames_with_duration_preservation() # Processes ALL frames
                             </div>
                         </div>
                     </section>

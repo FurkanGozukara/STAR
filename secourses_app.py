@@ -397,7 +397,7 @@ progress =gr .Progress (track_tqdm =True )
     )
 
 with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
-    gr .Markdown ("# SECourses Video and Image Upscaler Pro V3 - https://www.patreon.com/posts/134405610")
+    gr .Markdown ("# SECourses Video and Image Upscaler Pro V4 - https://www.patreon.com/posts/134405610")
 
     with gr .Tabs ()as main_tabs :
         with gr .Tab ("Main",id ="main_tab"):
@@ -508,7 +508,7 @@ The total combined prompt length is limited to 77 tokens."""
 
                     with gr .Row ():
                         how_to_use_button =gr .Button ("📖 How To Use Documentation",variant ="secondary")
-                        version_history_button =gr .Button ("📋 Version History V3",variant ="secondary")
+                        version_history_button =gr .Button ("📋 Version History V4",variant ="secondary")
                         open_output_folder_button =gr .Button ("Open Outputs Folder",icon ="icons/folder.png",variant ="primary")
 
                     status_textbox =gr .Textbox (label ="Log",interactive =False ,lines =10 ,max_lines =15 )
