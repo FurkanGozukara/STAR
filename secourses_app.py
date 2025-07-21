@@ -3639,12 +3639,19 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
                     comparison_video =result .get ('comparison_video_path',None )
 
                     processing_time =time .time ()-start_time 
+                    session_info = ""
+                    if 'session_name' in result and 'session_folder' in result:
+                        session_info = f"\n📂 Session Folder: {result['session_name']}"
+                        if save_frames_val:
+                            session_info += f"\n🖼️ Extracted Frames: {result['session_name']}/extracted_frames/"
+                            session_info += f"\n🎨 Processed Frames: {result['session_name']}/processed_frames/"
+                    
                     stats_msg =f"""📊 Processing Complete!
 ⏱️ Total Time: {processing_time:.1f} seconds
 🎬 Input: {os.path.basename(input_path)}
 📁 Output: {os.path.basename(output_video) if output_video else 'N/A'}
 🎯 Fidelity: {face_restoration_fidelity_val}
-🔧 Batch Size: {face_restoration_batch_size_val}
+🔧 Batch Size: {face_restoration_batch_size_val}{session_info}
 ✅ Status: Success"""
 
                     progress (1.0 ,"✅ Face restoration completed successfully!")

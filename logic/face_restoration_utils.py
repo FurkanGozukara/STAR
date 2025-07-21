@@ -829,21 +829,47 @@ def restore_video_frames(
         video_metadata = _get_video_metadata(video_path, logger)
         video_fps = video_metadata.get('fps', 30.0)
         
-        # Create frame extraction directory
-        frames_dir = os.path.join(output_dir, "extracted_frames")
+        # Create organized output directory structure like regular upscaling
+        # Import the get_next_filename utility to create numbered session folders
+        from .file_utils import get_next_filename
+        
+        # Get next numbered folder (e.g., "0003") for this face restoration session
+        base_output_filename_no_ext, output_video_path = get_next_filename(output_dir, logger=logger)
+        session_output_dir = os.path.join(output_dir, base_output_filename_no_ext)
+        os.makedirs(session_output_dir, exist_ok=True)
+        
+        # Create organized subdirectories for frames
+        extracted_frames_dir = os.path.join(session_output_dir, "extracted_frames")
+        processed_frames_dir = os.path.join(session_output_dir, "processed_frames")
+        os.makedirs(extracted_frames_dir, exist_ok=True)
+        os.makedirs(processed_frames_dir, exist_ok=True)
+        
+        # Create temp directory for processing (will be cleaned up later)
+        import tempfile
+        import random
+        run_id = f"face_restore_{int(time.time())}_{random.randint(1000, 9999)}"
+        temp_dir_base = tempfile.gettempdir()
+        temp_dir = os.path.join(temp_dir_base, run_id)
+        frames_dir = os.path.join(temp_dir, "extracted_frames")
         os.makedirs(frames_dir, exist_ok=True)
+        
+        logger.info(f"Face restoration session folder: {session_output_dir}")
+        logger.info(f"Extracted frames will be saved to: {extracted_frames_dir}")
+        logger.info(f"Processed frames will be saved to: {processed_frames_dir}")
+        logger.info(f"Save frames setting: {save_frames}")
         
         if progress_callback:
             progress_callback(0.1, "Extracting frames from video...")
             
-        # Extract frames using ffmpeg with the CORRECT FPS from metadata
+        # Extract frames using ffmpeg WITHOUT FPS filtering to preserve all frames
+        # This fixes the frame loss issue by ensuring every frame from the original video is extracted
+        logger.info(f"Extracting all frames from video (original FPS: {video_fps:.6f})")
         frame_pattern = os.path.join(frames_dir, "frame_%06d.png")
         
         try:
-            # Use the original video's FPS instead of hardcoded 30 FPS
+            # Extract ALL frames without FPS filtering to avoid frame loss
             cmd = [
                 'ffmpeg', '-i', video_path,
-                '-vf', f'fps=fps={video_fps}',  # Use actual FPS from metadata
                 '-y',  # Overwrite output files
                 frame_pattern
             ]
@@ -871,11 +897,22 @@ def restore_video_frames(
             
         logger.info(f"Extracted {len(frame_files)} frames from video")
         
+        # Copy extracted frames to permanent storage immediately so user can see them
+        try:
+            for frame_file in frame_files:
+                frame_name = os.path.basename(frame_file)
+                src_path = frame_file
+                dst_path = os.path.join(extracted_frames_dir, frame_name)
+                shutil.copy2(src_path, dst_path)
+            logger.info(f"Copied {len(frame_files)} extracted frames to permanent storage: {extracted_frames_dir}")
+        except Exception as e:
+            logger.warning(f"Failed to copy extracted frames to permanent storage: {e}")
+        
         if progress_callback:
             progress_callback(0.2, f"Processing {len(frame_files)} frames for face restoration...")
             
-        # Create output directory for restored frames
-        restored_frames_dir = os.path.join(output_dir, "restored_frames")
+        # Create temp output directory for restored frames (will copy to permanent later)
+        restored_frames_dir = os.path.join(temp_dir, "restored_frames")
         os.makedirs(restored_frames_dir, exist_ok=True)
         
         # Process frames in batches
@@ -886,8 +923,14 @@ def restore_video_frames(
                 
         batch_result = restore_frames_batch_true(
             frame_files, restored_frames_dir, fidelity_weight,
-            enable_colorization, model_path, batch_size, batch_progress_callback, logger
+            enable_colorization, model_path, batch_size, batch_progress_callback, 
+            processed_frames_dir, logger  # Pass processed_frames_dir for live saving
         )
+        
+        # Log final frame saving results
+        if batch_result['success']:
+            logger.info(f"Face restoration batch completed: {batch_result['processed_count']} frames processed")
+            logger.info(f"All processed frames saved to: {processed_frames_dir}")
         
         result['processed_frames'] = batch_result['processed_count']
         result['faces_detected_total'] = batch_result['faces_detected_total']
@@ -898,26 +941,99 @@ def restore_video_frames(
             if progress_callback:
                 progress_callback(0.9, "Reassembling video from processed frames...")
             
-            # Generate output video path
+            # Generate output video path in the session folder
             video_name = os.path.splitext(os.path.basename(video_path))[0]
-            output_video_path = os.path.join(output_dir, f"{video_name}_face_restored.mp4")
+            output_video_path_final = os.path.join(session_output_dir, f"{video_name}_face_restored.mp4")
             
             # Reassemble video from processed frames using the correct FPS
-            reassembly_result = _reassemble_video_from_frames(
-                frame_paths=batch_result['output_paths'],
-                output_path=output_video_path,
-                original_video_path=video_path if preserve_audio else None,
-                fps=video_fps,  # Use the correct FPS from metadata
-                preserve_audio=preserve_audio,
-                ffmpeg_preset=ffmpeg_preset,
-                ffmpeg_quality=ffmpeg_quality,
-                ffmpeg_use_gpu=ffmpeg_use_gpu,
+            # Using vsync vfr and exact FPS to maintain original timing
+            logger.info(f"Reassembling video with exact FPS: {video_fps:.6f}")
+            
+            # FIXED: Face restoration video reassembly issue
+            # Previously used _reassemble_video_from_frames which used ffmpeg concat without frame durations,
+            # causing only 3 frames to be output instead of the full video (e.g., 1,257 frames -> 3 frames).
+            # Now using create_video_from_frames_with_duration_preservation which calculates exact FPS
+            # and preserves input video duration, ensuring all frames are included in the output.
+            
+            # Use the same duration preservation method as the working upscaling pipeline
+            from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
+            
+            # Create a temporary directory with frames for the duration preservation method
+            import tempfile
+            import shutil
+            temp_frames_dir_for_video = os.path.join(temp_dir, "frames_for_video_creation")
+            os.makedirs(temp_frames_dir_for_video, exist_ok=True)
+            
+            # Copy processed frames to the temp directory with sequential naming
+            sorted_frame_paths = sorted(batch_result['output_paths'])
+            for i, frame_path in enumerate(sorted_frame_paths):
+                frame_name = f"frame_{i+1:06d}.png"
+                dst_path = os.path.join(temp_frames_dir_for_video, frame_name)
+                shutil.copy2(frame_path, dst_path)
+            
+            # Use duration-preserved video creation to ensure exact frame count and FPS
+            video_creation_success = create_video_from_frames_with_duration_preservation(
+                temp_frames_dir_for_video,
+                output_video_path_final,
+                video_path,  # Original video for duration reference
+                ffmpeg_preset,
+                ffmpeg_quality,
+                ffmpeg_use_gpu,
                 logger=logger
             )
             
-            if reassembly_result['success']:
-                result['output_video_path'] = output_video_path
+            # Clean up temp frames directory
+            try:
+                shutil.rmtree(temp_frames_dir_for_video)
+            except Exception as cleanup_e:
+                logger.warning(f"Failed to clean up temp frames directory: {cleanup_e}")
+            
+            if video_creation_success:
+                # Add audio from original video if requested
+                if preserve_audio and video_path and os.path.exists(video_path):
+                    # Check if original video has audio stream
+                    has_audio = _check_video_has_audio(video_path, logger)
+                    
+                    if has_audio:
+                        # Create final video with audio
+                        temp_silent_video = output_video_path_final + "_temp_silent.mp4"
+                        shutil.move(output_video_path_final, temp_silent_video)
+                        
+                        # Merge audio from original video
+                        audio_merge_cmd = f'ffmpeg -y -i "{temp_silent_video}" -i "{video_path}" -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 -avoid_negative_ts make_zero "{output_video_path_final}"'
+                        
+                        from .ffmpeg_utils import run_ffmpeg_command
+                        audio_success = run_ffmpeg_command(audio_merge_cmd, "Face Restoration Audio Merge", logger, raise_on_error=False)
+                        
+                        if audio_success and os.path.exists(output_video_path_final):
+                            logger.info("Successfully merged audio from original video")
+                            # Clean up temporary silent video
+                            try:
+                                os.remove(temp_silent_video)
+                            except Exception as temp_cleanup_e:
+                                logger.warning(f"Failed to clean up temp silent video: {temp_cleanup_e}")
+                        else:
+                            # Audio merge failed, restore silent video
+                            logger.warning("Audio merge failed, using silent video")
+                            if os.path.exists(temp_silent_video):
+                                shutil.move(temp_silent_video, output_video_path_final)
+                    else:
+                        logger.info("Original video has no audio track, keeping silent video")
+                
+                result['output_video_path'] = output_video_path_final
                 result['success'] = True
+                logger.info(f"Successfully reassembled video: {output_video_path_final}")
+                
+                # Verify frame count in output video matches input
+                output_metadata = _get_video_metadata(output_video_path_final, logger)
+                input_frame_count = video_metadata.get('total_frames', result['extracted_frames'])
+                output_frame_count = output_metadata.get('total_frames', 0)
+                
+                if output_frame_count != input_frame_count and abs(output_frame_count - input_frame_count) > 1:
+                    logger.warning(f"Frame count mismatch: Input {input_frame_count} frames, Output {output_frame_count} frames")
+                else:
+                    logger.info(f"Frame count preserved: {output_frame_count} frames (input: {input_frame_count})")
+                
                 result['message'] = f"Face restoration completed successfully! Processed {result['processed_frames']} frames with {result['faces_detected_total']} faces detected."
                 
                 # Create comparison video if requested
@@ -925,10 +1041,10 @@ def restore_video_frames(
                     if progress_callback:
                         progress_callback(0.95, "Creating before/after comparison video...")
                     
-                    comparison_path = os.path.join(output_dir, f"{video_name}_comparison.mp4")
+                    comparison_path = os.path.join(session_output_dir, f"{video_name}_comparison.mp4")
                     comparison_result = _create_comparison_video(
                         original_video_path=video_path,
-                        restored_video_path=output_video_path,
+                        restored_video_path=output_video_path_final,
                         output_path=comparison_path,
                         ffmpeg_preset=ffmpeg_preset,
                         ffmpeg_quality=ffmpeg_quality,
@@ -942,20 +1058,22 @@ def restore_video_frames(
                     else:
                         logger.warning(f"Failed to create comparison video: {comparison_result['error']}")
                 
-                # Clean up temporary frames if not saving them
-                if not save_frames:
-                    try:
-                        shutil.rmtree(frames_dir)
-                        shutil.rmtree(restored_frames_dir)
-                        logger.info("Cleaned up temporary frame directories")
-                    except Exception as e:
-                        logger.warning(f"Failed to clean up temporary directories: {e}")
+                # Clean up temporary directories
+                try:
+                    shutil.rmtree(temp_dir)
+                    logger.info("Cleaned up temporary processing directories")
+                except Exception as e:
+                    logger.warning(f"Failed to clean up temporary directories: {e}")
+                    
+                # Add session folder info to result for user reference
+                result['session_folder'] = session_output_dir
+                result['session_name'] = base_output_filename_no_ext
                 
                 if progress_callback:
                     progress_callback(1.0, "Face restoration completed successfully!")
                     
             else:
-                result['error'] = f"Video reassembly failed: {reassembly_result['error']}"
+                result['error'] = "Video reassembly failed using duration preservation method"
                 result['message'] = f"Face restoration processed {result['processed_frames']} frames but failed to create output video."
         else:
             result['error'] = f"Face restoration failed: {len(batch_result['errors'])} errors occurred"
@@ -972,7 +1090,7 @@ def restore_video_frames(
         
     return result
 
-def _get_video_metadata(video_path: str, logger: logging.Logger) -> Dict[str, Any]:
+def _get_video_metadata(video_path: str, logger: Optional[logging.Logger] = None) -> Dict[str, Any]:
     """
     Extract video metadata using ffprobe.
     
@@ -1078,132 +1196,6 @@ def _check_video_has_audio(video_path: str, logger: Optional[logging.Logger] = N
     except Exception as e:
         logger.warning(f"Error checking audio streams for {video_path}: {e}")
         return False
-
-def _reassemble_video_from_frames(
-    frame_paths: List[str],
-    output_path: str,
-    original_video_path: Optional[str] = None,
-    fps: float = 30.0,
-    preserve_audio: bool = True,
-    ffmpeg_preset: str = "medium",
-    ffmpeg_quality: int = 23,
-    ffmpeg_use_gpu: bool = False,
-    logger: Optional[logging.Logger] = None
-) -> Dict[str, Any]:
-    """
-    Reassemble video from processed frames.
-    
-    Args:
-        frame_paths: List of paths to processed frame images
-        output_path: Path for output video
-        original_video_path: Path to original video (for audio extraction)
-        fps: Frame rate for output video
-        preserve_audio: Whether to include audio from original video
-        ffmpeg_preset: FFmpeg encoding preset for comparison video
-        ffmpeg_quality: FFmpeg quality setting (CRF/CQ) for comparison video
-        ffmpeg_use_gpu: Whether to use GPU encoding for comparison video
-        logger: Logger instance
-        
-    Returns:
-        Dictionary containing reassembly results
-    """
-    if logger is None:
-        logger = logging.getLogger(__name__)
-    
-    result = {
-        'success': False,
-        'output_path': output_path,
-        'error': None
-    }
-    
-    try:
-        if not frame_paths:
-            result['error'] = "No frames provided for video reassembly"
-            return result
-        
-        # Sort frame paths to ensure correct order
-        sorted_frames = sorted(frame_paths)
-        
-        # Create a temporary file list for ffmpeg
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-            for frame_path in sorted_frames:
-                f.write(f"file '{frame_path}'\n")
-                f.write(f"duration {1/fps}\n")
-            # Add the last frame again for proper duration
-            if sorted_frames:
-                f.write(f"file '{sorted_frames[-1]}'\n")
-            temp_list_file = f.name
-        
-        try:
-            # Get encoding configuration with automatic NVENC fallback
-            from .nvenc_utils import get_nvenc_fallback_encoding_config, build_ffmpeg_video_encoding_args
-            
-            # Get video dimensions for encoding config (use first frame as reference)
-            if frame_paths:
-                first_frame = cv2.imread(frame_paths[0])
-                if first_frame is not None:
-                    height, width = first_frame.shape[:2]
-                else:
-                    width, height = 1920, 1080  # Default fallback
-            else:
-                width, height = 1920, 1080  # Default fallback
-            
-            encoding_config = get_nvenc_fallback_encoding_config(
-                use_gpu=ffmpeg_use_gpu,
-                ffmpeg_preset=ffmpeg_preset,
-                ffmpeg_quality=ffmpeg_quality,
-                width=width,
-                height=height,
-                logger=logger
-            )
-            
-            video_codec_opts = build_ffmpeg_video_encoding_args(encoding_config)
-            
-            if logger:
-                codec_info = f"Using {encoding_config['codec']} for face restoration video with preset {encoding_config['preset']} and {encoding_config['quality_param'].upper()} {encoding_config['quality_value']}."
-                logger.info(codec_info)
-
-            if preserve_audio and original_video_path and os.path.exists(original_video_path):
-                # Check if original video has audio stream
-                has_audio = _check_video_has_audio(original_video_path, logger)
-                
-                if has_audio:
-                    # Create video with audio from original
-                    cmd = f'ffmpeg -f concat -safe 0 -i "{temp_list_file}" -i "{original_video_path}" {video_codec_opts} -c:a aac -map 0:v:0 -map 1:a:0 -r {fps} -y "{output_path}"'
-                else:
-                    # Original video has no audio, create video without audio
-                    logger.info("Original video has no audio track, creating video without audio")
-                    cmd = f'ffmpeg -f concat -safe 0 -i "{temp_list_file}" {video_codec_opts} -r {fps} -y "{output_path}"'
-            else:
-                # Create video without audio
-                cmd = f'ffmpeg -f concat -safe 0 -i "{temp_list_file}" {video_codec_opts} -r {fps} -y "{output_path}"'
-            
-            # Use centralized ffmpeg command execution
-            from .ffmpeg_utils import run_ffmpeg_command
-            success = run_ffmpeg_command(cmd, "Face Restoration Video Reassembly", logger, raise_on_error=False)
-            
-            if success:
-                result['success'] = True
-                logger.info(f"Successfully reassembled video: {output_path}")
-            else:
-                result['error'] = "FFmpeg failed to reassemble video"
-                logger.error("Video reassembly failed")
-        
-        finally:
-            # Clean up temporary file
-            try:
-                os.unlink(temp_list_file)
-            except Exception as e:
-                logger.warning(f"Failed to clean up temp file {temp_list_file}: {e}")
-    
-    except subprocess.TimeoutExpired:
-        result['error'] = "Video reassembly timed out"
-        logger.error("Video reassembly timed out")
-    except Exception as e:
-        result['error'] = f"Unexpected error during video reassembly: {e}"
-        logger.error(f"Video reassembly error: {e}", exc_info=True)
-    
-    return result
 
 def _create_comparison_video(
     original_video_path: str,
@@ -1348,7 +1340,7 @@ def apply_face_restoration_to_frames(
         
         batch_result = restore_frames_batch_true(
             frame_files, output_frames_dir, fidelity_weight,
-            enable_colorization, model_path, batch_size, batch_progress_callback, logger
+            enable_colorization, model_path, batch_size, batch_progress_callback, None, logger
         )
         
         result['processed_count'] = batch_result['processed_count']
@@ -1412,6 +1404,7 @@ def restore_frames_batch_true(
     model_path: Optional[str] = None,
     batch_size: int = 4,
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
+    permanent_frames_dir: Optional[str] = None,
     logger: Optional[logging.Logger] = None
 ) -> Dict[str, Any]:
     """
@@ -1448,6 +1441,11 @@ def restore_frames_batch_true(
         'average_time_per_frame': 0.0,
         'errors': []
     }
+    
+    if logger and permanent_frames_dir:
+        logger.info(f"Face restoration batch processing: permanent frames will be saved to {permanent_frames_dir}")
+        # Ensure the permanent directory exists
+        os.makedirs(permanent_frames_dir, exist_ok=True)
     
     try:
         # Ensure CodeFormer is available before proceeding
@@ -1517,7 +1515,8 @@ def restore_frames_batch_true(
         logger.info(f"Processing {len(frame_paths)} frames with TRUE batch processing (batch_size: {batch_size})")
         
         # Step 1: Extract all faces from all frames
-        all_face_data = []  # List of (frame_path, face_idx, cropped_face, original_img)
+        all_face_data = []  # List of face data with frame info
+        frames_without_faces = []  # Track frames with no faces for fallback
         
         for frame_idx, frame_path in enumerate(frame_paths):
             if progress_callback:
@@ -1529,6 +1528,8 @@ def restore_frames_batch_true(
                 if img is None:
                     logger.warning(f"Failed to load frame: {frame_path}")
                     result['failed_count'] += 1
+                    # Save original frame as fallback
+                    frames_without_faces.append((frame_path, None))
                     continue
                     
                 # Clean face helper for new image
@@ -1560,22 +1561,60 @@ def restore_frames_batch_true(
                             }
                         })
                         
-                result['faces_detected_total'] += num_det_faces
+                    result['faces_detected_total'] += num_det_faces
+                else:
+                    # No faces detected, save original frame
+                    frames_without_faces.append((frame_path, img.copy()))
                         
             except Exception as e:
                 logger.error(f"Error processing frame {frame_path}: {e}")
                 result['failed_count'] += 1
+                # Save original frame as fallback
+                frames_without_faces.append((frame_path, None))
                 continue
         
-        if not all_face_data:
-            result['errors'].append("No faces detected in any frames")
+        # Save frames without faces as original (fallback)
+        for frame_path, original_img in frames_without_faces:
+            try:
+                frame_name = os.path.splitext(os.path.basename(frame_path))[0]
+                
+                # Load original if not provided
+                if original_img is None:
+                    original_img = cv2.imread(frame_path, cv2.IMREAD_COLOR)
+                    if original_img is None:
+                        logger.error(f"Could not load original frame for fallback: {frame_path}")
+                        continue
+                
+                # Save to temp output
+                output_path = os.path.join(output_dir, f"{frame_name}_restored.png")
+                cv2.imwrite(output_path, original_img)
+                result['output_paths'].append(output_path)
+                
+                # Save to permanent directory if provided
+                if permanent_frames_dir:
+                    permanent_frame_name = f"{frame_name}.png"
+                    permanent_path = os.path.join(permanent_frames_dir, permanent_frame_name)
+                    cv2.imwrite(permanent_path, original_img)
+                    logger.debug(f"Saved original frame (no faces detected): {permanent_frame_name}")
+                
+                result['processed_count'] += 1
+                
+            except Exception as e:
+                logger.error(f"Failed to save original frame {frame_path}: {e}")
+                result['failed_count'] += 1
+        
+        if not all_face_data and not frames_without_faces:
+            result['errors'].append("No faces detected and no frames could be processed")
             return result
             
-        logger.info(f"Extracted {len(all_face_data)} faces from {len(frame_paths)} frames")
+        logger.info(f"Extracted {len(all_face_data)} faces from {len(frame_paths)} frames, {len(frames_without_faces)} frames without faces saved as originals")
         
-        # Step 2: Process faces in true batches
+        # Step 2: Process faces in true batches (only if we have faces to process)
         total_faces = len(all_face_data)
         processed_faces = 0
+        
+        if total_faces > 0:
+            logger.info(f"Processing {total_faces} faces in TRUE batch mode")
         
         for batch_start in range(0, total_faces, batch_size):
             batch_end = min(batch_start + batch_size, total_faces)
@@ -1620,6 +1659,9 @@ def restore_frames_batch_true(
                 
                 # Step 3: Paste restored faces back to original images and save
                 for face_data, restored_face in zip(current_batch, restored_faces):
+                    frame_name = os.path.splitext(os.path.basename(face_data['frame_path']))[0]
+                    output_path = os.path.join(output_dir, f"{frame_name}_restored.png")
+                    
                     try:
                         # Restore face helper state
                         face_helper.clean_all()
@@ -1638,17 +1680,47 @@ def restore_frames_batch_true(
                         restored_img = face_helper.paste_faces_to_input_image(upsample_img=None, draw_box=False)
                         
                         # Save result
-                        frame_name = os.path.splitext(os.path.basename(face_data['frame_path']))[0]
-                        output_path = os.path.join(output_dir, f"{frame_name}_restored.png")
                         cv2.imwrite(output_path, restored_img)
+                        
+                        # Save to permanent directory immediately if provided
+                        if permanent_frames_dir:
+                            permanent_frame_name = f"{frame_name}.png"  # Use original naming convention
+                            permanent_path = os.path.join(permanent_frames_dir, permanent_frame_name)
+                            cv2.imwrite(permanent_path, restored_img)
+                            if (result['processed_count'] + 1) % 25 == 0 or (result['processed_count'] + 1) % 100 == 0:
+                                logger.info(f"Live frame saving: {result['processed_count'] + 1} frames saved to {permanent_frames_dir}")
+                            else:
+                                logger.debug(f"Saved restored frame to permanent storage: {permanent_frame_name}")
                         
                         result['output_paths'].append(output_path)
                         result['processed_count'] += 1
                         
                     except Exception as e:
-                        logger.error(f"Error saving restored frame {face_data['frame_path']}: {e}")
-                        result['failed_count'] += 1
-                        result['errors'].append(f"Save error for {face_data['frame_path']}: {e}")
+                        # If face restoration fails, use the original frame as fallback
+                        logger.warning(f"Face restoration failed for {face_data['frame_path']}: {e}. Using original frame.")
+                        
+                        try:
+                            # Use original frame as fallback
+                            original_img = face_data['original_img']
+                            cv2.imwrite(output_path, original_img)
+                            
+                            # Save original to permanent directory if provided
+                            if permanent_frames_dir:
+                                permanent_frame_name = f"{frame_name}.png"
+                                permanent_path = os.path.join(permanent_frames_dir, permanent_frame_name)
+                                cv2.imwrite(permanent_path, original_img)
+                                if (result['processed_count'] + 1) % 25 == 0 or (result['processed_count'] + 1) % 100 == 0:
+                                    logger.info(f"Live frame saving (fallback): {result['processed_count'] + 1} frames saved to {permanent_frames_dir}")
+                                else:
+                                    logger.debug(f"Saved original frame to permanent storage (fallback): {permanent_frame_name}")
+                            
+                            result['output_paths'].append(output_path)
+                            result['processed_count'] += 1  # Count as processed even though it's original
+                            
+                        except Exception as fallback_e:
+                            logger.error(f"Even fallback to original frame failed for {face_data['frame_path']}: {fallback_e}")
+                            result['failed_count'] += 1
+                            result['errors'].append(f"Complete failure for {face_data['frame_path']}: {e}, fallback: {fallback_e}")
                 
                 batch_time = time.time() - batch_start_time
                 processed_faces += len(current_batch)
@@ -1666,7 +1738,11 @@ def restore_frames_batch_true(
         result['success'] = result['processed_count'] > 0
         
         if result['success']:
-            logger.info(f"TRUE batch processing completed: {result['processed_count']} frames processed, {result['failed_count']} failed in {result['total_processing_time']:.2f}s")
+            faces_processed = len(all_face_data) if 'all_face_data' in locals() else 0
+            originals_saved = len(frames_without_faces) if 'frames_without_faces' in locals() else 0
+            logger.info(f"TRUE batch processing completed: {result['processed_count']} frames processed ({faces_processed} with face restoration, {originals_saved} originals), {result['failed_count']} failed in {result['total_processing_time']:.2f}s")
+            if permanent_frames_dir:
+                logger.info(f"All frames (restored + originals) saved to: {permanent_frames_dir}")
         else:
             logger.error(f"TRUE batch processing failed: {result['failed_count']} frames failed")
             
