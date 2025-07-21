@@ -397,7 +397,7 @@ progress =gr .Progress (track_tqdm =True )
     )
 
 with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
-    gr .Markdown ("# SECourses Video and Image Upscaler Pro V2")
+    gr .Markdown ("# SECourses Video and Image Upscaler Pro V2 - https://www.patreon.com/posts/134405610")
 
     with gr .Tabs ()as main_tabs :
         with gr .Tab ("Main",id ="main_tab"):
