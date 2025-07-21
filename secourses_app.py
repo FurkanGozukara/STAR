@@ -3225,7 +3225,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
 
         partial_run_upscale_for_batch =partial (core_run_upscale ,
         logger =logger ,
-        app_config_module =None ,
+        app_config_module =app_config_module ,
         metadata_handler_module =metadata_handler ,
         VideoToVideo_sr_class =VideoToVideo_sr ,
         setup_seed_func =setup_seed ,
@@ -3289,6 +3289,15 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         )
 
     def build_batch_app_config_from_ui (*args ):
+        
+        # Add parameter count validation similar to the regular build_app_config_from_ui function
+        if len (args )<97 :
+            logger .warning (f"Expected 97 UI arguments for batch processing, got {len(args)}. Adding default values for missing components.")
+            missing_count =97 -len (args )
+            args =list (args )+[None ]*missing_count 
+        elif len (args )>97 :
+            logger .warning (f"Expected 97 UI arguments for batch processing, got {len(args)}. Trimming extra arguments.")
+            args =args [:97 ]
 
         (
         input_video_val ,user_prompt_val ,pos_prompt_val ,neg_prompt_val ,model_selector_val ,
@@ -3487,11 +3496,51 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         result =process_batch_videos_wrapper (build_batch_app_config_from_ui (*args ))
         return result 
 
-    batch_click_inputs =click_inputs +[
+    # Create dedicated batch input list with only the parameters needed for batch processing
+    # This prevents parameter mismatch issues that can occur when click_inputs contains extra parameters
+    batch_click_inputs =[
+    # Core processing parameters (matching build_batch_app_config_from_ui order)
+    input_video ,user_prompt ,pos_prompt ,neg_prompt ,model_selector ,
+    upscale_factor_slider ,cfg_slider ,steps_slider ,solver_mode_radio ,
+    max_chunk_len_slider ,enable_chunk_optimization_check ,vae_chunk_slider ,enable_vram_optimization_check ,color_fix_dropdown ,
+    enable_tiling_check ,tile_size_num ,tile_overlap_num ,
+    enable_context_window_check ,context_overlap_num ,
+    enable_target_res_check ,target_h_num ,target_w_num ,target_res_mode_radio ,
+    enable_auto_aspect_resolution_check ,auto_resolution_status_display ,
+    ffmpeg_preset_dropdown ,ffmpeg_quality_slider ,ffmpeg_use_gpu_check ,
+    save_frames_checkbox ,save_metadata_checkbox ,save_chunks_checkbox ,save_chunk_frames_checkbox ,
+    create_comparison_video_check ,
+    enable_scene_split_check ,scene_split_mode_radio ,scene_min_scene_len_num ,scene_drop_short_check ,scene_merge_last_check ,
+    scene_frame_skip_num ,scene_threshold_num ,scene_min_content_val_num ,scene_frame_window_num ,
+    scene_copy_streams_check ,scene_use_mkvmerge_check ,scene_rate_factor_num ,scene_preset_dropdown ,scene_quiet_ffmpeg_check ,
+    scene_manual_split_type_radio ,scene_manual_split_value_num ,
+    enable_fps_decrease ,fps_decrease_mode ,fps_multiplier_preset ,fps_multiplier_custom ,target_fps ,fps_interpolation_method ,
+    enable_rife_interpolation ,rife_multiplier ,rife_fp16 ,rife_uhd ,rife_scale ,
+    rife_skip_static ,rife_enable_fps_limit ,rife_max_fps_limit ,
+    rife_apply_to_chunks ,rife_apply_to_scenes ,rife_keep_original ,rife_overwrite_original 
+    ]
+
+    # Add CogVLM parameters (conditional)
+    if UTIL_COG_VLM_AVAILABLE :
+        batch_click_inputs .extend ([cogvlm_quant_radio ,cogvlm_unload_radio ,auto_caption_then_upscale_check ])
+    else :
+        batch_click_inputs .extend ([gr .State (None ),gr .State (None ),gr .State (False )])
+
+    # Add remaining core parameters
+    batch_click_inputs .extend ([
+    seed_num ,random_seed_check ,
+    upscaler_type_radio ,
+    image_upscaler_model_dropdown ,image_upscaler_batch_size_slider ,
+    enable_face_restoration_check ,face_restoration_fidelity_slider ,enable_face_colorization_check ,
+    face_restoration_when_radio ,codeformer_model_dropdown ,face_restoration_batch_size_slider ,
+    enable_seedvr2_check ,seedvr2_model_dropdown ,seedvr2_quality_preset_radio ,seedvr2_batch_size_slider ,seedvr2_use_gpu_check ,
+    input_frames_folder ,frame_folder_fps_slider ,
+    gpu_selector ,
+    # Batch-specific parameters
     batch_input_folder ,batch_output_folder ,enable_batch_frame_folders ,
     enable_direct_image_upscaling ,
     batch_skip_existing ,batch_use_prompt_files ,batch_save_captions ,batch_enable_auto_caption 
-    ]
+    ])
 
     batch_process_button .click (
     fn =batch_wrapper ,

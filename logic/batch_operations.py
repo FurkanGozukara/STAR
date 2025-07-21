@@ -67,7 +67,7 @@ def process_batch_videos(
     batch_input_folder_val, batch_output_folder_val,
     user_prompt_val, pos_prompt_val, neg_prompt_val, model_selector_val,
     upscale_factor_slider_val, cfg_slider_val, steps_slider_val, solver_mode_radio_val,
-    max_chunk_len_slider_val, enable_chunk_optimization_check_val, vae_chunk_slider_val, color_fix_dropdown_val,
+    max_chunk_len_slider_val, enable_chunk_optimization_check_val, vae_chunk_slider_val, enable_vram_optimization_check_val, color_fix_dropdown_val,
     enable_tiling_check_val, tile_size_num_val, tile_overlap_num_val,
     enable_context_window_check_val, context_overlap_num_val,
     enable_target_res_check_val, target_h_num_val, target_w_num_val, target_res_mode_radio_val,
@@ -82,7 +82,7 @@ def process_batch_videos(
     scene_manual_split_type_radio_val, scene_manual_split_value_num_val,
 
     # FPS decrease parameters for batch processing
-    enable_fps_decrease_val, target_fps_val, fps_interpolation_method_val,
+    enable_fps_decrease_val, fps_decrease_mode_val, fps_multiplier_preset_val, fps_multiplier_custom_val, target_fps_val, fps_interpolation_method_val,
     
     # RIFE interpolation parameters for batch processing
     enable_rife_interpolation_val, rife_multiplier_val, rife_fp16_val, rife_uhd_val, rife_scale_val,
