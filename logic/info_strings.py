@@ -151,8 +151,116 @@ FACE_RESTORATION_HELP = """
 - 'Auto' mode uses the default CodeFormer model with optimal settings
 """
 
-# Model Info Display Templates
-SEEDVR2_MODEL_INFO_NO_MODELS = """📥 No Models Found
+# Main App Title and Headers
+APP_TITLE = "# SECourses Video and Image Upscaler Pro V4 - https://www.patreon.com/posts/134405610"
+
+ENHANCED_INPUT_HEADER = "### 📁 Enhanced Input: Video Files & Frame Folders"
+ENHANCED_INPUT_DESCRIPTION = "*Auto-detects whether your input is a single video file or a folder containing frame sequences*"
+
+CHOOSE_IMAGE_UPSCALING_METHOD = "### 🎯 Choose Your Image Upscaling Method"
+
+PROCESSING_CONTROLS_HEADER = "### 🚀 Processing Controls"
+
+IMAGE_UPSCALER_SUPPORT_NOTE = "📝 **Image Upscaler Support:** Target resolution now works with image upscalers! The system automatically adapts based on your selected model's scale factor (2x, 4x, etc.)."
+
+AUTO_RESOLUTION_HEADER = "### 🎯 Auto-Resolution (Aspect Ratio Aware)"
+
+EXPECTED_OUTPUT_RESOLUTION_HEADER = "### 📐 Expected Output Resolution Preview"
+EXPECTED_OUTPUT_RESOLUTION_DESCRIPTION = "*Real-time preview of your final video resolution based on current settings*"
+
+AUTOMATIC_SCENE_DETECTION_SETTINGS = "**Automatic Scene Detection Settings**"
+MANUAL_SPLIT_SETTINGS = "**Manual Split Settings**"
+ENCODING_SETTINGS_SCENE_SEGMENTS = "**Encoding Settings (for scene segments)**"
+
+UPSCALER_SELECTION_HEADER = "### Upscaler Selection"
+
+AUTO_CAPTIONING_DISABLED_NOTE = "_(Auto-captioning disabled as CogVLM2 components are not fully available.)_"
+
+FACE_RESTORATION_HEADER = "### Face Restoration (CodeFormer)"
+
+STAR_MODEL_SETTINGS_HEADER = "### STAR Model Settings - Temporal Upscaling"
+
+IMAGE_BASED_UPSCALER_SETTINGS_HEADER = "### Image-Based Upscaler Settings - Spatial Upscaling"
+IMAGE_BASED_UPSCALER_DESCRIPTION = "**High-speed deterministic upscaling using specialized image upscaler models**"
+IMAGE_BASED_UPSCALER_NOTE = "*⚙️ Enable Image-Based Upscaling in the Core Settings tab first*"
+
+QUICK_PREVIEW_HEADER = "### 🔍 Quick Preview & Model Testing"
+QUICK_PREVIEW_DESCRIPTION = "**Test upscaler models on the first frame of your video**"
+
+MODEL_INFORMATION_HEADER = "### Model Information & Performance"
+
+SEEDVR2_VIDEO_UPSCALER_HEADER = "### SeedVR2 Video Upscaler - Advanced AI Video Enhancement"
+
+BLOCK_SWAP_DESCRIPTION = "**🔄 Block Swap reduces VRAM usage by offloading transformer blocks to CPU**"
+
+CHUNK_PREVIEW_DESCRIPTION = "**📹 Chunk Preview - Similar to STAR model chunk preview functionality**"
+
+GENERATE_CUSTOM_COMPARISON_VIDEOS = "### Generate Custom Comparison Videos"
+CUSTOM_COMPARISON_DESCRIPTION = "Upload 2-4 videos to create custom comparison videos with various layout options using the same FFmpeg settings as the automatic comparison feature."
+
+CUSTOM_COMPARISON_STEP1 = "**Step 1:** Choose number of videos to compare"
+CUSTOM_COMPARISON_STEP2 = "**Step 2:** Upload videos for comparison"
+CUSTOM_COMPARISON_STEP3 = "**Step 3:** Choose comparison layout"
+CUSTOM_COMPARISON_STEP4 = "**Step 4:** Generate the comparison video using current FFmpeg settings"
+
+FRAME_INTERPOLATION_HEADER = "### Frame Interpolation (RIFE)"
+
+APPLY_RIFE_TO_INTERMEDIATE = "**Apply RIFE to intermediate videos (recommended)**"
+
+RIFE_NOTE = "**Note:** When RIFE is enabled, the system will return RIFE-interpolated versions to the interface instead of originals, ensuring you get the smoothest possible results throughout the process."
+
+PRE_PROCESSING_FPS_REDUCTION_HEADER = "### Pre-Processing FPS Reduction"
+PRE_PROCESSING_FPS_REDUCTION_DESCRIPTION = "**Reduce FPS before upscaling** to speed up processing and reduce VRAM usage. You can then use RIFE interpolation to restore smooth motion afterward."
+
+WORKFLOW_TIP = "**💡 Workflow Tip:** Use FPS decrease (1/2x for balanced speed/quality) for faster upscaling, then enable RIFE 2x-4x to restore smooth 24-60 FPS output!"
+
+VIDEO_EDITOR_HEADER = "# Video Editor - Cut and Extract Video Segments"
+VIDEO_EDITOR_DESCRIPTION = "**Cut specific time ranges or frame ranges from your videos with precise FFmpeg encoding.**"
+
+STANDALONE_FACE_RESTORATION_HEADER = "# Standalone Face Restoration - CodeFormer Processing"
+STANDALONE_FACE_RESTORATION_DESCRIPTION = "**Apply face restoration to videos using CodeFormer without upscaling. Perfect for improving face quality in existing videos.**"
+
+# Processing Status Messages
+PROCESSING_COMPLETE_TEMPLATE = """📊 Processing Complete!
+
+⏱️ Total Time: {total_time:.2f} seconds
+🎬 Frames Processed: {frames_processed}
+📁 Output: {output_filename}
+✅ Status: Success"""
+
+BATCH_PROCESSING_COMPLETE_TEMPLATE = """📊 Batch Processing Complete!
+
+⏱️ Total Time: {total_time:.2f} seconds
+🎬 Videos Processed: {videos_processed}
+📁 Output Folder: {output_folder}
+🔧 Batch Size: {face_restoration_batch_size_val}"""
+
+VIDEO_CUTTING_SUCCESS_TEMPLATE = """✅ Video cutting completed successfully!
+
+📁 Output: {output_filename}
+⏱️ Processing Time: {processing_time:.2f} seconds
+✂️ Cuts Applied: {cuts_applied}
+
+{analysis_text}"""
+
+VIDEO_CUTTING_INTEGRATION_TEMPLATE = """🎬✅ Video cutting completed successfully!
+
+📁 Output: {output_filename}
+⏱️ Processing Time: {processing_time:.2f} seconds
+✂️ Cuts Applied: {cuts_applied}
+
+{status_msg}"""
+
+# SeedVR2 Status Messages
+SEEDVR2_INSTALLATION_MISSING = """❌ SeedVR2 Installation Missing
+
+Required components not found in:
+└── SeedVR2/
+
+Please ensure SeedVR2 is properly installed.
+Expected location: SeedVR2/models/"""
+
+SEEDVR2_NO_MODELS_FOUND = """📥 No Models Found
 
 To use SeedVR2, you need to place model files in:
 └── SeedVR2/models/
@@ -168,7 +276,7 @@ To use SeedVR2, you need to place model files in:
 
 🔄 Click 'Refresh Models' after adding files"""
 
-SEEDVR2_MODEL_INFO_ERROR_TEMPLATE = """❌ Error Detected
+SEEDVR2_ERROR_DETECTED_TEMPLATE = """❌ Error Detected
 
 {error_message}
 
@@ -177,44 +285,8 @@ Please check the logs for more details and ensure:
 • Required dependencies are available
 • File permissions are correct"""
 
-# Processing Status Messages
-DEFAULT_STATUS_MESSAGES = {
-    'ready_video': '🎞️ Ready to edit videos. Upload a video and specify cut ranges to begin.',
-    'ready_face_restoration': '🎭 Ready for face restoration processing. Upload a video and configure settings to begin.',
-    'ready_processing_stats': '📊 Processing statistics will appear here during face restoration.',
-    'ready_image_processing': 'Ready to process images...',
-    'ready_image_details': 'Upload an image to see details...',
-    'ready_processing_log': 'Processing log will appear here...',
-    'validate_input': 'Enter a video file path or frames folder path above to validate',
-    'cut_analysis': '✏️ Enter ranges above to see cut analysis',
-    'time_estimate': '📊 Upload video and enter ranges to see time estimate',
-    'expected_resolution': '📹 Upload a video and configure settings to see expected output resolution',
-}
-
-# Processing Success Messages
-PROCESSING_SUCCESS_TEMPLATES = {
-    'image_processing_complete': """✅ Image processing completed successfully!
-
-📁 Output: {output_filename}
-📊 Details: {width}×{height} pixels
-⏱️ Time: {processing_time:.2f} seconds
-🔍 Upscale: {upscale_factor:.2f}x""",
-    
-    'temp_cleanup_success': "✅ Temp folder cleared. Freed {freed_gb:.2f} GB. Remaining: {remaining_label}",
-    'temp_cleanup_error': "⚠️ Temp folder cleanup encountered errors. Check logs."
-}
-
-# Direct Image Upscaling Info Messages
-DIRECT_IMAGE_UPSCALING_WARNING = "⚠️ Direct Image Upscaling enabled: Automatically uses Image Based Upscalers. Switch to 'Use Image Based Upscalers' in Core Settings for optimal results."
-
-DIRECT_IMAGE_UPSCALING_SUCCESS = "✅ Direct Image Upscaling enabled: Will process JPG, PNG, etc. files directly with the selected image upscaler model."
-
-DIRECT_IMAGE_UPSCALING_DEFAULT = "Process individual image files (JPG, PNG, etc.) directly with selected image upscaler model. Ideal for batch upscaling photos/images."
-
 # Block Swap Status Messages
-BLOCK_SWAP_DISABLED = "Block swap disabled"
-
-BLOCK_SWAP_ENABLED_TEMPLATE = """🔄 Advanced Block Swap Enabled
+BLOCK_SWAP_ADVANCED_ENABLED_TEMPLATE = """🔄 Advanced Block Swap Enabled
 
 {status_icon} {status_msg}
 💾 Current Memory: {memory_info}
@@ -226,7 +298,7 @@ BLOCK_SWAP_ENABLED_TEMPLATE = """🔄 Advanced Block Swap Enabled
 
 💡 Real-time optimization active"""
 
-BLOCK_SWAP_FALLBACK_TEMPLATE = """🔄 Block Swap Enabled: {block_swap_counter} blocks
+BLOCK_SWAP_ENABLED_FALLBACK_TEMPLATE = """🔄 Block Swap Enabled: {block_swap_counter} blocks
 
 📉 Estimated VRAM reduction: ~{estimated_savings}%
 ⚡ Performance impact: ~{performance_impact}% slower
@@ -235,92 +307,82 @@ BLOCK_SWAP_FALLBACK_TEMPLATE = """🔄 Block Swap Enabled: {block_swap_counter} 
 ⚠️ Real-time monitoring unavailable"""
 
 # GPU Status Messages
-NO_CUDA_GPUS_DETECTED = """❌ No CUDA GPUs detected"""
+NO_CUDA_GPUS_DETECTED_DETAILED = """❌ No CUDA GPUs detected
 
-SEEDVR2_DEPENDENCIES_SUCCESS = "✅ SeedVR2 ready to use!\n🚀 All dependencies available"
+Please ensure:
+• NVIDIA GPU is installed and recognized
+• CUDA drivers are properly installed
+• GPU is not being used by other processes"""
 
-SEEDVR2_DEPENDENCIES_MISSING_TEMPLATE = "❌ Missing dependencies:\n{missing_deps}"
+# Intelligent Analysis Messages
+INTELLIGENT_BLOCK_SWAP_ANALYSIS_TEMPLATE = """🧠 Intelligent Block Swap Analysis
+
+📊 Model: {model_filename}
+💾 VRAM Requirements: {vram_requirements}
+⚙️ Recommended Settings:
+{recommendations}
+
+Click "Apply Optimal Settings" to use these recommendations."""
+
+PROFESSIONAL_MULTI_GPU_ANALYSIS_TEMPLATE = """🚀 Professional Multi-GPU Analysis
+
+📊 Model: {model_filename}
+💾 Total VRAM: {total_vram:.1f}GB
+⚙️ Recommended Configuration:
+{recommendations}
+
+⚡ Performance monitoring will activate during processing to track actual speedup."""
+
+MODEL_VALIDATION_ENHANCED_TEMPLATE = """{current_info}
+
+📊 Model Specifications:
+• Architecture: {architecture}
+• Scale Factor: {scale_factor}x
+• Parameters: {parameters}
+• VRAM Usage: {vram_usage}
+• Block Swap: {'Enabled' if recommendations.get('enable_block_swap', False) else 'Disabled'}
+• Multi-GPU: {'Enabled' if recommendations.get('enable_multi_gpu', False) else 'Disabled'}
+
+📊 Available VRAM: {total_vram:.1f}GB"""
+
+MODEL_VALIDATION_FAILED_TEMPLATE = """❌ Model Validation Failed
+
+Error: {error_message}
+
+Please ensure:
+• Model file is not corrupted
+• File permissions are correct
+• Sufficient disk space available"""
+
+BLOCK_SWAP_ACTIVE_STATUS_TEMPLATE = """🔄 Advanced Block Swap Active
+
+📊 Current Status: {status_msg}
+💾 Memory Usage: {memory_info}
+⚙️ Configuration: {block_swap_counter} blocks
+📈 Estimated Savings: ~{estimated_savings:.1f}GB
+
+🔄 Auto-refreshing every 30 seconds"""
+
+# Model Info Display Templates
+MODEL_INFO_DISPLAY_TEMPLATE = """**{model_name}**
+📊 Scale Factor: {scale_factor}x
+💾 VRAM Usage: {vram_usage}
+🔧 Architecture: {architecture}
+📏 Input Size: {input_size}
+🎯 Output Size: {output_size}
+⚡ Supports BFloat16: {supports_bfloat16}"""
 
 # Error Messages
-GENERAL_ERROR_TEMPLATES = {
-    'model_info_error': "Error loading model info: {error}",
-    'video_info_error': "❌ Error reading video: {error}",
-    'validation_error': "❌ Validation Error: {error}",
-    'processing_error': "❌ Error: {error}",
-    'dependency_check_error': "❌ Dependency check failed: {error}",
-    'initialization_error': "❌ Initialization failed: {error}",
-    'no_results_error': "❌ No results returned from image processing"
-}
+MODEL_INFO_EXTRACTION_ERROR = "Could not extract model information from selection"
+MODEL_SCAN_ERROR_STATUS = "Error scanning models - check upscale_models/ directory"
+SEEDVR2_NO_MODELS_STATUS = "No SeedVR2 models found - Place .safetensors files in SeedVR2/models/"
 
-# Preset Status Messages
-PRESET_STATUS_LOADED = "✅ Loaded on startup: {preset_name}"
-PRESET_STATUS_NO_PRESET = "⚠️ No preset loaded on startup - using defaults"
-
-# Auto-Caption Status Messages
-AUTO_CAPTION_DISABLED_IMAGE_UPSCALER = "Image-based upscaling is enabled. Auto-captioning is disabled as image upscalers don't use prompts."
-AUTO_CAPTION_UNAVAILABLE = "Auto-captioning requested but CogVLM2 is not available. Using original prompt."
-
-# Video Information Display Template
-VIDEO_INFO_NO_VIDEO = "📹 Upload a video to see detailed information"
-
-# Batch Processing Info
-BATCH_SAVE_CAPTIONS_INFO = "Save auto-generated captions as filename.txt in the input folder for future reuse. Never overwrites existing prompt files."
-
-BATCH_USE_PROMPT_FILES_INFO = "Look for text files with same name as video (e.g., video.txt) to use as custom prompts. Takes priority over user prompt and auto-caption."
-
-BATCH_ENABLE_AUTO_CAPTION_INFO = "Generate automatic captions for videos that don't have prompt files. Uses the same CogVLM2 settings as Core Settings tab."
-
-# RIFE Interpolation Info
-RIFE_INTERPOLATION_INFO = "Enable AI-powered frame interpolation to increase video FPS. When enabled, RIFE will be applied to the final upscaled video and can optionally be applied to intermediate chunks and scenes."
-
-RIFE_DESCRIPTION = "**RIFE (Real-time Intermediate Flow Estimation)** uses AI to intelligently generate intermediate frames between existing frames, increasing video smoothness and frame rate."
-
-# SeedVR2 Specific Info
-SEEDVR2_BATCH_SIZE_INFO = "Frames processed simultaneously. Min 5 for temporal consistency. Higher = better quality but more VRAM."
-
-SEEDVR2_TEMPORAL_OVERLAP_INFO = "Frame overlap between batches for smoother transitions. Higher = smoother but slower."
-
-SEEDVR2_DESCRIPTION = "**🚀 Real-time Temporal Consistency & Superior Quality**"
-
-# Image Processing Info
-IMAGE_PRESERVE_ASPECT_RATIO_INFO = "Maintain the original image aspect ratio during upscaling"
-
-IMAGE_OUTPUT_FORMAT_INFO = "Choose output image format. PNG for lossless, JPEG for smaller files"
-
-IMAGE_QUALITY_INFO = "Quality level for JPEG/WEBP output (70-100, higher = better quality)"
-
-IMAGE_PRESERVE_METADATA_INFO = "Keep original image EXIF data and metadata in the output"
-
-IMAGE_CUSTOM_SUFFIX_INFO = "Custom suffix added to output filename (e.g., 'image_upscaled.png')"
-
-IMAGE_ENABLE_COMPARISON_INFO = "Generate a side-by-side before/after comparison image"
-
-# Face Restoration Detailed Info
-FACE_RESTORATION_ENABLE_INFO = """Enhance faces in the video using CodeFormer. Works with all upscaler types.
-- Detects and restores faces automatically
-- Can be applied before or after upscaling
-- Supports both face restoration and colorization
-- Requires CodeFormer models in pretrained_weight/ directory"""
-
-# Context and Memory Management Info
-CONTEXT_WINDOW_INFO = """Include previous frames as context when processing each chunk (except the first). Similar to "Optimize Last Chunk Quality" but applied to all chunks.
-- Mechanism: Each chunk (except first) includes N previous frames as context, but only outputs new frames. Provides temporal consistency without complex overlap logic.
-- Quality Impact: Better temporal consistency and reduced flickering between chunks. More context = better consistency.
-- VRAM Impact: Medium increase due to processing context frames (recommend 25-50% of Max Frames per Chunk).
-- Speed Impact: Slower due to processing additional context frames, but simpler and more predictable than traditional sliding window."""
-
-ADVANCED_MEMORY_MANAGEMENT_INFO = """Advanced memory management for STAR model components. Automatically moves models to CPU/unloads when not in use.
-- Text Encoder: Completely unloaded after encoding, reloaded only for new prompts
-- VAE: Moved to CPU when not actively encoding/decoding
-- VRAM Impact: Slightly reduces peak VRAM
-- Quality Impact: None - identical results with optimized memory usage"""
-
-# Processing Control Messages
+# Processing Cancelled Messages
 PROCESSING_CANCELLED_MESSAGES = {
     'auto_caption_cancelled': "⚠️ Process cancelled by user during auto-captioning",
     'main_process_cancelled': "⚠️ Process cancelled by user",
     'caption_generation_cancelled': "Caption generation failed or was cancelled. Using original prompt."
-} 
+}
 
 # Additional UI Component Info Strings
 UPSCALER_TYPE_SELECTION_INFO = """Select the upscaling method:
@@ -559,8 +621,6 @@ MODEL_INFO_EXTRACTION_ERROR = "Could not extract model information from selectio
 # Labels for Longer Components
 DESCRIBE_VIDEO_CONTENT_LABEL = "Describe the Video Content (Prompt) (Useful only for STAR Model)"
 
-AUTO_CAPTION_THEN_UPSCALE_LABEL = "Auto-caption then Upscale (Useful only for STAR Model)"
-
 DEFAULT_POSITIVE_PROMPT_LABEL = "Default Positive Prompt (Appended)"
 
 DEFAULT_NEGATIVE_PROMPT_LABEL = "Default Negative Prompt (Appended)"
@@ -606,3 +666,118 @@ FACE_RESTORATION_FIDELITY_WEIGHT_LABEL = "Face Restoration Fidelity Weight"
 CREATE_BEFORE_AFTER_COMPARISON_VIDEO_LABEL = "Create Before/After Comparison Video"
 
 FFMPEG_QUALITY_CRF_LIBX264_LABEL = "FFmpeg Quality (CRF for libx264)" 
+
+# Processing Status Messages
+DEFAULT_STATUS_MESSAGES = {
+    'ready_video': '🎞️ Ready to edit videos. Upload a video and specify cut ranges to begin.',
+    'ready_face_restoration': '🎭 Ready for face restoration processing. Upload a video and configure settings to begin.',
+    'ready_processing_stats': '📊 Processing statistics will appear here during face restoration.',
+    'ready_image_processing': 'Ready to process images...',
+    'ready_image_details': 'Upload an image to see details...',
+    'ready_processing_log': 'Processing log will appear here...',
+    'validate_input': 'Enter a video file path or frames folder path above to validate',
+    'cut_analysis': '✏️ Enter ranges above to see cut analysis',
+    'time_estimate': '📊 Upload video and enter ranges to see time estimate',
+    'expected_resolution': '📹 Upload a video and configure settings to see expected output resolution',
+}
+
+# Processing Success Messages
+PROCESSING_SUCCESS_TEMPLATES = {
+    'image_processing_complete': """✅ Image processing completed successfully!
+
+📁 Output: {output_filename}
+📊 Details: {width}×{height} pixels
+⏱️ Time: {processing_time:.2f} seconds
+🔍 Upscale: {upscale_factor:.2f}x""",
+    
+    'temp_cleanup_success': "✅ Temp folder cleared. Freed {freed_gb:.2f} GB. Remaining: {remaining_label}",
+    'temp_cleanup_error': "⚠️ Temp folder cleanup encountered errors. Check logs."
+}
+
+# Direct Image Upscaling Info Messages
+DIRECT_IMAGE_UPSCALING_WARNING = "⚠️ Direct Image Upscaling enabled: Automatically uses Image Based Upscalers. Switch to 'Use Image Based Upscalers' in Core Settings for optimal results."
+
+DIRECT_IMAGE_UPSCALING_SUCCESS = "✅ Direct Image Upscaling enabled: Will process JPG, PNG, etc. files directly with the selected image upscaler model."
+
+DIRECT_IMAGE_UPSCALING_DEFAULT = "Process individual image files (JPG, PNG, etc.) directly with selected image upscaler model. Ideal for batch upscaling photos/images."
+
+# Preset Status Messages
+PRESET_STATUS_LOADED = "✅ Loaded on startup: {preset_name}"
+PRESET_STATUS_NO_PRESET = "⚠️ No preset loaded on startup - using defaults"
+
+# Auto-Caption Status Messages
+AUTO_CAPTION_DISABLED_IMAGE_UPSCALER = "Image-based upscaling is enabled. Auto-captioning is disabled as image upscalers don't use prompts."
+AUTO_CAPTION_UNAVAILABLE = "Auto-captioning requested but CogVLM2 is not available. Using original prompt."
+
+# Video Information Display Template
+VIDEO_INFO_NO_VIDEO = "📹 Upload a video to see detailed information"
+
+# Batch Processing Info
+BATCH_SAVE_CAPTIONS_INFO = "Save auto-generated captions as filename.txt in the input folder for future reuse. Never overwrites existing prompt files."
+
+BATCH_USE_PROMPT_FILES_INFO = "Look for text files with same name as video (e.g., video.txt) to use as custom prompts. Takes priority over user prompt and auto-caption."
+
+BATCH_ENABLE_AUTO_CAPTION_INFO = "Generate automatic captions for videos that don't have prompt files. Uses the same CogVLM2 settings as Core Settings tab."
+
+# RIFE Interpolation Info
+RIFE_INTERPOLATION_INFO = "Enable AI-powered frame interpolation to increase video FPS. When enabled, RIFE will be applied to the final upscaled video and can optionally be applied to intermediate chunks and scenes."
+
+RIFE_DESCRIPTION = "**RIFE (Real-time Intermediate Flow Estimation)** uses AI to intelligently generate intermediate frames between existing frames, increasing video smoothness and frame rate."
+
+# SeedVR2 Specific Info
+SEEDVR2_BATCH_SIZE_INFO = "Frames processed simultaneously. Min 5 for temporal consistency. Higher = better quality but more VRAM."
+
+SEEDVR2_TEMPORAL_OVERLAP_INFO = "Frame overlap between batches for smoother transitions. Higher = smoother but slower."
+
+SEEDVR2_DESCRIPTION = "**🚀 Real-time Temporal Consistency & Superior Quality**"
+
+# Image Processing Info
+IMAGE_PRESERVE_ASPECT_RATIO_INFO = "Maintain the original image aspect ratio during upscaling"
+
+IMAGE_OUTPUT_FORMAT_INFO = "Choose output image format. PNG for lossless, JPEG for smaller files"
+
+IMAGE_QUALITY_INFO = "Quality level for JPEG/WEBP output (70-100, higher = better quality)"
+
+IMAGE_PRESERVE_METADATA_INFO = "Keep original image EXIF data and metadata in the output"
+
+IMAGE_CUSTOM_SUFFIX_INFO = "Custom suffix added to output filename (e.g., 'image_upscaled.png')"
+
+IMAGE_ENABLE_COMPARISON_INFO = "Generate a side-by-side before/after comparison image"
+
+# Face Restoration Detailed Info
+FACE_RESTORATION_ENABLE_INFO = """Enhance faces in the video using CodeFormer. Works with all upscaler types.
+- Detects and restores faces automatically
+- Can be applied before or after upscaling
+- Supports both face restoration and colorization
+- Requires CodeFormer models in pretrained_weight/ directory"""
+
+# Context and Memory Management Info
+CONTEXT_WINDOW_INFO = """Include previous frames as context when processing each chunk (except the first). Similar to "Optimize Last Chunk Quality" but applied to all chunks.
+- Mechanism: Each chunk (except first) includes N previous frames as context, but only outputs new frames. Provides temporal consistency without complex overlap logic.
+- Quality Impact: Better temporal consistency and reduced flickering between chunks. More context = better consistency.
+- VRAM Impact: Medium increase due to processing context frames (recommend 25-50% of Max Frames per Chunk).
+- Speed Impact: Slower due to processing additional context frames, but simpler and more predictable than traditional sliding window."""
+
+ADVANCED_MEMORY_MANAGEMENT_INFO = """Advanced memory management for STAR model components. Automatically moves models to CPU/unloads when not in use.
+- Text Encoder: Completely unloaded after encoding, reloaded only for new prompts
+- VAE: Moved to CPU when not actively encoding/decoding
+- VRAM Impact: Slightly reduces peak VRAM
+- Quality Impact: None - identical results with optimized memory usage"""
+
+# General Error Templates
+GENERAL_ERROR_TEMPLATES = {
+    'no_results_error': "❌ No results generated. Please check your input and try again.",
+    'processing_failed': "❌ Processing failed. Please check the logs for details.",
+    'invalid_input': "❌ Invalid input provided. Please check your settings.",
+    'model_not_found': "❌ Model not found. Please check your model selection.",
+    'gpu_error': "❌ GPU error occurred. Please check your GPU settings.",
+    'memory_error': "❌ Out of memory. Please reduce batch size or model complexity.",
+    'file_not_found': "❌ File not found. Please check your file paths.",
+    'permission_error': "❌ Permission denied. Please check file permissions.",
+    'timeout_error': "❌ Processing timed out. Please try with smaller input.",
+    'unknown_error': "❌ An unknown error occurred. Please check the logs."
+}
+
+# Auto-Caption Labels and Info
+AUTO_CAPTION_THEN_UPSCALE_LABEL = "Auto-Caption Then Upscale"
+AUTO_CAPTION_THEN_UPSCALE_INFO = "Generate automatic captions before upscaling using CogVLM2. Useful for videos without existing prompts." 

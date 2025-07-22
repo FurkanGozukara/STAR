@@ -358,7 +358,7 @@ progress =gr .Progress (track_tqdm =True )
     )
 
 with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
-    gr .Markdown ("# SECourses Video and Image Upscaler Pro V4 - https://www.patreon.com/posts/134405610")
+    gr .Markdown (APP_TITLE)
 
     with gr .Tabs ()as main_tabs :
         with gr .Tab ("Main",id ="main_tab"):
@@ -445,8 +445,8 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         info = PROMPT_NEGATIVE_INFO
                         )
                     with gr .Group ():
-                        gr .Markdown ("### 📁 Enhanced Input: Video Files & Frame Folders")
-                        gr .Markdown ("*Auto-detects whether your input is a single video file or a folder containing frame sequences*")
+                        gr .Markdown (ENHANCED_INPUT_HEADER)
+                        gr .Markdown (ENHANCED_INPUT_DESCRIPTION)
 
                         input_frames_folder =gr .Textbox (
                         label ="Input Video or Frames Folder Path",
@@ -528,7 +528,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         )
 
                     with gr .Accordion ("Image Upscaler Selection",open =True ):
-                        gr .Markdown ("### 🎯 Choose Your Image Upscaling Method")
+                        gr .Markdown (CHOOSE_IMAGE_UPSCALING_METHOD)
 
                         image_upscaler_type_radio =gr .Radio (
                         label ="Select Image Upscaler Type",
@@ -583,7 +583,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             )
 
                     with gr .Group ():
-                        gr .Markdown ("### 🚀 Processing Controls")
+                        gr .Markdown (PROCESSING_CONTROLS_HEADER)
                         with gr .Row ():
                             image_upscale_button =gr .Button ("Upscale Image",variant ="primary",icon ="icons/upscale.png")
                             image_cancel_button =gr .Button ("Cancel Processing",variant ="stop",visible =True ,interactive =False ,icon ="icons/cancel.png")
@@ -637,7 +637,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
             with gr .Row ():
                 with gr .Column (scale =1 ):
                     with gr .Accordion ("Target Resolution - Maintains Your Input Video Aspect Ratio",open =True ):
-                        gr .Markdown ("📝 **Image Upscaler Support:** Target resolution now works with image upscalers! The system automatically adapts based on your selected model's scale factor (2x, 4x, etc.).")
+                        gr .Markdown (IMAGE_UPSCALER_SUPPORT_NOTE)
                         enable_target_res_check =gr .Checkbox (
                         label ="Enable Max Target Resolution",
                         value =INITIAL_APP_CONFIG .resolution .enable_target_res ,
@@ -661,7 +661,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             )
 
                         gr .Markdown ("---")
-                        gr .Markdown ("### 🎯 Auto-Resolution (Aspect Ratio Aware)")
+                        gr .Markdown (AUTO_RESOLUTION_HEADER)
 
                         enable_auto_aspect_resolution_check =gr .Checkbox (
                         label ="Enable Auto Aspect Resolution",
@@ -678,8 +678,8 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         )
 
                         gr .Markdown ("---")
-                        gr .Markdown ("### 📐 Expected Output Resolution Preview")
-                        gr .Markdown ("*Real-time preview of your final video resolution based on current settings*")
+                        gr .Markdown (EXPECTED_OUTPUT_RESOLUTION_HEADER)
+                        gr .Markdown (EXPECTED_OUTPUT_RESOLUTION_DESCRIPTION)
 
                         output_resolution_preview =gr .Textbox (
                         label ="Expected Output Resolution",
@@ -703,7 +703,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             info = SCENE_SPLIT_MODE_INFO
                             )
                         with gr .Group ():
-                            gr .Markdown ("**Automatic Scene Detection Settings**")
+                            gr .Markdown (AUTOMATIC_SCENE_DETECTION_SETTINGS)
                             with gr .Row ():
                                 scene_min_scene_len_num =gr .Number (label ="Min Scene Length (seconds)",value =INITIAL_APP_CONFIG .scene_split .min_scene_len ,minimum =0.1 ,step =0.1 ,info = SCENE_MIN_LENGTH_INFO)
                                 scene_threshold_num =gr .Number (label ="Detection Threshold",value =INITIAL_APP_CONFIG .scene_split .threshold ,minimum =0.1 ,maximum =10.0 ,step =0.1 ,info = SCENE_THRESHOLD_INFO)
@@ -715,12 +715,12 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                                 scene_min_content_val_num =gr .Number (label ="Min Content Value",value =INITIAL_APP_CONFIG .scene_split .min_content_val ,minimum =0.0 ,step =1.0 ,info = SCENE_MIN_CONTENT_INFO)
                                 scene_frame_window_num =gr .Number (label ="Frame Window",value =INITIAL_APP_CONFIG .scene_split .frame_window ,minimum =1 ,step =1 ,info = SCENE_FRAME_WINDOW_INFO)
                         with gr .Group ():
-                            gr .Markdown ("**Manual Split Settings**")
+                            gr .Markdown (MANUAL_SPLIT_SETTINGS)
                             with gr .Row ():
                                 scene_manual_split_type_radio =gr .Radio (label ="Manual Split Type",choices =['duration','frame_count'],value =INITIAL_APP_CONFIG .scene_split .manual_split_type ,info = SCENE_MANUAL_SPLIT_TYPE_INFO)
                                 scene_manual_split_value_num =gr .Number (label ="Split Value",value =INITIAL_APP_CONFIG .scene_split .manual_split_value ,minimum =1.0 ,step =1.0 ,info = SCENE_MANUAL_SPLIT_VALUE_INFO)
                         with gr .Group ():
-                            gr .Markdown ("**Encoding Settings (for scene segments)**")
+                            gr .Markdown (ENCODING_SETTINGS_SCENE_SEGMENTS)
                             with gr .Row ():
                                 scene_copy_streams_check =gr .Checkbox (label ="Copy Streams",value =INITIAL_APP_CONFIG .scene_split .copy_streams ,info = SCENE_COPY_STREAMS_INFO)
                                 scene_use_mkvmerge_check =gr .Checkbox (label ="Use MKVMerge",value =INITIAL_APP_CONFIG .scene_split .use_mkvmerge ,info = SCENE_USE_MKVMERGE_INFO)
@@ -733,7 +733,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
             with gr .Row ():
                 with gr .Column (scale =1 ):
                     with gr .Group ():
-                        gr .Markdown ("### Upscaler Selection")
+                        gr .Markdown (UPSCALER_SELECTION_HEADER)
 
                         def get_upscaler_display_value (internal_value ):
                             reverse_map ={
@@ -772,11 +772,11 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                                 info = CAPTION_UNLOAD_STRATEGY_INFO
                                 )
                     else :
-                        gr .Markdown ("_(Auto-captioning disabled as CogVLM2 components are not fully available.)_")
+                        gr .Markdown (AUTO_CAPTIONING_DISABLED_NOTE)
 
                 with gr .Column (scale =1 ):
                     with gr .Group ():
-                        gr .Markdown ("### Face Restoration (CodeFormer)")
+                        gr .Markdown (FACE_RESTORATION_HEADER)
                         enable_face_restoration_check =gr .Checkbox (
                         label ="Enable Face Restoration",
                         value =INITIAL_APP_CONFIG .face_restoration .enable ,
@@ -837,7 +837,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
             with gr .Row ():
                 with gr .Column (scale =1 ):
                     with gr .Group ():
-                        gr .Markdown ("### STAR Model Settings - Temporal Upscaling")
+                        gr .Markdown (STAR_MODEL_SETTINGS_HEADER)
                         model_selector =gr .Dropdown (
                         label = STAR_MODEL_TEMPORAL_UPSCALING_LABEL,
                         choices =["Light Degradation","Heavy Degradation"],
@@ -929,9 +929,9 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
             with gr .Row ():
                 with gr .Column (scale =1 ):
                     with gr .Group ():
-                        gr .Markdown ("### Image-Based Upscaler Settings - Spatial Upscaling")
-                        gr .Markdown ("**High-speed deterministic upscaling using specialized image upscaler models**")
-                        gr .Markdown ("*⚙️ Enable Image-Based Upscaling in the Core Settings tab first*")
+                        gr .Markdown (IMAGE_BASED_UPSCALER_SETTINGS_HEADER)
+                        gr .Markdown (IMAGE_BASED_UPSCALER_DESCRIPTION)
+                        gr .Markdown (IMAGE_BASED_UPSCALER_NOTE)
 
                         try :
                             available_model_files =util_scan_for_models (APP_CONFIG .paths .upscale_models_dir ,logger )
@@ -971,8 +971,8 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         )
 
                     with gr .Group ():
-                        gr .Markdown ("### 🔍 Quick Preview & Model Testing")
-                        gr .Markdown ("**Test upscaler models on the first frame of your video**")
+                        gr .Markdown (QUICK_PREVIEW_HEADER)
+                        gr .Markdown (QUICK_PREVIEW_DESCRIPTION)
 
                         with gr .Row ():
                             preview_single_btn =gr .Button ("🖼️ Preview Current Model",variant ="secondary",size ="sm")
@@ -1000,7 +1000,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
 
                 with gr .Column (scale =1 ):
                     with gr .Group ():
-                        gr .Markdown ("### Model Information & Performance")
+                        gr .Markdown (MODEL_INFORMATION_HEADER)
 
                         model_info_display =gr .Textbox (
                         label ="Selected Model Info",
@@ -1018,7 +1018,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
             with gr .Row ():
                 with gr .Column (scale =1 ):
                     with gr .Group ():
-                        gr .Markdown ("### SeedVR2 Video Upscaler - Advanced AI Video Enhancement")
+                        gr .Markdown (SEEDVR2_VIDEO_UPSCALER_HEADER)
                         gr .Markdown (SEEDVR2_DESCRIPTION)
 
                         seedvr2_dependency_status =gr .Textbox (
@@ -1176,7 +1176,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         )
 
                     with gr .Accordion ("Block Swap - VRAM Optimization",open =False ):
-                        gr .Markdown ("**🔄 Block Swap reduces VRAM usage by offloading transformer blocks to CPU**")
+                        gr .Markdown (BLOCK_SWAP_DESCRIPTION)
 
                         seedvr2_enable_block_swap_check =gr .Checkbox (
                         label ="Enable Block Swap",
@@ -1214,7 +1214,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         )
 
                     with gr .Accordion ("Chunk Preview Settings",open =True ):
-                        gr .Markdown ("**📹 Chunk Preview - Similar to STAR model chunk preview functionality**")
+                        gr .Markdown (CHUNK_PREVIEW_DESCRIPTION)
 
                         seedvr2_enable_chunk_preview_check =gr .Checkbox (
                         label ="Enable Chunk Preview",
@@ -1310,10 +1310,10 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
 
                 with gr .Column (scale =1 ):
                     with gr .Accordion ("Manual Comparison Video Generator",open =True ):
-                        gr .Markdown ("### Generate Custom Comparison Videos")
-                        gr .Markdown ("Upload 2-4 videos to create custom comparison videos with various layout options using the same FFmpeg settings as the automatic comparison feature.")
+                        gr .Markdown (GENERATE_CUSTOM_COMPARISON_VIDEOS)
+                        gr .Markdown (CUSTOM_COMPARISON_DESCRIPTION)
 
-                        gr .Markdown ("**Step 1:** Choose number of videos to compare")
+                        gr .Markdown (CUSTOM_COMPARISON_STEP1)
                         manual_video_count =gr .Radio (
                         label ="Number of Videos",
                         choices =[2 ,3 ,4 ],
@@ -1321,7 +1321,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         info ="Select how many videos you want to compare. Additional video inputs will appear based on your selection."
                         )
 
-                        gr .Markdown ("**Step 2:** Upload videos for comparison")
+                        gr .Markdown (CUSTOM_COMPARISON_STEP2)
                         manual_original_video =gr .Video (
                         label ="Video 1 (Original/Reference)",
                         sources =["upload"],
@@ -1352,7 +1352,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         visible =False 
                         )
 
-                        gr .Markdown ("**Step 3:** Choose comparison layout")
+                        gr .Markdown (CUSTOM_COMPARISON_STEP3)
                         manual_comparison_layout =gr .Radio (
                         label ="Comparison Layout",
                         choices =["auto","side_by_side","top_bottom"],
@@ -1361,7 +1361,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         interactive =True 
                         )
 
-                        gr .Markdown ("**Step 4:** Generate the comparison video using current FFmpeg settings")
+                        gr .Markdown (CUSTOM_COMPARISON_STEP4)
                         manual_comparison_button =gr .Button (
                         "Generate Multi-Video Comparison",
                         variant ="primary",
@@ -1446,7 +1446,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
             with gr .Row ():
                 with gr .Column (scale =1 ):
                     with gr .Accordion ("RIFE Interpolation Settings",open =True ):
-                        gr .Markdown ("### Frame Interpolation (RIFE)")
+                        gr .Markdown (FRAME_INTERPOLATION_HEADER)
                         gr .Markdown (RIFE_DESCRIPTION)
 
                         enable_rife_interpolation =gr .Checkbox (
@@ -1488,7 +1488,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         )
 
                     with gr .Accordion ("Intermediate Processing",open =True ):
-                        gr .Markdown ("**Apply RIFE to intermediate videos (recommended)**")
+                        gr .Markdown (APPLY_RIFE_TO_INTERMEDIATE)
                         rife_apply_to_chunks =gr .Checkbox (
                         label ="Apply to Chunks",
                         value =INITIAL_APP_CONFIG .rife .apply_to_chunks ,
@@ -1500,12 +1500,12 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         info = RIFE_APPLY_TO_SCENES_INFO
                         )
 
-                        gr .Markdown ("**Note:** When RIFE is enabled, the system will return RIFE-interpolated versions to the interface instead of originals, ensuring you get the smoothest possible results throughout the processing pipeline.")
+                        gr .Markdown (RIFE_NOTE)
 
                 with gr .Column (scale =1 ):
                     with gr .Accordion ("FPS Decrease",open =True ):
-                        gr .Markdown ("### Pre-Processing FPS Reduction")
-                        gr .Markdown ("**Reduce FPS before upscaling** to speed up processing and reduce VRAM usage. You can then use RIFE interpolation to restore smooth motion afterward.")
+                        gr .Markdown (PRE_PROCESSING_FPS_REDUCTION_HEADER)
+                        gr .Markdown (PRE_PROCESSING_FPS_REDUCTION_DESCRIPTION)
 
                         enable_fps_decrease =gr .Checkbox (
                         label ="Enable FPS Decrease",
@@ -1561,7 +1561,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         visible =True 
                         )
 
-                        gr .Markdown ("**💡 Workflow Tip:** Use FPS decrease (1/2x for balanced speed/quality) for faster upscaling, then enable RIFE 2x-4x to restore smooth 24-60 FPS output!")
+                        gr .Markdown (WORKFLOW_TIP)
 
                     with gr .Accordion ("FPS Limiting & Output Control",open =True ):
                         rife_enable_fps_limit =gr .Checkbox (
@@ -1590,8 +1590,8 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             )
 
         with gr .Tab ("Edit Videos",id ="edit_tab"):
-            gr .Markdown ("# Video Editor - Cut and Extract Video Segments")
-            gr .Markdown ("**Cut specific time ranges or frame ranges from your videos with precise FFmpeg encoding.**")
+            gr .Markdown (VIDEO_EDITOR_HEADER)
+            gr .Markdown (VIDEO_EDITOR_DESCRIPTION)
 
             with gr .Row ():
                 with gr .Column (scale =1 ):
@@ -1695,8 +1695,8 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         gr .Markdown (VIDEO_EDITING_HELP)
 
         with gr .Tab ("Face Restoration",id ="face_restoration_tab"):
-            gr .Markdown ("# Standalone Face Restoration - CodeFormer Processing")
-            gr .Markdown ("**Apply face restoration to videos using CodeFormer without upscaling. Perfect for improving face quality in existing videos.**")
+            gr .Markdown (STANDALONE_FACE_RESTORATION_HEADER)
+            gr .Markdown (STANDALONE_FACE_RESTORATION_DESCRIPTION)
 
             with gr .Row ():
                 with gr .Column (scale =1 ):
@@ -1984,14 +1984,15 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
 
                 model_name =os .path .splitext (selected_model )[0 ]
 
-                info_text =f"""**{model_name}**
-Architecture: {model_info.get('architecture_name', model_info.get('architecture', 'Unknown'))}
-Scale Factor: {model_info.get('scale', 'Unknown')}x
-Input Channels: {model_info.get('input_channels', 'Unknown')}
-Output Channels: {model_info.get('output_channels', 'Unknown')}
-File Size: {file_size_str}
-Supports Half Precision: {model_info.get('supports_half', False)}
-Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
+                info_text = MODEL_INFO_DISPLAY_TEMPLATE.format(
+    model_name=model_name,
+    scale_factor=model_info.get('scale', 'Unknown'),
+    vram_usage="Unknown",
+    architecture=model_info.get('architecture_name', model_info.get('architecture', 'Unknown')),
+    input_size=f"{model_info.get('input_channels', 'Unknown')} channels",
+    output_size=f"{model_info.get('output_channels', 'Unknown')} channels",
+    supports_bfloat16=model_info.get('supports_bfloat16', False)
+)
                 return info_text 
             elif model_info and "error"in model_info :
                 return f"Error loading model: {model_info['error']}"
@@ -3869,13 +3870,11 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
                             session_info +=f"\n🖼️ Extracted Frames: {result['session_name']}/extracted_frames/"
                             session_info +=f"\n🎨 Processed Frames: {result['session_name']}/processed_frames/"
 
-                    stats_msg =f"""📊 Processing Complete!
-⏱️ Total Time: {processing_time:.1f} seconds
-🎬 Input: {os.path.basename(input_path)}
-📁 Output: {os.path.basename(output_video) if output_video else 'N/A'}
-🎯 Fidelity: {face_restoration_fidelity_val}
-🔧 Batch Size: {face_restoration_batch_size_val}{session_info}
-✅ Status: Success"""
+                    stats_msg = PROCESSING_COMPLETE_TEMPLATE.format(
+    total_time=processing_time,
+    frames_processed=f"Input: {os.path.basename(input_path)}, Output: {os.path.basename(output_video) if output_video else 'N/A'}, Fidelity: {face_restoration_fidelity_val}, Batch Size: {face_restoration_batch_size_val}{session_info}",
+    output_filename=os.path.basename(output_video) if output_video else 'N/A'
+)
 
                     progress (1.0 ,"✅ Face restoration completed successfully!")
                     return output_video ,comparison_video ,result ['message'],stats_msg 
@@ -3935,14 +3934,12 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
                         logger .error (f"Failed to process {video_name}: {result['message']}")
 
                 processing_time =time .time ()-start_time 
-                stats_msg =f"""📊 Batch Processing Complete!
-⏱️ Total Time: {processing_time:.1f} seconds
-📁 Input Folder: {os.path.basename(input_path)}
-📁 Output Folder: {os.path.basename(output_dir)}
-✅ Processed: {processed_count} videos
-❌ Failed: {failed_count} videos
-🎯 Fidelity: {face_restoration_fidelity_val}
-🔧 Batch Size: {face_restoration_batch_size_val}"""
+                stats_msg = BATCH_PROCESSING_COMPLETE_TEMPLATE.format(
+    total_time=processing_time,
+    videos_processed=f"Processed: {processed_count}, Failed: {failed_count}",
+    output_folder=os.path.basename(output_dir),
+    face_restoration_batch_size_val=face_restoration_batch_size_val
+)
 
                 if processed_count >0 :
                     progress (1.0 ,f"✅ Batch processing completed! {processed_count}/{total_files} videos processed successfully.")
@@ -4907,14 +4904,12 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
 
             progress (1.0 ,desc ="Video cutting completed!")
 
-            status_msg =f"""✅ Video cutting completed successfully!
-
-📁 Output: {result['final_output']}
-📊 Processed: {len(ranges)} segments
-📝 Session: {result['session_dir']}
-💾 Metadata: {result['metadata_path']}
-
-{validation_result['analysis_text']}"""
+            status_msg = VIDEO_CUTTING_SUCCESS_TEMPLATE.format(
+    output_filename=result['final_output'],
+    processing_time=time.time() - start_time if 'start_time' in locals() else 0,
+    cuts_applied=len(ranges),
+    analysis_text=validation_result['analysis_text']
+)
 
             return result ["final_output"],preview_path ,status_msg 
 
@@ -4940,18 +4935,12 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         if final_output is None :
             return None ,None ,status_msg ,gr .update (),gr .update (visible =False )
 
-        integration_msg =f"""🎬✅ Video cutting completed successfully!
-
-📁 Cut Video: {os.path.basename(final_output)}
-📍 Ready for upscaling in Main tab
-
-💡 Next Steps:
-1. Switch to the 'Main' tab
-2. The cut video has been automatically loaded
-3. Configure upscaling settings as needed
-4. Click 'Upscale Video' to begin processing
-
-{status_msg}"""
+        integration_msg = VIDEO_CUTTING_INTEGRATION_TEMPLATE.format(
+    output_filename=os.path.basename(final_output),
+    processing_time=time.time() - start_time if 'start_time' in locals() else 0,
+    cuts_applied=len(ranges) if 'ranges' in locals() else 1,
+    status_msg=status_msg
+)
 
         logger .info (f"Video editor: Cut completed, updating main tab input: {final_output}")
 
@@ -5536,41 +5525,13 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
             return gr .update (value ="No model selected")
 
         if "SeedVR2 directory not found"in model_choice :
-            return gr .update (value ="""❌ SeedVR2 Installation Missing
-
-The SeedVR2 directory was not found. Please ensure:
-1. SeedVR2 is properly installed in the project root
-2. The SeedVR2/models directory exists
-3. You have the necessary permissions
-
-Expected location: SeedVR2/models/""")
+            return gr .update (value = SEEDVR2_INSTALLATION_MISSING)
 
         if "No SeedVR2 models found"in model_choice :
-            return gr .update (value ="""📥 No Models Found
-
-To use SeedVR2, you need to place model files in:
-└── SeedVR2/models/
-
-📋 Supported Models:
-• SeedVR2_3B_FP8.safetensors (Recommended - Fast & Efficient)
-• SeedVR2_7B_FP16.safetensors (High Quality)
-• Custom SeedVR2 models (.safetensors format)
-
-💡 Recommended Models:
-• 3B FP8: Best speed/VRAM balance (~6GB VRAM)
-• 7B FP16: Highest quality (~12GB VRAM)
-
-🔄 Click 'Refresh Models' after adding files""")
+            return gr .update (value = SEEDVR2_NO_MODELS_FOUND)
 
         if "Error:"in model_choice :
-            return gr .update (value =f"""❌ Error Detected
-
-{model_choice}
-
-Please check the logs for more details and ensure:
-• SeedVR2 is properly installed
-• Required dependencies are available
-• File permissions are correct""")
+            return gr .update (value = SEEDVR2_ERROR_DETECTED_TEMPLATE.format(error_message=model_choice))
 
         try :
 
@@ -5615,29 +5576,24 @@ Please check the logs for more details and ensure:
                     status_icon ="🟢"
                     status_msg ="VRAM usage normal"
 
-                info_text =f"""🔄 Advanced Block Swap Enabled
-
-{status_icon} {status_msg}
-💾 Current Memory: {memory_info}
-
-📊 Block Swap Configuration:
-• Blocks to swap: {block_swap_counter}
-• Estimated VRAM savings: ~{estimated_savings_gb:.1f}GB
-• Expected performance impact: ~{estimated_performance_impact:.1f}%
-
-💡 Real-time optimization active"""
+                info_text = BLOCK_SWAP_ADVANCED_ENABLED_TEMPLATE.format(
+    status_icon=status_icon,
+    status_msg=status_msg,
+    memory_info=memory_info,
+    block_swap_counter=block_swap_counter,
+    estimated_savings_gb=estimated_savings_gb,
+    estimated_performance_impact=estimated_performance_impact
+)
 
             except Exception as e :
 
                 logger .warning (f"Block swap monitoring error: {e}")
                 estimated_savings =min (block_swap_counter *5 ,50 )
-                info_text =f"""🔄 Block Swap Enabled: {block_swap_counter} blocks
-
-📉 Estimated VRAM reduction: ~{estimated_savings}%
-⚡ Performance impact: ~{block_swap_counter * 2}% slower
-💡 Recommended for VRAM-limited systems
-
-⚠️ Real-time monitoring unavailable"""
+                info_text = BLOCK_SWAP_ENABLED_FALLBACK_TEMPLATE.format(
+    block_swap_counter=block_swap_counter,
+    estimated_savings=estimated_savings,
+    performance_impact=block_swap_counter * 2
+)
 
             return (
             gr .update (interactive =True ),
@@ -5687,13 +5643,7 @@ Please check the logs for more details and ensure:
             gpus =util_detect_available_gpus (logger =logger )
 
             if not gpus :
-                status_text ="""❌ No CUDA GPUs detected
-
-SeedVR2 requires CUDA-compatible GPUs for optimal performance.
-Please ensure:
-• NVIDIA GPU drivers are installed
-• PyTorch with CUDA support is available
-• GPU is not being used by other processes"""
+                status_text = NO_CUDA_GPUS_DETECTED_DETAILED
                 return gr .update (value =status_text )
 
             vram_info =util_get_vram_info (logger =logger )
@@ -5846,15 +5796,11 @@ Please ensure:
             system_status =util_get_real_time_block_swap_status (logger =logger )
             memory_info =system_status .get ("memory_info","Memory info unavailable")
 
-            enhanced_display =f"""🧠 Intelligent Block Swap Analysis
-
-🖥️ Current System Status:
-{memory_info}
-
-{formatted_recommendations}
-
-🔄 Live monitoring active. Recommendations update automatically based on current VRAM usage.
-Click "Apply Optimal Settings" to use these recommendations."""
+            enhanced_display = INTELLIGENT_BLOCK_SWAP_ANALYSIS_TEMPLATE.format(
+    model_filename=model_filename,
+    vram_requirements=f"Current System Status:\n{memory_info}",
+    recommendations=formatted_recommendations
+)
 
             logger .info (f"Generated block swap recommendations for {model_filename}")
 
@@ -5886,14 +5832,11 @@ Click "Apply Optimal Settings" to use these recommendations."""
 
             multi_gpu_status =util_get_multi_gpu_status_display (logger =logger )
 
-            enhanced_display =f"""🚀 Professional Multi-GPU Analysis
-
-{multi_gpu_status}
-
-{formatted_recommendations}
-
-🔧 Click "Apply Optimal Settings" to automatically configure multi-GPU based on these recommendations.
-⚡ Performance monitoring will activate during processing to track actual speedup."""
+            enhanced_display = PROFESSIONAL_MULTI_GPU_ANALYSIS_TEMPLATE.format(
+    model_filename=model_filename,
+    total_vram=sum(gpu.get('memory_gb', 0) for gpu in gpus),
+    recommendations=f"{multi_gpu_status}\n\n{formatted_recommendations}"
+)
 
             logger .info (f"Generated professional multi-GPU recommendations for {model_filename}")
 
@@ -5965,27 +5908,22 @@ Click "Apply Optimal Settings" to use these recommendations."""
                         )
 
                         current_info =basic_info .get ('value','')
-                        enhanced_info =f"""{current_info}
-
-🎯 Optimized Settings for Your System:
-• Batch Size: {recommendations.get('batch_size', 8)}
-• Block Swap: {'Enabled' if recommendations.get('enable_block_swap', False) else 'Disabled'}
-• Multi-GPU: {'Recommended' if len(gpus) > 1 and total_vram >= 8 else 'Not needed'}
-• Preserve VRAM: {'Essential' if total_vram < 8 else 'Recommended'}
-
-✅ Model validation: Passed
-📊 Available VRAM: {total_vram:.1f}GB"""
+                        enhanced_info = MODEL_VALIDATION_ENHANCED_TEMPLATE.format(
+    current_info=current_info,
+    architecture="Unknown",
+    scale_factor="Unknown",
+    parameters="Unknown",
+    vram_usage="Unknown",
+    total_vram=total_vram,
+    recommendations={
+        'enable_block_swap': recommendations.get('enable_block_swap', False),
+        'enable_multi_gpu': len(gpus) > 1 and total_vram >= 8
+    }
+)
 
                         return gr .update (value =enhanced_info )
                     else :
-                        error_info =f"""❌ Model Validation Failed
-
-{validation_msg}
-
-Please ensure:
-• Model file is not corrupted
-• File has proper .safetensors format
-• Sufficient disk space available"""
+                        error_info = MODEL_VALIDATION_FAILED_TEMPLATE.format(error_message=validation_msg)
                         return gr .update (value =error_info )
 
             return basic_info 
@@ -6047,17 +5985,12 @@ Please ensure:
                 estimated_savings_gb =block_swap_counter *0.3 
                 estimated_performance_impact =min (block_swap_counter *2.5 ,60 )
 
-                updated_status =f"""🔄 Advanced Block Swap Active
-
-{status_icon} {status_msg}
-💾 Live Memory: {memory_info}
-
-📊 Current Configuration:
-• Active blocks: {block_swap_counter}
-• VRAM savings: ~{estimated_savings_gb:.1f}GB  
-• Performance impact: ~{estimated_performance_impact:.1f}%
-
-🔄 Auto-refreshing every 30 seconds"""
+                updated_status = BLOCK_SWAP_ACTIVE_STATUS_TEMPLATE.format(
+    status_msg=f"{status_icon} {status_msg}",
+    memory_info=memory_info,
+    block_swap_counter=block_swap_counter,
+    estimated_savings=estimated_savings_gb
+)
 
                 return gr .update (value =updated_status )
 
