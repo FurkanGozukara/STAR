@@ -177,59 +177,98 @@ class SeedVR2SessionManager:
     
     def process_batch(self, batch_frames: torch.Tensor, batch_args: Dict[str, Any] = None) -> torch.Tensor:
         """
-        Process a batch using the existing session runner.
-        This REUSES the model instead of recreating it.
+        Process frames with the initialized SeedVR2 model (REUSED).
         """
-        if not self.is_initialized or self.runner is None:
-            raise RuntimeError("Session not initialized! Call initialize_session() first.")
+        if not self.is_initialized:
+            raise RuntimeError("SeedVR2 session not initialized")
         
         try:
-            # Use session args, override with batch-specific args if provided
+            # ✅ REUSE MODEL: No model creation/loading here
+            
+            # Merge batch arguments with processing args
             effective_args = self.processing_args.copy()
             if batch_args:
                 effective_args.update(batch_args)
             
-            # ✅ CALCULATE res_w based on batch frame dimensions (was missing!)
-            res_w = effective_args.get("res_w", None)
-            if res_w is None or res_w <= 0:
-                # Calculate resolution based on input frame dimensions
-                input_height, input_width = batch_frames.shape[1], batch_frames.shape[2]
-                
-                # Default 2x upscale for SeedVR2
-                target_width = input_width * 2
-                target_height = input_height * 2
-                
-                # Use the shorter side as the target resolution (as expected by SeedVR2)
-                res_w = min(target_width, target_height)
-                
-                # Ensure resolution is reasonable (between 256 and 2048)
-                res_w = max(256, min(2048, res_w))
-                
-                if self.logger:
-                    self.logger.debug(f"🔧 Auto-calculated res_w: {res_w} (from {input_width}x{input_height} input)")
-                    self.logger.debug(f"   Target output: ~{target_width}x{target_height}")
+            # Add resolution calculation - ensure we have valid target resolution
+            current_height, current_width = batch_frames.shape[1], batch_frames.shape[2]
             
-            # Ensure res_w is valid
-            if res_w is None or res_w <= 0:
-                res_w = 720  # Safe default
-                if self.logger:
-                    self.logger.warning(f"⚠️ Failed to calculate valid res_w, using default {res_w}")
+            # Calculate target resolution width (maintaining aspect ratio if possible)
+            if current_height == current_width:  # Square video
+                res_w = max(512, min(1920, current_width * 2))  # Conservative 2x upscale
+            else:
+                # Use larger dimension as base, cap at reasonable size
+                base_res = max(current_height, current_width)
+                res_w = max(512, min(1920, base_res * 2))
+            
+            # ✅ ADD DEBUGGING: Log tensor format before processing
+            self.logger.info(f"🔍 Processing batch - Input tensor shape: {batch_frames.shape}, dtype: {batch_frames.dtype}")
+            self.logger.info(f"🔍 Frame count constraint check: {batch_frames.shape[0]} % 4 = {batch_frames.shape[0] % 4} (should be 1)")
+            self.logger.info(f"🎯 Target resolution: {res_w}")
             
             # Import generation function
             from src.core.generation import generation_loop
             
-            # Process batch with REUSED runner
-            result_tensor = generation_loop(
-                runner=self.runner,  # ✅ REUSE EXISTING MODEL
-                images=batch_frames,
-                cfg_scale=effective_args.get("cfg_scale", 1.0),
-                seed=effective_args.get("seed", -1),
-                res_w=res_w,  # ✅ Now properly calculated
-                batch_size=len(batch_frames),
-                preserve_vram=effective_args["preserve_vram"],
-                temporal_overlap=effective_args.get("temporal_overlap", 0),
-                debug=effective_args.get("debug", False),
-            )
+            # ✅ ADD ERROR HANDLING: Wrap VAE processing to catch assertion errors
+            try:
+                # Process batch with REUSED runner
+                result_tensor = generation_loop(
+                    runner=self.runner,  # ✅ REUSE EXISTING MODEL
+                    images=batch_frames,
+                    cfg_scale=effective_args.get("cfg_scale", 1.0),
+                    seed=effective_args.get("seed", -1),
+                    res_w=res_w,  # ✅ Now properly calculated
+                    batch_size=len(batch_frames),
+                    preserve_vram=effective_args["preserve_vram"],
+                    temporal_overlap=effective_args.get("temporal_overlap", 0),
+                    debug=effective_args.get("debug", False),
+                )
+                
+            except AssertionError as ae:
+                # ✅ HANDLE VAE ASSERTION ERROR: Provide detailed debugging info
+                self.logger.error(f"❌ VAE Assertion Error occurred during processing:")
+                self.logger.error(f"   Input tensor shape: {batch_frames.shape}")
+                self.logger.error(f"   Input tensor dtype: {batch_frames.dtype}")
+                self.logger.error(f"   Frame count: {batch_frames.shape[0]}")
+                self.logger.error(f"   Frame count % 4: {batch_frames.shape[0] % 4}")
+                self.logger.error(f"   Expected constraint: frame_count % 4 == 1")
+                self.logger.error(f"   Assertion error: {ae}")
+                
+                # Try to provide a fallback processing
+                self.logger.warning("🔄 Attempting fallback processing with tensor format adjustment...")
+                
+                # Ensure tensor is in correct format and constraints
+                if batch_frames.shape[0] % 4 != 1:
+                    # Force adjust frame count
+                    target_frames = ((batch_frames.shape[0] - 1) // 4 + 1) * 4 + 1
+                    if target_frames > batch_frames.shape[0]:
+                        padding_needed = target_frames - batch_frames.shape[0]
+                        last_frame = batch_frames[-1:].expand(padding_needed, -1, -1, -1)
+                        batch_frames_fixed = torch.cat([batch_frames, last_frame], dim=0)
+                        self.logger.info(f"🔧 Fixed frame count: {batch_frames.shape[0]} -> {batch_frames_fixed.shape[0]}")
+                        
+                        # Retry with fixed tensor
+                        try:
+                            result_tensor = generation_loop(
+                                runner=self.runner,
+                                images=batch_frames_fixed,
+                                cfg_scale=effective_args.get("cfg_scale", 1.0),
+                                seed=effective_args.get("seed", -1),
+                                res_w=res_w,
+                                batch_size=len(batch_frames_fixed),
+                                preserve_vram=effective_args["preserve_vram"],
+                                temporal_overlap=effective_args.get("temporal_overlap", 0),
+                                debug=effective_args.get("debug", False),
+                            )
+                            self.logger.info("✅ Fallback processing succeeded")
+                        except Exception as fallback_error:
+                            self.logger.error(f"❌ Fallback processing also failed: {fallback_error}")
+                            raise
+                    else:
+                        raise
+                else:
+                    # Frame count is correct, but still failed - re-raise original error
+                    raise
             
             return result_tensor
             
@@ -382,8 +421,24 @@ def extract_frames_from_video_cli(video_path: str, debug: bool = False, skip_fir
     # Convert to tensor [T, H, W, C] and cast to Float16 for SeedVR2 compatibility
     frames_tensor = torch.from_numpy(np.stack(frames)).to(torch.float16)
     
+    # ✅ FIX: Ensure frame count follows 4n+1 constraint for SeedVR2 VAE compatibility
+    original_frame_count = frames_tensor.shape[0]
+    if original_frame_count % 4 != 1:
+        # Calculate how many frames to add to reach 4n+1 format
+        target_count = ((original_frame_count - 1) // 4 + 1) * 4 + 1
+        padding_needed = target_count - original_frame_count
+        
+        if debug:
+            print(f"🔧 Frame count adjustment: {original_frame_count} -> {target_count} (padding {padding_needed} frames)")
+        
+        # Duplicate last frame to reach target count
+        if padding_needed > 0:
+            last_frame = frames_tensor[-1:].expand(padding_needed, -1, -1, -1)
+            frames_tensor = torch.cat([frames_tensor, last_frame], dim=0)
+    
     if debug:
         print(f"📊 Frames tensor shape: {frames_tensor.shape}, dtype: {frames_tensor.dtype}")
+        print(f"🔍 Frame count constraint check: {frames_tensor.shape[0]} % 4 = {frames_tensor.shape[0] % 4} (should be 1)")
     
     return frames_tensor, fps
 
@@ -597,47 +652,110 @@ def process_video_with_seedvr2_cli(
         if status_callback:
             status_callback("🎬 Extracting frames from video...")
         
-        # Extract frames
-        logger.info("Extracting frames from input video")
-        frames_tensor, original_fps = extract_frames_from_video_cli(
-            input_video_path, 
-            debug=seedvr2_config.preserve_vram,  # Use preserve_vram flag for debug
-            skip_first_frames=0,  # Can be made configurable
-            load_cap=None  # Process all frames
-        )
+        # ✅ FIX FOR FRAME DUPLICATION: Check if frames already exist in session directory
+        frames_tensor = None
+        original_fps = None
+        frames_loaded_from_existing = False
         
-        # Save input frames immediately if requested (STAR standard behavior)
-        if save_frames and input_frames_permanent_save_path:
-            total_frames = frames_tensor.shape[0]
-            if logger:
-                logger.info(f"Copying {total_frames} input frames to permanent storage...")
+        # First try to load from existing input frames in session directory
+        if save_frames and input_frames_permanent_save_path and input_frames_permanent_save_path.exists():
+            existing_frame_files = sorted([f for f in input_frames_permanent_save_path.iterdir() 
+                                         if f.suffix.lower() in ['.png', '.jpg', '.jpeg']])
             
-            # Convert frames tensor to images and save
-            frames_saved = 0
-            for frame_idx in range(total_frames):
-                frame_tensor = frames_tensor[frame_idx].cpu()
-                if frame_tensor.dtype != torch.uint8:
-                    frame_tensor = (frame_tensor * 255).clamp(0, 255).to(torch.uint8)
+            if existing_frame_files:
+                logger.info(f"Found {len(existing_frame_files)} existing input frames in session directory")
+                logger.info("Loading frames from existing session instead of re-extracting...")
                 
-                frame_np = frame_tensor.numpy()
-                frame_bgr = cv2.cvtColor(frame_np, cv2.COLOR_RGB2BGR)
-                
-                # Generate frame filename
-                frame_filename = f"frame{frame_idx + 1:06d}.png"
-                frame_path = input_frames_permanent_save_path / frame_filename
-                
-                success = cv2.imwrite(str(frame_path), frame_bgr)
-                if success:
-                    frames_saved += 1
-                else:
-                    if logger:
-                        logger.warning(f"Failed to save input frame: {frame_filename}")
+                try:
+                    # Load frames from existing files
+                    frames = []
+                    for frame_file in existing_frame_files:
+                        frame = cv2.imread(str(frame_file))
+                        if frame is not None:
+                            # Convert BGR to RGB
+                            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                            # Convert to float32 and normalize to 0-1
+                            frame_normalized = frame_rgb.astype(np.float32) / 255.0
+                            frames.append(frame_normalized)
+                    
+                    if frames:
+                        frames_tensor = torch.from_numpy(np.stack(frames)).to(torch.float16)
+                        
+                        # ✅ FIX: Ensure frame count follows 4n+1 constraint for SeedVR2 VAE compatibility
+                        original_frame_count = frames_tensor.shape[0]
+                        if original_frame_count % 4 != 1:
+                            # Calculate how many frames to add to reach 4n+1 format
+                            target_count = ((original_frame_count - 1) // 4 + 1) * 4 + 1
+                            padding_needed = target_count - original_frame_count
+                            
+                            logger.info(f"🔧 Frame count adjustment: {original_frame_count} -> {target_count} (padding {padding_needed} frames)")
+                            
+                            # Duplicate last frame to reach target count
+                            if padding_needed > 0:
+                                last_frame = frames_tensor[-1:].expand(padding_needed, -1, -1, -1)
+                                frames_tensor = torch.cat([frames_tensor, last_frame], dim=0)
+                        
+                        frames_loaded_from_existing = True
+                        
+                        # Get FPS from original video
+                        cap = cv2.VideoCapture(input_video_path)
+                        original_fps = cap.get(cv2.CAP_PROP_FPS) if cap.isOpened() else 30.0
+                        cap.release()
+                        
+                        logger.info(f"✅ Loaded {len(frames)} frames from existing session directory")
+                        logger.info(f"📊 Frames tensor shape: {frames_tensor.shape}, dtype: {frames_tensor.dtype}")
+                        logger.info(f"🔍 Frame count constraint check: {frames_tensor.shape[0]} % 4 = {frames_tensor.shape[0] % 4} (should be 1)")
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to load from existing frames, will extract from video: {e}")
+                    frames_tensor = None
+                    frames_loaded_from_existing = False
+        
+        # If we couldn't load from existing frames, extract from video
+        if frames_tensor is None:
+            logger.info("Extracting frames from input video")
+            frames_tensor, original_fps = extract_frames_from_video_cli(
+                input_video_path, 
+                debug=seedvr2_config.preserve_vram,  # Use preserve_vram flag for debug
+                skip_first_frames=0,  # Can be made configurable
+                load_cap=None  # Process all frames
+            )
             
-            if logger:
-                logger.info(f"Input frames copied: {frames_saved}/{total_frames}")
+            # Save input frames immediately if requested (STAR standard behavior)
+            if save_frames and input_frames_permanent_save_path:
+                total_frames = frames_tensor.shape[0]
+                if logger:
+                    logger.info(f"Copying {total_frames} input frames to permanent storage...")
+                
+                # Convert frames tensor to images and save
+                frames_saved = 0
+                for frame_idx in range(total_frames):
+                    frame_tensor = frames_tensor[frame_idx].cpu()
+                    if frame_tensor.dtype != torch.uint8:
+                        frame_tensor = (frame_tensor * 255).clamp(0, 255).to(torch.uint8)
+                    
+                    frame_np = frame_tensor.numpy()
+                    frame_bgr = cv2.cvtColor(frame_np, cv2.COLOR_RGB2BGR)
+                    
+                    # Generate frame filename
+                    frame_filename = f"frame{frame_idx + 1:06d}.png"
+                    frame_path = input_frames_permanent_save_path / frame_filename
+                    
+                    success = cv2.imwrite(str(frame_path), frame_bgr)
+                    if success:
+                        frames_saved += 1
+                    else:
+                        if logger:
+                            logger.warning(f"Failed to save input frame: {frame_filename}")
+                
+                if logger:
+                    logger.info(f"Input frames copied: {frames_saved}/{total_frames}")
         
         if progress_callback:
-            progress_callback(0.1, "Frames extracted, preparing for processing")
+            if frames_loaded_from_existing:
+                progress_callback(0.1, "Frames loaded from existing session, preparing for processing")
+            else:
+                progress_callback(0.1, "Frames extracted, preparing for processing")
         
         # Check for cancellation
         cancellation_manager.check_cancel()
@@ -838,6 +956,10 @@ def _process_single_gpu_cli(
     Fixed: Now reuses model instead of recreating for each batch.
     """
     try:
+        # ✅ ADD FRAME COUNT TRACKING: Track original frame count
+        original_frame_count = frames_tensor.shape[0]
+        logger.info(f"🔢 Original frame count: {original_frame_count}")
+        
         # Get session manager
         session_manager = get_session_manager(logger)
         
@@ -854,6 +976,7 @@ def _process_single_gpu_cli(
         total_frames = frames_tensor.shape[0]
         
         processed_frames = []
+        total_processed_frames = 0
         
         logger.info(f"Processing {total_frames} frames in batches of {batch_size} with overlap {temporal_overlap}")
         
@@ -864,7 +987,8 @@ def _process_single_gpu_cli(
             end_idx = min(i + batch_size, total_frames)
             batch_frames = frames_tensor[i:end_idx]
             
-            logger.info(f"Processing batch {i//batch_size + 1}: frames {i}-{end_idx-1}")
+            batch_num = i // (batch_size - temporal_overlap) + 1 if temporal_overlap > 0 else i // batch_size + 1
+            logger.info(f"Processing batch {batch_num}: frames {i}-{end_idx-1} (batch size: {batch_frames.shape[0]})")
             
             # ✅ FIXED: Process batch with REUSED session model
             processed_batch = session_manager.process_batch(
@@ -872,15 +996,26 @@ def _process_single_gpu_cli(
                 batch_args={"seed": processing_args.get("seed", -1)}  # Override seed per batch if needed
             )
             
+            if processed_batch is None:
+                logger.warning(f"Batch {batch_num} returned None - skipping")
+                continue
+            
+            # ✅ FRAME COUNT TRACKING: Log processed batch info
+            logger.info(f"📊 Batch {batch_num} processed: {processed_batch.shape[0]} frames")
+            
             # Save processed frames immediately after each batch (STAR standard behavior)
             if save_frames and processed_frames_permanent_save_path and processed_batch is not None:
-                batch_num = i // batch_size + 1
                 total_batches = (total_frames + batch_size - 1) // batch_size
                 
                 # Save frames from this batch immediately
                 chunk_frames_saved = 0
                 for local_frame_idx in range(processed_batch.shape[0]):
                     global_frame_idx = i + local_frame_idx
+                    
+                    # ✅ BOUNDS CHECK: Ensure we don't exceed original frame count
+                    if global_frame_idx >= original_frame_count:
+                        logger.warning(f"Skipping frame {global_frame_idx} as it exceeds original count {original_frame_count}")
+                        break
                     
                     # Convert tensor frame to image
                     frame_tensor = processed_batch[local_frame_idx].cpu()
@@ -905,19 +1040,42 @@ def _process_single_gpu_cli(
                 if chunk_frames_saved > 0 and logger:
                     logger.info(f"Immediately saved {chunk_frames_saved} processed frames from batch {batch_num}/{total_batches}")
             
-            # Handle overlap
-            if i > 0 and temporal_overlap > 0:
+            # Handle overlap - remove overlapping frames from output (but not from the first batch)
+            if i > 0 and temporal_overlap > 0 and processed_batch.shape[0] > temporal_overlap:
                 processed_batch = processed_batch[temporal_overlap:]
+                logger.info(f"📊 After overlap removal: {processed_batch.shape[0]} frames kept from batch {batch_num}")
             
             processed_frames.append(processed_batch)
+            total_processed_frames += processed_batch.shape[0]
             
             # Update progress
             if progress_callback:
                 progress = 0.2 + 0.6 * (end_idx / total_frames)
                 progress_callback(progress, f"Processed {end_idx}/{total_frames} frames")
         
+        # ✅ FRAME COUNT VALIDATION: Check if we processed the right number of frames
+        logger.info(f"🔢 Frame count summary:")
+        logger.info(f"   Original frames: {original_frame_count}")
+        logger.info(f"   Total processed: {total_processed_frames}")
+        
         # Concatenate all processed frames
-        result_tensor = torch.cat(processed_frames, dim=0)
+        if processed_frames:
+            result_tensor = torch.cat(processed_frames, dim=0)
+            final_frame_count = result_tensor.shape[0]
+            
+            # ✅ ENSURE CORRECT OUTPUT COUNT: Trim to original frame count if needed
+            if final_frame_count > original_frame_count:
+                logger.warning(f"Trimming output from {final_frame_count} to {original_frame_count} frames")
+                result_tensor = result_tensor[:original_frame_count]
+                final_frame_count = result_tensor.shape[0]
+            elif final_frame_count < original_frame_count:
+                logger.warning(f"Output has fewer frames ({final_frame_count}) than input ({original_frame_count})")
+                # Could potentially pad with last frame here if needed
+            
+            logger.info(f"📊 Final output: {final_frame_count} frames")
+        else:
+            logger.error("No processed frames available!")
+            return _apply_placeholder_upscaling(frames_tensor, logger.level <= logging.DEBUG if logger else False)
         
         # Create chunk results for preview functionality
         chunk_results = []
