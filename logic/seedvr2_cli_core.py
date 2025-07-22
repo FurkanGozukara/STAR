@@ -26,7 +26,7 @@ import gc
 import logging
 import subprocess
 import multiprocessing as mp
-from typing import List, Dict, Tuple, Optional, Any, Generator
+from typing import List, Dict, Tuple, Optional, Any, Generator, Union
 from pathlib import Path
 import torch
 import json
@@ -677,29 +677,17 @@ def process_video_with_seedvr2_cli(
     
     # Use existing session directory if provided, otherwise create new one
     if session_output_dir and base_output_filename_no_ext:
-        # ✅ FIX: Check if this is a new upscale session vs reusing existing frames
-        # Only reuse existing directory if we are using existing extracted frames
-        session_output_path = Path(session_output_dir)
-        base_name = base_output_filename_no_ext
+        # ✅ FIX: Always create new incremental folder for new upscale session
+        # Don't reuse existing directories to avoid conflicts and ensure proper session tracking
+        from .file_utils import get_next_filename
+        base_name, output_video_path = get_next_filename(str(output_dir), logger=logger)
+        output_path = Path(output_video_path)
         
-        # Check if input frames already exist (frame reuse scenario)
-        existing_input_frames_dir = session_output_path / "input_frames"
-        if existing_input_frames_dir.exists() and any(existing_input_frames_dir.glob("frame_*.png")):
-            # Reuse existing session directory for frame reuse scenario
-            logger.info(f"Using existing session directory for frame reuse: {session_output_path}")
-            output_video_path = str(output_dir / f"{base_name}_seedvr2_upscaled.mp4")
-            output_path = Path(output_video_path)
-        else:
-            # ✅ FIX: Create new incremental folder for new upscale session
-            from .file_utils import get_next_filename
-            base_name, output_video_path = get_next_filename(str(output_dir), logger=logger)
-            output_path = Path(output_video_path)
-            
-            # Create NEW session directory following STAR pattern
-            session_output_path = output_dir / base_name
-            session_output_path.mkdir(parents=True, exist_ok=True)
-            
-            logger.info(f"Created new incremental session directory: {session_output_path}")
+        # Create NEW session directory following STAR pattern
+        session_output_path = output_dir / base_name
+        session_output_path.mkdir(parents=True, exist_ok=True)
+        
+        logger.info(f"Created new incremental session directory: {session_output_path}")
     else:
         # Fallback: Create new session directory (for standalone usage)
         from .file_utils import get_next_filename
@@ -896,7 +884,10 @@ def process_video_with_seedvr2_cli(
         
         # Process video using CLI approach
         logger.info("Starting SeedVR2 processing")
-        result_tensor, chunk_results, last_chunk_video_path = _process_frames_with_seedvr2_cli(
+        
+        # ✅ FIX: Process with generator to get real-time chunk updates
+        final_result = None
+        for processing_result in _process_frames_with_seedvr2_cli(
             frames_tensor, 
             device_list, 
             processing_args,
@@ -907,7 +898,25 @@ def process_video_with_seedvr2_cli(
             processed_frames_permanent_save_path=processed_frames_permanent_save_path,
             chunks_permanent_save_path=chunks_permanent_save_path,
             original_fps=original_fps
-        )
+        ):
+            if isinstance(processing_result, tuple) and len(processing_result) == 4:
+                # This is an intermediate chunk update
+                partial_tensor, chunk_results, chunk_video_path, chunk_status = processing_result
+                
+                if chunk_video_path:
+                    if logger:
+                        logger.info(f"Chunk preview available for Gradio: {chunk_video_path}")
+                    # ✅ FIX: Yield chunk update immediately to Gradio
+                    yield (None, chunk_status, chunk_video_path, f"SeedVR2 {chunk_status}", None)
+            else:
+                # This is the final result
+                final_result = processing_result
+        
+        # Extract final results
+        if final_result:
+            result_tensor, chunk_results, last_chunk_video_path = final_result
+        else:
+            result_tensor, chunk_results, last_chunk_video_path = torch.empty(0), [], None
         
         if progress_callback:
             progress_callback(0.8, "Processing complete, saving chunks and output video")
@@ -999,9 +1008,11 @@ def _process_frames_with_seedvr2_cli(
     processed_frames_permanent_save_path: Optional[Path] = None,
     chunks_permanent_save_path: Optional[Path] = None,
     original_fps: Optional[float] = None
-) -> Tuple[torch.Tensor, List[Dict[str, Any]], Optional[str]]:
+) -> Generator[Tuple[torch.Tensor, List[Dict[str, Any]], Optional[str], str], None, Tuple[torch.Tensor, List[Dict[str, Any]], Optional[str]]]:
     """
     Process frames using SeedVR2 CLI approach with multi-GPU support.
+    
+    ✅ FIX: Now yields chunk updates during processing for real-time Gradio updates.
     
     Args:
         frames_tensor: Input frames tensor
@@ -1015,8 +1026,11 @@ def _process_frames_with_seedvr2_cli(
         chunks_permanent_save_path: Path for chunk preview storage
         original_fps: Original FPS of the input video
         
+    Yields:
+        Tuple of (partial_result_tensor, chunk_results, last_chunk_video_path, status_message)
+        
     Returns:
-        Tuple of (processed frames tensor, chunk results for preview, last_chunk_video_path)
+        Final tuple of (processed frames tensor, chunk results for preview, last_chunk_video_path)
     """
     if logger is None:
         logger = logging.getLogger(__name__)
@@ -1024,11 +1038,13 @@ def _process_frames_with_seedvr2_cli(
     num_devices = len(device_list)
     
     if num_devices == 1:
-        # Single GPU processing
+        # Single GPU processing with yielding
         device_id = device_list[0]
         logger.info(f"Processing on single GPU: {device_id}")
         
-        result_tensor, chunk_results, last_chunk_video_path = _process_single_gpu_cli(
+        # ✅ FIX: Use generator version for single GPU processing
+        final_result = None
+        for result in _process_single_gpu_cli_generator(
             frames_tensor,
             device_id,
             processing_args,
@@ -1042,12 +1058,18 @@ def _process_frames_with_seedvr2_cli(
             ffmpeg_preset=processing_args.get("ffmpeg_preset", "medium"),
             ffmpeg_quality=processing_args.get("ffmpeg_quality", 23),
             ffmpeg_use_gpu=processing_args.get("ffmpeg_use_gpu", False)
-        )
+        ):
+            if isinstance(result, tuple) and len(result) == 4:
+                # This is an intermediate result with chunk update
+                yield result
+            else:
+                # This is the final result
+                final_result = result
         
-        return result_tensor, chunk_results, last_chunk_video_path
+        return final_result if final_result else (torch.empty(0), [], None)
         
     else:
-        # Multi-GPU processing
+        # Multi-GPU processing (no yielding for now)
         logger.info(f"Processing on {num_devices} GPUs: {device_list}")
         
         result_tensor, chunk_results, _ = _process_multi_gpu_cli(
@@ -1070,7 +1092,7 @@ def _process_frames_with_seedvr2_cli(
         return result_tensor, chunk_results, None
 
 
-def _process_single_gpu_cli(
+def _process_single_gpu_cli_generator(
     frames_tensor: torch.Tensor,
     device_id: str,
     processing_args: Dict[str, Any],
@@ -1084,11 +1106,9 @@ def _process_single_gpu_cli(
     ffmpeg_preset: str = "medium",
     ffmpeg_quality: int = 23,
     ffmpeg_use_gpu: bool = False
-) -> Tuple[torch.Tensor, List[Dict[str, Any]], Optional[str]]:
+) -> Generator[Union[Tuple[torch.Tensor, List[Dict[str, Any]], Optional[str], str], Tuple[torch.Tensor, List[Dict[str, Any]], Optional[str]]], None, None]:
     """
-    Process frames tensor using SeedVR2 on a single GPU with improved chunk preview logic.
-    
-    ✅ FIX: Implements proper Preview Frame Count logic instead of generating previews after every batch.
+    ✅ FIX: Generator version of single GPU processing that yields chunk updates during processing.
     """
     if logger:
         logger.info(f"🚀 Starting SeedVR2 processing (CLI mode)")
@@ -1107,17 +1127,44 @@ def _process_single_gpu_cli(
         logger.info(f"📊 Frames tensor shape: {frames_tensor.shape}, dtype: {frames_tensor.dtype}")
         logger.info(f"🔍 Frame count constraint check: {frames_tensor.shape[0]} % 4 = {frames_tensor.shape[0] % 4} (should be 1)")
     
-    # ✅ FIX: Initialize frame accumulation for proper Preview Frame Count logic
+    # ✅ FIX: Initialize frame accumulation for proper chunk processing based on user's chunk frame count
     accumulated_frames = []
-    preview_frame_count = getattr(seedvr2_config, 'chunk_preview_frames', 125)
+    
+    # ✅ FIX: Use user's chunk frame count setting instead of hardcoded preview frame count
+    # This should match the max_chunk_len setting from the UI (e.g. 25 frames)
+    chunk_frame_count = getattr(seedvr2_config, 'batch_size', 25)  # Default to 25 if not set
+    if hasattr(seedvr2_config, 'chunk_preview_frames') and seedvr2_config.chunk_preview_frames > 0:
+        chunk_frame_count = min(chunk_frame_count, seedvr2_config.chunk_preview_frames)
+    
     last_chunk_video_path = None
+    chunk_results = []
     
     if logger:
-        logger.info(f"Setting up SeedVR2 processing")
+        logger.info(f"Setting up SeedVR2 processing with chunk frame count: {chunk_frame_count}")
         logger.info(f"Using devices: ['{device_id}']")
         logger.info(f"Starting SeedVR2 processing")
         logger.info(f"🔢 Original frame count: {total_frames}")
         logger.info(f"🔧 Creating SeedVR2 session with model: {seedvr2_config.model}")
+
+    # ✅ FIX: Ensure frame count follows 4n+1 constraint for SeedVR2 VAE compatibility
+    # but apply "Optimize Last Chunk Quality" logic similar to STAR pipeline
+    original_frame_count = total_frames
+    if original_frame_count % 4 != 1:
+        # Calculate target count that satisfies 4n+1 constraint
+        target_count = ((original_frame_count - 1) // 4 + 1) * 4 + 1
+        padding_needed = target_count - original_frame_count
+        
+        if logger:
+            logger.info(f"🔧 Frame count adjustment for VAE: {original_frame_count} -> {target_count} (padding {padding_needed} frames)")
+        
+        # Pad frames by duplicating the last frame
+        if padding_needed > 0:
+            last_frame = frames_tensor[-1:].expand(padding_needed, -1, -1, -1)
+            frames_tensor = torch.cat([frames_tensor, last_frame], dim=0)
+            total_frames = frames_tensor.shape[0]
+    
+    # ✅ FIX: Track original frame count for proper output handling
+    frames_to_output = original_frame_count  # Only output original frames, discard padding
     
     # Initialize session manager outside try block to ensure it's always available
     session_manager = None
@@ -1240,26 +1287,38 @@ def _process_single_gpu_cli(
                 # Calculate total accumulated frames
                 total_accumulated_frames = sum(chunk.shape[0] for chunk in accumulated_frames)
                 
-                # ✅ FIX: Only generate chunk preview when reaching preview_frame_count threshold
-                if total_accumulated_frames >= preview_frame_count:
+                # ✅ FIX: Generate chunk preview when reaching user's chunk frame count threshold
+                # Instead of waiting for 125 frames, use the user's setting (e.g., 25 frames)
+                if total_accumulated_frames >= chunk_frame_count:
                     # Concatenate all accumulated frames
                     combined_tensor = torch.cat(accumulated_frames, dim=0)
                     
-                    # Take last preview_frame_count frames
-                    preview_tensor = combined_tensor[-preview_frame_count:] if combined_tensor.shape[0] > preview_frame_count else combined_tensor
+                    # ✅ FIX: Create multiple chunks of user's specified size
+                    chunk_start_frame = (len(chunk_results)) * chunk_frame_count + 1  # 1-based for display
+                    chunk_end_frame = min(chunk_start_frame + chunk_frame_count - 1, total_accumulated_frames)
                     
-                    # Create chunk result with accumulated frames
+                    # Take exactly chunk_frame_count frames (or remaining frames for last chunk)
+                    frames_for_chunk = min(chunk_frame_count, total_accumulated_frames)
+                    chunk_tensor = combined_tensor[:frames_for_chunk]
+                    
+                    if logger:
+                        logger.info(f"Saving 1 chunk previews to {chunks_permanent_save_path}")
+                        logger.info(f"Processing chunk {len(chunk_results) + 1}: {frames_for_chunk} frames, shape: {chunk_tensor.shape}")
+                    
+                    # Create chunk result with proper frame numbering
                     chunk_result = {
-                        'frames_tensor': preview_tensor,
+                        'frames_tensor': chunk_tensor,
                         'chunk_id': len(chunk_results) + 1,
-                        'frame_count': preview_tensor.shape[0],
+                        'frame_count': frames_for_chunk,
                         'processing_time': time.time(),
                         'device_id': device_id,
-                        'accumulated_frame_count': total_accumulated_frames
+                        'accumulated_frame_count': total_accumulated_frames,
+                        'chunk_start_frame': chunk_start_frame,
+                        'chunk_end_frame': chunk_end_frame
                     }
                     chunk_results.append(chunk_result)
                     
-                    # Generate chunk preview with reduced logging
+                    # Generate chunk preview immediately
                     last_chunk_path = _save_seedvr2_chunk_previews(
                         [chunk_result],  # Only pass the current chunk
                         chunks_permanent_save_path,
@@ -1272,13 +1331,28 @@ def _process_single_gpu_cli(
                     )
                     
                     if last_chunk_path and logger:
+                        logger.info(f"Successfully created chunk preview: chunk_{len(chunk_results):04d}.mp4")
+                        logger.info(f"Chunk preview generation complete. Last chunk: chunk_{len(chunk_results):04d}.mp4")
                         logger.info(f"Updated chunk preview: {last_chunk_path}")
                     
                     # Store for return to Gradio
                     last_chunk_video_path = last_chunk_path
                     
-                    # Reset accumulated frames after generating preview
-                    accumulated_frames = []
+                    # ✅ FIX: Yield chunk update immediately to Gradio for real-time preview
+                    if last_chunk_path:
+                        chunk_status = f"Chunk {len(chunk_results)} created: {frames_for_chunk} frames"
+                        yield (None, chunk_results, last_chunk_path, chunk_status)
+                    
+                    # ✅ FIX: Keep remaining frames for next chunk instead of clearing all
+                    remaining_frames = combined_tensor[frames_for_chunk:]
+                    if remaining_frames.shape[0] > 0:
+                        accumulated_frames = [remaining_frames]
+                    else:
+                        accumulated_frames = []
+                    
+                    # Keep only the last N chunks as configured
+                    if len(chunk_results) > seedvr2_config.keep_last_chunks:
+                        chunk_results = chunk_results[-seedvr2_config.keep_last_chunks:]
             else:
                 # Legacy behavior for when chunk preview is disabled
                 chunk_result = {
@@ -1316,9 +1390,50 @@ def _process_single_gpu_cli(
                 progress = 0.2 + 0.6 * (batch_num / total_batches)
                 progress_callback(progress, f"Batch {batch_num + 1}/{total_batches} completed")
         
+        # ✅ FIX: Process any remaining accumulated frames as final chunk
+        if accumulated_frames and chunks_permanent_save_path and seedvr2_config.enable_chunk_preview:
+            remaining_tensor = torch.cat(accumulated_frames, dim=0)
+            if remaining_tensor.shape[0] > 0:
+                if logger:
+                    logger.info(f"Processing final chunk: {remaining_tensor.shape[0]} frames")
+                
+                # Create final chunk result
+                final_chunk_result = {
+                    'frames_tensor': remaining_tensor,
+                    'chunk_id': len(chunk_results) + 1,
+                    'frame_count': remaining_tensor.shape[0],
+                    'processing_time': time.time(),
+                    'device_id': device_id,
+                    'accumulated_frame_count': remaining_tensor.shape[0],
+                    'chunk_start_frame': len(chunk_results) * chunk_frame_count + 1,
+                    'chunk_end_frame': len(chunk_results) * chunk_frame_count + remaining_tensor.shape[0]
+                }
+                chunk_results.append(final_chunk_result)
+                
+                # Generate final chunk preview
+                final_chunk_path = _save_seedvr2_chunk_previews(
+                    [final_chunk_result],
+                    chunks_permanent_save_path,
+                    original_fps or 30.0,
+                    seedvr2_config,
+                    ffmpeg_preset,
+                    ffmpeg_quality,
+                    ffmpeg_use_gpu,
+                    logger
+                )
+                
+                if final_chunk_path:
+                    last_chunk_video_path = final_chunk_path
+                    if logger:
+                        logger.info(f"Successfully created final chunk preview: chunk_{len(chunk_results):04d}.mp4")
+                    
+                    # ✅ FIX: Yield final chunk update to Gradio
+                    final_chunk_status = f"Final chunk {len(chunk_results)} created: {remaining_tensor.shape[0]} frames"
+                    yield (None, chunk_results, final_chunk_path, final_chunk_status)
+
         # ✅ FRAME COUNT VALIDATION: Check if we processed the right number of frames
         logger.info(f"🔢 Frame count summary:")
-        logger.info(f"   Original frames: {total_frames}")
+        logger.info(f"   Original frames: {frames_to_output}")  # Use original count, not padded
         logger.info(f"   Total processed: {total_processed_frames}")
         
         # Concatenate all processed frames
@@ -1326,14 +1441,14 @@ def _process_single_gpu_cli(
             result_tensor = torch.cat(processed_frames, dim=0)
             final_frame_count = result_tensor.shape[0]
             
-            # ✅ ENSURE CORRECT OUTPUT COUNT: Trim to original frame count if needed
-            if final_frame_count > total_frames:
-                logger.warning(f"Trimming output from {final_frame_count} to {total_frames} frames")
-                result_tensor = result_tensor[:total_frames]
+            # ✅ FIX: Trim to original frame count to remove padding frames
+            if final_frame_count > frames_to_output:
+                if logger:
+                    logger.info(f"🔧 Optimizing output quality: trimming from {final_frame_count} to {frames_to_output} frames (removing {final_frame_count - frames_to_output} padding frames)")
+                result_tensor = result_tensor[:frames_to_output]
                 final_frame_count = result_tensor.shape[0]
-            elif final_frame_count < total_frames:
-                logger.warning(f"Output has fewer frames ({final_frame_count}) than input ({total_frames})")
-                # Could potentially pad with last frame here if needed
+            elif final_frame_count < frames_to_output:
+                logger.warning(f"Output has fewer frames ({final_frame_count}) than expected ({frames_to_output})")
             
             logger.info(f"📊 Final output: {final_frame_count} frames")
         else:
@@ -1348,7 +1463,7 @@ def _process_single_gpu_cli(
         logger.info(f"Single-GPU processing complete: {result_tensor.shape[0]} frames processed")
         
         # ✅ FIX: Include last_chunk_video_path in return for Gradio
-        return result_tensor, chunk_results, last_chunk_video_path
+        return result_tensor, chunk_results, last_chunk_video_path, "Single-GPU processing complete"
     
     except Exception as e:
         logger.error(f"Error in single GPU processing: {e}")
@@ -1357,7 +1472,7 @@ def _process_single_gpu_cli(
             empty_tensor = torch.zeros(0, frames_tensor.shape[1], frames_tensor.shape[2], frames_tensor.shape[3], dtype=torch.float16)
         else:
             empty_tensor = torch.zeros(0, 256, 256, 3, dtype=torch.float16)  # Default fallback shape
-        return empty_tensor, [], None
+        return empty_tensor, [], None, f"Error: {e}"
 
 
 def _process_multi_gpu_cli(
@@ -1697,7 +1812,7 @@ def _save_seedvr2_chunk_previews(
     """
     Save SeedVR2 chunk previews following STAR pattern.
     
-    ✅ FIX: Uses Preview Frame Count from config instead of hard-coded values.
+    ✅ FIX: Uses actual chunk frame count from processing instead of hardcoded preview frame count.
     
     Args:
         chunk_results: List of chunk processing results
@@ -1718,11 +1833,8 @@ def _save_seedvr2_chunk_previews(
     try:
         chunks_permanent_save_path.mkdir(parents=True, exist_ok=True)
         
-        # ✅ FIX: Use Preview Frame Count from config instead of hard-coded values
-        preview_frame_count = getattr(seedvr2_config, 'chunk_preview_frames', 125)
-        
-        # Sort chunks by processing time to get the most recent
-        sorted_chunks = sorted(chunk_results, key=lambda x: x.get('processing_time', 0))
+        # Sort chunks by chunk_id to maintain proper order
+        sorted_chunks = sorted(chunk_results, key=lambda x: x.get('chunk_id', 0))
         
         # Keep only the last N chunks as configured
         chunks_to_keep = sorted_chunks[-seedvr2_config.keep_last_chunks:]
@@ -1736,7 +1848,8 @@ def _save_seedvr2_chunk_previews(
         
         for i, chunk_data in enumerate(chunks_to_keep):
             try:
-                chunk_num = len(sorted_chunks) - len(chunks_to_keep) + i + 1
+                # ✅ FIX: Use proper chunk numbering from chunk_id
+                chunk_num = chunk_data.get('chunk_id', i + 1)
                 chunk_filename = f"chunk_{chunk_num:04d}.mp4"
                 chunk_video_path = chunks_permanent_save_path / chunk_filename
                 
@@ -1750,10 +1863,10 @@ def _save_seedvr2_chunk_previews(
                 # Create temporary directory for this chunk's frames
                 import tempfile
                 with tempfile.TemporaryDirectory(prefix=f"seedvr2_chunk_{chunk_num}_") as temp_chunk_dir:
-                    # ✅ FIX: Use actual frame count from tensor instead of hard-coded preview count
+                    # ✅ FIX: Use actual frame count from tensor instead of hardcoded values
                     frame_count = chunk_frames.shape[0]
                     
-                    # ✅ FIX: Reduced logging - no need to log processing details for every chunk
+                    # ✅ FIX: Reduced logging - only log processing for current chunk
                     if logger:
                         logger.info(f"Processing chunk {chunk_num}: {frame_count} frames, shape: {chunk_frames.shape}")
                     
@@ -1782,7 +1895,6 @@ def _save_seedvr2_chunk_previews(
                             
                             # Ensure we have 3 channels (RGB)
                             if frame_np.shape[-1] != 3:
-                                # ✅ FIX: Reduced logging - don't warn for every problematic frame
                                 continue
                             
                             # Ensure values are in correct range [0, 255]
@@ -1804,12 +1916,12 @@ def _save_seedvr2_chunk_previews(
                                 saved_frames += 1
                             
                         except Exception as e:
-                            # ✅ FIX: Reduced logging - only log critical errors
-                            if logger and frame_idx < 3:  # Only log first few errors
+                            # ✅ FIX: Only log first few errors to avoid spam
+                            if logger and frame_idx < 3:
                                 logger.warning(f"Failed to save frame {frame_idx}: {e}")
                             continue
                     
-                    # ✅ FIX: Only log if frames were actually saved
+                    # ✅ FIX: Only create video if frames were actually saved
                     if saved_frames > 0:
                         # Create video from saved frames using existing utility
                         from .ffmpeg_utils import create_video_from_input_frames
@@ -1830,7 +1942,7 @@ def _save_seedvr2_chunk_previews(
                                 saved_chunk_paths.append(str(chunk_video_path))
                                 last_chunk_video_path = str(chunk_video_path)
                                 
-                                # ✅ FIX: Reduced logging - only show successful completion
+                                # ✅ FIX: Only show successful completion
                                 if logger:
                                     logger.info(f"Successfully created chunk preview: {chunk_video_path.name}")
                             
