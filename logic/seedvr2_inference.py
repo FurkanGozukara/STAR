@@ -29,7 +29,7 @@ if seedvr2_path not in sys.path:
 # Import STAR utilities
 from .seedvr2_model_manager import get_seedvr2_model_manager, SEEDVR2_AVAILABLE
 from .ffmpeg_utils import get_video_info
-from .dataclasses import AppConfig
+from .dataclasses import AppConfig, DEFAULT_SEEDVR2_DEFAULT_RESOLUTION
 
 # Import SeedVR2 components (now with fixed ComfyUI dependencies)
 if SEEDVR2_AVAILABLE:
@@ -176,7 +176,7 @@ class SeedVR2InferenceEngine:
         try:
             # Extract configuration
             model_name = getattr(config, 'seedvr2_model', 'seedvr2_ema_3b_fp8_e4m3fn.safetensors')
-            target_resolution = getattr(config, 'seedvr2_resolution', 1072)
+            target_resolution = getattr(config, 'seedvr2_resolution', DEFAULT_SEEDVR2_DEFAULT_RESOLUTION)
             batch_size = getattr(config, 'seedvr2_batch_size', 5)
             preserve_vram = getattr(config, 'seedvr2_preserve_vram', True)
             seed = getattr(config, 'seed_num', 100)
@@ -291,7 +291,7 @@ class SeedVR2InferenceEngine:
         try:
             # Extract configuration
             model_name = getattr(config, 'seedvr2_model', 'seedvr2_ema_3b_fp8_e4m3fn.safetensors')
-            target_resolution = getattr(config, 'seedvr2_resolution', 1072)
+            target_resolution = getattr(config, 'seedvr2_resolution', DEFAULT_SEEDVR2_DEFAULT_RESOLUTION)
             preserve_vram = getattr(config, 'seedvr2_preserve_vram', True)
             seed = getattr(config, 'seed_num', 100)
             

@@ -180,6 +180,12 @@ DEFAULT_SEEDVR2_MODEL_PRECISION = "auto"  # Options: "auto", "fp16", "fp8"
 DEFAULT_SEEDVR2_CFG_SCALE = 1.0  # Guidance scale for generation
 DEFAULT_SEEDVR2_SEED = -1  # Use global seed if -1
 
+# SeedVR2 Resolution Configuration
+DEFAULT_SEEDVR2_UPSCALE_FACTOR = 2.0  # Default 2x upscale factor for SeedVR2
+DEFAULT_SEEDVR2_DEFAULT_RESOLUTION = 1072  # Safe default resolution
+DEFAULT_SEEDVR2_MIN_RESOLUTION = 256  # Minimum allowed resolution
+DEFAULT_SEEDVR2_MAX_RESOLUTION = 4096  # Maximum allowed resolution
+
 
 # Single Image Upscaling (SeedVR2)
 DEFAULT_ENABLE_SINGLE_IMAGE_UPSCALE = False

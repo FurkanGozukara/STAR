@@ -404,7 +404,8 @@ def util_validate_seedvr2_config(config_dict: Dict[str, Any]) -> Tuple[bool, Lis
         errors.append("Warning: Batch size < 5 disables temporal consistency")
     
     # Check resolution
-    resolution = config_dict.get('seedvr2_resolution', 1072)
+    from .dataclasses import DEFAULT_SEEDVR2_DEFAULT_RESOLUTION
+    resolution = config_dict.get('seedvr2_resolution', DEFAULT_SEEDVR2_DEFAULT_RESOLUTION)
     if resolution < 16 or resolution > 4320:
         errors.append("Resolution must be between 16 and 4320")
     elif resolution % 16 != 0:

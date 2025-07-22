@@ -31,65 +31,8 @@ import torch
 from .cancellation_manager import cancellation_manager, CancelledError
 from .common_utils import format_time
 
-def _calculate_seedvr2_resolution(input_video_path: str, enable_target_res: bool, target_h: int, target_w: int, 
-                                 target_res_mode: str, upscale_factor: float = 2.0, logger=None) -> int:
-    """
-    Calculate the target resolution for SeedVR2 based on input video and settings.
-    
-    Args:
-        input_video_path: Path to input video
-        enable_target_res: Whether target resolution is enabled
-        target_h: Target height from UI
-        target_w: Target width from UI  
-        target_res_mode: Resolution mode (Ratio Upscale, Downscale then Upscale)
-        upscale_factor: Default upscale factor for SeedVR2 (2.0x)
-        logger: Optional logger
-        
-    Returns:
-        Target resolution (short side) for SeedVR2
-    """
-    try:
-        # Get input video resolution
-        from .file_utils import get_video_resolution
-        orig_h, orig_w = get_video_resolution(input_video_path, logger=logger)
-        
-        if enable_target_res:
-            # Use the existing resolution calculation system
-            from .upscaling_utils import calculate_upscale_params
-            
-            try:
-                needs_downscale, ds_h, ds_w, upscale_factor_calc, final_h_calc, final_w_calc = calculate_upscale_params(
-                    orig_h, orig_w, target_h, target_w, target_res_mode, logger=logger, image_upscaler_model=None
-                )
-                
-                # For SeedVR2, use the shorter side as resolution
-                target_resolution = min(final_w_calc, final_h_calc)
-                
-                if logger:
-                    logger.info(f"SeedVR2 resolution calculation: {orig_w}x{orig_h} -> target resolution {target_resolution} (short side)")
-                    
-            except Exception as e:
-                if logger:
-                    logger.warning(f"Failed to use target resolution calculation, falling back to default 2x: {e}")
-                # Fallback to 2x upscale
-                target_resolution = min(orig_w, orig_h) * upscale_factor
-                
-        else:
-            # Simple 2x upscale of the shorter side
-            target_resolution = min(orig_w, orig_h) * upscale_factor
-            if logger:
-                logger.info(f"SeedVR2 using {upscale_factor}x default upscale: {orig_w}x{orig_h} -> target resolution {target_resolution} (short side)")
-        
-        # Ensure reasonable bounds and even number
-        target_resolution = max(256, min(4096, int(target_resolution)))
-        target_resolution = int(target_resolution // 2) * 2  # Ensure even number
-        
-        return target_resolution
-        
-    except Exception as e:
-        if logger:
-            logger.error(f"Failed to calculate SeedVR2 resolution: {e}, using default 1072")
-        return 1072  # Safe default
+# Import the unified resolution calculation function
+from .seedvr2_resolution_utils import calculate_seedvr2_resolution
 
 def process_video_with_seedvr2(
     input_video_path: str,
@@ -473,9 +416,9 @@ def process_video_with_seedvr2(
         frame_chunk_info = []  # No enhanced chunk info for simple processing
     
     # Calculate resolution for SeedVR2 (using 2x upscale by default)
-    calculated_resolution = _calculate_seedvr2_resolution(
+    calculated_resolution = calculate_seedvr2_resolution(
         input_video_path, enable_target_res, target_h, target_w, target_res_mode, 
-        upscale_factor=2.0, logger=logger
+        logger=logger
     )
     
     if logger:

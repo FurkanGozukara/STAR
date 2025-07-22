@@ -34,39 +34,8 @@ import json
 from .cancellation_manager import cancellation_manager, CancelledError
 from .common_utils import format_time
 
-def _calculate_seedvr2_image_resolution(input_image_path: str, upscale_factor: float = 2.0, logger=None) -> int:
-    """
-    Calculate the target resolution for SeedVR2 image processing.
-    
-    Args:
-        input_image_path: Path to input image
-        upscale_factor: Default upscale factor for SeedVR2 (2.0x)
-        logger: Optional logger
-        
-    Returns:
-        Target resolution (short side) for SeedVR2
-    """
-    try:
-        # Get input image resolution
-        with Image.open(input_image_path) as img:
-            orig_w, orig_h = img.size
-        
-        # Calculate 2x upscale of the shorter side
-        target_resolution = min(orig_w, orig_h) * upscale_factor
-        
-        if logger:
-            logger.info(f"SeedVR2 image resolution: {orig_w}x{orig_h} -> target resolution {target_resolution} (short side, {upscale_factor}x)")
-        
-        # Ensure reasonable bounds and even number
-        target_resolution = max(256, min(4096, int(target_resolution)))
-        target_resolution = int(target_resolution // 2) * 2  # Ensure even number
-        
-        return target_resolution
-        
-    except Exception as e:
-        if logger:
-            logger.error(f"Failed to calculate SeedVR2 image resolution: {e}, using default 1072")
-        return 1072  # Safe default
+# Import the unified resolution calculation function
+from .seedvr2_resolution_utils import calculate_seedvr2_image_resolution
 
 def process_single_image(
     input_image_path: str,
@@ -420,7 +389,7 @@ def _process_with_seedvr2(
         "debug": logger.level <= logging.DEBUG if logger else False,
         "cfg_scale": seedvr2_config.cfg_scale,
         "seed": seedvr2_config.seed if seedvr2_config.seed >= 0 else current_seed,
-        "res_w": _calculate_seedvr2_image_resolution(input_image_path, upscale_factor=2.0, logger=logger),
+        "res_w": calculate_seedvr2_image_resolution(input_image_path, logger=logger),
         "batch_size": 1,  # Single image processing
         "temporal_overlap": 0,  # No temporal processing for single image
     }
