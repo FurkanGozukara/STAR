@@ -1470,40 +1470,203 @@
                     <section id="seedvr2" class="section">
                         <div class="section-header">
                             <h2 class="section-title">SeedVR2 Video Upscaler</h2>
-                            <p class="section-subtitle">Next-generation video upscaling (coming soon)</p>
+                            <p class="section-subtitle">Next-generation video upscaling with temporal consistency</p>
                         </div>
                         
                         <div class="feature-card">
                             <h3 class="feature-title">
                                 <span class="feature-icon"><i class="fas fa-seedling"></i></span>
-                                Planned Features <span class="badge-feature badge-experimental">COMING SOON</span>
+                                Core Features <span class="badge-feature badge-new">AVAILABLE NOW</span>
                             </h3>
                             
-                            <div class="alert-info">
-                                <i class="fas fa-info-circle me-2"></i>
-                                <strong>Development Status:</strong> SeedVR2 is currently in development and will be available in a future update.
+                            <div class="alert-success">
+                                <i class="fas fa-check-circle me-2"></i>
+                                <strong>SeedVR2 Integration Complete:</strong> Full video and image upscaling with advanced temporal consistency and professional features.
                             </div>
                             
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <h5>Advanced Features</h5>
+                            <div class="feature-list">
+                                <div class="feature-item">
+                                    <i class="fas fa-film feature-icon"></i>
+                                    <div class="feature-content">
+                                        <h4>Advanced Video Upscaling</h4>
+                                        <p>State-of-the-art video-to-video upscaling with temporal consistency. Supports multiple model sizes (3B/7B) and precision formats (FP16/FP8) for optimal performance across different hardware configurations.</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="feature-item">
+                                    <i class="fas fa-image feature-icon"></i>
+                                    <div class="feature-content">
+                                        <h4>Single Image Upscaling</h4>
+                                        <p>High-quality image upscaling with support for PNG, JPEG, and WEBP formats. Features automatic comparison generation and metadata preservation.</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="feature-item">
+                                    <i class="fas fa-clock feature-icon"></i>
+                                    <div class="feature-content">
+                                        <h4>Temporal Consistency</h4>
+                                        <p>Advanced temporal processing with scene awareness, automatic overlap optimization, and quality validation. Maintains coherent motion across frames for professional results.</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="feature-item">
+                                    <i class="fas fa-memory feature-icon"></i>
+                                    <div class="feature-content">
+                                        <h4>Memory Optimization</h4>
+                                        <p>Intelligent block swapping and VRAM management. Supports multi-GPU processing and automatic memory optimization for systems with limited resources.</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="feature-item">
+                                    <i class="fas fa-cogs feature-icon"></i>
+                                    <div class="feature-content">
+                                        <h4>Professional Features</h4>
+                                        <p>Flash Attention acceleration, color correction with wavelet reconstruction, automatic frame padding, and comprehensive progress monitoring.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-sliders-h"></i></span>
+                                Configuration Options
+                            </h3>
+                            
+                            <div class="config-grid">
+                                <div class="config-item">
+                                    <h4><i class="fas fa-microchip"></i> Model Selection</h4>
+                                    <p>Choose from 6 available models:</p>
                                     <ul>
-                                        <li><strong>Temporal Consistency:</strong> Advanced inter-frame coherence</li>
-                                        <li><strong>Variable Scale Factors:</strong> 2x, 4x, and custom scaling</li>
-                                        <li><strong>Multiple Architectures:</strong> Optimized for different content types</li>
-                                        <li><strong>Real-time Preview:</strong> Live preview during processing</li>
-                                        <li><strong>Custom Training:</strong> Fine-tune on your own data</li>
+                                        <li><strong>3B FP8:</strong> Best speed/VRAM balance (~6GB)</li>
+                                        <li><strong>3B FP16:</strong> Higher quality (~8GB VRAM)</li>
+                                        <li><strong>7B FP8:</strong> Professional quality (~12GB VRAM)</li>
+                                        <li><strong>7B FP16:</strong> Maximum quality (~16GB VRAM)</li>
+                                        <li><strong>7B Sharp variants:</strong> Enhanced detail preservation</li>
                                     </ul>
                                 </div>
                                 
-                                <div class="col-md-6">
-                                    <h5>Expected Benefits</h5>
+                                <div class="config-item">
+                                    <h4><i class="fas fa-layer-group"></i> Temporal Settings</h4>
                                     <ul>
-                                        <li>Best of both temporal and spatial upscaling</li>
-                                        <li>Improved quality over current methods</li>
-                                        <li>Efficient processing pipeline</li>
-                                        <li>Advanced customization options</li>
-                                        <li>Batch processing optimization</li>
+                                        <li><strong>Batch Size:</strong> 5-16 frames (minimum 5 for temporal consistency)</li>
+                                        <li><strong>Temporal Overlap:</strong> 2-4 frames for smooth transitions</li>
+                                        <li><strong>Scene Awareness:</strong> Intelligent scene boundary detection</li>
+                                        <li><strong>Quality Modes:</strong> Fast, Balanced, Quality presets</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="config-item">
+                                    <h4><i class="fas fa-tachometer-alt"></i> Performance</h4>
+                                    <ul>
+                                        <li><strong>Multi-GPU:</strong> Automatic distribution across available GPUs</li>
+                                        <li><strong>Block Swap:</strong> 0-12+ blocks for memory optimization</li>
+                                        <li><strong>Flash Attention:</strong> 15-20% speedup (recommended)</li>
+                                        <li><strong>VRAM Preserve:</strong> Automatic memory management</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="config-item">
+                                    <h4><i class="fas fa-palette"></i> Quality Features</h4>
+                                    <ul>
+                                        <li><strong>Color Correction:</strong> Wavelet reconstruction for color accuracy</li>
+                                        <li><strong>Frame Padding:</strong> Optimal chunk quality processing</li>
+                                        <li><strong>Consistency Validation:</strong> Real-time quality assessment</li>
+                                        <li><strong>Chunk Optimization:</strong> Intelligent boundary processing</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-play-circle"></i></span>
+                                Quick Start Guide
+                            </h3>
+                            
+                            <div class="steps">
+                                <div class="step">
+                                    <div class="step-number">1</div>
+                                    <div class="step-content">
+                                        <h4>Select SeedVR2 Mode</h4>
+                                        <p>In <strong>Core Settings</strong>, choose "Use SeedVR2 Video Upscaler" as your upscaler type.</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="step">
+                                    <div class="step-number">2</div>
+                                    <div class="step-content">
+                                        <h4>Configure Model</h4>
+                                        <p>Go to <strong>SeedVR2 Upscaler</strong> tab and select your model. Click "Apply Optimal Settings" for automatic configuration based on your hardware.</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="step">
+                                    <div class="step-number">3</div>
+                                    <div class="step-content">
+                                        <h4>Upload and Process</h4>
+                                        <p>Upload your video in the <strong>Main</strong> tab and click "Upscale Video". For images, use the <strong>Single Image Upscale</strong> tab.</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="step">
+                                    <div class="step-number">4</div>
+                                    <div class="step-content">
+                                        <h4>Monitor Progress</h4>
+                                        <p>Watch real-time progress with temporal consistency metrics and GPU utilization statistics.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-lightbulb"></i></span>
+                                Performance Tips
+                            </h3>
+                            
+                            <div class="tips-grid">
+                                <div class="tip-item">
+                                    <i class="fas fa-rocket"></i>
+                                    <h4>Speed Optimization</h4>
+                                    <ul>
+                                        <li>Use 3B FP8 models for fastest processing</li>
+                                        <li>Enable Flash Attention (default)</li>
+                                        <li>Use multi-GPU if available</li>
+                                        <li>Set batch size based on VRAM capacity</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="tip-item">
+                                    <i class="fas fa-gem"></i>
+                                    <h4>Quality Optimization</h4>
+                                    <ul>
+                                        <li>Use 7B models for maximum quality</li>
+                                        <li>Enable temporal consistency features</li>
+                                        <li>Use higher batch sizes (8-12)</li>
+                                        <li>Enable color correction</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="tip-item">
+                                    <i class="fas fa-memory"></i>
+                                    <h4>Memory Management</h4>
+                                    <ul>
+                                        <li>Enable block swap for <16GB VRAM</li>
+                                        <li>Use VRAM preserve mode</li>
+                                        <li>Adjust batch size if out of memory</li>
+                                        <li>Monitor GPU status in real-time</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="tip-item">
+                                    <i class="fas fa-video"></i>
+                                    <h4>Content-Specific</h4>
+                                    <ul>
+                                        <li>Enable scene awareness for complex videos</li>
+                                        <li>Use higher temporal overlap for action scenes</li>
+                                        <li>Adjust resolution mode based on content</li>
+                                        <li>Test with short clips first</li>
                                     </ul>
                                 </div>
                             </div>

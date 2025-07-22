@@ -71,7 +71,7 @@ A quick setup guide to get you upscaling videos in minutes.
     Navigate to the **Core Settings** tab and select your preferred upscaling method:
     *   **STAR Model Upscaler:** AI temporal upscaling with prompt guidance
     *   **Image Based Upscalers:** Fast spatial upscaling (RealESRGAN, etc.)
-    *   **SeedVR2:** Advanced video upscaler (coming soon)
+    *   **SeedVR2:** Advanced video upscaling with temporal consistency
 
 2.  #### Upload Your Video
     In the **Main** tab, upload your video file or specify a frames folder path. The app supports most video formats and can process frame sequences.
@@ -80,12 +80,13 @@ A quick setup guide to get you upscaling videos in minutes.
     Adjust settings based on your needs:
     *   **For STAR Model:** Set prompts, target resolution, and model parameters
     *   **For Image Upscalers:** Choose model and batch size
+    *   **For SeedVR2:** Select model, configure temporal settings, and optimize for your hardware
     *   **GPU:** Select your GPU for processing
 
 4.  #### Start Processing
     Click **"Upscale Video"** and monitor progress. You can cancel at any time if needed.
 
-> ✅ **Pro Tip:** Start with Image Based Upscalers for quick results, then explore STAR Model for advanced quality when you need prompt-guided enhancement.
+> ✅ **Pro Tip:** Start with Image Based Upscalers for quick results, then explore STAR Model for advanced quality when you need prompt-guided enhancement, or use SeedVR2 for the highest quality with temporal consistency.
 
 ---
 
@@ -296,15 +297,78 @@ Use the preview buttons to test upscaler models on a sample frame before full pr
 
 ## 🌱 SeedVR2 Video Upscaler
 
-Next-generation video upscaling. **[EXPERIMENTAL - COMING SOON]**
+Next-generation video upscaling with temporal consistency and professional features.
 
-> ℹ️ **Development Status:** SeedVR2 is currently in development and will be available in a future update.
+### 🚀 Key Features
 
-### Planned Features
-*   Advanced inter-frame coherence
-*   Variable scale factors (2x, 4x, custom)
-*   Real-time preview during processing
-*   Custom training support
+#### Advanced Video Processing
+*   **Temporal Consistency:** Maintains coherent motion across frames with intelligent overlap processing
+*   **Scene Awareness:** Automatic scene boundary detection and optimized chunk processing
+*   **Multi-Model Support:** 6 available models (3B/7B sizes, FP16/FP8 precision, Sharp variants)
+*   **Single Image Upscaling:** High-quality image processing with comparison generation
+
+#### Performance & Memory Optimization
+*   **Multi-GPU Support:** Automatic distribution across available GPUs with professional monitoring
+*   **Block Swapping:** Dynamic memory management with 0-12+ blocks for systems with limited VRAM
+*   **Flash Attention:** 15-20% speedup with optimized attention mechanisms
+*   **VRAM Preserve:** Intelligent memory management for various hardware configurations
+
+#### Professional Features
+*   **Color Correction:** Wavelet reconstruction for accurate color preservation
+*   **Quality Validation:** Real-time temporal consistency assessment and metrics
+*   **Chunk Optimization:** Intelligent boundary processing for optimal results
+*   **Frame Padding:** Automatic padding for consistent batch processing
+
+### 🎯 Model Selection Guide
+
+| Model | Size | VRAM | Best For | Speed |
+|-------|------|------|----------|-------|
+| 3B FP8 | 3.4GB | ~6GB | General use, balanced performance | Fastest |
+| 3B FP16 | 6.8GB | ~8GB | Higher quality, good performance | Fast |
+| 7B FP8 | 8.2GB | ~12GB | Professional quality | Medium |
+| 7B FP16 | 16.5GB | ~16GB | Maximum quality | Slower |
+| 7B Sharp (FP8/FP16) | Same as above | Same as above | Enhanced detail preservation | Same as above |
+
+### ⚙️ Configuration Recommendations
+
+#### For Speed (Low VRAM)
+*   Model: **3B FP8**
+*   Batch Size: **5-6**
+*   Block Swap: **6-8 blocks**
+*   Flash Attention: **Enabled**
+*   VRAM Preserve: **Enabled**
+
+#### For Quality (High VRAM)
+*   Model: **7B FP16 or 7B Sharp**
+*   Batch Size: **8-12**
+*   Block Swap: **Disabled**
+*   Temporal Overlap: **3-4 frames**
+*   Scene Awareness: **Enabled**
+
+#### For Balanced Performance
+*   Model: **7B FP8**
+*   Batch Size: **6-8**
+*   Block Swap: **2-4 blocks**
+*   Quality Mode: **Balanced**
+*   Multi-GPU: **Auto-detect**
+
+### 📊 Real-Time Monitoring
+
+SeedVR2 provides comprehensive monitoring:
+*   **GPU Utilization:** Per-device VRAM, temperature, and usage statistics
+*   **Processing Metrics:** Temporal consistency scores and quality validation
+*   **Memory Management:** Block swap efficiency and memory allocation tracking
+*   **Progress Tracking:** Frame-by-frame processing with ETA calculations
+
+### 🎬 Temporal Consistency Features
+
+*   **Minimum Batch Size:** 5 frames required for temporal consistency
+*   **Overlap Processing:** 2-4 frame overlap for smooth transitions
+*   **Scene Boundary Detection:** Automatic detection and optimized processing
+*   **Quality Validation:** Real-time assessment of temporal coherence
+*   **Chunk Optimization:** Intelligent boundary adjustment for optimal results
+
+> ✅ **Getting Started:** Use the "Apply Optimal Settings" button in the SeedVR2 tab for automatic configuration based on your hardware capabilities.
 
 ---
 

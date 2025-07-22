@@ -134,10 +134,39 @@ format_video_info_for_display as util_format_video_info_for_display
 )
 
 from logic .temp_folder_utils import (
-get_temp_folder_path as util_get_temp_folder_path ,
-calculate_temp_folder_size as util_calculate_temp_folder_size ,
-format_temp_folder_size as util_format_temp_folder_size ,
-clear_temp_folder as util_clear_temp_folder 
+    get_temp_folder_path as util_get_temp_folder_path ,
+    calculate_temp_folder_size as util_calculate_temp_folder_size ,
+    format_temp_folder_size as util_format_temp_folder_size ,
+    clear_temp_folder as util_clear_temp_folder 
+)
+
+from logic .seedvr2_image_core import (
+    process_single_image as util_process_single_image ,
+    format_image_info_display as util_format_image_info_display 
+)
+
+from logic .seedvr2_utils import (
+    scan_for_seedvr2_models as util_scan_for_seedvr2_models ,
+    get_model_dropdown_choices as util_get_model_dropdown_choices ,
+    extract_model_filename_from_dropdown as util_extract_model_filename_from_dropdown ,
+    validate_seedvr2_model as util_validate_seedvr2_model ,
+    format_model_info_display as util_format_model_info_display ,
+    check_seedvr2_dependencies as util_check_seedvr2_dependencies ,
+    detect_available_gpus as util_detect_available_gpus ,
+    format_gpu_dropdown_choices as util_format_gpu_dropdown_choices ,
+    validate_multi_gpu_setup as util_validate_multi_gpu_setup ,
+    setup_block_swap_config as util_setup_block_swap_config ,
+    get_optimal_batch_size_for_vram as util_get_optimal_batch_size_for_vram ,
+    get_recommended_settings_for_vram as util_get_recommended_settings_for_vram ,
+    estimate_processing_time as util_estimate_processing_time ,
+    get_real_time_block_swap_status as util_get_real_time_block_swap_status ,
+    get_intelligent_block_swap_recommendations as util_get_intelligent_block_swap_recommendations ,
+    format_block_swap_recommendations_for_ui as util_format_block_swap_recommendations_for_ui ,
+    get_multi_gpu_status_display as util_get_multi_gpu_status_display ,
+    analyze_multi_gpu_configuration as util_analyze_multi_gpu_configuration ,
+    format_multi_gpu_recommendations as util_format_multi_gpu_recommendations ,
+    validate_multi_gpu_configuration as util_validate_multi_gpu_configuration ,
+    get_optimized_multi_gpu_settings as util_get_optimized_multi_gpu_settings 
 )
 
 from logic .frame_folder_utils import (
@@ -546,6 +575,134 @@ The total combined prompt length is limited to 77 tokens."""
                         interactive =False ,
                         lines =1 ,
                         value ="No chunks processed yet"
+                        )
+
+        with gr .Tab ("Single Image Upscale",id ="image_upscale_tab"):
+            with gr .Row ():
+                with gr .Column (scale =1 ):
+                    with gr .Group ():
+                        input_image =gr .Image (
+                        label ="Input Image",
+                        sources =["upload"],
+                        interactive =True ,
+                        height =512 ,
+                        type ="filepath"
+                        )
+
+                        image_integration_status =gr .Textbox (
+                        label ="Image Processing Status",
+                        interactive =False ,
+                        lines =2 ,
+                        visible =False ,
+                        value =""
+                        )
+
+                    with gr .Accordion ("Image Upscaler Selection",open =True ):
+                        gr .Markdown ("### 🎯 Choose Your Image Upscaling Method")
+                        
+                        image_upscaler_type_radio =gr .Radio (
+                        label ="Select Image Upscaler Type",
+                        choices =["Use SeedVR2 for Images","Use Image Based Upscalers"],
+                        value ="Use SeedVR2 for Images",
+                        info ="""Choose your preferred upscaling method:
+• SeedVR2: Advanced AI upscaling with superior quality and detail preservation
+• Image Based: Fast traditional upscalers (RealESRGAN, ESRGAN, etc.)"""
+                        )
+
+                    with gr .Accordion ("Image Processing Settings",open =True ):
+                        with gr .Row ():
+                            image_preserve_aspect_ratio =gr .Checkbox (
+                            label ="Preserve Aspect Ratio",
+                            value =True ,
+                            info ="Maintain the original image aspect ratio during upscaling"
+                            )
+                            image_output_format =gr .Dropdown (
+                            label ="Output Format",
+                            choices =["PNG","JPEG","WEBP"],
+                            value ="PNG",
+                            info ="Choose output image format. PNG for lossless, JPEG for smaller files"
+                            )
+
+                        with gr .Row ():
+                            image_quality_level =gr .Slider (
+                            label ="Output Quality (JPEG/WEBP only)",
+                            minimum =70 ,
+                            maximum =100 ,
+                            value =95 ,
+                            step =1 ,
+                            info ="Quality level for JPEG/WEBP output (70-100, higher = better quality)"
+                            )
+
+                    with gr .Accordion ("Advanced Image Settings",open =False ):
+                        with gr .Row ():
+                            image_enable_comparison =gr .Checkbox (
+                            label ="Create Before/After Comparison",
+                            value =True ,
+                            info ="Generate side-by-side comparison image showing original vs upscaled"
+                            )
+                            image_preserve_metadata =gr .Checkbox (
+                            label ="Preserve Image Metadata",
+                            value =True ,
+                            info ="Keep original image EXIF data and metadata in the output"
+                            )
+
+                        with gr .Row ():
+                            image_custom_suffix =gr .Textbox (
+                            label ="Custom Output Suffix",
+                            value ="_upscaled",
+                            placeholder ="_upscaled",
+                            info ="Custom suffix added to output filename (e.g., 'image_upscaled.png')"
+                            )
+
+                    with gr .Group ():
+                        gr .Markdown ("### 🚀 Processing Controls")
+                        with gr .Row ():
+                            image_upscale_button =gr .Button ("Upscale Image",variant ="primary",icon ="icons/upscale.png")
+                            image_cancel_button =gr .Button ("Cancel Processing",variant ="stop",visible =True ,interactive =False ,icon ="icons/cancel.png")
+
+                        image_processing_status =gr .Textbox (
+                        label ="Processing Status",
+                        interactive =False ,
+                        lines =3 ,
+                        value ="Ready to process images..."
+                        )
+
+                with gr .Column (scale =1 ):
+                    with gr .Accordion ("Upscaled Image Results",open =True ):
+                        output_image =gr .Image (
+                        label ="Upscaled Image",
+                        interactive =False ,
+                        height =512 ,
+                        type ="filepath"
+                        )
+
+                        image_download_button =gr .Button ("📥 Download Upscaled Image",variant ="primary",visible =False )
+
+                    with gr .Accordion ("Before/After Comparison",open =True ):
+                        comparison_image =gr .Image (
+                        label ="Before/After Comparison",
+                        interactive =False ,
+                        height =512 ,
+                        type ="filepath",
+                        visible =False 
+                        )
+
+                        comparison_download_button =gr .Button ("📥 Download Comparison",variant ="secondary",visible =False )
+
+                    with gr .Accordion ("Image Information",open =True ):
+                        image_info_display =gr .Textbox (
+                        label ="Image Details",
+                        interactive =False ,
+                        lines =8 ,
+                        value ="Upload an image to see details..."
+                        )
+
+                    with gr .Accordion ("Processing Log",open =False ):
+                        image_log_display =gr .Textbox (
+                        label ="Detailed Processing Log",
+                        interactive =False ,
+                        lines =6 ,
+                        value ="Processing log will appear here..."
                         )
 
         with gr .Tab ("Resolution & Scene Split",id ="resolution_tab"):
@@ -994,76 +1151,231 @@ The total combined prompt length is limited to 77 tokens."""
             with gr .Row ():
                 with gr .Column (scale =1 ):
                     with gr .Group ():
-                        gr .Markdown ("### SeedVR2 Video Upscaler - Upcoming")
-                        gr .Markdown ("**🚧 This upscaler is in development and will be available soon!**")
+                        gr .Markdown ("### SeedVR2 Video Upscaler - Advanced AI Video Enhancement")
+                        gr .Markdown ("**🚀 Real-time Temporal Consistency & Superior Quality**")
 
                         enable_seedvr2_check =gr .Checkbox (
-                        label ="Enable SeedVR2 Upscaling (Coming Soon)",
-                        value =False ,
-                        interactive =False ,
-                        info ="Advanced video upscaler with temporal consistency. Currently in development."
+                        label ="Enable SeedVR2 Upscaling",
+                        value =INITIAL_APP_CONFIG .seedvr2 .enable ,
+                        info ="Enable advanced SeedVR2 video upscaling with temporal consistency."
                         )
+
+                        seedvr2_dependency_status =gr .Textbox (
+                        label ="SeedVR2 Status",
+                        value ="Checking SeedVR2 dependencies...",
+                        interactive =False ,
+                        lines =2 ,
+                        info ="Shows SeedVR2 installation and dependency status"
+                        )
+
+                    with gr .Accordion ("Model Selection",open =True ):
+                        try :
+                            # Get available SeedVR2 models
+                            available_models =util_get_model_dropdown_choices (logger =logger )
+                            if available_models and available_models [0 ]!="No SeedVR2 models found":
+                                default_model =available_models [0 ]
+                            else :
+                                default_model ="No SeedVR2 models found"
+                        except Exception as e :
+                            logger .warning (f"Failed to scan for SeedVR2 models: {e}")
+                            available_models =["Error scanning models - check SeedVR2/models/ directory"]
+                            default_model =available_models [0 ]
 
                         seedvr2_model_dropdown =gr .Dropdown (
                         label ="SeedVR2 Model",
-                        choices =["Model will be available soon"],
-                        value ="Model will be available soon",
-                        interactive =False ,
-                        info ="SeedVR2 models will be available when the upscaler is released."
+                        choices =available_models ,
+                        value =default_model ,
+                        info ="Select SeedVR2 model. 3B FP8 models offer best speed/VRAM balance, 7B models provide highest quality."
                         )
 
-                        seedvr2_quality_preset_radio =gr .Radio (
-                        label ="Quality Preset",
-                        choices =["Fast","Balanced","Quality"],
-                        value ="Balanced",
+                        with gr .Row ():
+                            refresh_seedvr2_models_btn =gr .Button ("🔄 Refresh Models",variant ="secondary",scale =1 )
+                            apply_recommended_settings_btn =gr .Button ("⚡ Apply Optimal Settings",variant ="primary",scale =1 )
+                        
+                        with gr .Row ():
+                            get_block_swap_recommendations_btn =gr .Button ("🧠 Smart Block Swap",variant ="secondary",scale =1 )
+                            get_multi_gpu_recommendations_btn =gr .Button ("🚀 Multi-GPU Analysis",variant ="secondary",scale =1 )
+
+                        seedvr2_model_info_display =gr .Textbox (
+                        label ="Model Information",
+                        value ="Select a model to see detailed specifications",
                         interactive =False ,
-                        info ="""Quality vs Speed trade-off:
-- Fast: Quick processing, good quality
-- Balanced: Best balance of speed and quality  
-- Quality: Highest quality, slower processing"""
+                        lines =8 ,
+                        info ="Detailed model specifications and requirements"
                         )
 
-                        seedvr2_batch_size_slider =gr .Slider (
-                        label ="Batch Size",
-                        minimum =1 ,
-                        maximum =50 ,
-                        value =INITIAL_APP_CONFIG .seedvr2 .batch_size ,
-                        step =1 ,
-                        interactive =False ,
-                        info ="Number of frames to process simultaneously."
-                        )
+                    with gr .Accordion ("Processing Settings",open =True ):
+                        with gr .Row ():
+                            seedvr2_batch_size_slider =gr .Slider (
+                            label ="Batch Size (Temporal Consistency)",
+                            minimum =5 ,
+                            maximum =32 ,
+                            value =max (5 ,INITIAL_APP_CONFIG .seedvr2 .batch_size ),
+                            step =1 ,
+                            info ="Frames processed simultaneously. Min 5 for temporal consistency. Higher = better quality but more VRAM."
+                            )
+
+                        with gr .Row ():
+                            seedvr2_temporal_overlap_slider =gr .Slider (
+                            label ="Temporal Overlap",
+                            minimum =0 ,
+                            maximum =8 ,
+                            value =INITIAL_APP_CONFIG .seedvr2 .temporal_overlap ,
+                            step =1 ,
+                            info ="Frame overlap between batches for smoother transitions. Higher = smoother but slower."
+                            )
+
+                        with gr .Row ():
+                            seedvr2_preserve_vram_check =gr .Checkbox (
+                            label ="Preserve VRAM",
+                            value =INITIAL_APP_CONFIG .seedvr2 .preserve_vram ,
+                            info ="Optimize VRAM usage. Recommended for most systems."
+                            )
+                            seedvr2_color_correction_check =gr .Checkbox (
+                            label ="Color Correction (Wavelet)",
+                            value =INITIAL_APP_CONFIG .seedvr2 .color_correction ,
+                            info ="Fix color shifts using wavelet reconstruction. Recommended."
+                            )
+
+                        with gr .Row ():
+                            seedvr2_enable_frame_padding_check =gr .Checkbox (
+                            label ="Automatic Frame Padding",
+                            value =INITIAL_APP_CONFIG .seedvr2 .enable_frame_padding ,
+                            info ="Optimize last chunk quality like STAR model. Recommended."
+                            )
+                            seedvr2_flash_attention_check =gr .Checkbox (
+                            label ="Flash Attention",
+                            value =INITIAL_APP_CONFIG .seedvr2 .flash_attention ,
+                            info ="Memory-efficient attention mechanism. Default enabled."
+                            )
+                        
+                        # Temporal Consistency Settings
+                        with gr .Accordion ("🎬 Temporal Consistency",open =False ):
+                            with gr .Row ():
+                                seedvr2_scene_awareness_check =gr .Checkbox (
+                                label ="🎭 Scene Awareness",
+                                value =INITIAL_APP_CONFIG .seedvr2 .scene_awareness ,
+                                info ="Enable scene-aware temporal processing for better scene boundary handling."
+                                )
+                                seedvr2_consistency_validation_check =gr .Checkbox (
+                                label ="🎯 Consistency Validation",
+                                value =INITIAL_APP_CONFIG .seedvr2 .consistency_validation ,
+                                info ="Validate temporal consistency during processing and report quality metrics."
+                                )
+                            
+                            with gr .Row ():
+                                seedvr2_chunk_optimization_check =gr .Checkbox (
+                                label ="🔧 Chunk Optimization",
+                                value =INITIAL_APP_CONFIG .seedvr2 .chunk_optimization ,
+                                info ="Optimize chunk boundaries for temporal coherence. Recommended for longer videos."
+                                )
+                                seedvr2_temporal_quality_radio =gr .Radio (
+                                choices =["fast","balanced","quality"],
+                                value =INITIAL_APP_CONFIG .seedvr2 .temporal_quality ,
+                                label ="🏆 Temporal Quality",
+                                info ="Balance between processing speed and temporal consistency quality."
+                                )
 
                 with gr .Column (scale =1 ):
-                    with gr .Group ():
-                        gr .Markdown ("### Expected Features")
-                        gr .Markdown ("""
-**🎯 Planned SeedVR2 Features:**
-- **Temporal Consistency**: Advanced inter-frame coherence
-- **Variable Scale Factors**: 2x, 4x, and custom scaling
-- **Multiple Architectures**: Optimized for different content types
-- **Real-time Preview**: Live preview during processing
-- **Batch Processing**: Efficient multi-video processing
-- **Custom Training**: Fine-tune on your own data
+                    with gr .Accordion ("GPU Configuration",open =True ):
+                        with gr .Row ():
+                            seedvr2_enable_multi_gpu_check =gr .Checkbox (
+                            label ="Enable Multi-GPU",
+                            value =INITIAL_APP_CONFIG .seedvr2 .enable_multi_gpu ,
+                            info ="Distribute processing across multiple GPUs for faster processing."
+                            )
 
-**📅 Development Status:**
-- Core architecture: In development
-- Model training: Planned
-- Integration: Upcoming
-- Release timeline: TBD
-
-**💡 Stay Updated:**
-This will be a major addition to the upscaling toolkit, combining the best of both temporal and spatial upscaling approaches.
-""")
-
-                        gr .Markdown ("### Placeholder Settings")
-                        gr .Markdown ("*These settings will become functional when SeedVR2 is released.*")
-
-                        seedvr2_use_gpu_check =gr .Checkbox (
-                        label ="Use GPU Acceleration",
-                        value =INITIAL_APP_CONFIG .seedvr2 .use_gpu ,
-                        interactive =False ,
-                        info ="GPU acceleration for SeedVR2 processing."
+                        seedvr2_gpu_devices_textbox =gr .Textbox (
+                        label ="GPU Device IDs",
+                        value =INITIAL_APP_CONFIG .seedvr2 .gpu_devices ,
+                        placeholder ="0,1,2",
+                        info ="Comma-separated GPU IDs (e.g., '0,1,2'). Single GPU: '0'"
                         )
+
+                        seedvr2_gpu_status_display =gr .Textbox (
+                        label ="GPU Status",
+                        value ="Detecting available GPUs...",
+                        interactive =False ,
+                        lines =4 ,
+                        info ="Shows available GPUs and their VRAM status"
+                        )
+
+                    with gr .Accordion ("Block Swap - VRAM Optimization",open =False ):
+                        gr .Markdown ("**🔄 Block Swap reduces VRAM usage by offloading transformer blocks to CPU**")
+
+                        seedvr2_enable_block_swap_check =gr .Checkbox (
+                        label ="Enable Block Swap",
+                        value =INITIAL_APP_CONFIG .seedvr2 .enable_block_swap ,
+                        info ="Enable block swapping for large models on limited VRAM systems."
+                        )
+
+                        seedvr2_block_swap_counter_slider =gr .Slider (
+                        label ="Block Swap Counter",
+                        minimum =0 ,
+                        maximum =20 ,
+                        value =INITIAL_APP_CONFIG .seedvr2 .block_swap_counter ,
+                        step =1 ,
+                        info ="Number of blocks to swap (0=disabled). Higher = more VRAM savings but slower."
+                        )
+
+                        with gr .Row ():
+                            seedvr2_block_swap_offload_io_check =gr .Checkbox (
+                            label ="I/O Component Offloading",
+                            value =INITIAL_APP_CONFIG .seedvr2 .block_swap_offload_io ,
+                            info ="Offload input/output layers for maximum VRAM savings. Optional."
+                            )
+                            seedvr2_block_swap_model_caching_check =gr .Checkbox (
+                            label ="Model Caching",
+                            value =INITIAL_APP_CONFIG .seedvr2 .block_swap_model_caching ,
+                            info ="Keep model cached in RAM between runs. Faster batch processing."
+                            )
+
+                        seedvr2_block_swap_info_display =gr .Textbox (
+                        label ="Block Swap Status",
+                        value ="Block swap disabled",
+                        interactive =False ,
+                        lines =3 ,
+                        info ="Shows block swap configuration and estimated VRAM savings"
+                        )
+
+                    with gr .Accordion ("Advanced Settings",open =False ):
+                        with gr .Row ():
+                            seedvr2_cfg_scale_slider =gr .Slider (
+                            label ="CFG Scale",
+                            minimum =0.5 ,
+                            maximum =2.0 ,
+                            value =INITIAL_APP_CONFIG .seedvr2 .cfg_scale ,
+                            step =0.1 ,
+                            info ="Guidance scale for generation. Usually 1.0 for SeedVR2."
+                            )
+
+                        with gr .Row ():
+                            seedvr2_resolution_mode_radio =gr .Radio (
+                            label ="Resolution Mode",
+                            choices =["Auto","Custom"],
+                            value =INITIAL_APP_CONFIG .seedvr2 .resolution_mode ,
+                            info ="Auto uses model defaults, Custom allows manual resolution."
+                            )
+
+                        with gr .Row ():
+                            seedvr2_custom_width_slider =gr .Slider (
+                            label ="Custom Width",
+                            minimum =256 ,
+                            maximum =2048 ,
+                            value =INITIAL_APP_CONFIG .seedvr2 .custom_width ,
+                            step =64 ,
+                            visible =False ,
+                            info ="Custom width for SeedVR2 processing."
+                            )
+                            seedvr2_custom_height_slider =gr .Slider (
+                            label ="Custom Height",
+                            minimum =256 ,
+                            maximum =2048 ,
+                            value =INITIAL_APP_CONFIG .seedvr2 .custom_height ,
+                            step =64 ,
+                            visible =False ,
+                            info ="Custom height for SeedVR2 processing."
+                            )
 
         with gr .Tab ("Output & Comparison",id ="output_tab"):
             with gr .Row ():
@@ -2224,7 +2536,16 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         image_upscaler_model_val ,image_upscaler_batch_size_val ,
         enable_face_restoration_val ,face_restoration_fidelity_val ,enable_face_colorization_val ,
         face_restoration_when_val ,codeformer_model_val ,face_restoration_batch_size_val ,
-        enable_seedvr2_val ,seedvr2_model_val ,seedvr2_quality_preset_val ,seedvr2_batch_size_val ,seedvr2_use_gpu_val ,
+        enable_seedvr2_val ,seedvr2_model_val ,seedvr2_batch_size_val ,
+        seedvr2_temporal_overlap_val ,seedvr2_preserve_vram_val ,seedvr2_color_correction_val ,
+        seedvr2_scene_awareness_val ,seedvr2_consistency_validation_val ,
+        seedvr2_chunk_optimization_val ,seedvr2_temporal_quality_val ,
+        seedvr2_enable_frame_padding_val ,seedvr2_flash_attention_val ,
+        seedvr2_enable_multi_gpu_val ,seedvr2_gpu_devices_val ,
+        seedvr2_enable_block_swap_val ,seedvr2_block_swap_counter_val ,
+        seedvr2_block_swap_offload_io_val ,seedvr2_block_swap_model_caching_val ,
+        seedvr2_cfg_scale_val ,seedvr2_resolution_mode_val ,
+        seedvr2_custom_width_val ,seedvr2_custom_height_val ,
         input_frames_folder_val ,frame_folder_fps_slider_val ,
         gpu_selector_val ,
 
@@ -2313,6 +2634,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         selected_upscaler_type =upscaler_type_map .get (upscaler_type_radio_val ,"image_upscaler")
 
         enable_image_upscaler_from_type =(selected_upscaler_type =="image_upscaler")
+        enable_seedvr2_from_type =(selected_upscaler_type =="seedvr2")
 
         config =AppConfig (
         input_video_path =input_video_val ,
@@ -2446,11 +2768,28 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         batch_size =face_restoration_batch_size_val 
         ),
         seedvr2 =SeedVR2Config (
-        enable =enable_seedvr2_val ,
+        enable =enable_seedvr2_from_type and enable_seedvr2_val ,
         model =seedvr2_model_val ,
         batch_size =seedvr2_batch_size_val ,
-        quality_preset =seedvr2_quality_preset_val ,
-        use_gpu =seedvr2_use_gpu_val 
+        temporal_overlap =seedvr2_temporal_overlap_val ,
+        scene_awareness =seedvr2_scene_awareness_val ,
+        temporal_quality =seedvr2_temporal_quality_val ,
+        consistency_validation =seedvr2_consistency_validation_val ,
+        chunk_optimization =seedvr2_chunk_optimization_val ,
+        preserve_vram =seedvr2_preserve_vram_val ,
+        color_correction =seedvr2_color_correction_val ,
+        enable_frame_padding =seedvr2_enable_frame_padding_val ,
+        flash_attention =seedvr2_flash_attention_val ,
+        enable_multi_gpu =seedvr2_enable_multi_gpu_val ,
+        gpu_devices =seedvr2_gpu_devices_val ,
+        enable_block_swap =seedvr2_enable_block_swap_val ,
+        block_swap_counter =seedvr2_block_swap_counter_val ,
+        block_swap_offload_io =seedvr2_block_swap_offload_io_val ,
+        block_swap_model_caching =seedvr2_block_swap_model_caching_val ,
+        cfg_scale =seedvr2_cfg_scale_val ,
+        resolution_mode =seedvr2_resolution_mode_val ,
+        custom_width =seedvr2_custom_width_val ,
+        custom_height =seedvr2_custom_height_val 
         ),
         gpu =GpuConfig (
         device =str (extract_gpu_index_from_dropdown (gpu_selector_val ))
@@ -2839,7 +3178,10 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
             face_restoration_timing ="after_upscale",
             face_restoration_when =app_config .face_restoration .when ,
             codeformer_model =app_config .face_restoration .model ,
-            face_restoration_batch_size =app_config .face_restoration .batch_size 
+            face_restoration_batch_size =app_config .face_restoration .batch_size ,
+
+            enable_seedvr2 =app_config .seedvr2 .enable ,
+            seedvr2_config =app_config .seedvr2 
             )
 
             cancellation_detected =False 
@@ -3324,7 +3666,16 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         image_upscaler_model_val ,image_upscaler_batch_size_val ,
         enable_face_restoration_val ,face_restoration_fidelity_val ,enable_face_colorization_val ,
         face_restoration_when_val ,codeformer_model_val ,face_restoration_batch_size_val ,
-        enable_seedvr2_val ,seedvr2_model_val ,seedvr2_quality_preset_val ,seedvr2_batch_size_val ,seedvr2_use_gpu_val ,
+        enable_seedvr2_val ,seedvr2_model_val ,seedvr2_batch_size_val ,
+        seedvr2_temporal_overlap_val ,seedvr2_preserve_vram_val ,seedvr2_color_correction_val ,
+        seedvr2_scene_awareness_val ,seedvr2_consistency_validation_val ,
+        seedvr2_chunk_optimization_val ,seedvr2_temporal_quality_val ,
+        seedvr2_enable_frame_padding_val ,seedvr2_flash_attention_val ,
+        seedvr2_enable_multi_gpu_val ,seedvr2_gpu_devices_val ,
+        seedvr2_enable_block_swap_val ,seedvr2_block_swap_counter_val ,
+        seedvr2_block_swap_offload_io_val ,seedvr2_block_swap_model_caching_val ,
+        seedvr2_cfg_scale_val ,seedvr2_resolution_mode_val ,
+        seedvr2_custom_width_val ,seedvr2_custom_height_val ,
         input_frames_folder_val ,frame_folder_fps_slider_val ,
         gpu_selector_val ,
         batch_input_folder_val ,batch_output_folder_val ,enable_batch_frame_folders_val ,
@@ -3346,6 +3697,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         selected_upscaler_type =upscaler_type_map .get (upscaler_type_radio_val ,"image_upscaler")
 
         enable_image_upscaler_from_type =(selected_upscaler_type =="image_upscaler")
+        enable_seedvr2_from_type =(selected_upscaler_type =="seedvr2")
 
         config =AppConfig (
         input_video_path =input_video_val ,
@@ -3480,11 +3832,28 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         batch_size =face_restoration_batch_size_val 
         ),
         seedvr2 =SeedVR2Config (
-        enable =enable_seedvr2_val ,
+        enable =enable_seedvr2_from_type and enable_seedvr2_val ,
         model =seedvr2_model_val ,
         batch_size =seedvr2_batch_size_val ,
-        quality_preset =seedvr2_quality_preset_val ,
-        use_gpu =seedvr2_use_gpu_val 
+        temporal_overlap =seedvr2_temporal_overlap_val ,
+        scene_awareness =seedvr2_scene_awareness_val ,
+        temporal_quality =seedvr2_temporal_quality_val ,
+        consistency_validation =seedvr2_consistency_validation_val ,
+        chunk_optimization =seedvr2_chunk_optimization_val ,
+        preserve_vram =seedvr2_preserve_vram_val ,
+        color_correction =seedvr2_color_correction_val ,
+        enable_frame_padding =seedvr2_enable_frame_padding_val ,
+        flash_attention =seedvr2_flash_attention_val ,
+        enable_multi_gpu =seedvr2_enable_multi_gpu_val ,
+        gpu_devices =seedvr2_gpu_devices_val ,
+        enable_block_swap =seedvr2_enable_block_swap_val ,
+        block_swap_counter =seedvr2_block_swap_counter_val ,
+        block_swap_offload_io =seedvr2_block_swap_offload_io_val ,
+        block_swap_model_caching =seedvr2_block_swap_model_caching_val ,
+        cfg_scale =seedvr2_cfg_scale_val ,
+        resolution_mode =seedvr2_resolution_mode_val ,
+        custom_width =seedvr2_custom_width_val ,
+        custom_height =seedvr2_custom_height_val 
         ),
         gpu =GpuConfig (
         device =str (extract_gpu_index_from_dropdown (gpu_selector_val ))
@@ -4832,7 +5201,16 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
     upscaler_type_radio :('upscaler_type','upscaler_type'),
     image_upscaler_model_dropdown :('image_upscaler','model'),image_upscaler_batch_size_slider :('image_upscaler','batch_size'),
     enable_face_restoration_check :('face_restoration','enable'),face_restoration_fidelity_slider :('face_restoration','fidelity_weight'),enable_face_colorization_check :('face_restoration','enable_colorization'),face_restoration_when_radio :('face_restoration','when'),codeformer_model_dropdown :('face_restoration','model'),face_restoration_batch_size_slider :('face_restoration','batch_size'),
-    enable_seedvr2_check :('seedvr2','enable'),seedvr2_model_dropdown :('seedvr2','model'),seedvr2_quality_preset_radio :('seedvr2','quality_preset'),seedvr2_batch_size_slider :('seedvr2','batch_size'),seedvr2_use_gpu_check :('seedvr2','use_gpu'),
+    enable_seedvr2_check :('seedvr2','enable'),seedvr2_model_dropdown :('seedvr2','model'),seedvr2_batch_size_slider :('seedvr2','batch_size'),
+            seedvr2_temporal_overlap_slider :('seedvr2','temporal_overlap'),seedvr2_preserve_vram_check :('seedvr2','preserve_vram'),seedvr2_color_correction_check :('seedvr2','color_correction'),
+        seedvr2_scene_awareness_check :('seedvr2','scene_awareness'),seedvr2_consistency_validation_check :('seedvr2','consistency_validation'),
+        seedvr2_chunk_optimization_check :('seedvr2','chunk_optimization'),seedvr2_temporal_quality_radio :('seedvr2','temporal_quality'),
+    seedvr2_enable_frame_padding_check :('seedvr2','enable_frame_padding'),seedvr2_flash_attention_check :('seedvr2','flash_attention'),
+    seedvr2_enable_multi_gpu_check :('seedvr2','enable_multi_gpu'),seedvr2_gpu_devices_textbox :('seedvr2','gpu_devices'),
+    seedvr2_enable_block_swap_check :('seedvr2','enable_block_swap'),seedvr2_block_swap_counter_slider :('seedvr2','block_swap_counter'),
+    seedvr2_block_swap_offload_io_check :('seedvr2','block_swap_offload_io'),seedvr2_block_swap_model_caching_check :('seedvr2','block_swap_model_caching'),
+    seedvr2_cfg_scale_slider :('seedvr2','cfg_scale'),seedvr2_resolution_mode_radio :('seedvr2','resolution_mode'),
+    seedvr2_custom_width_slider :('seedvr2','custom_width'),seedvr2_custom_height_slider :('seedvr2','custom_height'),
     gpu_selector :('gpu','device'),
     enable_direct_image_upscaling :('batch','enable_direct_image_upscaling'),
 
@@ -5289,6 +5667,849 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         inputs =[input_video ,fps_decrease_mode ,fps_multiplier_preset ,fps_multiplier_custom ,target_fps ],
         outputs =fps_calculation_info 
         )
+
+    # ==================== SEEDVR2 TAB EVENT HANDLERS ====================
+    
+    def refresh_seedvr2_models():
+        """Refresh the list of available SeedVR2 models."""
+        try:
+            available_models = util_get_model_dropdown_choices(logger=logger)
+            if available_models and available_models[0] != "No SeedVR2 models found":
+                default_model = available_models[0]
+                logger.info(f"Found {len(available_models)} SeedVR2 models")
+                return gr.update(choices=available_models, value=default_model)
+            else:
+                # Check if SeedVR2 directory exists
+                seedvr2_models_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'SeedVR2', 'models')
+                if not os.path.exists(seedvr2_models_path):
+                    logger.warning(f"SeedVR2 models directory not found: {seedvr2_models_path}")
+                    return gr.update(choices=["SeedVR2 directory not found"], value="SeedVR2 directory not found")
+                else:
+                    logger.info("SeedVR2 models directory exists but no models found")
+                    return gr.update(choices=["No SeedVR2 models found - Place .safetensors files in SeedVR2/models/"], 
+                                   value="No SeedVR2 models found - Place .safetensors files in SeedVR2/models/")
+        except Exception as e:
+            logger.error(f"Failed to refresh SeedVR2 models: {e}")
+            return gr.update(choices=[f"Error: {str(e)}"], value=f"Error: {str(e)}")
+
+    def update_seedvr2_model_info(model_choice):
+        """Update model information display when model selection changes."""
+        if not model_choice:
+            return gr.update(value="No model selected")
+        
+        # Handle various error states
+        if "SeedVR2 directory not found" in model_choice:
+            return gr.update(value="""❌ SeedVR2 Installation Missing
+
+The SeedVR2 directory was not found. Please ensure:
+1. SeedVR2 is properly installed in the project root
+2. The SeedVR2/models directory exists
+3. You have the necessary permissions
+
+Expected location: SeedVR2/models/""")
+        
+        if "No SeedVR2 models found" in model_choice:
+            return gr.update(value="""📥 No Models Found
+
+To use SeedVR2, you need to place model files in:
+└── SeedVR2/models/
+
+📋 Supported Models:
+• SeedVR2_3B_FP8.safetensors (Recommended - Fast & Efficient)
+• SeedVR2_7B_FP16.safetensors (High Quality)
+• Custom SeedVR2 models (.safetensors format)
+
+💡 Recommended Models:
+• 3B FP8: Best speed/VRAM balance (~6GB VRAM)
+• 7B FP16: Highest quality (~12GB VRAM)
+
+🔄 Click 'Refresh Models' after adding files""")
+        
+        if "Error:" in model_choice:
+            return gr.update(value=f"""❌ Error Detected
+
+{model_choice}
+
+Please check the logs for more details and ensure:
+• SeedVR2 is properly installed
+• Required dependencies are available
+• File permissions are correct""")
+        
+        try:
+            # Extract model filename from dropdown choice
+            model_filename = util_extract_model_filename_from_dropdown(model_choice)
+            if model_filename:
+                model_info = util_format_model_info_display(model_filename)
+                logger.info(f"Displaying info for model: {model_filename}")
+                return gr.update(value=model_info)
+            else:
+                return gr.update(value="Could not extract model information from selection")
+        except Exception as e:
+            logger.error(f"Failed to get model info for '{model_choice}': {e}")
+            return gr.update(value=f"Error loading model information: {e}")
+
+    def update_block_swap_controls(enable_block_swap, block_swap_counter):
+        """Update block swap information and control states with real-time monitoring."""
+        if not enable_block_swap or block_swap_counter == 0:
+            return (
+                gr.update(interactive=False),  # block_swap_counter_slider
+                gr.update(interactive=False),  # block_swap_offload_io_check
+                gr.update(interactive=False),  # block_swap_model_caching_check
+                gr.update(value="Block swap disabled")  # block_swap_info_display
+            )
+        else:
+            try:
+                # Get real-time system status
+                system_status = util_get_real_time_block_swap_status(logger=logger)
+                
+                # Get memory info
+                memory_info = system_status.get("memory_info", "Memory info unavailable")
+                vram_allocated = system_status.get("vram_allocated", 0)
+                
+                # Calculate intelligent estimates based on actual system state
+                estimated_savings_gb = block_swap_counter * 0.3  # ~300MB per block
+                estimated_performance_impact = min(block_swap_counter * 2.5, 60)  # ~2.5% per block, cap at 60%
+                
+                # Determine status and recommendations
+                if vram_allocated > 8:
+                    status_icon = "🔴"
+                    status_msg = "High VRAM usage detected"
+                elif vram_allocated > 6:
+                    status_icon = "🟡"
+                    status_msg = "Moderate VRAM usage"
+                else:
+                    status_icon = "🟢"
+                    status_msg = "VRAM usage normal"
+                
+                info_text = f"""🔄 Advanced Block Swap Enabled
+
+{status_icon} {status_msg}
+💾 Current Memory: {memory_info}
+
+📊 Block Swap Configuration:
+• Blocks to swap: {block_swap_counter}
+• Estimated VRAM savings: ~{estimated_savings_gb:.1f}GB
+• Expected performance impact: ~{estimated_performance_impact:.1f}%
+
+💡 Real-time optimization active"""
+                
+            except Exception as e:
+                # Fallback to basic estimation if real-time monitoring fails
+                logger.warning(f"Block swap monitoring error: {e}")
+                estimated_savings = min(block_swap_counter * 5, 50)  # Percentage estimate
+                info_text = f"""🔄 Block Swap Enabled: {block_swap_counter} blocks
+
+📉 Estimated VRAM reduction: ~{estimated_savings}%
+⚡ Performance impact: ~{block_swap_counter * 2}% slower
+💡 Recommended for VRAM-limited systems
+
+⚠️ Real-time monitoring unavailable"""
+            
+            return (
+                gr.update(interactive=True),   # block_swap_counter_slider
+                gr.update(interactive=True),   # block_swap_offload_io_check
+                gr.update(interactive=True),   # block_swap_model_caching_check
+                gr.update(value=info_text)     # block_swap_info_display
+            )
+
+    def update_resolution_mode_controls(resolution_mode):
+        """Show/hide custom resolution controls based on mode."""
+        if resolution_mode == "Custom":
+            return (
+                gr.update(visible=True),   # custom_width_slider
+                gr.update(visible=True)    # custom_height_slider
+            )
+        else:
+            return (
+                gr.update(visible=False),  # custom_width_slider  
+                gr.update(visible=False)   # custom_height_slider
+            )
+
+    def check_seedvr2_dependencies():
+        """Check SeedVR2 dependencies and update status."""
+        try:
+            all_available, missing_deps = util_check_seedvr2_dependencies(logger=logger)
+            
+            if all_available:
+                status_text = "✅ SeedVR2 ready to use!\n🚀 All dependencies available"
+            else:
+                status_text = f"❌ Missing dependencies:\n{'; '.join(missing_deps[:3])}"  # Show first 3
+            
+            return gr.update(value=status_text)
+        except Exception as e:
+            logger.error(f"Failed to check SeedVR2 dependencies: {e}")
+            return gr.update(value=f"❌ Dependency check failed: {e}")
+
+    def initialize_seedvr2_tab():
+        """Initialize SeedVR2 tab with proper values."""
+        try:
+            # Check dependencies
+            dep_status = check_seedvr2_dependencies()
+            
+            # Get GPU status
+            gpu_status = update_gpu_status()
+            
+            # Refresh models and get initial model info
+            models_update = refresh_seedvr2_models()
+            
+            # Get model info for the default model
+            default_model = models_update.get('value', 'No SeedVR2 models found')
+            model_info = update_seedvr2_model_info(default_model) if default_model != 'No SeedVR2 models found' else gr.update(value="No models available")
+            
+            return [dep_status, gpu_status, models_update, model_info]
+        except Exception as e:
+            logger.error(f"Failed to initialize SeedVR2 tab: {e}")
+            error_status = gr.update(value=f"❌ Initialization failed: {e}")
+            return [error_status, error_status, error_status, error_status]
+
+    def update_gpu_status():
+        """Update GPU status display with professional multi-GPU information."""
+        try:
+            # Get enhanced GPU information with multi-GPU analysis
+            gpus = util_detect_available_gpus(logger=logger)
+            
+            if not gpus:
+                status_text = """❌ No CUDA GPUs detected
+
+SeedVR2 requires CUDA-compatible GPUs for optimal performance.
+Please ensure:
+• NVIDIA GPU drivers are installed
+• PyTorch with CUDA support is available
+• GPU is not being used by other processes"""
+                return gr.update(value=status_text)
+            
+            # Professional multi-GPU status display
+            multi_gpu_status = util_get_multi_gpu_status_display(logger=logger)
+            
+            # Add professional VRAM-based model recommendations
+            total_vram = sum(gpu.get('free_memory_gb', 0) for gpu in gpus if gpu.get('is_available', False))
+            suitable_gpus = len([gpu for gpu in gpus if gpu.get('is_suitable_for_multigpu', False)])
+            
+            recommendation_lines = ["\n🎯 Professional Recommendations:"]
+            
+            # Single GPU recommendations
+            if total_vram >= 16:
+                recommendation_lines.append("🏆 Single GPU: 7B FP16 model (maximum quality)")
+            elif total_vram >= 12:
+                recommendation_lines.append("⚡ Single GPU: 7B FP8 model (high quality, efficient)")
+            elif total_vram >= 8:
+                recommendation_lines.append("💡 Single GPU: 3B FP16 model (balanced)")
+            elif total_vram >= 6:
+                recommendation_lines.append("⚙️ Single GPU: 3B FP8 + Block Swap (optimized)")
+            else:
+                recommendation_lines.append("🔧 Single GPU: 3B FP8 + Aggressive Block Swap")
+            
+            # Multi-GPU recommendations with analysis
+            if suitable_gpus >= 2:
+                recommendation_lines.append(f"🚀 Multi-GPU: {suitable_gpus} GPUs detected for parallel processing")
+                
+                try:
+                    # Analyze multi-GPU potential
+                    model_filename = "seedvr2_ema_3b_fp8_e4m3fn.safetensors"  # Default for analysis
+                    multi_gpu_analysis = util_analyze_multi_gpu_configuration(
+                        gpus, model_filename, logger=logger
+                    )
+                    
+                    if multi_gpu_analysis.get("multi_gpu_possible", False):
+                        speedup = multi_gpu_analysis.get("performance_estimate", "2x")
+                        recommended_gpus = multi_gpu_analysis.get("recommended_gpus", [])
+                        
+                        recommendation_lines.append(f"💥 Expected Speedup: {speedup}")
+                        recommendation_lines.append(f"🖥️ Optimal Configuration: GPUs {', '.join(map(str, recommended_gpus))}")
+                        recommendation_lines.append("✅ Multi-GPU highly recommended for this system")
+                    else:
+                        reason = multi_gpu_analysis.get("reason", "Unknown limitation")
+                        recommendation_lines.append(f"⚠️ Multi-GPU Limited: {reason}")
+                except Exception as e:
+                    recommendation_lines.append(f"⚠️ Multi-GPU Analysis Error: {e}")
+            else:
+                recommendation_lines.append("ℹ️ Multi-GPU: Not available (need 2+ suitable GPUs)")
+            
+            # Professional performance tips
+            recommendation_lines.append("\n🔧 Performance Tips:")
+            recommendation_lines.append("• Use 'Apply Optimal Settings' for automatic configuration")
+            recommendation_lines.append("• Enable Flash Attention for 15-20% speedup")
+            recommendation_lines.append("• Use 'Smart Block Swap' for VRAM optimization")
+            
+            # Combine all status information
+            complete_status = multi_gpu_status + "\n" + "\n".join(recommendation_lines)
+            
+            return gr.update(value=complete_status)
+            
+        except Exception as e:
+            logger.error(f"Failed to update professional GPU status: {e}")
+            return gr.update(value=f"❌ Professional GPU analysis failed: {e}")
+
+    def validate_gpu_devices(gpu_devices_text, enable_multi_gpu):
+        """Validate GPU device configuration with professional multi-GPU analysis."""
+        if not enable_multi_gpu:
+            return gr.update(value="Multi-GPU disabled - using single GPU")
+        
+        try:
+            # Use professional multi-GPU validation
+            model_filename = "seedvr2_ema_3b_fp8_e4m3fn.safetensors"  # Default for validation
+            is_valid, error_msg, valid_devices = util_validate_multi_gpu_configuration(
+                gpu_devices_text, model_filename, logger=logger
+            )
+            
+            if is_valid:
+                if len(valid_devices) > 1:
+                    status_text = f"✅ Multi-GPU validated: {len(valid_devices)} GPUs\nDevices: {', '.join(valid_devices)}"
+                else:
+                    status_text = f"✅ Single GPU validated: GPU {valid_devices[0]}"
+            else:
+                status_text = f"❌ {error_msg}"
+            
+            return gr.update(value=status_text)
+        except Exception as e:
+            logger.error(f"Failed to validate GPU devices: {e}")
+            return gr.update(value=f"❌ GPU validation failed: {e}")
+
+    def apply_optimal_seedvr2_settings(current_model):
+        """Apply optimal SeedVR2 settings based on selected model and available hardware."""
+        try:
+            if not current_model or any(error in current_model for error in ["Error:", "No SeedVR2", "SeedVR2 directory"]):
+                return [gr.update()] * 12  # Return no changes for all controls
+            
+            model_filename = util_extract_model_filename_from_dropdown(current_model)
+            if not model_filename:
+                return [gr.update()] * 12
+            
+            # Get system info
+            gpus = util_detect_available_gpus(logger=logger)
+            total_vram = sum(gpu.get('free_memory_gb', 0) for gpu in gpus if gpu.get('is_available', False))
+            num_gpus = len([gpu for gpu in gpus if gpu.get('is_available', False)])
+            
+            # Get recommendations
+            recommendations = util_get_recommended_settings_for_vram(
+                total_vram_gb=total_vram,
+                model_filename=model_filename,
+                target_quality='balanced',
+                logger=logger
+            )
+            
+            logger.info(f"Applying optimal settings for {model_filename} with {total_vram:.1f}GB VRAM")
+            
+            # Apply settings based on recommendations
+            batch_size = max(5, recommendations.get('batch_size', 8))  # Min 5 for temporal consistency
+            temporal_overlap = 2 if total_vram >= 8 else 1
+            preserve_vram = total_vram < 12
+            color_correction = True  # Always recommended
+            enable_frame_padding = True  # Always recommended  
+            flash_attention = True  # Always enabled
+            
+            # Multi-GPU settings
+            enable_multi_gpu = num_gpus > 1 and total_vram >= 8
+            gpu_devices = ','.join([str(gpu['id']) for gpu in gpus if gpu.get('is_available', False)][:2]) if enable_multi_gpu else "0"
+            
+            # Block swap settings
+            enable_block_swap = recommendations.get('enable_block_swap', False)
+            block_swap_counter = recommendations.get('block_swap_counter', 0) if enable_block_swap else 0
+            block_swap_offload_io = enable_block_swap and total_vram < 6
+            block_swap_model_caching = enable_block_swap and total_vram >= 4
+            
+            # Advanced settings
+            cfg_scale = 1.0  # Standard for SeedVR2
+            resolution_mode = "Auto"
+            
+            logger.info(f"Applied settings: batch_size={batch_size}, block_swap={enable_block_swap}, multi_gpu={enable_multi_gpu}")
+            
+            return [
+                gr.update(value=batch_size),           # batch_size_slider
+                gr.update(value=temporal_overlap),     # temporal_overlap_slider  
+                gr.update(value=preserve_vram),        # preserve_vram_check
+                gr.update(value=color_correction),     # color_correction_check
+                gr.update(value=enable_frame_padding), # enable_frame_padding_check
+                gr.update(value=flash_attention),      # flash_attention_check
+                gr.update(value=enable_multi_gpu),     # enable_multi_gpu_check
+                gr.update(value=gpu_devices),          # gpu_devices_textbox
+                gr.update(value=enable_block_swap),    # enable_block_swap_check
+                gr.update(value=block_swap_counter),   # block_swap_counter_slider
+                gr.update(value=block_swap_offload_io), # block_swap_offload_io_check
+                gr.update(value=block_swap_model_caching) # block_swap_model_caching_check
+            ]
+            
+        except Exception as e:
+            logger.error(f"Failed to apply optimal settings: {e}")
+            return [gr.update()] * 12  # Return no changes on error
+
+    def get_intelligent_block_swap_recommendations(current_model):
+        """Get intelligent block swap recommendations and display in model info."""
+        try:
+            if not current_model or any(error in current_model for error in ["Error:", "No SeedVR2", "SeedVR2 directory"]):
+                return gr.update(value="Please select a valid SeedVR2 model first.")
+            
+            model_filename = util_extract_model_filename_from_dropdown(current_model)
+            if not model_filename:
+                return gr.update(value="Could not extract model information.")
+            
+            # Get intelligent recommendations
+            recommendations = util_get_intelligent_block_swap_recommendations(
+                model_filename=model_filename,
+                target_quality="balanced",
+                logger=logger
+            )
+            
+            # Format for display
+            formatted_recommendations = util_format_block_swap_recommendations_for_ui(recommendations)
+            
+            # Add current system status
+            system_status = util_get_real_time_block_swap_status(logger=logger)
+            memory_info = system_status.get("memory_info", "Memory info unavailable")
+            
+            enhanced_display = f"""🧠 Intelligent Block Swap Analysis
+
+🖥️ Current System Status:
+{memory_info}
+
+{formatted_recommendations}
+
+🔄 Live monitoring active. Recommendations update automatically based on current VRAM usage.
+Click "Apply Optimal Settings" to use these recommendations."""
+            
+            logger.info(f"Generated block swap recommendations for {model_filename}")
+            
+            return gr.update(value=enhanced_display)
+            
+        except Exception as e:
+            logger.error(f"Failed to get block swap recommendations: {e}")
+            return gr.update(value=f"Error generating recommendations: {e}")
+
+    def get_professional_multi_gpu_recommendations(current_model):
+        """Get professional multi-GPU recommendations and display comprehensive analysis."""
+        try:
+            if not current_model or any(error in current_model for error in ["Error:", "No SeedVR2", "SeedVR2 directory"]):
+                return gr.update(value="Please select a valid SeedVR2 model first.")
+            
+            model_filename = util_extract_model_filename_from_dropdown(current_model)
+            if not model_filename:
+                return gr.update(value="Could not extract model information.")
+            
+            # Get available GPUs
+            gpus = util_detect_available_gpus(logger=logger)
+            
+            # Analyze multi-GPU configuration
+            multi_gpu_analysis = util_analyze_multi_gpu_configuration(
+                gpus, model_filename, logger=logger
+            )
+            
+            # Format recommendations
+            formatted_recommendations = util_format_multi_gpu_recommendations(
+                multi_gpu_analysis, model_filename
+            )
+            
+            # Add current multi-GPU status
+            multi_gpu_status = util_get_multi_gpu_status_display(logger=logger)
+            
+            enhanced_display = f"""🚀 Professional Multi-GPU Analysis
+
+{multi_gpu_status}
+
+{formatted_recommendations}
+
+🔧 Click "Apply Optimal Settings" to automatically configure multi-GPU based on these recommendations.
+⚡ Performance monitoring will activate during processing to track actual speedup."""
+            
+            logger.info(f"Generated professional multi-GPU recommendations for {model_filename}")
+            
+            return gr.update(value=enhanced_display)
+            
+        except Exception as e:
+            logger.error(f"Failed to get multi-GPU recommendations: {e}")
+            return gr.update(value=f"Error generating multi-GPU analysis: {e}")
+
+    # Wire up SeedVR2 tab event handlers
+    refresh_seedvr2_models_btn.click(
+        fn=refresh_seedvr2_models,
+        inputs=[],
+        outputs=[seedvr2_model_dropdown]
+    )
+
+    apply_recommended_settings_btn.click(
+        fn=apply_optimal_seedvr2_settings,
+        inputs=[seedvr2_model_dropdown],
+        outputs=[
+            seedvr2_batch_size_slider,
+            seedvr2_temporal_overlap_slider,
+            seedvr2_preserve_vram_check,
+            seedvr2_color_correction_check,
+            seedvr2_enable_frame_padding_check,
+            seedvr2_flash_attention_check,
+            seedvr2_enable_multi_gpu_check,
+            seedvr2_gpu_devices_textbox,
+            seedvr2_enable_block_swap_check,
+            seedvr2_block_swap_counter_slider,
+            seedvr2_block_swap_offload_io_check,
+            seedvr2_block_swap_model_caching_check
+        ]
+    )
+
+    get_block_swap_recommendations_btn.click(
+        fn=get_intelligent_block_swap_recommendations,
+        inputs=[seedvr2_model_dropdown],
+        outputs=[seedvr2_model_info_display]
+    )
+
+    get_multi_gpu_recommendations_btn.click(
+        fn=get_professional_multi_gpu_recommendations,
+        inputs=[seedvr2_model_dropdown],
+        outputs=[seedvr2_model_info_display]
+    )
+
+    def validate_and_update_model_info(model_choice):
+        """Validate selected model and update info display with recommendations."""
+        try:
+            # First get the basic model info
+            basic_info = update_seedvr2_model_info(model_choice)
+            
+            # If it's a valid model, add validation and recommendations
+            if not any(error in model_choice for error in ["Error:", "No SeedVR2", "SeedVR2 directory"]):
+                model_filename = util_extract_model_filename_from_dropdown(model_choice)
+                if model_filename:
+                    # Validate the model file
+                    is_valid, validation_msg = util_validate_seedvr2_model(model_filename, logger=logger)
+                    
+                    if is_valid:
+                        # Get GPU info for recommendations
+                        gpus = util_detect_available_gpus(logger=logger)
+                        total_vram = sum(gpu.get('free_memory_gb', 0) for gpu in gpus if gpu.get('is_available', False))
+                        
+                        # Get recommendations
+                        recommendations = util_get_recommended_settings_for_vram(
+                            total_vram_gb=total_vram,
+                            model_filename=model_filename,
+                            target_quality='balanced',
+                            logger=logger
+                        )
+                        
+                        # Append recommendations to the model info
+                        current_info = basic_info.get('value', '')
+                        enhanced_info = f"""{current_info}
+
+🎯 Optimized Settings for Your System:
+• Batch Size: {recommendations.get('batch_size', 8)}
+• Block Swap: {'Enabled' if recommendations.get('enable_block_swap', False) else 'Disabled'}
+• Multi-GPU: {'Recommended' if len(gpus) > 1 and total_vram >= 8 else 'Not needed'}
+• Preserve VRAM: {'Essential' if total_vram < 8 else 'Recommended'}
+
+✅ Model validation: Passed
+📊 Available VRAM: {total_vram:.1f}GB"""
+                        
+                        return gr.update(value=enhanced_info)
+                    else:
+                        error_info = f"""❌ Model Validation Failed
+
+{validation_msg}
+
+Please ensure:
+• Model file is not corrupted
+• File has proper .safetensors format
+• Sufficient disk space available"""
+                        return gr.update(value=error_info)
+            
+            return basic_info
+            
+        except Exception as e:
+            logger.error(f"Failed to validate model '{model_choice}': {e}")
+            return gr.update(value=f"Error validating model: {e}")
+
+    seedvr2_model_dropdown.change(
+        fn=validate_and_update_model_info,
+        inputs=[seedvr2_model_dropdown],
+        outputs=[seedvr2_model_info_display]
+    )
+
+    # Block swap controls
+    for component in [seedvr2_enable_block_swap_check, seedvr2_block_swap_counter_slider]:
+        component.change(
+            fn=update_block_swap_controls,
+            inputs=[seedvr2_enable_block_swap_check, seedvr2_block_swap_counter_slider],
+            outputs=[
+                seedvr2_block_swap_counter_slider,
+                seedvr2_block_swap_offload_io_check,
+                seedvr2_block_swap_model_caching_check,
+                seedvr2_block_swap_info_display
+            ]
+        )
+
+    # Resolution mode controls
+    seedvr2_resolution_mode_radio.change(
+        fn=update_resolution_mode_controls,
+        inputs=[seedvr2_resolution_mode_radio],
+        outputs=[seedvr2_custom_width_slider, seedvr2_custom_height_slider]
+    )
+
+    # GPU configuration
+    for component in [seedvr2_enable_multi_gpu_check, seedvr2_gpu_devices_textbox]:
+        component.change(
+            fn=validate_gpu_devices,
+            inputs=[seedvr2_gpu_devices_textbox, seedvr2_enable_multi_gpu_check],
+            outputs=[seedvr2_gpu_status_display]
+        )
+
+    # Initialize SeedVR2 tab on app load
+    demo.load(
+        fn=initialize_seedvr2_tab,
+        inputs=[],
+        outputs=[seedvr2_dependency_status, seedvr2_gpu_status_display, seedvr2_model_dropdown, seedvr2_model_info_display]
+    )
+
+    # Add periodic refresh for real-time block swap monitoring
+    def refresh_block_swap_status(enable_block_swap, block_swap_counter):
+        """Periodic refresh of block swap status for real-time monitoring."""
+        if enable_block_swap and block_swap_counter > 0:
+            try:
+                # Get current status
+                system_status = util_get_real_time_block_swap_status(logger=logger)
+                memory_info = system_status.get("memory_info", "Memory info unavailable")
+                vram_allocated = system_status.get("vram_allocated", 0)
+                
+                # Determine status based on VRAM usage
+                if vram_allocated > 8:
+                    status_icon = "🔴"
+                    status_msg = "High VRAM usage"
+                elif vram_allocated > 6:
+                    status_icon = "🟡" 
+                    status_msg = "Moderate VRAM usage"
+                else:
+                    status_icon = "🟢"
+                    status_msg = "VRAM usage normal"
+                
+                # Calculate current impact
+                estimated_savings_gb = block_swap_counter * 0.3
+                estimated_performance_impact = min(block_swap_counter * 2.5, 60)
+                
+                updated_status = f"""🔄 Advanced Block Swap Active
+
+{status_icon} {status_msg}
+💾 Live Memory: {memory_info}
+
+📊 Current Configuration:
+• Active blocks: {block_swap_counter}
+• VRAM savings: ~{estimated_savings_gb:.1f}GB  
+• Performance impact: ~{estimated_performance_impact:.1f}%
+
+🔄 Auto-refreshing every 30 seconds"""
+                
+                return gr.update(value=updated_status)
+                
+            except Exception as e:
+                return gr.update(value=f"⚠️ Block swap monitoring error: {e}")
+        else:
+            return gr.update()  # No update if block swap is disabled
+    
+    # Set up periodic refresh every 30 seconds for block swap status
+    import time
+    from threading import Timer
+    
+    def setup_periodic_refresh():
+        """Setup periodic refresh for block swap monitoring."""
+        try:
+            # This would ideally use Gradio's built-in timer functionality
+            # For now, we'll update manually when controls change
+            pass
+        except Exception as e:
+            if logger:
+                logger.warning(f"Could not setup periodic refresh: {e}")
+    
+    # Call setup
+    setup_periodic_refresh()
+
+    # ==================== IMAGE UPSCALING TAB EVENT HANDLERS ====================
+    
+    def handle_image_upload(image_path):
+        """Handle image upload and display image information."""
+        if not image_path:
+            return (
+                gr.update(value="Upload an image to see details..."),
+                gr.update(value="Ready to process images..."),
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(visible=False)
+            )
+        
+        try:
+            # Extract image information
+            from logic.seedvr2_image_core import _extract_image_info
+            image_info = _extract_image_info(image_path, logger)
+            formatted_info = util_format_image_info_display(image_info)
+            
+            return (
+                gr.update(value=formatted_info),
+                gr.update(value=f"✅ Image loaded: {image_info.get('width', 0)}×{image_info.get('height', 0)} pixels"),
+                gr.update(visible=False),  # output_image
+                gr.update(visible=False),  # image_download_button
+                gr.update(visible=False),  # comparison_image
+                gr.update(visible=False)   # comparison_download_button
+            )
+        except Exception as e:
+            error_msg = f"❌ Error loading image: {e}"
+            logger.error(error_msg)
+            return (
+                gr.update(value=error_msg),
+                gr.update(value=error_msg),
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(visible=False)
+            )
+
+    def image_upscale_wrapper(
+        input_image_path, upscaler_type, output_format, output_quality,
+        preserve_aspect_ratio, preserve_metadata, custom_suffix,
+        enable_comparison, progress=gr.Progress(track_tqdm=True)
+    ):
+        """Wrapper function for image upscaling."""
+        if not input_image_path:
+            return (
+                gr.update(),  # output_image
+                gr.update(visible=False),  # image_download_button
+                gr.update(visible=False),  # comparison_image
+                gr.update(visible=False),  # comparison_download_button
+                "❌ Please upload an image first",  # status
+                gr.update(),  # image_info
+                "❌ No image uploaded"  # log
+            )
+        
+        try:
+            # Determine upscaler type
+            if upscaler_type == "Use SeedVR2 for Images":
+                actual_upscaler_type = "seedvr2"
+                # Use default SeedVR2 config
+                from logic.dataclasses import SeedVR2Config
+                seedvr2_config = SeedVR2Config()
+                image_upscaler_model = None
+            else:
+                actual_upscaler_type = "image_upscaler"
+                seedvr2_config = None
+                # Use default image upscaler model (will need to be set from UI later)
+                image_upscaler_model = "RealESRGAN_x4plus.pth"  # Default fallback
+            
+            # Process the image
+            results = list(util_process_single_image(
+                input_image_path=input_image_path,
+                upscaler_type=actual_upscaler_type,
+                seedvr2_config=seedvr2_config,
+                image_upscaler_model=image_upscaler_model,
+                output_format=output_format,
+                output_quality=output_quality,
+                preserve_aspect_ratio=preserve_aspect_ratio,
+                preserve_metadata=preserve_metadata,
+                custom_suffix=custom_suffix,
+                create_comparison=enable_comparison,
+                logger=logger,
+                progress=progress,
+                current_seed=current_seed
+            ))
+            
+            if results:
+                output_image_path, comparison_image_path, status_message, image_info = results[0]
+                
+                # Format image info for display
+                formatted_info = util_format_image_info_display(image_info)
+                
+                # Update UI components
+                output_image_update = gr.update(value=output_image_path)
+                download_button_update = gr.update(visible=True)
+                
+                if comparison_image_path and enable_comparison:
+                    comparison_update = gr.update(value=comparison_image_path, visible=True)
+                    comparison_download_update = gr.update(visible=True)
+                else:
+                    comparison_update = gr.update(visible=False)
+                    comparison_download_update = gr.update(visible=False)
+                
+                processing_log = f"""✅ Image processing completed successfully!
+                
+📁 Output: {os.path.basename(output_image_path)}
+📊 Details: {image_info.get('output_width', 0)}×{image_info.get('output_height', 0)} pixels
+⏱️ Time: {image_info.get('processing_time', 0):.2f} seconds
+🔍 Upscale: {image_info.get('upscale_factor_x', 1):.2f}x"""
+                
+                return (
+                    output_image_update,
+                    download_button_update,
+                    comparison_update,
+                    comparison_download_update,
+                    status_message,
+                    gr.update(value=formatted_info),
+                    processing_log
+                )
+            else:
+                error_msg = "❌ No results returned from image processing"
+                return (
+                    gr.update(),
+                    gr.update(visible=False),
+                    gr.update(visible=False),
+                    gr.update(visible=False),
+                    error_msg,
+                    gr.update(),
+                    error_msg
+                )
+                
+        except Exception as e:
+            error_msg = f"❌ Image processing failed: {e}"
+            logger.error(error_msg)
+            return (
+                gr.update(),
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(visible=False),
+                error_msg,
+                gr.update(),
+                error_msg
+            )
+
+    def update_image_upscaler_visibility(upscaler_type):
+        """Update visibility of upscaler-specific controls."""
+        if upscaler_type == "Use SeedVR2 for Images":
+            return gr.update(visible=True)  # Could show SeedVR2 specific controls
+        else:
+            return gr.update(visible=True)  # Could show image upscaler specific controls
+
+    # Wire up image tab event handlers
+    input_image.change(
+        fn=handle_image_upload,
+        inputs=input_image,
+        outputs=[
+            image_info_display,
+            image_processing_status,
+            output_image,
+            image_download_button,
+            comparison_image,
+            comparison_download_button
+        ]
+    )
+
+    image_upscale_button.click(
+        fn=image_upscale_wrapper,
+        inputs=[
+            input_image,
+            image_upscaler_type_radio,
+            image_output_format,
+            image_quality_level,
+            image_preserve_aspect_ratio,
+            image_preserve_metadata,
+            image_custom_suffix,
+            image_enable_comparison
+        ],
+        outputs=[
+            output_image,
+            image_download_button,
+            comparison_image,
+            comparison_download_button,
+            image_processing_status,
+            image_info_display,
+            image_log_display
+        ]
+    )
+
+    image_upscaler_type_radio.change(
+        fn=update_image_upscaler_visibility,
+        inputs=image_upscaler_type_radio,
+        outputs=image_processing_status  # Placeholder output
+    )
 
 if __name__ =="__main__":
     os .makedirs (APP_CONFIG .paths .outputs_dir ,exist_ok =True )

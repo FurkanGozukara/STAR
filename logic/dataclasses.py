@@ -142,12 +142,54 @@ DEFAULT_IMAGE_UPSCALER_CACHE_MODELS = True
 # Upscaler Type Selection
 DEFAULT_UPSCALER_TYPE = "image_upscaler"  # Options: "star", "image_upscaler", "seedvr2"
 
-# SeedVR2 Upscaler (Upcoming)
+# SeedVR2 Upscaler
 DEFAULT_ENABLE_SEEDVR2 = False
 DEFAULT_SEEDVR2_MODEL = None
-DEFAULT_SEEDVR2_BATCH_SIZE = 1
+DEFAULT_SEEDVR2_BATCH_SIZE = 5  # Minimum 5 for temporal consistency
 DEFAULT_SEEDVR2_QUALITY_PRESET = "balanced"  # Options: "fast", "balanced", "quality"
 DEFAULT_SEEDVR2_USE_GPU = True
+
+# SeedVR2 Advanced Settings
+DEFAULT_SEEDVR2_PRESERVE_VRAM = True
+DEFAULT_SEEDVR2_FLASH_ATTENTION = True
+DEFAULT_SEEDVR2_COLOR_CORRECTION = True  # Wavelet reconstruction
+DEFAULT_SEEDVR2_ENABLE_MULTI_GPU = False
+DEFAULT_SEEDVR2_GPU_DEVICES = "0"  # Comma-separated list of GPU indices
+
+# SeedVR2 Block Swap Configuration
+DEFAULT_SEEDVR2_ENABLE_BLOCK_SWAP = False
+DEFAULT_SEEDVR2_BLOCK_SWAP_COUNTER = 0  # 0 = disabled, 1-12+ = number of blocks to swap
+DEFAULT_SEEDVR2_BLOCK_SWAP_OFFLOAD_IO = False  # I/O component offloading
+DEFAULT_SEEDVR2_BLOCK_SWAP_MODEL_CACHING = False  # Keep model cached in RAM between runs
+
+# SeedVR2 Temporal Consistency Settings
+DEFAULT_SEEDVR2_TEMPORAL_OVERLAP = 2  # Frames of overlap between temporal chunks (minimum 2 for consistency)
+DEFAULT_SEEDVR2_SCENE_AWARENESS = True  # Enable scene-aware temporal processing
+DEFAULT_SEEDVR2_TEMPORAL_QUALITY = "balanced"  # fast, balanced, quality
+DEFAULT_SEEDVR2_CONSISTENCY_VALIDATION = True  # Enable temporal consistency validation
+DEFAULT_SEEDVR2_CHUNK_OPTIMIZATION = True  # Enable chunk boundary optimization
+DEFAULT_SEEDVR2_ENABLE_TEMPORAL_CONSISTENCY = True  # Requires batch_size >= 5
+
+# SeedVR2 Frame Processing
+DEFAULT_SEEDVR2_ENABLE_FRAME_PADDING = True  # Automatic frame padding like STAR
+DEFAULT_SEEDVR2_PAD_LAST_CHUNK = True  # Pad last chunk to same size as batch_size
+DEFAULT_SEEDVR2_SKIP_FIRST_FRAMES = 0  # Number of frames to skip at start
+
+# SeedVR2 Model Configuration
+DEFAULT_SEEDVR2_MODEL_PRECISION = "auto"  # Options: "auto", "fp16", "fp8"
+DEFAULT_SEEDVR2_CFG_SCALE = 1.0  # Guidance scale for generation
+DEFAULT_SEEDVR2_SEED = -1  # Use global seed if -1
+DEFAULT_SEEDVR2_RESOLUTION_MODE = "auto"  # Options: "auto", "custom"
+DEFAULT_SEEDVR2_CUSTOM_WIDTH = 1024
+DEFAULT_SEEDVR2_CUSTOM_HEIGHT = 1024
+
+# Single Image Upscaling (SeedVR2)
+DEFAULT_ENABLE_SINGLE_IMAGE_UPSCALE = False
+DEFAULT_SINGLE_IMAGE_INPUT_PATH = None
+DEFAULT_SINGLE_IMAGE_OUTPUT_FORMAT = "png"  # Options: "png", "jpg", "webp"
+DEFAULT_SINGLE_IMAGE_PRESERVE_METADATA = True
+DEFAULT_SINGLE_IMAGE_CREATE_COMPARISON = True
+DEFAULT_SINGLE_IMAGE_UPSCALER_TYPE = "seedvr2"  # Options: "seedvr2", "image_upscaler"
 
 # Face Restoration
 DEFAULT_ENABLE_FACE_RESTORATION = False
@@ -372,12 +414,57 @@ class UpscalerTypeConfig:
 
 @dataclass
 class SeedVR2Config:
-    """Configuration for SeedVR2 upscaler (upcoming)."""
+    """Configuration for SeedVR2 upscaler with advanced features."""
+    # Basic settings
     enable: bool = DEFAULT_ENABLE_SEEDVR2
     model: Optional[str] = DEFAULT_SEEDVR2_MODEL
     batch_size: int = DEFAULT_SEEDVR2_BATCH_SIZE
     quality_preset: str = DEFAULT_SEEDVR2_QUALITY_PRESET
     use_gpu: bool = DEFAULT_SEEDVR2_USE_GPU
+    
+    # Advanced settings
+    preserve_vram: bool = DEFAULT_SEEDVR2_PRESERVE_VRAM
+    flash_attention: bool = DEFAULT_SEEDVR2_FLASH_ATTENTION
+    color_correction: bool = DEFAULT_SEEDVR2_COLOR_CORRECTION
+    enable_multi_gpu: bool = DEFAULT_SEEDVR2_ENABLE_MULTI_GPU
+    gpu_devices: str = DEFAULT_SEEDVR2_GPU_DEVICES
+    
+    # Block swap configuration
+    enable_block_swap: bool = DEFAULT_SEEDVR2_ENABLE_BLOCK_SWAP
+    block_swap_counter: int = DEFAULT_SEEDVR2_BLOCK_SWAP_COUNTER
+    block_swap_offload_io: bool = DEFAULT_SEEDVR2_BLOCK_SWAP_OFFLOAD_IO
+    block_swap_model_caching: bool = DEFAULT_SEEDVR2_BLOCK_SWAP_MODEL_CACHING
+    
+    # Temporal consistency settings
+    temporal_overlap: int = DEFAULT_SEEDVR2_TEMPORAL_OVERLAP
+    scene_awareness: bool = DEFAULT_SEEDVR2_SCENE_AWARENESS
+    temporal_quality: str = DEFAULT_SEEDVR2_TEMPORAL_QUALITY
+    consistency_validation: bool = DEFAULT_SEEDVR2_CONSISTENCY_VALIDATION
+    chunk_optimization: bool = DEFAULT_SEEDVR2_CHUNK_OPTIMIZATION
+    enable_temporal_consistency: bool = DEFAULT_SEEDVR2_ENABLE_TEMPORAL_CONSISTENCY
+    
+    # Frame processing
+    enable_frame_padding: bool = DEFAULT_SEEDVR2_ENABLE_FRAME_PADDING
+    pad_last_chunk: bool = DEFAULT_SEEDVR2_PAD_LAST_CHUNK
+    skip_first_frames: int = DEFAULT_SEEDVR2_SKIP_FIRST_FRAMES
+    
+    # Model configuration
+    model_precision: str = DEFAULT_SEEDVR2_MODEL_PRECISION
+    cfg_scale: float = DEFAULT_SEEDVR2_CFG_SCALE
+    seed: int = DEFAULT_SEEDVR2_SEED
+    resolution_mode: str = DEFAULT_SEEDVR2_RESOLUTION_MODE
+    custom_width: int = DEFAULT_SEEDVR2_CUSTOM_WIDTH
+    custom_height: int = DEFAULT_SEEDVR2_CUSTOM_HEIGHT
+
+@dataclass
+class SingleImageUpscaleConfig:
+    """Configuration for single image upscaling feature."""
+    enable: bool = DEFAULT_ENABLE_SINGLE_IMAGE_UPSCALE
+    input_path: Optional[str] = DEFAULT_SINGLE_IMAGE_INPUT_PATH
+    output_format: str = DEFAULT_SINGLE_IMAGE_OUTPUT_FORMAT
+    preserve_metadata: bool = DEFAULT_SINGLE_IMAGE_PRESERVE_METADATA
+    create_comparison: bool = DEFAULT_SINGLE_IMAGE_CREATE_COMPARISON
+    upscaler_type: str = DEFAULT_SINGLE_IMAGE_UPSCALER_TYPE
 
 @dataclass
 class StandaloneFaceRestorationConfig:
@@ -445,6 +532,7 @@ class AppConfig:
     gpu: GpuConfig = field(default_factory=GpuConfig)
     upscaler_type: UpscalerTypeConfig = field(default_factory=UpscalerTypeConfig)
     seedvr2: SeedVR2Config = field(default_factory=SeedVR2Config)
+    single_image_upscale: SingleImageUpscaleConfig = field(default_factory=SingleImageUpscaleConfig)
     standalone_face_restoration: StandaloneFaceRestorationConfig = field(default_factory=StandaloneFaceRestorationConfig)
     video_editing: VideoEditingConfig = field(default_factory=VideoEditingConfig)
     manual_comparison: ManualComparisonConfig = field(default_factory=ManualComparisonConfig)
@@ -491,6 +579,9 @@ def create_app_config(base_path: str, outputs_folder: str, star_cfg: Optional[An
     
     if not hasattr(app_config, 'video_editing') or app_config.video_editing is None:
         app_config.video_editing = VideoEditingConfig()
+    
+    if not hasattr(app_config, 'single_image_upscale') or app_config.single_image_upscale is None:
+        app_config.single_image_upscale = SingleImageUpscaleConfig()
     
     return app_config
 
