@@ -2817,6 +2817,61 @@
                                 <strong>Pro Tip:</strong> Create multiple test presets (Fast, Balanced, Quality) and benchmark them with your typical content to find your optimal settings.
                             </div>
                         </div>
+                        
+                        <!-- SeedVR2 Troubleshooting -->
+                        <div class="feature-card">
+                            <h3 class="feature-title">
+                                <span class="feature-icon"><i class="fas fa-seedling"></i></span>
+                                SeedVR2 Processing Issues
+                            </h3>
+                            
+                            <div class="alert-danger">
+                                <strong>Error:</strong> "This should never happen!!" or SeedVR2 processing failures
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h5>🔧 Solution 1: Switch to FP8 Model</h5>
+                                    <ul>
+                                        <li><strong>Issue:</strong> FP16 3B model can be unstable</li>
+                                        <li><strong>Fix:</strong> Use <code>seedvr2_ema_3b_fp8_e4m3fn.safetensors</code></li>
+                                        <li><strong>Benefits:</strong> More stable, uses less VRAM</li>
+                                        <li><strong>Location:</strong> SeedVR2 tab → Model Selection → Choose FP8 variant</li>
+                                    </ul>
+                                    
+                                    <h5>⚙️ Solution 2: Adjust Settings</h5>
+                                    <ul>
+                                        <li><strong>Batch Size:</strong> Use 5, 9, 13, 17, or 21 (4n+1 format)</li>
+                                        <li><strong>Preserve VRAM:</strong> Always enable</li>
+                                        <li><strong>Block Swap:</strong> Disable for stability</li>
+                                        <li><strong>Temporal Overlap:</strong> Set to 0</li>
+                                        <li><strong>CFG Scale:</strong> Keep at 1.0</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="col-md-6">
+                                    <h5>💻 Solution 3: System Requirements</h5>
+                                    <ul>
+                                        <li><strong>Minimum VRAM:</strong> 8GB (12GB recommended)</li>
+                                        <li><strong>PyTorch:</strong> Version 2.0+ with CUDA support</li>
+                                        <li><strong>Dependencies:</strong> einops, omegaconf installed</li>
+                                        <li><strong>CUDA:</strong> Compatible driver and runtime</li>
+                                    </ul>
+                                    
+                                    <h5>🔄 Solution 4: Fallback Options</h5>
+                                    <p>If SeedVR2 continues to fail, the system will automatically use:</p>
+                                    <ul>
+                                        <li>Placeholder 2x bicubic upscaling</li>
+                                        <li>Alternative upscaler models (ESRGAN, etc.)</li>
+                                        <li>Standard STAR video processing</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <div class="alert-info">
+                                <strong>Debug Mode:</strong> Enable debug output in SeedVR2 settings to see detailed error information and verify all required files are present.
+                            </div>
+                        </div>
                     </section>
 
                     <!-- Advanced Features Section -->

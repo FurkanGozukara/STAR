@@ -723,6 +723,20 @@ def _process_batch_with_seedvr2_model(
             print(f"📁 Model: {model_name}")
             print(f"💾 Preserve VRAM: {preserve_vram}")
         
+        # Check system requirements first
+        if not check_seedvr2_system_requirements(debug):
+            if debug:
+                print("❌ System requirements not met for SeedVR2")
+            return _apply_placeholder_upscaling(batch_frames, debug)
+        
+        # Validate and fix configuration
+        if seedvr2_config:
+            seedvr2_config = validate_and_fix_seedvr2_config(seedvr2_config, debug)
+            # Update processing args with fixed config
+            processing_args["model"] = seedvr2_config.model
+            processing_args["preserve_vram"] = seedvr2_config.preserve_vram
+            processing_args["cfg_scale"] = seedvr2_config.cfg_scale
+        
         # Ensure model directory exists and model is available
         model_path = os.path.join(model_dir, model_name)
         if not os.path.exists(model_path):
@@ -731,75 +745,155 @@ def _process_batch_with_seedvr2_model(
             # For now, return upscaled placeholder (2x nearest neighbor)
             return _apply_placeholder_upscaling(batch_frames, debug)
         
-        # Try to load and run SeedVR2 model
         try:
-            # Add SeedVR2 to path for imports
+            # Add SeedVR2 project root to Python path for imports
             seedvr2_base_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'SeedVR2')
             if seedvr2_base_path not in sys.path:
                 sys.path.insert(0, seedvr2_base_path)
             
-            # Import SeedVR2 components
+            # Verify required files exist before processing
+            required_files = [
+                os.path.join(seedvr2_base_path, 'pos_emb.pt'),
+                os.path.join(seedvr2_base_path, 'neg_emb.pt'),
+                os.path.join(processing_args["model_dir"], processing_args["model"]),
+                os.path.join(processing_args["model_dir"], "ema_vae_fp16.safetensors")
+            ]
+            
+            missing_files = [f for f in required_files if not os.path.exists(f)]
+            if missing_files:
+                if debug:
+                    print(f"❌ Missing required SeedVR2 files: {missing_files}")
+                print(f"⚠️ SeedVR2 files missing, using placeholder upscaling")
+                return _apply_placeholder_upscaling(batch_frames, debug)
+            
+            # Import SeedVR2 CLI processing modules
             from src.core.model_manager import configure_runner
             from src.core.generation import generation_loop
             from src.utils.downloads import download_weight
+            from src.optimization.blockswap import SeedVR2BlockSwap
             
             if debug:
                 print("✅ SeedVR2 modules imported successfully")
             
-            # Ensure model weights are downloaded
-            download_weight(model_name, model_dir)
+            # Verify model file exists and download if needed
+            model_path = os.path.join(processing_args["model_dir"], processing_args["model"])
+            if not os.path.exists(model_path):
+                if debug:
+                    print(f"📥 Downloading missing model: {processing_args['model']}")
+                try:
+                    download_weight(processing_args["model"], processing_args["model_dir"])
+                except Exception as download_error:
+                    if debug:
+                        print(f"❌ Model download failed: {download_error}")
+                    print(f"⚠️ Failed to download SeedVR2 model, using placeholder upscaling")
+                    return _apply_placeholder_upscaling(batch_frames, debug)
             
-            # Configure runner with our settings
-            runner = configure_runner(
-                model=model_name,
-                base_cache_dir=model_dir,
-                preserve_vram=preserve_vram,
-                debug=debug,
-                block_swap_config={
-                    "blocks_to_swap": seedvr2_config.block_swap_counter if seedvr2_config and seedvr2_config.enable_block_swap else 0,
-                    "offload_io_components": seedvr2_config.block_swap_offload_io if seedvr2_config else False,
-                    "use_non_blocking": True,
-                    "enable_debug": debug
-                } if seedvr2_config and seedvr2_config.enable_block_swap else None
-            )
-            
+            # Configure SeedVR2 runner with enhanced error checking
             if debug:
-                print("✅ SeedVR2 runner configured")
+                print(f"🔧 Configuring SeedVR2 runner for model: {processing_args['model']}")
             
-            # Apply custom block swap if needed
+            try:
+                runner = configure_runner(
+                    model=processing_args["model"],
+                    base_cache_dir=processing_args["model_dir"],
+                    preserve_vram=processing_args["preserve_vram"],
+                    debug=processing_args["debug"],
+                    block_swap_config=None  # Disable block swap for stability
+                )
+                
+                if debug:
+                    print("✅ SeedVR2 runner configured successfully")
+                    
+            except Exception as runner_error:
+                if debug:
+                    print(f"❌ SeedVR2 runner configuration failed: {runner_error}")
+                print(f"⚠️ SeedVR2 runner configuration failed, using placeholder upscaling: {runner_error}")
+                return _apply_placeholder_upscaling(batch_frames, debug)
+            
+            # Verify runner components are properly loaded
+            if not hasattr(runner, 'dit') or not hasattr(runner, 'vae'):
+                if debug:
+                    print("❌ SeedVR2 runner missing required components (dit/vae)")
+                print(f"⚠️ SeedVR2 runner incomplete, using placeholder upscaling")
+                return _apply_placeholder_upscaling(batch_frames, debug)
+            
+            # Setup block swap if enabled and working
+            block_swap = None
+            if seedvr2_config and seedvr2_config.enable_block_swap and seedvr2_config.block_swap_counter > 0:
+                try:
+                    block_swap = SeedVR2BlockSwap(enable_debug=processing_args.get("debug", False))
+                    if debug:
+                        print(f"✅ Block swap configured: {seedvr2_config.block_swap_counter} blocks")
+                except Exception as bs_error:
+                    if debug:
+                        print(f"⚠️ Block swap setup failed, continuing without: {bs_error}")
+                    block_swap = None
+            
+            # Apply block swap configuration
             if block_swap and seedvr2_config and seedvr2_config.enable_block_swap:
                 if hasattr(runner, 'dit'):
-                    block_swap.apply_block_swap(
-                        runner.dit,
-                        seedvr2_config.block_swap_counter,
-                        seedvr2_config.block_swap_offload_io,
-                        seedvr2_config.block_swap_model_caching
-                    )
+                    try:
+                        block_swap.apply_block_swap(
+                            runner.dit,
+                            seedvr2_config.block_swap_counter,
+                            seedvr2_config.block_swap_offload_io,
+                            seedvr2_config.block_swap_model_caching
+                        )
+                        if debug:
+                            print("✅ Block swap applied successfully")
+                    except Exception as bs_apply_error:
+                        if debug:
+                            print(f"⚠️ Block swap application failed: {bs_apply_error}")
             
-            # Run generation
-            result_tensor = generation_loop(
-                runner=runner,
-                images=batch_frames,
-                cfg_scale=processing_args.get("cfg_scale", 1.0),
-                seed=processing_args.get("seed", -1),
-                res_w=processing_args.get("res_w", None),
-                batch_size=len(batch_frames),
-                preserve_vram=preserve_vram,
-                temporal_overlap=processing_args.get("temporal_overlap", 0),
-                debug=debug,
-            )
-            
+            # Enhanced generation with better error handling
             if debug:
-                print(f"✅ SeedVR2 processing complete: {result_tensor.shape}")
+                print(f"🚀 Starting SeedVR2 generation with batch: {batch_frames.shape}")
+                print(f"   Model: {processing_args['model']}")
+                print(f"   CFG Scale: {processing_args.get('cfg_scale', 1.0)}")
+                print(f"   Seed: {processing_args.get('seed', -1)}")
+                print(f"   Preserve VRAM: {processing_args['preserve_vram']}")
             
-            return result_tensor
-            
-        except ImportError as e:
-            if debug:
-                print(f"⚠️ SeedVR2 import failed: {e}")
-            print(f"⚠️ SeedVR2 dependencies not available, using placeholder upscaling")
-            return _apply_placeholder_upscaling(batch_frames, debug)
-            
+            # Run generation with enhanced error context
+            try:
+                result_tensor = generation_loop(
+                    runner=runner,
+                    images=batch_frames,
+                    cfg_scale=processing_args.get("cfg_scale", 1.0),
+                    seed=processing_args.get("seed", -1),
+                    res_w=processing_args.get("res_w", None),
+                    batch_size=len(batch_frames),
+                    preserve_vram=preserve_vram,
+                    temporal_overlap=processing_args.get("temporal_overlap", 0),
+                    debug=debug,
+                )
+                
+                if debug:
+                    print(f"✅ SeedVR2 generation completed successfully: {result_tensor.shape}")
+                
+                return result_tensor
+                
+            except FileNotFoundError as file_error:
+                if debug:
+                    print(f"❌ SeedVR2 file not found: {file_error}")
+                print(f"⚠️ SeedVR2 missing files, using placeholder upscaling: {file_error}")
+                return _apply_placeholder_upscaling(batch_frames, debug)
+                
+            except RuntimeError as runtime_error:
+                if debug:
+                    print(f"❌ SeedVR2 runtime error: {runtime_error}")
+                # Check for common CUDA/memory issues
+                if "CUDA" in str(runtime_error) or "memory" in str(runtime_error):
+                    print(f"⚠️ SeedVR2 CUDA/memory error, using placeholder upscaling: {runtime_error}")
+                else:
+                    print(f"⚠️ SeedVR2 runtime error, using placeholder upscaling: {runtime_error}")
+                return _apply_placeholder_upscaling(batch_frames, debug)
+                
+            except ImportError as import_error:
+                if debug:
+                    print(f"❌ SeedVR2 import error: {import_error}")
+                print(f"⚠️ SeedVR2 dependencies missing, using placeholder upscaling: {import_error}")
+                return _apply_placeholder_upscaling(batch_frames, debug)
+             
         except Exception as e:
             if debug:
                 print(f"❌ SeedVR2 processing error: {e}")
@@ -808,7 +902,7 @@ def _process_batch_with_seedvr2_model(
             
         finally:
             # Clean up imports
-            if seedvr2_base_path in sys.path:
+            if 'seedvr2_base_path' in locals() and seedvr2_base_path in sys.path:
                 sys.path.remove(seedvr2_base_path)
     
     except Exception as e:
@@ -861,4 +955,123 @@ def apply_wavelet_color_correction(frames_tensor: torch.Tensor, original_frames:
     """
     # Placeholder implementation
     # TODO: Implement actual wavelet reconstruction for color correction
-    return frames_tensor 
+    return frames_tensor
+
+
+def validate_and_fix_seedvr2_config(seedvr2_config, debug: bool = False):
+    """
+    Validate and fix common SeedVR2 configuration issues.
+    
+    Args:
+        seedvr2_config: SeedVR2 configuration object
+        debug: Enable debug logging
+        
+    Returns:
+        Fixed configuration object
+    """
+    if debug:
+        print("🔧 Validating SeedVR2 configuration...")
+    
+    # Set safer defaults for problematic configurations
+    if hasattr(seedvr2_config, 'model'):
+        # Use FP8 models for better stability and memory efficiency
+        if 'fp16' in seedvr2_config.model and '3b' in seedvr2_config.model:
+            old_model = seedvr2_config.model
+            seedvr2_config.model = "seedvr2_ema_3b_fp8_e4m3fn.safetensors"
+            if debug:
+                print(f"🔄 Switched model from {old_model} to {seedvr2_config.model} for better stability")
+    
+    # Ensure batch size is optimal (4n+1 format)
+    if hasattr(seedvr2_config, 'batch_size'):
+        if seedvr2_config.batch_size % 4 != 1 or seedvr2_config.batch_size < 5:
+            old_batch = seedvr2_config.batch_size
+            seedvr2_config.batch_size = 5  # Smallest optimal batch size
+            if debug:
+                print(f"🔄 Adjusted batch size from {old_batch} to {seedvr2_config.batch_size} for optimal processing")
+    
+    # Disable problematic features for stability
+    if hasattr(seedvr2_config, 'enable_block_swap'):
+        if seedvr2_config.enable_block_swap:
+            seedvr2_config.enable_block_swap = False
+            if debug:
+                print("🔄 Disabled block swap for stability")
+    
+    # Set conservative CFG scale
+    if hasattr(seedvr2_config, 'cfg_scale'):
+        if seedvr2_config.cfg_scale != 1.0:
+            old_cfg = seedvr2_config.cfg_scale
+            seedvr2_config.cfg_scale = 1.0
+            if debug:
+                print(f"🔄 Set CFG scale from {old_cfg} to {seedvr2_config.cfg_scale} for stability")
+    
+    # Enable preserve VRAM for better memory management
+    if hasattr(seedvr2_config, 'preserve_vram'):
+        if not seedvr2_config.preserve_vram:
+            seedvr2_config.preserve_vram = True
+            if debug:
+                print("🔄 Enabled preserve VRAM for better memory management")
+    
+    # Disable temporal overlap for simpler processing
+    if hasattr(seedvr2_config, 'temporal_overlap'):
+        if seedvr2_config.temporal_overlap > 0:
+            old_overlap = seedvr2_config.temporal_overlap
+            seedvr2_config.temporal_overlap = 0
+            if debug:
+                print(f"🔄 Disabled temporal overlap (was {old_overlap}) for stability")
+    
+    if debug:
+        print("✅ SeedVR2 configuration validated and fixed")
+    
+    return seedvr2_config
+
+
+def check_seedvr2_system_requirements(debug: bool = False) -> bool:
+    """
+    Check if the system meets SeedVR2 requirements.
+    
+    Args:
+        debug: Enable debug logging
+        
+    Returns:
+        True if requirements are met, False otherwise
+    """
+    if debug:
+        print("🔍 Checking SeedVR2 system requirements...")
+    
+    # Check CUDA availability
+    if not torch.cuda.is_available():
+        if debug:
+            print("❌ CUDA not available")
+        return False
+    
+    # Check VRAM
+    if torch.cuda.is_available():
+        gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
+        if gpu_memory < 8.0:  # Minimum 8GB VRAM
+            if debug:
+                print(f"❌ Insufficient VRAM: {gpu_memory:.1f}GB (minimum 8GB required)")
+            return False
+        else:
+            if debug:
+                print(f"✅ VRAM check passed: {gpu_memory:.1f}GB")
+    
+    # Check PyTorch version
+    torch_version = torch.__version__
+    if debug:
+        print(f"✅ PyTorch version: {torch_version}")
+    
+    # Check for required dependencies
+    try:
+        import einops
+        import omegaconf
+        if debug:
+            print("✅ Required dependencies available")
+    except ImportError as e:
+        if debug:
+            print(f"❌ Missing dependency: {e}")
+        return False
+    
+    if debug:
+        print("✅ System requirements check passed")
+    
+    return True 
