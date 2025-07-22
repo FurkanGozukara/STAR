@@ -910,8 +910,8 @@ def run_upscale (
             from .seedvr2_cli_core import process_video_with_seedvr2_cli
 
             try:
-                # Process with SeedVR2 CLI
-                output_video_path = process_video_with_seedvr2_cli(
+                # Call SeedVR2 processing with generator pattern
+                seedvr2_generator = process_video_with_seedvr2_cli(
                     input_video_path=current_input_video_for_frames,
                     seedvr2_config=seedvr2_config,
                     
@@ -955,6 +955,25 @@ def run_upscale (
                     logger=logger
                 )
                 
+                # Process SeedVR2 generator and yield updates
+                last_chunk_video_path = None
+                output_video_path = None
+                for result_output_video_path, status_msg, chunk_video_path, chunk_status, comparison_video_path in seedvr2_generator:
+                    # Update status log
+                    if status_msg:
+                        status_log.append(status_msg)
+                    
+                    # Update chunk preview path
+                    if chunk_video_path:
+                        last_chunk_video_path = chunk_video_path
+                    
+                    # Update output video path
+                    if result_output_video_path:
+                        output_video_path = result_output_video_path
+                    
+                    # Yield progress update
+                    yield None, "\n".join(status_log), last_chunk_video_path, chunk_status or "SeedVR2 processing", comparison_video_path
+                
                 # SeedVR2 processing completed successfully
                 if output_video_path and os.path.exists(output_video_path):
                     status_log.append(f"✅ SeedVR2 processing completed: {os.path.basename(output_video_path)}")
@@ -984,6 +1003,19 @@ def run_upscale (
                         silent_upscaled_video_path = output_video_path
                     
                     params_for_metadata["input_fps"] = input_fps_val
+                    
+                    # Check for chunk preview files and yield updates
+                    if seedvr2_config and seedvr2_config.enable_chunk_preview:
+                        # Look for chunk preview files in the session directory
+                        session_chunks_dir = os.path.join(main_output_dir, base_output_filename_no_ext, "chunks")
+                        if os.path.exists(session_chunks_dir):
+                            chunk_files = sorted([f for f in os.listdir(session_chunks_dir) 
+                                               if f.startswith('chunk_') and f.endswith('.mp4')])
+                            if chunk_files:
+                                last_chunk_video_path = os.path.join(session_chunks_dir, chunk_files[-1])
+                                logger.info(f"Found SeedVR2 chunk preview: {last_chunk_video_path}")
+                                # Yield chunk preview update
+                                yield None, "\n".join(status_log), last_chunk_video_path, "SeedVR2 chunk preview available", None
                 else:
                     logger.error("SeedVR2 processing failed: no output video generated")
                     status_log.append("❌ SeedVR2 processing failed")
