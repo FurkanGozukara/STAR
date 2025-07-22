@@ -941,6 +941,9 @@ def run_upscale (
                     session_output_dir=frames_output_subfolder if save_frames else os.path.join(main_output_dir, base_output_filename_no_ext),
                     base_output_filename_no_ext=base_output_filename_no_ext,
                     
+                    # ✅ FIX: Pass user's chunk frame count setting (25 frames)
+                    max_chunk_len=max_chunk_len,
+                    
                     # Global settings
                     ffmpeg_preset=ffmpeg_preset,
                     ffmpeg_quality=ffmpeg_quality_value,

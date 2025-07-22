@@ -632,6 +632,9 @@ def process_video_with_seedvr2_cli(
     session_output_dir: Optional[str] = None,  # Existing session directory from main pipeline
     base_output_filename_no_ext: Optional[str] = None,  # Base filename from main pipeline
     
+    # ✅ FIX: Add max_chunk_len parameter for user's chunk frame count setting
+    max_chunk_len: int = 25,  # User's chunk frame count setting from UI
+    
     # Progress callback
     progress_callback: Optional[callable] = None,
     status_callback: Optional[callable] = None,
@@ -897,7 +900,8 @@ def process_video_with_seedvr2_cli(
             save_frames=save_frames,
             processed_frames_permanent_save_path=processed_frames_permanent_save_path,
             chunks_permanent_save_path=chunks_permanent_save_path,
-            original_fps=original_fps
+            original_fps=original_fps,
+            max_chunk_len=max_chunk_len  # ✅ FIX: Pass user's chunk frame count setting
         ):
             if isinstance(processing_result, tuple) and len(processing_result) == 4:
                 # This is an intermediate chunk update
@@ -1007,7 +1011,8 @@ def _process_frames_with_seedvr2_cli(
     save_frames: bool = False,
     processed_frames_permanent_save_path: Optional[Path] = None,
     chunks_permanent_save_path: Optional[Path] = None,
-    original_fps: Optional[float] = None
+    original_fps: Optional[float] = None,
+    max_chunk_len: int = 25  # ✅ FIX: Pass user's chunk frame count setting
 ) -> Generator[Tuple[torch.Tensor, List[Dict[str, Any]], Optional[str], str], None, Tuple[torch.Tensor, List[Dict[str, Any]], Optional[str]]]:
     """
     Process frames using SeedVR2 CLI approach with multi-GPU support.
@@ -1025,6 +1030,7 @@ def _process_frames_with_seedvr2_cli(
         processed_frames_permanent_save_path: Path for permanent frame storage
         chunks_permanent_save_path: Path for chunk preview storage
         original_fps: Original FPS of the input video
+        max_chunk_len: User's chunk frame count setting
         
     Yields:
         Tuple of (partial_result_tensor, chunk_results, last_chunk_video_path, status_message)
@@ -1057,7 +1063,8 @@ def _process_frames_with_seedvr2_cli(
             original_fps=original_fps,
             ffmpeg_preset=processing_args.get("ffmpeg_preset", "medium"),
             ffmpeg_quality=processing_args.get("ffmpeg_quality", 23),
-            ffmpeg_use_gpu=processing_args.get("ffmpeg_use_gpu", False)
+            ffmpeg_use_gpu=processing_args.get("ffmpeg_use_gpu", False),
+            max_chunk_len=max_chunk_len  # ✅ FIX: Pass user's chunk frame count setting
         ):
             if isinstance(result, tuple) and len(result) == 4:
                 # This is an intermediate result with chunk update
@@ -1085,7 +1092,8 @@ def _process_frames_with_seedvr2_cli(
             original_fps=original_fps,
             ffmpeg_preset=processing_args.get("ffmpeg_preset", "medium"),
             ffmpeg_quality=processing_args.get("ffmpeg_quality", 23),
-            ffmpeg_use_gpu=processing_args.get("ffmpeg_use_gpu", False)
+            ffmpeg_use_gpu=processing_args.get("ffmpeg_use_gpu", False),
+            max_chunk_len=max_chunk_len  # ✅ FIX: Pass user's chunk frame count setting
         )
         
         # Multi-GPU doesn't generate chunk previews during processing
@@ -1105,7 +1113,8 @@ def _process_single_gpu_cli_generator(
     original_fps: Optional[float] = None,
     ffmpeg_preset: str = "medium",
     ffmpeg_quality: int = 23,
-    ffmpeg_use_gpu: bool = False
+    ffmpeg_use_gpu: bool = False,
+    max_chunk_len: int = 25  # ✅ FIX: Pass user's chunk frame count setting
 ) -> Generator[Union[Tuple[torch.Tensor, List[Dict[str, Any]], Optional[str], str], Tuple[torch.Tensor, List[Dict[str, Any]], Optional[str]]], None, None]:
     """
     ✅ FIX: Generator version of single GPU processing that yields chunk updates during processing.
@@ -1130,17 +1139,17 @@ def _process_single_gpu_cli_generator(
     # ✅ FIX: Initialize frame accumulation for proper chunk processing based on user's chunk frame count
     accumulated_frames = []
     
-    # ✅ FIX: Use user's chunk frame count setting instead of hardcoded preview frame count
-    # This should match the max_chunk_len setting from the UI (e.g. 25 frames)
-    chunk_frame_count = getattr(seedvr2_config, 'batch_size', 25)  # Default to 25 if not set
-    if hasattr(seedvr2_config, 'chunk_preview_frames') and seedvr2_config.chunk_preview_frames > 0:
-        chunk_frame_count = min(chunk_frame_count, seedvr2_config.chunk_preview_frames)
+    # ✅ FIX: Use user's chunk frame count setting (max_chunk_len) instead of processing batch_size
+    # - max_chunk_len = user's chunk frame count setting from UI (e.g., 25 frames)
+    # - batch_size = SeedVR2 processing batch size (must be 5 for temporal consistency)
+    chunk_frame_count = max_chunk_len  # Use user's setting directly
     
     last_chunk_video_path = None
     chunk_results = []
     
     if logger:
-        logger.info(f"Setting up SeedVR2 processing with chunk frame count: {chunk_frame_count}")
+        logger.info(f"Setting up SeedVR2 processing with user's chunk frame count: {chunk_frame_count}")
+        logger.info(f"SeedVR2 processing batch size: {processing_args.get('batch_size', 5)} (for temporal consistency)")
         logger.info(f"Using devices: ['{device_id}']")
         logger.info(f"Starting SeedVR2 processing")
         logger.info(f"🔢 Original frame count: {total_frames}")
@@ -1244,11 +1253,20 @@ def _process_single_gpu_cli_generator(
                 # ✅ FIX: Use session manager's process_batch method directly
                 processed_batch = session_manager.process_batch(batch_frames)
                 
-                # Ensure tensor is in correct format
+                # ✅ FIX: Ensure proper tensor format to prevent black video
                 if not isinstance(processed_batch, torch.Tensor):
-                    processed_batch = torch.from_numpy(processed_batch).to(torch.float16)
-                elif processed_batch.dtype != torch.float16:
-                    processed_batch = processed_batch.to(torch.float16)
+                    processed_batch = torch.from_numpy(processed_batch)
+                
+                # Convert to CPU and ensure proper data type and value range
+                if processed_batch.device != torch.device('cpu'):
+                    processed_batch = processed_batch.cpu()
+                
+                # Use float32 for better precision instead of float16
+                if processed_batch.dtype != torch.float32:
+                    processed_batch = processed_batch.float()
+                
+                # ✅ FIX: Ensure values are in correct range [0, 1] to prevent black/white videos
+                processed_batch = torch.clamp(processed_batch, 0.0, 1.0)
                 
                 # ✅ FIX: Only log completion, not every step
                 if logger:
@@ -1488,7 +1506,8 @@ def _process_multi_gpu_cli(
     original_fps: Optional[float] = None,
     ffmpeg_preset: str = "medium",
     ffmpeg_quality: int = 23,
-    ffmpeg_use_gpu: bool = False
+    ffmpeg_use_gpu: bool = False,
+    max_chunk_len: int = 25  # ✅ FIX: Pass user's chunk frame count setting
 ) -> Tuple[torch.Tensor, List[Dict[str, Any]], Optional[str]]:
     """
     Process frames using multiple GPUs with CLI approach.
