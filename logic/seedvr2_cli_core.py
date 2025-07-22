@@ -41,12 +41,13 @@ class SeedVR2BlockSwap:
     Independent block swapping implementation for SeedVR2 models.
     
     This class handles dynamic block swapping between GPU and CPU memory
-    without ComfyUI dependencies.
+    without ComfyUI dependencies. Currently disabled for stability.
     """
     
     def __init__(self, enable_debug: bool = False):
         self.enable_debug = enable_debug
         self.swap_history = []
+        self._is_available = False  # Disabled by default for stability
         
     def log(self, message: str, level: str = "INFO"):
         """Log debug messages if enabled."""
@@ -80,71 +81,37 @@ class SeedVR2BlockSwap:
         """
         Apply block swapping to a model.
         
+        IMPORTANT: Block swap is currently disabled for stability.
+        This method will do nothing and return immediately.
+        
         Args:
             model: The model to apply block swapping to
             blocks_to_swap: Number of blocks to swap (0=disabled)
-            offload_io: Whether to offload I/O components
-            model_caching: Whether to enable model caching
+            offload_io: Whether to offload I/O components (disabled)
+            model_caching: Whether to enable model caching (disabled)
         """
+        if not self._is_available:
+            self.log("Block swap is disabled for stability", "INFO")
+            return
+            
         if blocks_to_swap <= 0:
             self.log("Block swap disabled (blocks_to_swap=0)")
             return
             
-        if not hasattr(model, 'blocks'):
-            self.log("Model doesn't have 'blocks' attribute for BlockSwap", "WARN")
-            return
-            
-        total_blocks = len(model.blocks)
-        blocks_to_swap = min(blocks_to_swap, total_blocks)
-        
-        self.log(f"Applying block swap: {blocks_to_swap}/{total_blocks} blocks")
-        
-        # Move specified blocks to CPU
-        for i in range(blocks_to_swap):
-            if i < len(model.blocks):
-                block = model.blocks[i]
-                self.log(f"Moving block {i} to CPU ({self.get_module_memory_mb(block):.1f}MB)")
-                block.cpu()
-                
-        # Offload I/O components if requested
-        if offload_io:
-            self._offload_io_components(model)
-            
-        # Setup model caching if requested
-        if model_caching:
-            self._setup_model_caching(model)
-            
-        # Force garbage collection
-        gc.collect()
-        torch.cuda.empty_cache()
-        
-        vram_info = self.get_vram_usage()
-        self.log(f"Block swap applied. VRAM: {vram_info['allocated']:.2f}GB allocated")
+        # NOTE: Block swap functionality is disabled for now
+        # This prevents ComfyUI compatibility issues and ensures stability
+        self.log("Block swap temporarily disabled for compatibility", "WARN")
+        return
     
     def _offload_io_components(self, model):
-        """Offload input/output components to CPU."""
-        components_offloaded = 0
-        
-        # Common I/O component names to offload
-        io_component_names = [
-            'input_layer', 'output_layer', 'embedding', 'embed', 
-            'pos_embed', 'cls_token', 'patch_embed', 'norm', 'head'
-        ]
-        
-        for name, module in model.named_modules():
-            if any(io_name in name.lower() for io_name in io_component_names):
-                self.log(f"Offloading I/O component: {name} ({self.get_module_memory_mb(module):.1f}MB)")
-                module.cpu()
-                components_offloaded += 1
-                
-        self.log(f"Offloaded {components_offloaded} I/O components")
+        """Offload input/output components to CPU. (DISABLED)"""
+        self.log("I/O component offloading is disabled", "INFO")
+        return
     
     def _setup_model_caching(self, model):
-        """Setup model caching in RAM."""
-        self.log("Model caching enabled - model will be kept in RAM between runs")
-        # Mark model for caching (implementation depends on specific requirements)
-        if hasattr(model, 'cache_in_ram'):
-            model.cache_in_ram = True
+        """Setup model caching in RAM. (DISABLED)"""
+        self.log("Model caching is disabled", "INFO")
+        return
 
 
 def extract_frames_from_video_cli(video_path: str, debug: bool = False, skip_first_frames: int = 0, load_cap: Optional[int] = None) -> Tuple[torch.Tensor, float]:
@@ -737,6 +704,35 @@ def _process_batch_with_seedvr2_model(
             processing_args["preserve_vram"] = seedvr2_config.preserve_vram
             processing_args["cfg_scale"] = seedvr2_config.cfg_scale
         
+        # Calculate target resolution properly - THIS IS THE MAIN FIX
+        res_w = processing_args.get("res_w", None)
+        if res_w is None or res_w <= 0:
+            # Calculate resolution based on input frame dimensions
+            input_height, input_width = batch_frames.shape[1], batch_frames.shape[2]
+            
+            # Default 2x upscale for SeedVR2
+            target_width = input_width * 2
+            target_height = input_height * 2
+            
+            # Use the shorter side as the target resolution (as expected by SeedVR2)
+            res_w = min(target_width, target_height)
+            
+            # Ensure resolution is reasonable (between 256 and 2048)
+            res_w = max(256, min(2048, res_w))
+            
+            if debug:
+                print(f"🔧 Auto-calculated res_w: {res_w} (from {input_width}x{input_height} input)")
+                print(f"   Target output: ~{target_width}x{target_height}")
+        
+        # Ensure res_w is valid
+        if res_w is None or res_w <= 0:
+            if debug:
+                print("⚠️ Failed to calculate valid res_w, using default 720")
+            res_w = 720  # Safe default
+        
+        # Update processing args with calculated res_w
+        processing_args["res_w"] = res_w
+        
         # Ensure model directory exists and model is available
         model_path = os.path.join(model_dir, model_name)
         if not os.path.exists(model_path):
@@ -798,7 +794,7 @@ def _process_batch_with_seedvr2_model(
                     base_cache_dir=processing_args["model_dir"],
                     preserve_vram=processing_args["preserve_vram"],
                     debug=processing_args["debug"],
-                    block_swap_config=None  # Disable block swap for stability
+                    block_swap_config=None  # Block swap disabled for stability (ComfyUI dependencies removed)
                 )
                 
                 if debug:
@@ -852,6 +848,7 @@ def _process_batch_with_seedvr2_model(
                 print(f"   CFG Scale: {processing_args.get('cfg_scale', 1.0)}")
                 print(f"   Seed: {processing_args.get('seed', -1)}")
                 print(f"   Preserve VRAM: {processing_args['preserve_vram']}")
+                print(f"   Target Resolution (res_w): {processing_args['res_w']}")
             
             # Run generation with enhanced error context
             try:
@@ -860,7 +857,7 @@ def _process_batch_with_seedvr2_model(
                     images=batch_frames,
                     cfg_scale=processing_args.get("cfg_scale", 1.0),
                     seed=processing_args.get("seed", -1),
-                    res_w=processing_args.get("res_w", None),
+                    res_w=processing_args["res_w"],  # Now guaranteed to be valid
                     batch_size=len(batch_frames),
                     preserve_vram=preserve_vram,
                     temporal_overlap=processing_args.get("temporal_overlap", 0),
@@ -893,10 +890,23 @@ def _process_batch_with_seedvr2_model(
                     print(f"❌ SeedVR2 import error: {import_error}")
                 print(f"⚠️ SeedVR2 dependencies missing, using placeholder upscaling: {import_error}")
                 return _apply_placeholder_upscaling(batch_frames, debug)
+                
+            except ValueError as value_error:
+                if debug:
+                    print(f"❌ SeedVR2 value error: {value_error}")
+                    print(f"   This may be caused by invalid input dimensions or parameters")
+                if "This should never happen" in str(value_error):
+                    print(f"⚠️ TorchVision transform error detected, likely invalid res_w parameter")
+                    print(f"   Input batch shape: {batch_frames.shape}")
+                    print(f"   res_w parameter: {processing_args.get('res_w', 'None')}")
+                print(f"⚠️ SeedVR2 parameter error, using placeholder upscaling: {value_error}")
+                return _apply_placeholder_upscaling(batch_frames, debug)
              
         except Exception as e:
             if debug:
                 print(f"❌ SeedVR2 processing error: {e}")
+                import traceback
+                traceback.print_exc()
             print(f"⚠️ SeedVR2 processing failed, using placeholder upscaling: {e}")
             return _apply_placeholder_upscaling(batch_frames, debug)
             
@@ -906,7 +916,11 @@ def _process_batch_with_seedvr2_model(
                 sys.path.remove(seedvr2_base_path)
     
     except Exception as e:
-        print(f"❌ Critical error in SeedVR2 processing: {e}")
+        if debug:
+            print(f"❌ Critical error in SeedVR2 processing: {e}")
+            import traceback
+            traceback.print_exc()
+        print(f"⚠️ Critical SeedVR2 error, using placeholder upscaling: {e}")
         return _apply_placeholder_upscaling(batch_frames, debug)
 
 
@@ -989,12 +1003,41 @@ def validate_and_fix_seedvr2_config(seedvr2_config, debug: bool = False):
             if debug:
                 print(f"🔄 Adjusted batch size from {old_batch} to {seedvr2_config.batch_size} for optimal processing")
     
-    # Disable problematic features for stability
+    # FORCE DISABLE block swap for stability (ComfyUI dependencies removed)
     if hasattr(seedvr2_config, 'enable_block_swap'):
         if seedvr2_config.enable_block_swap:
             seedvr2_config.enable_block_swap = False
             if debug:
-                print("🔄 Disabled block swap for stability")
+                print("🔄 DISABLED block swap for stability (ComfyUI dependencies removed)")
+    
+    # Ensure block swap counter is 0
+    if hasattr(seedvr2_config, 'block_swap_counter'):
+        if seedvr2_config.block_swap_counter > 0:
+            old_counter = seedvr2_config.block_swap_counter
+            seedvr2_config.block_swap_counter = 0
+            if debug:
+                print(f"🔄 Reset block swap counter from {old_counter} to 0 for stability")
+    
+    # Disable all block swap related features
+    if hasattr(seedvr2_config, 'block_swap_offload_io'):
+        if seedvr2_config.block_swap_offload_io:
+            seedvr2_config.block_swap_offload_io = False
+            if debug:
+                print("🔄 Disabled block swap I/O offloading for stability")
+    
+    if hasattr(seedvr2_config, 'block_swap_model_caching'):
+        if seedvr2_config.block_swap_model_caching:
+            seedvr2_config.block_swap_model_caching = False
+            if debug:
+                print("🔄 Disabled block swap model caching for stability")
+    
+    # Disable temporal overlap for stability if block swap was attempted
+    if hasattr(seedvr2_config, 'temporal_overlap'):
+        if seedvr2_config.temporal_overlap > 0:
+            old_overlap = seedvr2_config.temporal_overlap
+            seedvr2_config.temporal_overlap = 0
+            if debug:
+                print(f"🔄 Disabled temporal overlap (was {old_overlap}) for stability")
     
     # Set conservative CFG scale
     if hasattr(seedvr2_config, 'cfg_scale'):
@@ -1010,14 +1053,6 @@ def validate_and_fix_seedvr2_config(seedvr2_config, debug: bool = False):
             seedvr2_config.preserve_vram = True
             if debug:
                 print("🔄 Enabled preserve VRAM for better memory management")
-    
-    # Disable temporal overlap for simpler processing
-    if hasattr(seedvr2_config, 'temporal_overlap'):
-        if seedvr2_config.temporal_overlap > 0:
-            old_overlap = seedvr2_config.temporal_overlap
-            seedvr2_config.temporal_overlap = 0
-            if debug:
-                print(f"🔄 Disabled temporal overlap (was {old_overlap}) for stability")
     
     if debug:
         print("✅ SeedVR2 configuration validated and fixed")
