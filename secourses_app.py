@@ -117,6 +117,24 @@ scan_for_models as util_scan_for_models ,
 get_model_info as util_get_model_info 
 )
 
+from logic .seedvr2_utils import (
+util_check_seedvr2_dependencies,
+util_scan_seedvr2_models,
+util_get_seedvr2_model_info,
+util_get_vram_info,
+util_get_block_swap_recommendations,
+util_format_model_display_name,
+util_extract_model_filename_from_dropdown,
+util_format_vram_status,
+util_format_block_swap_status,
+util_validate_seedvr2_config,
+util_get_suggested_settings,
+util_estimate_processing_time,
+util_cleanup_seedvr2_resources,
+util_detect_available_gpus,
+util_validate_gpu_selection
+)
+
 from logic .preview_utils import (
 preview_single_model as util_preview_single_model ,
 preview_all_models as util_preview_all_models 
@@ -146,34 +164,7 @@ from logic .seedvr2_cli_core import (
     apply_wavelet_color_correction as util_apply_wavelet_color_correction 
 )
 
-from logic .seedvr2_image_core import (
-    process_single_image as util_process_single_image ,
-    format_image_info_display as util_format_image_info_display 
-)
 
-from logic .seedvr2_utils import (
-    scan_for_seedvr2_models as util_scan_for_seedvr2_models ,
-    get_model_dropdown_choices as util_get_model_dropdown_choices ,
-    extract_model_filename_from_dropdown as util_extract_model_filename_from_dropdown ,
-    validate_seedvr2_model as util_validate_seedvr2_model ,
-    format_model_info_display as util_format_model_info_display ,
-    check_seedvr2_dependencies as util_check_seedvr2_dependencies ,
-    detect_available_gpus as util_detect_available_gpus ,
-    format_gpu_dropdown_choices as util_format_gpu_dropdown_choices ,
-    validate_multi_gpu_setup as util_validate_multi_gpu_setup ,
-    setup_block_swap_config as util_setup_block_swap_config ,
-    get_optimal_batch_size_for_vram as util_get_optimal_batch_size_for_vram ,
-    get_recommended_settings_for_vram as util_get_recommended_settings_for_vram ,
-    get_real_time_block_swap_status as util_get_real_time_block_swap_status ,
-    estimate_processing_time as util_estimate_processing_time ,
-    get_intelligent_block_swap_recommendations as util_get_intelligent_block_swap_recommendations ,
-    format_block_swap_recommendations_for_ui as util_format_block_swap_recommendations_for_ui ,
-    get_multi_gpu_status_display as util_get_multi_gpu_status_display ,
-    analyze_multi_gpu_configuration as util_analyze_multi_gpu_configuration ,
-    format_multi_gpu_recommendations as util_format_multi_gpu_recommendations ,
-    validate_multi_gpu_configuration as util_validate_multi_gpu_configuration ,
-    get_optimized_multi_gpu_settings as util_get_optimized_multi_gpu_settings 
-)
 
 from logic .frame_folder_utils import (
 validate_frame_folder_input as util_validate_frame_folder_input ,
@@ -1177,19 +1168,21 @@ The total combined prompt length is limited to 77 tokens."""
                     with gr .Accordion ("Model Selection",open =True ):
                         try :
                             # Get available SeedVR2 models
-                            available_models =util_get_model_dropdown_choices (logger =logger )
-                            if available_models and available_models [0 ]!="No SeedVR2 models found":
-                                default_model =available_models [0 ]
-                            else :
-                                default_model ="No SeedVR2 models found"
+                            available_models = util_scan_seedvr2_models(logger=logger)
+                            if available_models:
+                                # Format model choices for dropdown
+                                model_choices = [util_format_model_display_name(model) for model in available_models]
+                                default_model = model_choices[0]
+                            else:
+                                default_model = "No SeedVR2 models found"
                         except Exception as e :
                             logger .warning (f"Failed to scan for SeedVR2 models: {e}")
-                            available_models =["Error scanning models - check SeedVR2/models/ directory"]
-                            default_model =available_models [0 ]
+                            model_choices =["Error scanning models - check SeedVR2/models/ directory"]
+                            default_model = model_choices[0]
 
                         seedvr2_model_dropdown =gr .Dropdown (
                         label ="SeedVR2 Model",
-                        choices =available_models ,
+                        choices = model_choices if 'model_choices' in locals() else [default_model],
                         value =default_model ,
                         info ="Select SeedVR2 model. 3B FP8 models offer best speed/VRAM balance, 7B models provide highest quality."
                         )
@@ -5697,11 +5690,17 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
     def refresh_seedvr2_models():
         """Refresh the list of available SeedVR2 models."""
         try:
-            available_models = util_get_model_dropdown_choices(logger=logger)
-            if available_models and available_models[0] != "No SeedVR2 models found":
-                default_model = available_models[0]
+            available_models = util_scan_seedvr2_models(logger=logger)
+            if available_models:
+                # Format model choices for dropdown
+                model_choices = []
+                for model in available_models:
+                    display_name = util_format_model_display_name(model)
+                    model_choices.append(display_name)
+                
+                default_model = model_choices[0]
                 logger.info(f"Found {len(available_models)} SeedVR2 models")
-                return gr.update(choices=available_models, value=default_model)
+                return gr.update(choices=model_choices, value=default_model)
             else:
                 # Check if SeedVR2 directory exists
                 seedvr2_models_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'SeedVR2', 'models')
@@ -5902,12 +5901,20 @@ Please ensure:
 • GPU is not being used by other processes"""
                 return gr.update(value=status_text)
             
-            # Professional multi-GPU status display
-            multi_gpu_status = util_get_multi_gpu_status_display(logger=logger)
+            # Get VRAM info for formatting
+            vram_info = util_get_vram_info(logger=logger)
+            vram_status = util_format_vram_status(vram_info)
+            
+            # Create GPU status display
+            status_lines = [vram_status]
+            status_lines.append("\n🖥️ Available GPUs:")
+            
+            for gpu in gpus:
+                gpu_line = f"  • {gpu['display_name']}"
+                status_lines.append(gpu_line)
             
             # Add professional VRAM-based model recommendations
-            total_vram = sum(gpu.get('free_memory_gb', 0) for gpu in gpus if gpu.get('is_available', False))
-            suitable_gpus = len([gpu for gpu in gpus if gpu.get('is_suitable_for_multigpu', False)])
+            total_vram = sum(gpu.get('memory_gb', 0) for gpu in gpus)
             
             recommendation_lines = ["\n🎯 Professional Recommendations:"]
             
@@ -5923,31 +5930,12 @@ Please ensure:
             else:
                 recommendation_lines.append("🔧 Single GPU: 3B FP8 + Aggressive Block Swap")
             
-            # Multi-GPU recommendations with analysis
-            if suitable_gpus >= 2:
-                recommendation_lines.append(f"🚀 Multi-GPU: {suitable_gpus} GPUs detected for parallel processing")
-                
-                try:
-                    # Analyze multi-GPU potential
-                    model_filename = "seedvr2_ema_3b_fp8_e4m3fn.safetensors"  # Default for analysis
-                    multi_gpu_analysis = util_analyze_multi_gpu_configuration(
-                        gpus, model_filename, logger=logger
-                    )
-                    
-                    if multi_gpu_analysis.get("multi_gpu_possible", False):
-                        speedup = multi_gpu_analysis.get("performance_estimate", "2x")
-                        recommended_gpus = multi_gpu_analysis.get("recommended_gpus", [])
-                        
-                        recommendation_lines.append(f"💥 Expected Speedup: {speedup}")
-                        recommendation_lines.append(f"🖥️ Optimal Configuration: GPUs {', '.join(map(str, recommended_gpus))}")
-                        recommendation_lines.append("✅ Multi-GPU highly recommended for this system")
-                    else:
-                        reason = multi_gpu_analysis.get("reason", "Unknown limitation")
-                        recommendation_lines.append(f"⚠️ Multi-GPU Limited: {reason}")
-                except Exception as e:
-                    recommendation_lines.append(f"⚠️ Multi-GPU Analysis Error: {e}")
+            # Multi-GPU recommendations
+            if len(gpus) >= 2:
+                recommendation_lines.append(f"🚀 Multi-GPU: {len(gpus)} GPUs detected for parallel processing")
+                recommendation_lines.append("✅ Multi-GPU enabled for increased performance")
             else:
-                recommendation_lines.append("ℹ️ Multi-GPU: Not available (need 2+ suitable GPUs)")
+                recommendation_lines.append("ℹ️ Multi-GPU: Not available (need 2+ GPUs)")
             
             # Professional performance tips
             recommendation_lines.append("\n🔧 Performance Tips:")
@@ -5956,7 +5944,7 @@ Please ensure:
             recommendation_lines.append("• Use 'Smart Block Swap' for VRAM optimization")
             
             # Combine all status information
-            complete_status = multi_gpu_status + "\n" + "\n".join(recommendation_lines)
+            complete_status = "\n".join(status_lines + recommendation_lines)
             
             return gr.update(value=complete_status)
             
@@ -5970,19 +5958,17 @@ Please ensure:
             return gr.update(value="Multi-GPU disabled - using single GPU")
         
         try:
-            # Use professional multi-GPU validation
-            model_filename = "seedvr2_ema_3b_fp8_e4m3fn.safetensors"  # Default for validation
-            is_valid, error_msg, valid_devices = util_validate_multi_gpu_configuration(
-                gpu_devices_text, model_filename, logger=logger
-            )
+            # Use our new GPU validation utility
+            is_valid, error_messages = util_validate_gpu_selection(gpu_devices_text)
             
             if is_valid:
-                if len(valid_devices) > 1:
-                    status_text = f"✅ Multi-GPU validated: {len(valid_devices)} GPUs\nDevices: {', '.join(valid_devices)}"
+                device_indices = [int(x.strip()) for x in gpu_devices_text.split(',') if x.strip()]
+                if len(device_indices) > 1:
+                    status_text = f"✅ Multi-GPU validated: {len(device_indices)} GPUs\nDevices: {', '.join(map(str, device_indices))}"
                 else:
-                    status_text = f"✅ Single GPU validated: GPU {valid_devices[0]}"
+                    status_text = f"✅ Single GPU validated: GPU {device_indices[0]}"
             else:
-                status_text = f"❌ {error_msg}"
+                status_text = f"❌ {'; '.join(error_messages)}"
             
             return gr.update(value=status_text)
         except Exception as e:
