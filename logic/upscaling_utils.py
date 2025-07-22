@@ -11,7 +11,7 @@ from .ffmpeg_utils import extract_frames, create_video_from_frames
 from .common_utils import format_time
 from .cogvlm_utils import auto_caption, COG_VLM_AVAILABLE
 
-def calculate_upscale_params(orig_h, orig_w, target_h, target_w, target_res_mode, logger=None, image_upscaler_model=None):
+def calculate_upscale_params(orig_h, orig_w, target_h, target_w, target_res_mode, logger=None, image_upscaler_model=None, custom_upscale_factor=None):
     """Calculate upscaling parameters based on target resolution mode."""
     final_h = int(target_h)
     final_w = int(target_w)
@@ -44,8 +44,13 @@ def calculate_upscale_params(orig_h, orig_w, target_h, target_w, target_res_mode
                 if logger:
                     logger.warning(f"Could not determine image upscaler scale, using 4x fallback")
         else:
-            actual_upscale_factor = 4.0  # STAR model default
-            model_type = "STAR"
+            # Use custom upscale factor if provided, otherwise default to STAR 4x
+            if custom_upscale_factor is not None:
+                actual_upscale_factor = custom_upscale_factor
+                model_type = f"Custom ({custom_upscale_factor}x)"
+            else:
+                actual_upscale_factor = 4.0  # STAR model default
+                model_type = "STAR"
         
         # Calculate optimal final resolution that fits within the constraint box
         # while maintaining the original aspect ratio

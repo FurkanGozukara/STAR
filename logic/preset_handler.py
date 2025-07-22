@@ -256,7 +256,7 @@ def migrate_preset_data(config_dict: Dict[str, Any]) -> Dict[str, Any]:
             'enable': False,
             'model': None,
             'batch_size': 1,
-            'quality_preset': 'Balanced',
+            'quality_preset': 'quality',
             'use_gpu': True
         }
         logger.info("Added missing seedvr2 section to preset")

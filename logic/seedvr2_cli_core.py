@@ -354,7 +354,7 @@ def process_video_with_seedvr2_cli(
     
     try:
         # Check for cancellation
-        cancellation_manager.check_cancellation()
+        cancellation_manager.check_cancel()
         
         if status_callback:
             status_callback("🎬 Extracting frames from video...")
@@ -372,7 +372,7 @@ def process_video_with_seedvr2_cli(
             progress_callback(0.1, "Frames extracted, preparing for processing")
         
         # Check for cancellation
-        cancellation_manager.check_cancellation()
+        cancellation_manager.check_cancel()
         
         if status_callback:
             status_callback("🧠 Configuring SeedVR2 model...")
@@ -406,7 +406,7 @@ def process_video_with_seedvr2_cli(
             progress_callback(0.2, "Model configured, starting processing")
         
         # Check for cancellation
-        cancellation_manager.check_cancellation()
+        cancellation_manager.check_cancel()
         
         if status_callback:
             status_callback("⚡ Processing video with SeedVR2...")
@@ -426,7 +426,7 @@ def process_video_with_seedvr2_cli(
             progress_callback(0.8, "Processing complete, saving output video")
         
         # Check for cancellation
-        cancellation_manager.check_cancellation()
+        cancellation_manager.check_cancel()
         
         if status_callback:
             status_callback("💾 Saving processed video...")
@@ -550,7 +550,7 @@ def _process_single_gpu_cli(
     
     for i in range(0, total_frames, batch_size - temporal_overlap):
         # Check for cancellation
-        cancellation_manager.check_cancellation()
+        cancellation_manager.check_cancel()
         
         end_idx = min(i + batch_size, total_frames)
         batch_frames = frames_tensor[i:end_idx]

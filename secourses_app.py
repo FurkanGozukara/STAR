@@ -4473,8 +4473,10 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
                 effective_upscale_factor =app_config .resolution .upscale_factor 
                 model_name ="STAR Model (4x)"
             elif internal_upscaler_type =="seedvr2":
-                effective_upscale_factor =app_config .resolution .upscale_factor 
-                model_name ="SeedVR2 (4x - Coming Soon)"
+                # SeedVR2 uses 2x upscale factor by default
+                from logic.dataclasses import DEFAULT_SEEDVR2_UPSCALE_FACTOR
+                effective_upscale_factor = DEFAULT_SEEDVR2_UPSCALE_FACTOR
+                model_name ="SeedVR2 (2x)"
             else :
                 effective_upscale_factor =upscale_factor 
                 model_name =f"Unknown Upscaler ({upscale_factor}x)"
@@ -4482,10 +4484,12 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
             if enable_target_res :
 
                 try :
+                    custom_upscale_factor = effective_upscale_factor if internal_upscaler_type == "seedvr2" else None
                     needs_downscale ,ds_h ,ds_w ,upscale_factor_calc ,final_h_calc ,final_w_calc =util_calculate_upscale_params (
                     orig_h ,orig_w ,target_h ,target_w ,target_res_mode ,
                     logger =logger ,
-                    image_upscaler_model =image_upscaler_model if internal_upscaler_type =="image_upscaler"else None 
+                    image_upscaler_model =image_upscaler_model if internal_upscaler_type =="image_upscaler"else None,
+                    custom_upscale_factor =custom_upscale_factor
                     )
 
                     final_h =final_h_calc 
@@ -4618,18 +4622,22 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
                 effective_upscale_factor =upscale_factor 
                 model_name ="STAR Model (4x)"
             elif internal_upscaler_type =="seedvr2":
-                effective_upscale_factor =upscale_factor 
-                model_name ="SeedVR2 (4x)"
+                # SeedVR2 uses 2x upscale factor by default
+                from logic.dataclasses import DEFAULT_SEEDVR2_UPSCALE_FACTOR
+                effective_upscale_factor = DEFAULT_SEEDVR2_UPSCALE_FACTOR
+                model_name ="SeedVR2 (2x)"
             else :
                 effective_upscale_factor =upscale_factor 
                 model_name =f"Upscaler ({upscale_factor}x)"
 
             if enable_target_res :
                 try :
+                    custom_upscale_factor = effective_upscale_factor if internal_upscaler_type == "seedvr2" else None
                     needs_downscale ,ds_h ,ds_w ,upscale_factor_calc ,final_h_calc ,final_w_calc =util_calculate_upscale_params (
                     orig_h ,orig_w ,target_h ,target_w ,target_res_mode ,
                     logger =logger ,
-                    image_upscaler_model =image_upscaler_model if internal_upscaler_type =="image_upscaler"else None 
+                    image_upscaler_model =image_upscaler_model if internal_upscaler_type =="image_upscaler"else None,
+                    custom_upscale_factor =custom_upscale_factor
                     )
 
                     final_h =final_h_calc 

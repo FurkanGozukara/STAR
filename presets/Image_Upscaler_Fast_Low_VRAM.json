@@ -132,7 +132,7 @@
         "enable": false,
         "model": "Model will be available soon",
         "batch_size": 1,
-        "quality_preset": "Balanced",
+        "quality_preset": "quality",
         "use_gpu": true
     },
     "standalone_face_restoration": {

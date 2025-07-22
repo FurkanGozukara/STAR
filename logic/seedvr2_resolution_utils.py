@@ -429,7 +429,8 @@ def _calculate_with_target_constraints(
         from .upscaling_utils import calculate_upscale_params
         
         needs_downscale, ds_h, ds_w, upscale_factor_calc, final_h_calc, final_w_calc = calculate_upscale_params(
-            orig_h, orig_w, target_h, target_w, target_res_mode, logger=logger, image_upscaler_model=None
+            orig_h, orig_w, target_h, target_w, target_res_mode, logger=logger, image_upscaler_model=None,
+            custom_upscale_factor=upscale_factor
         )
         
         # For SeedVR2, use the shorter side as resolution
