@@ -177,7 +177,7 @@ DEFAULT_SEEDVR2_SKIP_FIRST_FRAMES = 0  # Number of frames to skip at start
 
 # SeedVR2 Chunk Preview Configuration (same as STAR for consistency)
 DEFAULT_SEEDVR2_ENABLE_CHUNK_PREVIEW = True  # Enable chunk preview by default 
-DEFAULT_SEEDVR2_CHUNK_PREVIEW_FRAMES = 125  # Show last 125 frames as default
+DEFAULT_SEEDVR2_CHUNK_PREVIEW_FRAMES = 25  # Show last 125 frames as default
 DEFAULT_SEEDVR2_KEEP_LAST_CHUNKS = 5  # Keep last 5 chunk videos in chunks folder
 
 # SeedVR2 Model Configuration

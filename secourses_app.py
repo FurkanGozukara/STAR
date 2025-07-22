@@ -1356,7 +1356,7 @@ The total combined prompt length is limited to 77 tokens."""
                         with gr .Row ():
                             seedvr2_chunk_preview_frames_slider =gr .Slider (
                             label ="Preview Frame Count",
-                            minimum =25 ,
+                            minimum =5 ,
                             maximum =500 ,
                             value =INITIAL_APP_CONFIG .seedvr2 .chunk_preview_frames ,
                             step =25 ,
@@ -1365,7 +1365,7 @@ The total combined prompt length is limited to 77 tokens."""
                             seedvr2_keep_last_chunks_slider =gr .Slider (
                             label ="Keep Last N Chunks",
                             minimum =1 ,
-                            maximum =10 ,
+                            maximum =1000 ,
                             value =INITIAL_APP_CONFIG .seedvr2 .keep_last_chunks ,
                             step =1 ,
                             info ="Number of recent chunk videos to keep in chunks folder (default: 5)."
