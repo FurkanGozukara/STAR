@@ -114,6 +114,194 @@ class SeedVR2BlockSwap:
         return
 
 
+class SeedVR2SessionManager:
+    """
+    Proper session-based SeedVR2 model manager.
+    Creates model ONCE and reuses for all batches - fixes memory leak.
+    """
+    
+    def __init__(self, logger: Optional[logging.Logger] = None):
+        self.logger = logger or logging.getLogger(__name__)
+        self.runner = None
+        self.current_model = None
+        self.is_initialized = False
+        self.processing_args = None
+        
+    def initialize_session(self, processing_args: Dict[str, Any], seedvr2_config) -> bool:
+        """
+        Initialize SeedVR2 session with model loading.
+        Call this ONCE at the start of processing.
+        """
+        if self.is_initialized:
+            self.logger.warning("Session already initialized, skipping...")
+            return True
+            
+        try:
+            self.processing_args = processing_args.copy()
+            
+            # Add SeedVR2 to path
+            seedvr2_base_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'SeedVR2')
+            if seedvr2_base_path not in sys.path:
+                sys.path.insert(0, seedvr2_base_path)
+            
+            # Import modules
+            from src.core.model_manager import configure_runner
+            
+            # Verify model exists
+            model_path = os.path.join(processing_args["model_dir"], processing_args["model"])
+            if not os.path.exists(model_path):
+                from src.utils.downloads import download_weight
+                self.logger.info(f"Downloading model: {processing_args['model']}")
+                download_weight(processing_args["model"], processing_args["model_dir"])
+            
+            # Create runner ONCE for the entire session
+            self.logger.info(f"🔧 Creating SeedVR2 session with model: {processing_args['model']}")
+            
+            self.runner = configure_runner(
+                model=processing_args["model"],
+                base_cache_dir=processing_args["model_dir"],
+                preserve_vram=processing_args["preserve_vram"],
+                debug=processing_args["debug"],
+                block_swap_config=None  # Disabled for stability
+            )
+            
+            self.current_model = processing_args["model"]
+            self.is_initialized = True
+            
+            self.logger.info("✅ SeedVR2 session initialized successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize SeedVR2 session: {e}")
+            return False
+    
+    def process_batch(self, batch_frames: torch.Tensor, batch_args: Dict[str, Any] = None) -> torch.Tensor:
+        """
+        Process a batch using the existing session runner.
+        This REUSES the model instead of recreating it.
+        """
+        if not self.is_initialized or self.runner is None:
+            raise RuntimeError("Session not initialized! Call initialize_session() first.")
+        
+        try:
+            # Use session args, override with batch-specific args if provided
+            effective_args = self.processing_args.copy()
+            if batch_args:
+                effective_args.update(batch_args)
+            
+            # ✅ CALCULATE res_w based on batch frame dimensions (was missing!)
+            res_w = effective_args.get("res_w", None)
+            if res_w is None or res_w <= 0:
+                # Calculate resolution based on input frame dimensions
+                input_height, input_width = batch_frames.shape[1], batch_frames.shape[2]
+                
+                # Default 2x upscale for SeedVR2
+                target_width = input_width * 2
+                target_height = input_height * 2
+                
+                # Use the shorter side as the target resolution (as expected by SeedVR2)
+                res_w = min(target_width, target_height)
+                
+                # Ensure resolution is reasonable (between 256 and 2048)
+                res_w = max(256, min(2048, res_w))
+                
+                if self.logger:
+                    self.logger.debug(f"🔧 Auto-calculated res_w: {res_w} (from {input_width}x{input_height} input)")
+                    self.logger.debug(f"   Target output: ~{target_width}x{target_height}")
+            
+            # Ensure res_w is valid
+            if res_w is None or res_w <= 0:
+                res_w = 720  # Safe default
+                if self.logger:
+                    self.logger.warning(f"⚠️ Failed to calculate valid res_w, using default {res_w}")
+            
+            # Import generation function
+            from src.core.generation import generation_loop
+            
+            # Process batch with REUSED runner
+            result_tensor = generation_loop(
+                runner=self.runner,  # ✅ REUSE EXISTING MODEL
+                images=batch_frames,
+                cfg_scale=effective_args.get("cfg_scale", 1.0),
+                seed=effective_args.get("seed", -1),
+                res_w=res_w,  # ✅ Now properly calculated
+                batch_size=len(batch_frames),
+                preserve_vram=effective_args["preserve_vram"],
+                temporal_overlap=effective_args.get("temporal_overlap", 0),
+                debug=effective_args.get("debug", False),
+            )
+            
+            return result_tensor
+            
+        except Exception as e:
+            self.logger.error(f"Batch processing failed: {e}")
+            raise
+    
+    def cleanup_session(self):
+        """
+        Cleanup session and free all resources.
+        Call this ONCE at the end of all processing.
+        """
+        if not self.is_initialized:
+            return
+            
+        try:
+            self.logger.info("🧹 Cleaning up SeedVR2 session...")
+            
+            if self.runner:
+                # Proper cleanup of runner components
+                if hasattr(self.runner, 'dit') and self.runner.dit is not None:
+                    if hasattr(self.runner.dit, 'cpu'):
+                        self.runner.dit.cpu()
+                    del self.runner.dit
+                    self.runner.dit = None
+                
+                if hasattr(self.runner, 'vae') and self.runner.vae is not None:
+                    if hasattr(self.runner.vae, 'cpu'):
+                        self.runner.vae.cpu()
+                    del self.runner.vae
+                    self.runner.vae = None
+                
+                del self.runner
+                self.runner = None
+            
+            # Clear GPU cache
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+            
+            # Force garbage collection
+            import gc
+            gc.collect()
+            
+            self.current_model = None
+            self.is_initialized = False
+            self.processing_args = None
+            
+            self.logger.info("✅ SeedVR2 session cleaned up successfully")
+            
+        except Exception as e:
+            self.logger.warning(f"Error during session cleanup: {e}")
+
+
+# Global session manager instance
+_global_session_manager = None
+
+def get_session_manager(logger: Optional[logging.Logger] = None) -> SeedVR2SessionManager:
+    """Get or create the global session manager."""
+    global _global_session_manager
+    if _global_session_manager is None:
+        _global_session_manager = SeedVR2SessionManager(logger)
+    return _global_session_manager
+
+def cleanup_global_session():
+    """Cleanup the global session manager."""
+    global _global_session_manager
+    if _global_session_manager:
+        _global_session_manager.cleanup_session()
+        _global_session_manager = None
+
+
 def extract_frames_from_video_cli(video_path: str, debug: bool = False, skip_first_frames: int = 0, load_cap: Optional[int] = None) -> Tuple[torch.Tensor, float]:
     """
     Extract frames from video using OpenCV (CLI approach).
@@ -420,6 +608,13 @@ def process_video_with_seedvr2_cli(
         logger.error(f"Error during SeedVR2 processing: {e}")
         raise
     finally:
+        # ✅ CLEANUP SESSION: Clean up the global session at the end of ALL processing
+        try:
+            cleanup_global_session()
+            logger.info("SeedVR2 session cleaned up successfully")
+        except Exception as cleanup_error:
+            logger.warning(f"Session cleanup error: {cleanup_error}")
+        
         # Cleanup
         gc.collect()
         if torch.cuda.is_available():
@@ -484,71 +679,66 @@ def _process_single_gpu_cli(
     logger: Optional[logging.Logger] = None
 ) -> torch.Tensor:
     """
-    Process frames on a single GPU using CLI approach.
+    Process frames on single GPU using SESSION-BASED approach.
+    Fixed: Now reuses model instead of recreating for each batch.
     """
-    if logger is None:
-        logger = logging.getLogger(__name__)
-    
-    logger.info(f"Processing on single GPU: {device_id}")
-    
-    # Set CUDA device
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(device_id)
-    
-    # Import torch here to respect CUDA_VISIBLE_DEVICES
-    import torch
-    
-    # Move frames to GPU
-    frames_tensor = frames_tensor.cuda()
-    
-    # Setup block swap if enabled
-    block_swap = None
-    if seedvr2_config.enable_block_swap and seedvr2_config.block_swap_counter > 0:
-        block_swap = SeedVR2BlockSwap(enable_debug=processing_args.get("debug", False))
-        logger.info(f"Block swap enabled: {seedvr2_config.block_swap_counter} blocks")
-    
-    # Process frames in batches for temporal consistency
-    batch_size = processing_args["batch_size"]
-    temporal_overlap = processing_args["temporal_overlap"]
-    total_frames = frames_tensor.shape[0]
-    
-    logger.info(f"Processing {total_frames} frames in batches of {batch_size} with overlap {temporal_overlap}")
-    
-    processed_frames = []
-    
-    for i in range(0, total_frames, batch_size - temporal_overlap):
-        # Check for cancellation
-        cancellation_manager.check_cancel()
+    try:
+        # Get session manager
+        session_manager = get_session_manager(logger)
         
-        end_idx = min(i + batch_size, total_frames)
-        batch_frames = frames_tensor[i:end_idx]
+        # Initialize session if not already done
+        if not session_manager.is_initialized:
+            success = session_manager.initialize_session(processing_args, seedvr2_config)
+            if not success:
+                logger.error("Failed to initialize SeedVR2 session")
+                return _apply_placeholder_upscaling(frames_tensor, logger.level <= logging.DEBUG if logger else False)
         
-        logger.info(f"Processing batch {i//batch_size + 1}: frames {i}-{end_idx-1}")
+        # Calculate processing parameters
+        batch_size = max(5, processing_args.get("batch_size", 5))
+        temporal_overlap = max(0, processing_args.get("temporal_overlap", 0))
+        total_frames = frames_tensor.shape[0]
         
-        # Process batch with real SeedVR2 model
-        processed_batch = _process_batch_with_seedvr2_model(
-            batch_frames, 
-            processing_args,
-            seedvr2_config,
-            block_swap
-        )
+        processed_frames = []
         
-        # Handle overlap
-        if i > 0 and temporal_overlap > 0:
-            # Skip overlapped frames except for the first batch
-            processed_batch = processed_batch[temporal_overlap:]
+        logger.info(f"Processing {total_frames} frames in batches of {batch_size} with overlap {temporal_overlap}")
         
-        processed_frames.append(processed_batch)
+        for i in range(0, total_frames, batch_size - temporal_overlap):
+            # Check for cancellation
+            cancellation_manager.check_cancel()
+            
+            end_idx = min(i + batch_size, total_frames)
+            batch_frames = frames_tensor[i:end_idx]
+            
+            logger.info(f"Processing batch {i//batch_size + 1}: frames {i}-{end_idx-1}")
+            
+            # ✅ FIXED: Process batch with REUSED session model
+            processed_batch = session_manager.process_batch(
+                batch_frames,
+                batch_args={"seed": processing_args.get("seed", -1)}  # Override seed per batch if needed
+            )
+            
+            # Handle overlap
+            if i > 0 and temporal_overlap > 0:
+                processed_batch = processed_batch[temporal_overlap:]
+            
+            processed_frames.append(processed_batch)
+            
+            # Update progress
+            if progress_callback:
+                progress = 0.2 + 0.6 * (end_idx / total_frames)
+                progress_callback(progress, f"Processed {end_idx}/{total_frames} frames")
         
-        # Update progress
-        if progress_callback:
-            progress = 0.2 + 0.6 * (end_idx / total_frames)
-            progress_callback(progress, f"Processed {end_idx}/{total_frames} frames")
-    
-    # Concatenate all processed frames
-    result_tensor = torch.cat(processed_frames, dim=0)
-    
-    logger.info(f"Processing complete: {result_tensor.shape[0]} frames processed")
-    return result_tensor
+        # Concatenate all processed frames
+        result_tensor = torch.cat(processed_frames, dim=0)
+        
+        logger.info(f"Processing complete: {result_tensor.shape[0]} frames processed with REUSED model")
+        return result_tensor
+        
+    except Exception as e:
+        logger.error(f"Single GPU processing failed: {e}")
+        # Cleanup on error
+        cleanup_global_session()
+        raise
 
 
 def _process_multi_gpu_cli(
@@ -667,260 +857,56 @@ def _process_batch_with_seedvr2_model(
     block_swap: Optional[SeedVR2BlockSwap] = None
 ) -> torch.Tensor:
     """
-    Process frames using actual SeedVR2 model inference.
-    
-    Args:
-        batch_frames: Input frames tensor [T, H, W, C]
-        processing_args: Processing configuration
-        seedvr2_config: SeedVR2 configuration
-        block_swap: Block swap manager
-        
-    Returns:
-        Processed frames tensor
+    ✅ FIXED: Process frames using session-based approach instead of recreating model.
+    This function now REUSES the existing model instead of creating a new one each time.
     """
     try:
-        # Get model configuration
-        model_name = processing_args.get("model", "seedvr2_ema_3b_fp16.safetensors")
-        model_dir = processing_args.get("model_dir", "./models/SEEDVR2")
-        preserve_vram = processing_args.get("preserve_vram", True)
         debug = processing_args.get("debug", False)
         
         if debug:
-            print(f"🔄 Processing batch: {batch_frames.shape}")
-            print(f"📁 Model: {model_name}")
-            print(f"💾 Preserve VRAM: {preserve_vram}")
+            print(f"🔄 Processing batch: {batch_frames.shape} (REUSING MODEL)")
+            print(f"📁 Model: {processing_args.get('model', 'unknown')}")
+            print(f"💾 Preserve VRAM: {processing_args.get('preserve_vram', True)}")
         
-        # Check system requirements first
+        # Check system requirements
         if not check_seedvr2_system_requirements(debug):
             if debug:
                 print("❌ System requirements not met for SeedVR2")
             return _apply_placeholder_upscaling(batch_frames, debug)
         
-        # Validate and fix configuration
-        if seedvr2_config:
-            seedvr2_config = validate_and_fix_seedvr2_config(seedvr2_config, debug)
-            # Update processing args with fixed config
-            processing_args["model"] = seedvr2_config.model
-            processing_args["preserve_vram"] = seedvr2_config.preserve_vram
-            processing_args["cfg_scale"] = seedvr2_config.cfg_scale
+        # Get session manager
+        session_manager = get_session_manager()
         
-        # Calculate target resolution properly - THIS IS THE MAIN FIX
-        res_w = processing_args.get("res_w", None)
-        if res_w is None or res_w <= 0:
-            # Calculate resolution based on input frame dimensions
-            input_height, input_width = batch_frames.shape[1], batch_frames.shape[2]
-            
-            # Default 2x upscale for SeedVR2
-            target_width = input_width * 2
-            target_height = input_height * 2
-            
-            # Use the shorter side as the target resolution (as expected by SeedVR2)
-            res_w = min(target_width, target_height)
-            
-            # Ensure resolution is reasonable (between 256 and 2048)
-            res_w = max(256, min(2048, res_w))
-            
+        # Initialize session if needed
+        if not session_manager.is_initialized:
             if debug:
-                print(f"🔧 Auto-calculated res_w: {res_w} (from {input_width}x{input_height} input)")
-                print(f"   Target output: ~{target_width}x{target_height}")
+                print("🔧 Initializing SeedVR2 session...")
+            
+            success = session_manager.initialize_session(processing_args, seedvr2_config)
+            if not success:
+                if debug:
+                    print("❌ Failed to initialize SeedVR2 session")
+                return _apply_placeholder_upscaling(batch_frames, debug)
         
-        # Ensure res_w is valid
-        if res_w is None or res_w <= 0:
-            if debug:
-                print("⚠️ Failed to calculate valid res_w, using default 720")
-            res_w = 720  # Safe default
+        # ✅ FIXED: Process with REUSED model
+        if debug:
+            print(f"🚀 Processing batch with REUSED SeedVR2 model")
         
-        # Update processing args with calculated res_w
-        processing_args["res_w"] = res_w
+        result_tensor = session_manager.process_batch(batch_frames)
         
-        # Ensure model directory exists and model is available
-        model_path = os.path.join(model_dir, model_name)
-        if not os.path.exists(model_path):
-            if debug:
-                print(f"❌ Model not found: {model_path}")
-            # For now, return upscaled placeholder (2x nearest neighbor)
-            return _apply_placeholder_upscaling(batch_frames, debug)
+        if debug:
+            print(f"✅ Batch processed successfully: {result_tensor.shape}")
         
-        try:
-            # Add SeedVR2 project root to Python path for imports
-            seedvr2_base_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'SeedVR2')
-            if seedvr2_base_path not in sys.path:
-                sys.path.insert(0, seedvr2_base_path)
-            
-            # Verify required files exist before processing
-            required_files = [
-                os.path.join(seedvr2_base_path, 'pos_emb.pt'),
-                os.path.join(seedvr2_base_path, 'neg_emb.pt'),
-                os.path.join(processing_args["model_dir"], processing_args["model"]),
-                os.path.join(processing_args["model_dir"], "ema_vae_fp16.safetensors")
-            ]
-            
-            missing_files = [f for f in required_files if not os.path.exists(f)]
-            if missing_files:
-                if debug:
-                    print(f"❌ Missing required SeedVR2 files: {missing_files}")
-                print(f"⚠️ SeedVR2 files missing, using placeholder upscaling")
-                return _apply_placeholder_upscaling(batch_frames, debug)
-            
-            # Import SeedVR2 CLI processing modules
-            from src.core.model_manager import configure_runner
-            from src.core.generation import generation_loop
-            from src.utils.downloads import download_weight
-            # Note: Using local SeedVR2BlockSwap class defined above, not importing from blockswap module
-            
-            if debug:
-                print("✅ SeedVR2 modules imported successfully")
-            
-            # Verify model file exists and download if needed
-            model_path = os.path.join(processing_args["model_dir"], processing_args["model"])
-            if not os.path.exists(model_path):
-                if debug:
-                    print(f"📥 Downloading missing model: {processing_args['model']}")
-                try:
-                    download_weight(processing_args["model"], processing_args["model_dir"])
-                except Exception as download_error:
-                    if debug:
-                        print(f"❌ Model download failed: {download_error}")
-                    print(f"⚠️ Failed to download SeedVR2 model, using placeholder upscaling")
-                    return _apply_placeholder_upscaling(batch_frames, debug)
-            
-            # Configure SeedVR2 runner with enhanced error checking
-            if debug:
-                print(f"🔧 Configuring SeedVR2 runner for model: {processing_args['model']}")
-            
-            try:
-                runner = configure_runner(
-                    model=processing_args["model"],
-                    base_cache_dir=processing_args["model_dir"],
-                    preserve_vram=processing_args["preserve_vram"],
-                    debug=processing_args["debug"],
-                    block_swap_config=None  # Block swap disabled for stability (ComfyUI dependencies removed)
-                )
-                
-                if debug:
-                    print("✅ SeedVR2 runner configured successfully")
-                    
-            except Exception as runner_error:
-                if debug:
-                    print(f"❌ SeedVR2 runner configuration failed: {runner_error}")
-                print(f"⚠️ SeedVR2 runner configuration failed, using placeholder upscaling: {runner_error}")
-                return _apply_placeholder_upscaling(batch_frames, debug)
-            
-            # Verify runner components are properly loaded
-            if not hasattr(runner, 'dit') or not hasattr(runner, 'vae'):
-                if debug:
-                    print("❌ SeedVR2 runner missing required components (dit/vae)")
-                print(f"⚠️ SeedVR2 runner incomplete, using placeholder upscaling")
-                return _apply_placeholder_upscaling(batch_frames, debug)
-            
-            # Setup block swap if enabled and working
-            block_swap = None
-            if seedvr2_config and seedvr2_config.enable_block_swap and seedvr2_config.block_swap_counter > 0:
-                try:
-                    block_swap = SeedVR2BlockSwap(enable_debug=processing_args.get("debug", False))
-                    if debug:
-                        print(f"✅ Block swap configured: {seedvr2_config.block_swap_counter} blocks")
-                except Exception as bs_error:
-                    if debug:
-                        print(f"⚠️ Block swap setup failed, continuing without: {bs_error}")
-                    block_swap = None
-            
-            # Apply block swap configuration
-            if block_swap and seedvr2_config and seedvr2_config.enable_block_swap:
-                if hasattr(runner, 'dit'):
-                    try:
-                        block_swap.apply_block_swap(
-                            runner.dit,
-                            seedvr2_config.block_swap_counter,
-                            seedvr2_config.block_swap_offload_io,
-                            seedvr2_config.block_swap_model_caching
-                        )
-                        if debug:
-                            print("✅ Block swap applied successfully")
-                    except Exception as bs_apply_error:
-                        if debug:
-                            print(f"⚠️ Block swap application failed: {bs_apply_error}")
-            
-            # Enhanced generation with better error handling
-            if debug:
-                print(f"🚀 Starting SeedVR2 generation with batch: {batch_frames.shape}")
-                print(f"   Model: {processing_args['model']}")
-                print(f"   CFG Scale: {processing_args.get('cfg_scale', 1.0)}")
-                print(f"   Seed: {processing_args.get('seed', -1)}")
-                print(f"   Preserve VRAM: {processing_args['preserve_vram']}")
-                print(f"   Target Resolution (res_w): {processing_args['res_w']}")
-            
-            # Run generation with enhanced error context
-            try:
-                result_tensor = generation_loop(
-                    runner=runner,
-                    images=batch_frames,
-                    cfg_scale=processing_args.get("cfg_scale", 1.0),
-                    seed=processing_args.get("seed", -1),
-                    res_w=processing_args["res_w"],  # Now guaranteed to be valid
-                    batch_size=len(batch_frames),
-                    preserve_vram=preserve_vram,
-                    temporal_overlap=processing_args.get("temporal_overlap", 0),
-                    debug=debug,
-                )
-                
-                if debug:
-                    print(f"✅ SeedVR2 generation completed successfully: {result_tensor.shape}")
-                
-                return result_tensor
-                
-            except FileNotFoundError as file_error:
-                if debug:
-                    print(f"❌ SeedVR2 file not found: {file_error}")
-                print(f"⚠️ SeedVR2 missing files, using placeholder upscaling: {file_error}")
-                return _apply_placeholder_upscaling(batch_frames, debug)
-                
-            except RuntimeError as runtime_error:
-                if debug:
-                    print(f"❌ SeedVR2 runtime error: {runtime_error}")
-                # Check for common CUDA/memory issues
-                if "CUDA" in str(runtime_error) or "memory" in str(runtime_error):
-                    print(f"⚠️ SeedVR2 CUDA/memory error, using placeholder upscaling: {runtime_error}")
-                else:
-                    print(f"⚠️ SeedVR2 runtime error, using placeholder upscaling: {runtime_error}")
-                return _apply_placeholder_upscaling(batch_frames, debug)
-                
-            except ImportError as import_error:
-                if debug:
-                    print(f"❌ SeedVR2 import error: {import_error}")
-                print(f"⚠️ SeedVR2 dependencies missing, using placeholder upscaling: {import_error}")
-                return _apply_placeholder_upscaling(batch_frames, debug)
-                
-            except ValueError as value_error:
-                if debug:
-                    print(f"❌ SeedVR2 value error: {value_error}")
-                    print(f"   This may be caused by invalid input dimensions or parameters")
-                if "This should never happen" in str(value_error):
-                    print(f"⚠️ TorchVision transform error detected, likely invalid res_w parameter")
-                    print(f"   Input batch shape: {batch_frames.shape}")
-                    print(f"   res_w parameter: {processing_args.get('res_w', 'None')}")
-                print(f"⚠️ SeedVR2 parameter error, using placeholder upscaling: {value_error}")
-                return _apply_placeholder_upscaling(batch_frames, debug)
-             
-        except Exception as e:
-            if debug:
-                print(f"❌ SeedVR2 processing error: {e}")
-                import traceback
-                traceback.print_exc()
-            print(f"⚠️ SeedVR2 processing failed, using placeholder upscaling: {e}")
-            return _apply_placeholder_upscaling(batch_frames, debug)
-            
-        finally:
-            # Clean up imports
-            if 'seedvr2_base_path' in locals() and seedvr2_base_path in sys.path:
-                sys.path.remove(seedvr2_base_path)
-    
+        return result_tensor
+        
     except Exception as e:
         if debug:
-            print(f"❌ Critical error in SeedVR2 processing: {e}")
+            print(f"❌ Batch processing error: {e}")
             import traceback
             traceback.print_exc()
-        print(f"⚠️ Critical SeedVR2 error, using placeholder upscaling: {e}")
+        
+        # On error, cleanup and try placeholder
+        cleanup_global_session()
         return _apply_placeholder_upscaling(batch_frames, debug)
 
 
