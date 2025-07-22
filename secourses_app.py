@@ -1154,11 +1154,8 @@ The total combined prompt length is limited to 77 tokens."""
                         gr .Markdown ("### SeedVR2 Video Upscaler - Advanced AI Video Enhancement")
                         gr .Markdown ("**🚀 Real-time Temporal Consistency & Superior Quality**")
 
-                        enable_seedvr2_check =gr .Checkbox (
-                        label ="Enable SeedVR2 Upscaling",
-                        value =INITIAL_APP_CONFIG .seedvr2 .enable ,
-                        info ="Enable advanced SeedVR2 video upscaling with temporal consistency."
-                        )
+                        # SeedVR2 is now controlled by Core Settings > Choose Your Upscaler Type
+                        # No separate enable checkbox needed - follows upscaler_type_radio selection
 
                         seedvr2_dependency_status =gr .Textbox (
                         label ="SeedVR2 Status",
@@ -2525,7 +2522,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         image_upscaler_model_val ,image_upscaler_batch_size_val ,
         enable_face_restoration_val ,face_restoration_fidelity_val ,enable_face_colorization_val ,
         face_restoration_when_val ,codeformer_model_val ,face_restoration_batch_size_val ,
-        enable_seedvr2_val ,seedvr2_model_val ,seedvr2_quality_preset_val ,seedvr2_batch_size_val ,seedvr2_use_gpu_val ,
+        seedvr2_model_val ,seedvr2_quality_preset_val ,seedvr2_batch_size_val ,seedvr2_use_gpu_val ,
         seedvr2_temporal_overlap_val ,seedvr2_preserve_vram_val ,seedvr2_color_correction_val ,
         seedvr2_scene_awareness_val ,seedvr2_consistency_validation_val ,
         seedvr2_chunk_optimization_val ,seedvr2_temporal_quality_val ,
@@ -2584,7 +2581,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
             image_upscaler_model_val ,image_upscaler_batch_size_val ,
             enable_face_restoration_val ,face_restoration_fidelity_val ,enable_face_colorization_val ,
             face_restoration_when_val ,codeformer_model_val ,face_restoration_batch_size_val ,
-            enable_seedvr2_val ,seedvr2_model_val ,seedvr2_quality_preset_val ,seedvr2_batch_size_val ,seedvr2_use_gpu_val ,
+            seedvr2_model_val ,seedvr2_quality_preset_val ,seedvr2_batch_size_val ,seedvr2_use_gpu_val ,
             input_frames_folder_val ,frame_folder_fps_slider_val ,
             gpu_selector_val ,
 
@@ -2756,7 +2753,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         batch_size =face_restoration_batch_size_val 
         ),
         seedvr2 =SeedVR2Config (
-        enable =enable_seedvr2_from_type and enable_seedvr2_val ,
+        enable =enable_seedvr2_from_type ,
         model =seedvr2_model_val ,
         quality_preset =seedvr2_quality_preset_val ,
         batch_size =seedvr2_batch_size_val ,
@@ -3371,7 +3368,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
     image_upscaler_model_dropdown ,image_upscaler_batch_size_slider ,
     enable_face_restoration_check ,face_restoration_fidelity_slider ,enable_face_colorization_check ,
     face_restoration_when_radio ,codeformer_model_dropdown ,face_restoration_batch_size_slider ,
-    enable_seedvr2_check ,seedvr2_model_dropdown ,seedvr2_quality_preset_radio ,seedvr2_batch_size_slider ,seedvr2_use_gpu_check ,
+    seedvr2_model_dropdown ,seedvr2_quality_preset_radio ,seedvr2_batch_size_slider ,seedvr2_use_gpu_check ,
     seedvr2_temporal_overlap_slider ,seedvr2_preserve_vram_check ,seedvr2_color_correction_check ,
     seedvr2_scene_awareness_check ,seedvr2_consistency_validation_check ,
     seedvr2_chunk_optimization_check ,seedvr2_temporal_quality_radio ,
@@ -3662,7 +3659,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         image_upscaler_model_val ,image_upscaler_batch_size_val ,
         enable_face_restoration_val ,face_restoration_fidelity_val ,enable_face_colorization_val ,
         face_restoration_when_val ,codeformer_model_val ,face_restoration_batch_size_val ,
-        enable_seedvr2_val ,seedvr2_model_val ,seedvr2_quality_preset_val ,seedvr2_batch_size_val ,seedvr2_use_gpu_val ,
+        seedvr2_model_val ,seedvr2_quality_preset_val ,seedvr2_batch_size_val ,seedvr2_use_gpu_val ,
         seedvr2_temporal_overlap_val ,seedvr2_preserve_vram_val ,seedvr2_color_correction_val ,
         seedvr2_scene_awareness_val ,seedvr2_consistency_validation_val ,
         seedvr2_chunk_optimization_val ,seedvr2_temporal_quality_val ,
@@ -3827,7 +3824,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         batch_size =face_restoration_batch_size_val 
         ),
         seedvr2 =SeedVR2Config (
-        enable =enable_seedvr2_from_type and enable_seedvr2_val ,
+        enable =enable_seedvr2_from_type ,
         model =seedvr2_model_val ,
         quality_preset =seedvr2_quality_preset_val ,
         batch_size =seedvr2_batch_size_val ,
@@ -3896,7 +3893,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
     image_upscaler_model_dropdown ,image_upscaler_batch_size_slider ,
     enable_face_restoration_check ,face_restoration_fidelity_slider ,enable_face_colorization_check ,
     face_restoration_when_radio ,codeformer_model_dropdown ,face_restoration_batch_size_slider ,
-    enable_seedvr2_check ,seedvr2_model_dropdown ,seedvr2_quality_preset_radio ,seedvr2_batch_size_slider ,seedvr2_use_gpu_check ,
+    seedvr2_model_dropdown ,seedvr2_quality_preset_radio ,seedvr2_batch_size_slider ,seedvr2_use_gpu_check ,
     seedvr2_temporal_overlap_slider ,seedvr2_preserve_vram_check ,seedvr2_color_correction_check ,
     seedvr2_scene_awareness_check ,seedvr2_consistency_validation_check ,
     seedvr2_chunk_optimization_check ,seedvr2_temporal_quality_radio ,
@@ -5203,7 +5200,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
     upscaler_type_radio :('upscaler_type','upscaler_type'),
     image_upscaler_model_dropdown :('image_upscaler','model'),image_upscaler_batch_size_slider :('image_upscaler','batch_size'),
     enable_face_restoration_check :('face_restoration','enable'),face_restoration_fidelity_slider :('face_restoration','fidelity_weight'),enable_face_colorization_check :('face_restoration','enable_colorization'),face_restoration_when_radio :('face_restoration','when'),codeformer_model_dropdown :('face_restoration','model'),face_restoration_batch_size_slider :('face_restoration','batch_size'),
-    enable_seedvr2_check :('seedvr2','enable'),seedvr2_model_dropdown :('seedvr2','model'),seedvr2_batch_size_slider :('seedvr2','batch_size'),
+    seedvr2_model_dropdown :('seedvr2','model'),seedvr2_batch_size_slider :('seedvr2','batch_size'),
     seedvr2_temporal_overlap_slider :('seedvr2','temporal_overlap'),seedvr2_preserve_vram_check :('seedvr2','preserve_vram'),seedvr2_color_correction_check :('seedvr2','color_correction'),
     seedvr2_scene_awareness_check :('seedvr2','scene_awareness'),seedvr2_consistency_validation_check :('seedvr2','consistency_validation'),
     seedvr2_chunk_optimization_check :('seedvr2','chunk_optimization'),seedvr2_temporal_quality_radio :('seedvr2','temporal_quality'),

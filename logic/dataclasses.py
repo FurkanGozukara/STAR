@@ -146,7 +146,7 @@ DEFAULT_UPSCALER_TYPE = "image_upscaler"  # Options: "star", "image_upscaler", "
 DEFAULT_ENABLE_SEEDVR2 = False
 DEFAULT_SEEDVR2_MODEL = None
 DEFAULT_SEEDVR2_BATCH_SIZE = 5  # Minimum 5 for temporal consistency
-DEFAULT_SEEDVR2_QUALITY_PRESET = "balanced"  # Options: "fast", "balanced", "quality"
+DEFAULT_SEEDVR2_QUALITY_PRESET = "quality"  # Options: "fast", "balanced", "quality"
 DEFAULT_SEEDVR2_USE_GPU = True
 
 # SeedVR2 Advanced Settings
