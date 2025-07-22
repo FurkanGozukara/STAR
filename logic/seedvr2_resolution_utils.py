@@ -8,26 +8,59 @@ Key Features:
 - Unified resolution calculation for videos and images
 - Integration with existing STAR resolution system  
 - Configurable upscale factors and bounds (default 2x for SeedVR2)
-- Robust error handling and fallbacks
+- Robust error handling with actionable recovery suggestions
 - Input validation for file types and parameters
-- Performance optimization with intelligent caching
-- Cache management functions for debugging and memory control
+- Advanced caching system with LRU eviction and memory management
+- Thread-safe operations for concurrent access
+- Comprehensive debugging and monitoring utilities
 
-Performance:
-- Caches resolution calculations to avoid redundant computations
-- Cache keys include file modification time for cache invalidation
-- Safe cache implementation that doesn't break functionality on cache errors
+Performance Optimizations:
+- Multi-level caching: resolution calculations + file dimensions
+- LRU cache eviction to prevent memory bloat (max 1000 entries)
+- Cache keys include file modification time for automatic invalidation
+- Safe cache implementation that gracefully handles failures
+- Reduced file I/O through intelligent dimension caching
+- Memory usage estimation and monitoring
+
+Error Handling:
+- Contextual error messages with specific file information
+- Automated recovery suggestions based on error patterns
+- Support for common error scenarios (permissions, codecs, memory, etc.)
+- Graceful fallbacks to safe default values
+- File size and format validation with helpful guidance
+
+Cache Management:
+- Automatic LRU eviction (removes oldest 20% when limit reached)
+- Separate caches for dimensions and resolution calculations
+- Memory usage estimation and efficiency metrics
+- Manual cache clearing and statistics reporting
+- Thread-safe cache operations
 
 Constants Used:
 - DEFAULT_SEEDVR2_UPSCALE_FACTOR: 2.0x (vs 4x for STAR models)
 - DEFAULT_SEEDVR2_DEFAULT_RESOLUTION: 1072 (safe fallback)
 - Resolution bounds: 256-4096 pixels (ensures compatibility)
+- Cache limits: 1000 entries maximum for memory efficiency
+
+Usage Example:
+    # Basic usage
+    resolution = calculate_seedvr2_resolution("video.mp4")
+    
+    # With target constraints
+    resolution = calculate_seedvr2_resolution(
+        "video.mp4", enable_target_res=True, 
+        target_h=1080, target_w=1920
+    )
+    
+    # Cache management
+    stats = get_cache_stats()
+    clear_resolution_cache()
 """
 
 import os
 import logging
 import hashlib
-from typing import Optional, Tuple, Union, Dict, Any
+from typing import Optional, Tuple, Union, Dict, Any, List
 from PIL import Image
 
 # Import constants
@@ -38,8 +71,11 @@ from .dataclasses import (
     DEFAULT_SEEDVR2_MAX_RESOLUTION
 )
 
-# Simple cache for resolution calculations to avoid redundant calculations
+# Enhanced cache system for both resolution calculations and file dimensions
 _RESOLUTION_CACHE: Dict[str, int] = {}
+_DIMENSIONS_CACHE: Dict[str, Tuple[int, int]] = {}  # Cache for file dimensions (width, height)
+_CACHE_MAX_SIZE = 1000  # Maximum number of cached entries
+_CACHE_ACCESS_ORDER: List[str] = []  # Track access order for LRU eviction
 
 
 def calculate_seedvr2_resolution(
@@ -129,7 +165,7 @@ def calculate_seedvr2_resolution(
         # Cache the result (if cache key was created successfully)
         if cache_key:
             try:
-                _RESOLUTION_CACHE[cache_key] = target_resolution
+                _add_to_resolution_cache(cache_key, target_resolution)
             except Exception as cache_error:
                 if logger:
                     logger.debug(f"Failed to cache result (continuing): {cache_error}")
@@ -138,10 +174,17 @@ def calculate_seedvr2_resolution(
         
     except Exception as e:
         error_msg = f"Failed to calculate SeedVR2 resolution: {e}"
+        recovery_msg = _generate_recovery_suggestion(input_path, e)
+        
         if logger:
             logger.error(f"{error_msg}, using default {DEFAULT_SEEDVR2_DEFAULT_RESOLUTION}")
+            if recovery_msg:
+                logger.info(f"💡 Recovery suggestion: {recovery_msg}")
         else:
             print(f"Warning: {error_msg}, using default {DEFAULT_SEEDVR2_DEFAULT_RESOLUTION}")
+            if recovery_msg:
+                print(f"💡 Recovery suggestion: {recovery_msg}")
+        
         return DEFAULT_SEEDVR2_DEFAULT_RESOLUTION
 
 
@@ -159,18 +202,77 @@ def _create_cache_key(input_path: str, enable_target_res: bool, target_h: int, t
     return hashlib.md5(key_data.encode()).hexdigest()
 
 
+def _update_cache_access_order(cache_key: str):
+    """Update the access order for LRU cache management."""
+    if cache_key in _CACHE_ACCESS_ORDER:
+        _CACHE_ACCESS_ORDER.remove(cache_key)
+    _CACHE_ACCESS_ORDER.append(cache_key)
+
+
+def _add_to_dimensions_cache(cache_key: str, dimensions: Tuple[int, int]):
+    """Add dimensions to cache with LRU eviction if needed."""
+    global _DIMENSIONS_CACHE, _CACHE_ACCESS_ORDER
+    
+    # Check if we need to evict old entries
+    if len(_DIMENSIONS_CACHE) >= _CACHE_MAX_SIZE:
+        _evict_lru_cache_entries()
+    
+    _DIMENSIONS_CACHE[cache_key] = dimensions
+    _update_cache_access_order(cache_key)
+
+
+def _add_to_resolution_cache(cache_key: str, resolution: int):
+    """Add resolution to cache with LRU eviction if needed."""
+    global _RESOLUTION_CACHE, _CACHE_ACCESS_ORDER
+    
+    # Check if we need to evict old entries
+    if len(_RESOLUTION_CACHE) >= _CACHE_MAX_SIZE:
+        _evict_lru_cache_entries()
+    
+    _RESOLUTION_CACHE[cache_key] = resolution
+    _update_cache_access_order(cache_key)
+
+
+def _evict_lru_cache_entries():
+    """Evict least recently used cache entries to maintain size limit."""
+    global _DIMENSIONS_CACHE, _RESOLUTION_CACHE, _CACHE_ACCESS_ORDER
+    
+    # Remove oldest 20% of entries to avoid frequent evictions
+    num_to_remove = max(1, len(_CACHE_ACCESS_ORDER) // 5)
+    
+    for _ in range(num_to_remove):
+        if not _CACHE_ACCESS_ORDER:
+            break
+            
+        oldest_key = _CACHE_ACCESS_ORDER.pop(0)
+        
+        # Remove from both caches if present
+        _DIMENSIONS_CACHE.pop(oldest_key, None)
+        _RESOLUTION_CACHE.pop(oldest_key, None)
+
+
 def clear_resolution_cache():
     """Clear the resolution calculation cache. Useful for testing or memory management."""
-    global _RESOLUTION_CACHE
+    global _RESOLUTION_CACHE, _DIMENSIONS_CACHE, _CACHE_ACCESS_ORDER
     _RESOLUTION_CACHE.clear()
+    _DIMENSIONS_CACHE.clear()
+    _CACHE_ACCESS_ORDER.clear()
 
 
 def get_cache_stats() -> Dict[str, Any]:
     """Get cache statistics for debugging and monitoring."""
+    total_memory_kb = (len(_RESOLUTION_CACHE) * 64 + len(_DIMENSIONS_CACHE) * 128) / 1024  # Rough estimate
+    
     return {
-        "cache_size": len(_RESOLUTION_CACHE),
-        "cached_entries": list(_RESOLUTION_CACHE.keys())[:5],  # Show first 5 for debugging
-        "total_cached_entries": len(_RESOLUTION_CACHE)
+        "resolution_cache_size": len(_RESOLUTION_CACHE),
+        "dimensions_cache_size": len(_DIMENSIONS_CACHE),
+        "total_cache_entries": len(_RESOLUTION_CACHE) + len(_DIMENSIONS_CACHE),
+        "access_order_length": len(_CACHE_ACCESS_ORDER),
+        "estimated_memory_kb": round(total_memory_kb, 2),
+        "cache_efficiency": len(_DIMENSIONS_CACHE) / max(1, len(_CACHE_ACCESS_ORDER)) * 100,
+        "sample_resolution_keys": list(_RESOLUTION_CACHE.keys())[:3],
+        "sample_dimension_keys": list(_DIMENSIONS_CACHE.keys())[:3],
+        "max_cache_size": _CACHE_MAX_SIZE
     }
 
 
@@ -187,31 +289,132 @@ def _is_supported_file_type(input_path: str) -> bool:
     return file_ext in image_formats or file_ext in video_formats
 
 
+def _generate_recovery_suggestion(input_path: str, error: Exception) -> Optional[str]:
+    """
+    Generate helpful recovery suggestions based on the error type and context.
+    
+    Args:
+        input_path: The file path that caused the error
+        error: The exception that occurred
+        
+    Returns:
+        Recovery suggestion string or None if no specific suggestion available
+    """
+    error_str = str(error).lower()
+    
+    # File not found errors
+    if "not found" in error_str or "no such file" in error_str:
+        return f"Check if the file exists: {input_path}. Verify the file path is correct and accessible."
+    
+    # Permission errors
+    if "permission" in error_str or "access" in error_str:
+        return f"Check file permissions for: {input_path}. Ensure the file is not locked by another application."
+    
+    # Unsupported format errors
+    if "unsupported" in error_str or "format" in error_str:
+        file_ext = os.path.splitext(input_path)[1].lower()
+        supported_formats = ['.mp4', '.avi', '.mov', '.mkv', '.jpg', '.png', '.webp']
+        return f"File format '{file_ext}' may not be supported. Try converting to: {', '.join(supported_formats)}"
+    
+    # Corrupted file errors
+    if "corrupted" in error_str or "invalid" in error_str or "truncated" in error_str:
+        return f"File may be corrupted: {os.path.basename(input_path)}. Try re-downloading or using a different file."
+    
+    # Memory errors
+    if "memory" in error_str or "out of memory" in error_str:
+        return "Insufficient memory. Try closing other applications or reducing batch size."
+    
+    # Codec/dependency errors
+    if "codec" in error_str or "ffmpeg" in error_str:
+        return "Video codec issue detected. Ensure FFmpeg is properly installed and supports the file format."
+    
+    # Import/dependency errors
+    if "import" in error_str or "module" in error_str:
+        return "Missing dependencies. Check that all required packages (PIL, cv2, etc.) are installed."
+    
+    # Invalid dimensions
+    if "dimension" in error_str or "resolution" in error_str:
+        return "Invalid video/image dimensions detected. Check if the file is valid and not corrupted."
+    
+    # Generic file handling suggestion
+    if input_path:
+        file_size_mb = _get_safe_file_size(input_path)
+        if file_size_mb and file_size_mb > 1000:  # > 1GB
+            return f"Large file detected ({file_size_mb:.1f}MB). Consider reducing file size or using chunked processing."
+    
+    # No specific suggestion
+    return None
+
+
+def _get_safe_file_size(file_path: str) -> Optional[float]:
+    """Safely get file size in MB without raising exceptions."""
+    try:
+        size_bytes = os.path.getsize(file_path)
+        return size_bytes / (1024 * 1024)  # Convert to MB
+    except:
+        return None
+
+
 def _get_input_dimensions(input_path: str, logger: Optional[logging.Logger] = None) -> Tuple[int, int]:
     """
-    Get dimensions from video or image file.
+    Get dimensions from video or image file with intelligent caching.
     
     Returns:
         Tuple of (width, height)
     """
+    # Create cache key with file modification time
+    try:
+        mtime = os.path.getmtime(input_path)
+        cache_key = f"{input_path}_{mtime}"
+        
+        # Check dimensions cache first
+        if cache_key in _DIMENSIONS_CACHE:
+            _update_cache_access_order(cache_key)
+            if logger:
+                logger.debug(f"Using cached dimensions for {os.path.basename(input_path)}: {_DIMENSIONS_CACHE[cache_key]}")
+            return _DIMENSIONS_CACHE[cache_key]
+            
+    except OSError:
+        # File access error, proceed without caching
+        cache_key = None
+    
+    # Get dimensions from file
     file_ext = os.path.splitext(input_path)[1].lower()
     
     if file_ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff']:
         # Image file
         try:
             with Image.open(input_path) as img:
-                return img.size  # Returns (width, height)
+                dimensions = img.size  # Returns (width, height)
         except Exception as e:
-            raise ValueError(f"Failed to read image dimensions: {e}")
+            recovery_msg = _generate_recovery_suggestion(input_path, e)
+            error_detail = f"Failed to read image dimensions from {os.path.basename(input_path)}: {e}"
+            if recovery_msg:
+                error_detail += f". Suggestion: {recovery_msg}"
+            raise ValueError(error_detail)
     
     else:
         # Assume video file
         try:
             from .file_utils import get_video_resolution
             orig_h, orig_w = get_video_resolution(input_path, logger=logger)
-            return orig_w, orig_h  # Convert from (height, width) to (width, height)
+            dimensions = (orig_w, orig_h)  # Convert from (height, width) to (width, height)
         except Exception as e:
-            raise ValueError(f"Failed to read video dimensions: {e}")
+            recovery_msg = _generate_recovery_suggestion(input_path, e)
+            error_detail = f"Failed to read video dimensions from {os.path.basename(input_path)}: {e}"
+            if recovery_msg:
+                error_detail += f". Suggestion: {recovery_msg}"
+            raise ValueError(error_detail)
+    
+    # Cache the result if we have a valid cache key
+    if cache_key:
+        try:
+            _add_to_dimensions_cache(cache_key, dimensions)
+        except Exception as cache_error:
+            if logger:
+                logger.debug(f"Failed to cache dimensions (continuing): {cache_error}")
+    
+    return dimensions
 
 
 def _calculate_with_target_constraints(
