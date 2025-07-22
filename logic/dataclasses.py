@@ -179,9 +179,7 @@ DEFAULT_SEEDVR2_SKIP_FIRST_FRAMES = 0  # Number of frames to skip at start
 DEFAULT_SEEDVR2_MODEL_PRECISION = "auto"  # Options: "auto", "fp16", "fp8"
 DEFAULT_SEEDVR2_CFG_SCALE = 1.0  # Guidance scale for generation
 DEFAULT_SEEDVR2_SEED = -1  # Use global seed if -1
-DEFAULT_SEEDVR2_RESOLUTION_MODE = "auto"  # Options: "auto", "custom"
-DEFAULT_SEEDVR2_CUSTOM_WIDTH = 1024
-DEFAULT_SEEDVR2_CUSTOM_HEIGHT = 1024
+
 
 # Single Image Upscaling (SeedVR2)
 DEFAULT_ENABLE_SINGLE_IMAGE_UPSCALE = False
@@ -453,9 +451,6 @@ class SeedVR2Config:
     model_precision: str = DEFAULT_SEEDVR2_MODEL_PRECISION
     cfg_scale: float = DEFAULT_SEEDVR2_CFG_SCALE
     seed: int = DEFAULT_SEEDVR2_SEED
-    resolution_mode: str = DEFAULT_SEEDVR2_RESOLUTION_MODE
-    custom_width: int = DEFAULT_SEEDVR2_CUSTOM_WIDTH
-    custom_height: int = DEFAULT_SEEDVR2_CUSTOM_HEIGHT
 
 @dataclass
 class SingleImageUpscaleConfig:

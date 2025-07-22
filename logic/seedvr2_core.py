@@ -31,6 +31,66 @@ import torch
 from .cancellation_manager import cancellation_manager, CancelledError
 from .common_utils import format_time
 
+def _calculate_seedvr2_resolution(input_video_path: str, enable_target_res: bool, target_h: int, target_w: int, 
+                                 target_res_mode: str, upscale_factor: float = 2.0, logger=None) -> int:
+    """
+    Calculate the target resolution for SeedVR2 based on input video and settings.
+    
+    Args:
+        input_video_path: Path to input video
+        enable_target_res: Whether target resolution is enabled
+        target_h: Target height from UI
+        target_w: Target width from UI  
+        target_res_mode: Resolution mode (Ratio Upscale, Downscale then Upscale)
+        upscale_factor: Default upscale factor for SeedVR2 (2.0x)
+        logger: Optional logger
+        
+    Returns:
+        Target resolution (short side) for SeedVR2
+    """
+    try:
+        # Get input video resolution
+        from .file_utils import get_video_resolution
+        orig_h, orig_w = get_video_resolution(input_video_path, logger=logger)
+        
+        if enable_target_res:
+            # Use the existing resolution calculation system
+            from .upscaling_utils import calculate_upscale_params
+            
+            try:
+                needs_downscale, ds_h, ds_w, upscale_factor_calc, final_h_calc, final_w_calc = calculate_upscale_params(
+                    orig_h, orig_w, target_h, target_w, target_res_mode, logger=logger, image_upscaler_model=None
+                )
+                
+                # For SeedVR2, use the shorter side as resolution
+                target_resolution = min(final_w_calc, final_h_calc)
+                
+                if logger:
+                    logger.info(f"SeedVR2 resolution calculation: {orig_w}x{orig_h} -> target resolution {target_resolution} (short side)")
+                    
+            except Exception as e:
+                if logger:
+                    logger.warning(f"Failed to use target resolution calculation, falling back to default 2x: {e}")
+                # Fallback to 2x upscale
+                target_resolution = min(orig_w, orig_h) * upscale_factor
+                
+        else:
+            # Simple 2x upscale of the shorter side
+            target_resolution = min(orig_w, orig_h) * upscale_factor
+            if logger:
+                logger.info(f"SeedVR2 using {upscale_factor}x default upscale: {orig_w}x{orig_h} -> target resolution {target_resolution} (short side)")
+        
+        # Ensure reasonable bounds and even number
+        target_resolution = max(256, min(4096, int(target_resolution)))
+        target_resolution = int(target_resolution // 2) * 2  # Ensure even number
+        
+        return target_resolution
+        
+    except Exception as e:
+        if logger:
+            logger.error(f"Failed to calculate SeedVR2 resolution: {e}, using default 1072")
+        return 1072  # Safe default
+
 def process_video_with_seedvr2(
     input_video_path: str,
     seedvr2_config,  # SeedVR2Config object from dataclasses
@@ -412,6 +472,15 @@ def process_video_with_seedvr2(
         
         frame_chunk_info = []  # No enhanced chunk info for simple processing
     
+    # Calculate resolution for SeedVR2 (using 2x upscale by default)
+    calculated_resolution = _calculate_seedvr2_resolution(
+        input_video_path, enable_target_res, target_h, target_w, target_res_mode, 
+        upscale_factor=2.0, logger=logger
+    )
+    
+    if logger:
+        logger.info(f"SeedVR2 target resolution calculated: {calculated_resolution}")
+    
     # Process frames with SeedVR2
     status_log.append(f"Processing {len(frame_chunks)} chunks with SeedVR2...")
     if progress:
@@ -438,12 +507,12 @@ def process_video_with_seedvr2(
                 # Handle multi-GPU processing for this chunk
                 if seedvr2_config.enable_multi_gpu and len(gpu_devices) > 1:
                     chunk_result = _process_multi_gpu(
-                        chunk_tensor, gpu_devices, seedvr2_config, runner, logger
+                        chunk_tensor, gpu_devices, seedvr2_config, runner, calculated_resolution, logger
                     )
                 else:
                     # Single GPU processing for this chunk
                     chunk_result = _process_single_gpu(
-                        chunk_tensor, seedvr2_config, runner, logger, None  # Don't pass progress for individual chunks
+                        chunk_tensor, seedvr2_config, runner, calculated_resolution, logger, None  # Don't pass progress for individual chunks
                     )
                 
                 processed_chunks.append(chunk_result)
@@ -699,9 +768,6 @@ def process_video_with_seedvr2(
                 "seedvr2_block_swap_offload_io": seedvr2_config.block_swap_offload_io,
                 "seedvr2_block_swap_model_caching": seedvr2_config.block_swap_model_caching,
                 "seedvr2_cfg_scale": seedvr2_config.cfg_scale,
-                "seedvr2_resolution_mode": seedvr2_config.resolution_mode,
-                "seedvr2_custom_width": seedvr2_config.custom_width,
-                "seedvr2_custom_height": seedvr2_config.custom_height,
                 "seedvr2_processing_time": processing_time,
                 "seedvr2_avg_fps": len(frames_tensor) / processing_time if processing_time > 0 else 0,
                 "seedvr2_total_frames": len(frames_tensor),
@@ -1114,7 +1180,7 @@ def _setup_gpu_configuration(seedvr2_config, logger=None) -> List[str]:
     return ["0"]
 
 
-def _process_single_gpu(frames_tensor: torch.Tensor, seedvr2_config, runner, logger=None, progress=None) -> torch.Tensor:
+def _process_single_gpu(frames_tensor: torch.Tensor, seedvr2_config, runner, calculated_resolution: int, logger=None, progress=None) -> torch.Tensor:
     """Process frames using a single GPU."""
     
     # Move to GPU
@@ -1125,7 +1191,7 @@ def _process_single_gpu(frames_tensor: torch.Tensor, seedvr2_config, runner, log
     generation_params = {
         "cfg_scale": seedvr2_config.cfg_scale,
         "seed": seedvr2_config.seed if seedvr2_config.seed >= 0 else None,
-        "res_w": seedvr2_config.custom_width if seedvr2_config.resolution_mode == "custom" else None,
+        "res_w": _calculate_seedvr2_resolution(input_video_path, enable_target_res, target_h, target_w, target_res_mode, upscale_factor=2.0, logger=logger),
         "batch_size": seedvr2_config.batch_size,
         "preserve_vram": seedvr2_config.preserve_vram,
         "temporal_overlap": seedvr2_config.temporal_overlap,
@@ -1161,7 +1227,7 @@ def _process_single_gpu(frames_tensor: torch.Tensor, seedvr2_config, runner, log
         raise
 
 
-def _process_multi_gpu(frames_tensor: torch.Tensor, gpu_devices: List[str], seedvr2_config, runner, logger=None) -> torch.Tensor:
+def _process_multi_gpu(frames_tensor: torch.Tensor, gpu_devices: List[str], seedvr2_config, runner, calculated_resolution: int, logger=None) -> torch.Tensor:
     """Process frames using multiple GPUs with professional optimization."""
     
     import multiprocessing as mp
@@ -1192,7 +1258,7 @@ def _process_multi_gpu(frames_tensor: torch.Tensor, gpu_devices: List[str], seed
         "debug": logger.level <= logging.DEBUG if logger else False,
         "cfg_scale": seedvr2_config.cfg_scale,
         "seed": seedvr2_config.seed if seedvr2_config.seed >= 0 else None,
-        "res_w": seedvr2_config.custom_width if seedvr2_config.resolution_mode == "custom" else None,
+        "res_w": calculated_resolution,
         "batch_size": seedvr2_config.batch_size,
         "temporal_overlap": seedvr2_config.temporal_overlap,
         "flash_attention": seedvr2_config.flash_attention,

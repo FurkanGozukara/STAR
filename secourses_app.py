@@ -1364,33 +1364,7 @@ The total combined prompt length is limited to 77 tokens."""
                             info ="Guidance scale for generation. Usually 1.0 for SeedVR2."
                             )
 
-                        with gr .Row ():
-                            seedvr2_resolution_mode_radio =gr .Radio (
-                            label ="Resolution Mode",
-                            choices =["Auto","Custom"],
-                            value =INITIAL_APP_CONFIG .seedvr2 .resolution_mode ,
-                            info ="Auto uses model defaults, Custom allows manual resolution."
-                            )
 
-                        with gr .Row ():
-                            seedvr2_custom_width_slider =gr .Slider (
-                            label ="Custom Width",
-                            minimum =256 ,
-                            maximum =2048 ,
-                            value =INITIAL_APP_CONFIG .seedvr2 .custom_width ,
-                            step =64 ,
-                            visible =False ,
-                            info ="Custom width for SeedVR2 processing."
-                            )
-                            seedvr2_custom_height_slider =gr .Slider (
-                            label ="Custom Height",
-                            minimum =256 ,
-                            maximum =2048 ,
-                            value =INITIAL_APP_CONFIG .seedvr2 .custom_height ,
-                            step =64 ,
-                            visible =False ,
-                            info ="Custom height for SeedVR2 processing."
-                            )
 
         with gr .Tab ("Output & Comparison",id ="output_tab"):
             with gr .Row ():
@@ -2559,8 +2533,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         seedvr2_enable_multi_gpu_val ,seedvr2_gpu_devices_val ,
         seedvr2_enable_block_swap_val ,seedvr2_block_swap_counter_val ,
         seedvr2_block_swap_offload_io_val ,seedvr2_block_swap_model_caching_val ,
-        seedvr2_cfg_scale_val ,seedvr2_resolution_mode_val ,
-        seedvr2_custom_width_val ,seedvr2_custom_height_val ,
+        seedvr2_cfg_scale_val ,
         input_frames_folder_val ,frame_folder_fps_slider_val ,
         gpu_selector_val ,
 
@@ -2803,10 +2776,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         block_swap_counter =seedvr2_block_swap_counter_val ,
         block_swap_offload_io =seedvr2_block_swap_offload_io_val ,
         block_swap_model_caching =seedvr2_block_swap_model_caching_val ,
-        cfg_scale =seedvr2_cfg_scale_val ,
-        resolution_mode =seedvr2_resolution_mode_val ,
-        custom_width =seedvr2_custom_width_val ,
-        custom_height =seedvr2_custom_height_val 
+        cfg_scale =seedvr2_cfg_scale_val 
         ),
         gpu =GpuConfig (
         device =str (extract_gpu_index_from_dropdown (gpu_selector_val ))
@@ -3409,8 +3379,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
     seedvr2_enable_multi_gpu_check ,seedvr2_gpu_devices_textbox ,
     seedvr2_enable_block_swap_check ,seedvr2_block_swap_counter_slider ,
     seedvr2_block_swap_offload_io_check ,seedvr2_block_swap_model_caching_check ,
-    seedvr2_cfg_scale_slider ,seedvr2_resolution_mode_radio ,
-    seedvr2_custom_width_slider ,seedvr2_custom_height_slider ,
+    seedvr2_cfg_scale_slider ,
     input_frames_folder ,frame_folder_fps_slider ,
     gpu_selector ,
 
@@ -3701,8 +3670,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         seedvr2_enable_multi_gpu_val ,seedvr2_gpu_devices_val ,
         seedvr2_enable_block_swap_val ,seedvr2_block_swap_counter_val ,
         seedvr2_block_swap_offload_io_val ,seedvr2_block_swap_model_caching_val ,
-        seedvr2_cfg_scale_val ,seedvr2_resolution_mode_val ,
-        seedvr2_custom_width_val ,seedvr2_custom_height_val ,
+        seedvr2_cfg_scale_val ,
         input_frames_folder_val ,frame_folder_fps_slider_val ,
         gpu_selector_val ,
         batch_input_folder_val ,batch_output_folder_val ,enable_batch_frame_folders_val ,
@@ -3879,10 +3847,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         block_swap_counter =seedvr2_block_swap_counter_val ,
         block_swap_offload_io =seedvr2_block_swap_offload_io_val ,
         block_swap_model_caching =seedvr2_block_swap_model_caching_val ,
-        cfg_scale =seedvr2_cfg_scale_val ,
-        resolution_mode =seedvr2_resolution_mode_val ,
-        custom_width =seedvr2_custom_width_val ,
-        custom_height =seedvr2_custom_height_val 
+        cfg_scale =seedvr2_cfg_scale_val 
         ),
         gpu =GpuConfig (
         device =str (extract_gpu_index_from_dropdown (gpu_selector_val ))
@@ -3939,8 +3904,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
     seedvr2_enable_multi_gpu_check ,seedvr2_gpu_devices_textbox ,
     seedvr2_enable_block_swap_check ,seedvr2_block_swap_counter_slider ,
     seedvr2_block_swap_offload_io_check ,seedvr2_block_swap_model_caching_check ,
-    seedvr2_cfg_scale_slider ,seedvr2_resolution_mode_radio ,
-    seedvr2_custom_width_slider ,seedvr2_custom_height_slider ,
+    seedvr2_cfg_scale_slider ,
     input_frames_folder ,frame_folder_fps_slider ,
     gpu_selector ,
     # Batch-specific parameters
@@ -5247,8 +5211,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
     seedvr2_enable_multi_gpu_check :('seedvr2','enable_multi_gpu'),seedvr2_gpu_devices_textbox :('seedvr2','gpu_devices'),
     seedvr2_enable_block_swap_check :('seedvr2','enable_block_swap'),seedvr2_block_swap_counter_slider :('seedvr2','block_swap_counter'),
     seedvr2_block_swap_offload_io_check :('seedvr2','block_swap_offload_io'),seedvr2_block_swap_model_caching_check :('seedvr2','block_swap_model_caching'),
-    seedvr2_cfg_scale_slider :('seedvr2','cfg_scale'),seedvr2_resolution_mode_radio :('seedvr2','resolution_mode'),
-    seedvr2_custom_width_slider :('seedvr2','custom_width'),seedvr2_custom_height_slider :('seedvr2','custom_height'),
+    seedvr2_cfg_scale_slider :('seedvr2','cfg_scale'),
     gpu_selector :('gpu','device'),
     enable_direct_image_upscaling :('batch','enable_direct_image_upscaling'),
 
@@ -5856,19 +5819,6 @@ Please check the logs for more details and ensure:
                 gr.update(value=info_text)     # block_swap_info_display
             )
 
-    def update_resolution_mode_controls(resolution_mode):
-        """Show/hide custom resolution controls based on mode."""
-        if resolution_mode == "Custom":
-            return (
-                gr.update(visible=True),   # custom_width_slider
-                gr.update(visible=True)    # custom_height_slider
-            )
-        else:
-            return (
-                gr.update(visible=False),  # custom_width_slider  
-                gr.update(visible=False)   # custom_height_slider
-            )
-
     def check_seedvr2_dependencies():
         """Check SeedVR2 dependencies and update status."""
         try:
@@ -6262,13 +6212,6 @@ Please ensure:
                 seedvr2_block_swap_info_display
             ]
         )
-
-    # Resolution mode controls
-    seedvr2_resolution_mode_radio.change(
-        fn=update_resolution_mode_controls,
-        inputs=[seedvr2_resolution_mode_radio],
-        outputs=[seedvr2_custom_width_slider, seedvr2_custom_height_slider]
-    )
 
     # GPU configuration
     for component in [seedvr2_enable_multi_gpu_check, seedvr2_gpu_devices_textbox]:
