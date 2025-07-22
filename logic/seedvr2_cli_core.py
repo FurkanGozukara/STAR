@@ -680,17 +680,16 @@ def process_video_with_seedvr2_cli(
     
     # Use existing session directory if provided, otherwise create new one
     if session_output_dir and base_output_filename_no_ext:
-        # ✅ FIX: Always create new incremental folder for new upscale session
-        # Don't reuse existing directories to avoid conflicts and ensure proper session tracking
-        from .file_utils import get_next_filename
-        base_name, output_video_path = get_next_filename(str(output_dir), logger=logger)
-        output_path = Path(output_video_path)
-        
-        # Create NEW session directory following STAR pattern
-        session_output_path = output_dir / base_name
+        # ✅ FIX: Use existing session directory provided by main pipeline
+        # This ensures consistent naming between processing and metadata saving
+        session_output_path = Path(session_output_dir)
         session_output_path.mkdir(parents=True, exist_ok=True)
         
-        logger.info(f"Created new incremental session directory: {session_output_path}")
+        # ✅ FIX: Use the base filename from main pipeline for output video
+        output_path = output_dir / f"{base_output_filename_no_ext}.mp4"
+        
+        logger.info(f"Using existing session directory from main pipeline: {session_output_path}")
+        logger.info(f"Output video will be saved as: {output_path}")
     else:
         # Fallback: Create new session directory (for standalone usage)
         from .file_utils import get_next_filename
@@ -1066,11 +1065,16 @@ def _process_frames_with_seedvr2_cli(
             ffmpeg_use_gpu=processing_args.get("ffmpeg_use_gpu", False),
             max_chunk_len=max_chunk_len  # ✅ FIX: Pass user's chunk frame count setting
         ):
-            if isinstance(result, tuple) and len(result) == 4:
+            # ✅ FIX: Check for intermediate chunk updates (exactly 4 elements with None as first element)
+            if isinstance(result, tuple) and len(result) == 4 and result[0] is None:
                 # This is an intermediate result with chunk update
                 yield result
+            elif isinstance(result, tuple) and len(result) >= 3:
+                # This is the final result (has result_tensor, chunk_results, last_chunk_video_path, ...)
+                final_result = result[:3]  # Take only the first 3 elements for consistency
             else:
-                # This is the final result
+                # Fallback for unexpected result format
+                logger.warning(f"Unexpected result format from generator: {type(result)}")
                 final_result = result
         
         return final_result if final_result else (torch.empty(0), [], None)
@@ -1219,14 +1223,34 @@ def _process_single_gpu_cli_generator(
         # ✅ BATCH PROCESSING: Main processing loop
         logger.info(f"🚀 Starting batch processing: {total_batches} batches to process")
         
-        for i in range(0, total_frames, batch_size - temporal_overlap):
+        # ✅ FIX: Initialize variables for "Optimize Last Chunk Quality" logic
+        step_size = batch_size - temporal_overlap if temporal_overlap > 0 else batch_size
+        last_batch_frames = None  # Store frames for last batch optimization
+        
+        for i in range(0, total_frames, step_size):
             # Check for cancellation
             cancellation_manager.check_cancel()
             
             end_idx = min(i + batch_size, total_frames)
             batch_frames = frames_tensor[i:end_idx]
             
-            batch_num = i // (batch_size - temporal_overlap) + 1 if temporal_overlap > 0 else i // batch_size + 1
+            batch_num = i // step_size + 1
+            is_last_batch = (batch_num == total_batches)
+            
+            # ✅ FIX: Implement "Optimize Last Chunk Quality" logic for last batch
+            if is_last_batch and batch_frames.shape[0] < batch_size and last_batch_frames is not None:
+                # Last batch is too small - enhance it with frames from previous batch
+                frames_needed = batch_size - batch_frames.shape[0]
+                if last_batch_frames.shape[0] >= frames_needed:
+                    # Take the last N frames from previous batch
+                    enhancement_frames = last_batch_frames[-frames_needed:]
+                    # Combine: enhancement_frames + current_batch_frames
+                    enhanced_batch = torch.cat([enhancement_frames, batch_frames], dim=0)
+                    logger.info(f"🔧 Optimizing last batch quality: enhanced {batch_frames.shape[0]} frames with {frames_needed} frames from previous batch")
+                    logger.info(f"🎯 Last batch size: {batch_frames.shape[0]} -> {enhanced_batch.shape[0]} frames")
+                    batch_frames = enhanced_batch
+                else:
+                    logger.warning(f"Cannot optimize last batch - previous batch too small ({last_batch_frames.shape[0]} frames)")
             
             if logger:
                 logger.info(f"📦 Preparing batch {batch_num}/{total_batches}: frames {i}-{end_idx-1} (size: {batch_frames.shape[0]})")
@@ -1234,10 +1258,6 @@ def _process_single_gpu_cli_generator(
             # ✅ BATCH PROCESSING: Process each batch
             if logger:
                 logger.info(f"Processing batch {batch_num}: frames {i}-{end_idx-1} (batch size: {batch_size})")
-                # ✅ FIX: Reduced logging - remove excessive debug info
-                # logger.info(f"🔍 Processing batch - Input tensor shape: {current_batch.shape}, dtype: {current_batch.dtype}")
-                # logger.info(f"🔍 Frame count constraint check: {current_batch.shape[0]} % 4 = {current_batch.shape[0] % 4} (should be 1)")
-                # logger.info(f"🎯 Target resolution: {calculated_resolution}")
             
             # ✅ FIX: Reduce verbose batch processing messages
             # Only show essential progress information
@@ -1294,6 +1314,21 @@ def _process_single_gpu_cli_generator(
                 processed_batch = processed_batch[temporal_overlap:]
                 if logger:
                     logger.info(f"📊 After overlap removal: {processed_batch.shape[0]} frames kept from batch {batch_num}")
+            
+            # ✅ FIX: Handle last batch optimization - remove enhancement frames from output
+            if is_last_batch and last_batch_frames is not None and batch_frames.shape[0] > (end_idx - i):
+                # This batch was enhanced, only keep the frames that correspond to original input
+                original_frames_in_batch = end_idx - i
+                enhanced_frames_count = batch_frames.shape[0] - original_frames_in_batch
+                if enhanced_frames_count > 0:
+                    # Remove the enhancement frames (they're at the beginning)
+                    processed_batch = processed_batch[enhanced_frames_count:]
+                    logger.info(f"🔧 Removed {enhanced_frames_count} enhancement frames from last batch output")
+                    logger.info(f"📊 Final batch output: {processed_batch.shape[0]} frames")
+            
+            # ✅ FIX: Store current batch frames for potential use in last batch optimization
+            if not is_last_batch:
+                last_batch_frames = batch_frames.clone()  # Store for next iteration
             
             processed_frames.append(processed_batch)
             total_processed_frames += processed_batch.shape[0]
