@@ -1350,6 +1350,33 @@ The total combined prompt length is limited to 77 tokens."""
                         info ="Shows block swap configuration and estimated VRAM savings"
                         )
 
+                    with gr .Accordion ("Chunk Preview Settings",open =True ):
+                        gr .Markdown ("**📹 Chunk Preview - Similar to STAR model chunk preview functionality**")
+                        
+                        seedvr2_enable_chunk_preview_check =gr .Checkbox (
+                        label ="Enable Chunk Preview",
+                        value =INITIAL_APP_CONFIG .seedvr2 .enable_chunk_preview ,
+                        info ="Enable chunk preview functionality to display processed chunks in main tab."
+                        )
+                        
+                        with gr .Row ():
+                            seedvr2_chunk_preview_frames_slider =gr .Slider (
+                            label ="Preview Frame Count",
+                            minimum =25 ,
+                            maximum =500 ,
+                            value =INITIAL_APP_CONFIG .seedvr2 .chunk_preview_frames ,
+                            step =25 ,
+                            info ="Number of frames to show in chunk preview (default: 125 frames)."
+                            )
+                            seedvr2_keep_last_chunks_slider =gr .Slider (
+                            label ="Keep Last N Chunks",
+                            minimum =1 ,
+                            maximum =10 ,
+                            value =INITIAL_APP_CONFIG .seedvr2 .keep_last_chunks ,
+                            step =1 ,
+                            info ="Number of recent chunk videos to keep in chunks folder (default: 5)."
+                            )
+
                     with gr .Accordion ("Advanced Settings",open =False ):
                         with gr .Row ():
                             seedvr2_cfg_scale_slider =gr .Slider (
@@ -2531,6 +2558,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         seedvr2_enable_block_swap_val ,seedvr2_block_swap_counter_val ,
         seedvr2_block_swap_offload_io_val ,seedvr2_block_swap_model_caching_val ,
         seedvr2_cfg_scale_val ,
+        seedvr2_enable_chunk_preview_val ,seedvr2_chunk_preview_frames_val ,seedvr2_keep_last_chunks_val ,
         input_frames_folder_val ,frame_folder_fps_slider_val ,
         gpu_selector_val ,
 
@@ -2550,10 +2578,10 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         input_video_face_restoration_val ,face_restoration_mode_val ,batch_input_folder_face_val ,batch_output_folder_face_val ,standalone_codeformer_model_val 
         )=args 
 
-        if len (args )<95 :
-            logger .warning (f"Expected 95 UI arguments, got {len(args)}. Adding default values for missing components.")
+        if len (args )<98 :
+            logger .warning (f"Expected 98 UI arguments, got {len(args)}. Adding default values for missing components.")
 
-            missing_count =95 -len (args )
+            missing_count =98 -len (args )
             args =list (args )+[None ]*missing_count 
 
             (
@@ -2773,7 +2801,10 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         block_swap_counter =seedvr2_block_swap_counter_val ,
         block_swap_offload_io =seedvr2_block_swap_offload_io_val ,
         block_swap_model_caching =seedvr2_block_swap_model_caching_val ,
-        cfg_scale =seedvr2_cfg_scale_val 
+        cfg_scale =seedvr2_cfg_scale_val,
+        enable_chunk_preview =seedvr2_enable_chunk_preview_val,
+        chunk_preview_frames =seedvr2_chunk_preview_frames_val,
+        keep_last_chunks =seedvr2_keep_last_chunks_val
         ),
         gpu =GpuConfig (
         device =str (extract_gpu_index_from_dropdown (gpu_selector_val ))
@@ -3377,6 +3408,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
     seedvr2_enable_block_swap_check ,seedvr2_block_swap_counter_slider ,
     seedvr2_block_swap_offload_io_check ,seedvr2_block_swap_model_caching_check ,
     seedvr2_cfg_scale_slider ,
+    seedvr2_enable_chunk_preview_check ,seedvr2_chunk_preview_frames_slider ,seedvr2_keep_last_chunks_slider ,
     input_frames_folder ,frame_folder_fps_slider ,
     gpu_selector ,
 
@@ -3626,13 +3658,13 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
     def build_batch_app_config_from_ui (*args ):
         
         # Add parameter count validation similar to the regular build_app_config_from_ui function
-        if len (args )<99 :  # Updated to 99 to account for new SeedVR2 parameters
-            logger .warning (f"Expected 99 UI arguments for batch processing, got {len(args)}. Adding default values for missing components.")
-            missing_count =99 -len (args )
+        if len (args )<102 :  # Updated to 102 to account for new SeedVR2 chunk preview parameters
+            logger .warning (f"Expected 102 UI arguments for batch processing, got {len(args)}. Adding default values for missing components.")
+            missing_count =102 -len (args )
             args =list (args )+[None ]*missing_count 
-        elif len (args )>99 :
-            logger .warning (f"Expected 99 UI arguments for batch processing, got {len(args)}. Trimming extra arguments.")
-            args =args [:99 ]
+        elif len (args )>102 :
+            logger .warning (f"Expected 102 UI arguments for batch processing, got {len(args)}. Trimming extra arguments.")
+            args =args [:102 ]
 
         (
         input_video_val ,user_prompt_val ,pos_prompt_val ,neg_prompt_val ,model_selector_val ,
@@ -3668,6 +3700,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         seedvr2_enable_block_swap_val ,seedvr2_block_swap_counter_val ,
         seedvr2_block_swap_offload_io_val ,seedvr2_block_swap_model_caching_val ,
         seedvr2_cfg_scale_val ,
+        seedvr2_enable_chunk_preview_val ,seedvr2_chunk_preview_frames_val ,seedvr2_keep_last_chunks_val ,
         input_frames_folder_val ,frame_folder_fps_slider_val ,
         gpu_selector_val ,
         batch_input_folder_val ,batch_output_folder_val ,enable_batch_frame_folders_val ,
@@ -3844,7 +3877,10 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         block_swap_counter =seedvr2_block_swap_counter_val ,
         block_swap_offload_io =seedvr2_block_swap_offload_io_val ,
         block_swap_model_caching =seedvr2_block_swap_model_caching_val ,
-        cfg_scale =seedvr2_cfg_scale_val 
+        cfg_scale =seedvr2_cfg_scale_val,
+        enable_chunk_preview =seedvr2_enable_chunk_preview_val,
+        chunk_preview_frames =seedvr2_chunk_preview_frames_val,
+        keep_last_chunks =seedvr2_keep_last_chunks_val
         ),
         gpu =GpuConfig (
         device =str (extract_gpu_index_from_dropdown (gpu_selector_val ))
@@ -3902,6 +3938,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
     seedvr2_enable_block_swap_check ,seedvr2_block_swap_counter_slider ,
     seedvr2_block_swap_offload_io_check ,seedvr2_block_swap_model_caching_check ,
     seedvr2_cfg_scale_slider ,
+    seedvr2_enable_chunk_preview_check ,seedvr2_chunk_preview_frames_slider ,seedvr2_keep_last_chunks_slider ,
     input_frames_folder ,frame_folder_fps_slider ,
     gpu_selector ,
     # Batch-specific parameters
@@ -5217,6 +5254,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
     seedvr2_enable_block_swap_check :('seedvr2','enable_block_swap'),seedvr2_block_swap_counter_slider :('seedvr2','block_swap_counter'),
     seedvr2_block_swap_offload_io_check :('seedvr2','block_swap_offload_io'),seedvr2_block_swap_model_caching_check :('seedvr2','block_swap_model_caching'),
     seedvr2_cfg_scale_slider :('seedvr2','cfg_scale'),
+    seedvr2_enable_chunk_preview_check :('seedvr2','enable_chunk_preview'),seedvr2_chunk_preview_frames_slider :('seedvr2','chunk_preview_frames'),seedvr2_keep_last_chunks_slider :('seedvr2','keep_last_chunks'),
     gpu_selector :('gpu','device'),
     enable_direct_image_upscaling :('batch','enable_direct_image_upscaling'),
 

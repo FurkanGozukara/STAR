@@ -246,16 +246,9 @@ def run_upscale (
         os .makedirs (input_frames_permanent_save_path ,exist_ok =True )
         os .makedirs (processed_frames_permanent_save_path ,exist_ok =True )
 
-    if save_chunks :
-        chunks_permanent_save_path =os .path .join (frames_output_subfolder if frames_output_subfolder else main_output_dir ,"chunks")
-        os .makedirs (chunks_permanent_save_path ,exist_ok =True )
-
-    # NEW: Initialize chunk_frames directory for debugging if save_chunk_frames is enabled
+    # Directory setup will be handled by specific upscaler branches
+    chunks_permanent_save_path = None
     chunk_frames_permanent_save_path = None
-    if save_chunk_frames:
-        chunk_frames_permanent_save_path = os.path.join(frames_output_subfolder if frames_output_subfolder else main_output_dir, "chunk_frames")
-        os.makedirs(chunk_frames_permanent_save_path, exist_ok=True)
-        logger.info(f"Chunk input frames will be saved to: {chunk_frames_permanent_save_path}")
 
     os .makedirs (temp_dir ,exist_ok =True )
     os .makedirs (input_frames_dir ,exist_ok =True )
@@ -944,6 +937,10 @@ def run_upscale (
                     temp_folder=temp_dir,
                     create_comparison_video=create_comparison_video_enabled,
                     
+                    # Session directory management (NEW - use existing session)
+                    session_output_dir=frames_output_subfolder if save_frames else os.path.join(main_output_dir, base_output_filename_no_ext),
+                    base_output_filename_no_ext=base_output_filename_no_ext,
+                    
                     # Global settings
                     ffmpeg_preset=ffmpeg_preset,
                     ffmpeg_quality=ffmpeg_quality_value,
@@ -1246,6 +1243,18 @@ def run_upscale (
 
             # The mis-indented 'else' started around here in the previous diff. 
             # The following is the NON-SCENE-SPLIT path.
+            
+            # Setup chunk directories for STAR processing only
+            if save_chunks:
+                chunks_permanent_save_path = os.path.join(frames_output_subfolder if frames_output_subfolder else main_output_dir, "chunks")
+                os.makedirs(chunks_permanent_save_path, exist_ok=True)
+
+            # Initialize chunk_frames directory for debugging if save_chunk_frames is enabled
+            if save_chunk_frames:
+                chunk_frames_permanent_save_path = os.path.join(frames_output_subfolder if frames_output_subfolder else main_output_dir, "chunk_frames")
+                os.makedirs(chunk_frames_permanent_save_path, exist_ok=True)
+                logger.info(f"Chunk input frames will be saved to: {chunk_frames_permanent_save_path}")
+            
             upscaling_loop_progress_start_no_scene_split = current_overall_progress
             status_log.append(f"Starting direct upscaling of {frame_count} frames...")
             logger.info(f"Starting direct upscaling of {frame_count} frames, without scene splitting.")

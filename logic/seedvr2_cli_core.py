@@ -388,49 +388,83 @@ def extract_frames_from_video_cli(video_path: str, debug: bool = False, skip_fir
     return frames_tensor, fps
 
 
-def save_frames_to_video_cli(frames_tensor: torch.Tensor, output_path: str, fps: float = 30.0, debug: bool = False):
+def save_frames_to_video_cli(
+    frames_tensor: torch.Tensor, 
+    output_path: str, 
+    fps: float = 30.0, 
+    debug: bool = False,
+    ffmpeg_preset: str = "medium",
+    ffmpeg_quality: int = 23,
+    ffmpeg_use_gpu: bool = False,
+    logger: Optional[logging.Logger] = None
+):
     """
-    Save frames tensor to video file (CLI approach).
+    Save frames tensor to video file using global FFmpeg settings.
     
     Args:
         frames_tensor: Frames in format [T, H, W, C] (Float16, 0-1)
         output_path: Output video path
         fps: Output video FPS
         debug: Enable debug logging
+        ffmpeg_preset: FFmpeg encoding preset
+        ffmpeg_quality: FFmpeg quality setting
+        ffmpeg_use_gpu: Whether to use GPU encoding
+        logger: Logger instance
     """
-    if debug:
-        print(f"🎬 Saving {frames_tensor.shape[0]} frames to video: {output_path}")
+    if debug and logger:
+        logger.info(f"🎬 Saving {frames_tensor.shape[0]} frames to video: {output_path}")
     
     # Ensure output directory exists
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
-    # Convert tensor to numpy and denormalize
-    frames_np = frames_tensor.cpu().numpy()
-    frames_np = (frames_np * 255.0).astype(np.uint8)
-    
-    # Get video properties
-    T, H, W, C = frames_np.shape
-    
-    # Initialize video writer
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, fps, (W, H))
-    
-    if not out.isOpened():
-        raise ValueError(f"Cannot create video writer for: {output_path}")
-    
-    # Write frames
-    for i, frame in enumerate(frames_np):
-        # Convert RGB to BGR for OpenCV
-        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        out.write(frame_bgr)
-        
-        if debug and (i + 1) % 100 == 0:
-            print(f"💾 Saved {i + 1}/{T} frames")
-    
-    out.release()
-    
-    if debug:
-        print(f"✅ Video saved successfully: {output_path}")
+    try:
+        # Create temporary directory for frames
+        with tempfile.TemporaryDirectory(prefix="seedvr2_video_save_") as temp_frames_dir:
+            # Convert tensor to numpy and denormalize
+            frames_np = frames_tensor.cpu().numpy()
+            frames_np = (frames_np * 255.0).astype(np.uint8)
+            
+            # Get video properties
+            T, H, W, C = frames_np.shape
+            
+            if debug and logger:
+                logger.info(f"Processing {T} frames of size {H}x{W}")
+            
+            # Save frames to temporary directory
+            for i, frame in enumerate(frames_np):
+                # Convert RGB to BGR for OpenCV
+                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                frame_filename = f"frame_{i+1:06d}.png"
+                frame_path = os.path.join(temp_frames_dir, frame_filename)
+                cv2.imwrite(frame_path, frame_bgr)
+                
+                if debug and logger and (i + 1) % 100 == 0:
+                    logger.info(f"💾 Saved {i + 1}/{T} frames to temp directory")
+            
+            # Use global FFmpeg pipeline to create video
+            from .ffmpeg_utils import create_video_from_input_frames
+            
+            success = create_video_from_input_frames(
+                input_frames_dir=temp_frames_dir,
+                output_path=output_path,
+                fps=fps,
+                ffmpeg_preset=ffmpeg_preset,
+                ffmpeg_quality_value=ffmpeg_quality,
+                ffmpeg_use_gpu=ffmpeg_use_gpu,
+                logger=logger
+            )
+            
+            if not success:
+                raise RuntimeError("Failed to create video using FFmpeg pipeline")
+            
+            if debug and logger:
+                logger.info(f"✅ Video saved successfully: {output_path}")
+                
+    except Exception as e:
+        error_msg = f"Failed to save video: {e}"
+        if logger:
+            logger.error(error_msg)
+        raise RuntimeError(error_msg)
 
 
 def process_video_with_seedvr2_cli(
@@ -458,6 +492,10 @@ def process_video_with_seedvr2_cli(
     output_folder: str = "output",
     temp_folder: str = "temp",
     create_comparison_video: bool = False,
+    
+    # Session directory management (NEW - to use existing session)
+    session_output_dir: Optional[str] = None,  # Existing session directory from main pipeline
+    base_output_filename_no_ext: Optional[str] = None,  # Base filename from main pipeline
     
     # Progress callback
     progress_callback: Optional[callable] = None,
@@ -494,7 +532,7 @@ def process_video_with_seedvr2_cli(
     if not seedvr2_config.enable:
         raise ValueError("SeedVR2 is not enabled in configuration")
     
-    # Setup paths
+    # Setup paths using STAR standard structure
     input_path = Path(input_video_path)
     output_dir = Path(output_folder)
     temp_dir = Path(temp_folder)
@@ -502,29 +540,55 @@ def process_video_with_seedvr2_cli(
     output_dir.mkdir(parents=True, exist_ok=True)
     temp_dir.mkdir(parents=True, exist_ok=True)
     
-    # Generate output filename
-    timestamp = int(time.time())
-    output_filename = f"{input_path.stem}_seedvr2_{timestamp}.mp4"
-    output_path = output_dir / output_filename
+    # Use existing session directory if provided, otherwise create new one
+    if session_output_dir and base_output_filename_no_ext:
+        # Use existing session directory from main pipeline (PREFERRED)
+        session_output_path = Path(session_output_dir)
+        base_name = base_output_filename_no_ext
+        
+        # Generate output video path using existing session
+        output_video_path = str(output_dir / f"{base_name}_seedvr2_upscaled.mp4")
+        output_path = Path(output_video_path)
+        
+        logger.info(f"Using existing session directory: {session_output_path}")
+    else:
+        # Fallback: Create new session directory (for standalone usage)
+        from .file_utils import get_next_filename
+        base_name, output_video_path = get_next_filename(str(output_dir), logger=logger)
+        output_path = Path(output_video_path)
+        
+        # Create session directory following STAR pattern
+        session_output_path = output_dir / base_name
+        session_output_path.mkdir(parents=True, exist_ok=True)
+        
+        logger.info(f"Created new session directory: {session_output_path}")
+    
+    # Ensure session directory exists
+    session_output_path.mkdir(parents=True, exist_ok=True)
     
     # Setup permanent frame saving directories (STAR standard structure)
     input_frames_permanent_save_path = None
     processed_frames_permanent_save_path = None
+    chunks_permanent_save_path = None
     
     if save_frames:
         # Create frame saving directories using STAR standard structure
-        base_output_filename_no_ext = input_path.stem
-        frames_output_subfolder = output_dir / base_output_filename_no_ext
-        frames_output_subfolder.mkdir(parents=True, exist_ok=True)
-        
-        input_frames_permanent_save_path = frames_output_subfolder / "input_frames"
-        processed_frames_permanent_save_path = frames_output_subfolder / "processed_frames"
+        input_frames_permanent_save_path = session_output_path / "input_frames"
+        processed_frames_permanent_save_path = session_output_path / "processed_frames"
         input_frames_permanent_save_path.mkdir(parents=True, exist_ok=True)
         processed_frames_permanent_save_path.mkdir(parents=True, exist_ok=True)
         
         if logger:
             logger.info(f"Frame saving enabled - Input: {input_frames_permanent_save_path}")
             logger.info(f"Frame saving enabled - Processed: {processed_frames_permanent_save_path}")
+    
+    # Setup chunks directory for chunk preview functionality
+    if save_chunks or seedvr2_config.enable_chunk_preview:
+        chunks_permanent_save_path = session_output_path / "chunks"
+        chunks_permanent_save_path.mkdir(parents=True, exist_ok=True)
+        
+        if logger:
+            logger.info(f"Chunk preview enabled - Chunks: {chunks_permanent_save_path}")
     
     try:
         # Check for cancellation
@@ -617,7 +681,7 @@ def process_video_with_seedvr2_cli(
         
         # Process video using CLI approach
         logger.info("Starting SeedVR2 processing")
-        result_tensor = _process_frames_with_seedvr2_cli(
+        result_tensor, chunk_results = _process_frames_with_seedvr2_cli(
             frames_tensor, 
             device_list, 
             processing_args,
@@ -625,25 +689,50 @@ def process_video_with_seedvr2_cli(
             progress_callback,
             logger,
             save_frames=save_frames,
-            processed_frames_permanent_save_path=processed_frames_permanent_save_path
+            processed_frames_permanent_save_path=processed_frames_permanent_save_path,
+            chunks_permanent_save_path=chunks_permanent_save_path
         )
         
         if progress_callback:
-            progress_callback(0.8, "Processing complete, saving output video")
+            progress_callback(0.8, "Processing complete, saving chunks and output video")
         
         # Check for cancellation
         cancellation_manager.check_cancel()
         
+        # Handle chunk preview functionality
+        last_chunk_video_path = None
+        if chunks_permanent_save_path and chunk_results:
+            if status_callback:
+                status_callback("📹 Saving chunk previews...")
+            
+            last_chunk_video_path = _save_seedvr2_chunk_previews(
+                chunk_results,
+                chunks_permanent_save_path,
+                original_fps,
+                seedvr2_config,
+                ffmpeg_preset,
+                ffmpeg_quality,
+                ffmpeg_use_gpu,
+                logger
+            )
+            
+            if logger and last_chunk_video_path:
+                logger.info(f"Chunk preview saved: {last_chunk_video_path}")
+        
         if status_callback:
             status_callback("💾 Saving processed video...")
         
-        # Save output video
+        # Save output video using global FFmpeg settings
         logger.info(f"Saving output video to: {output_path}")
         save_frames_to_video_cli(
             result_tensor, 
             str(output_path), 
             original_fps, 
-            debug=seedvr2_config.preserve_vram
+            debug=seedvr2_config.preserve_vram,
+            ffmpeg_preset=processing_args.get('ffmpeg_preset', 'medium'),
+            ffmpeg_quality=processing_args.get('ffmpeg_quality', 23),
+            ffmpeg_use_gpu=processing_args.get('ffmpeg_use_gpu', False),
+            logger=logger
         )
         
         if progress_callback:
@@ -680,8 +769,9 @@ def _process_frames_with_seedvr2_cli(
     progress_callback: Optional[callable] = None,
     logger: Optional[logging.Logger] = None,
     save_frames: bool = False,
-    processed_frames_permanent_save_path: Optional[Path] = None
-) -> torch.Tensor:
+    processed_frames_permanent_save_path: Optional[Path] = None,
+    chunks_permanent_save_path: Optional[Path] = None
+) -> Tuple[torch.Tensor, List[Dict[str, Any]]]:
     """
     Process frames using SeedVR2 CLI approach with multi-GPU support.
     
@@ -692,9 +782,12 @@ def _process_frames_with_seedvr2_cli(
         seedvr2_config: SeedVR2 configuration
         progress_callback: Progress callback function
         logger: Logger instance
+        save_frames: Whether to save frames
+        processed_frames_permanent_save_path: Path for permanent frame storage
+        chunks_permanent_save_path: Path for chunk preview storage
         
     Returns:
-        Processed frames tensor
+        Tuple of (processed frames tensor, chunk results for preview)
     """
     if logger is None:
         logger = logging.getLogger(__name__)
@@ -711,7 +804,8 @@ def _process_frames_with_seedvr2_cli(
             progress_callback,
             logger,
             save_frames=save_frames,
-            processed_frames_permanent_save_path=processed_frames_permanent_save_path
+            processed_frames_permanent_save_path=processed_frames_permanent_save_path,
+            chunks_permanent_save_path=chunks_permanent_save_path
         )
     else:
         # Multi-GPU processing
@@ -723,7 +817,8 @@ def _process_frames_with_seedvr2_cli(
             progress_callback,
             logger,
             save_frames=save_frames,
-            processed_frames_permanent_save_path=processed_frames_permanent_save_path
+            processed_frames_permanent_save_path=processed_frames_permanent_save_path,
+            chunks_permanent_save_path=chunks_permanent_save_path
         )
 
 
@@ -735,8 +830,9 @@ def _process_single_gpu_cli(
     progress_callback: Optional[callable] = None,
     logger: Optional[logging.Logger] = None,
     save_frames: bool = False,
-    processed_frames_permanent_save_path: Optional[Path] = None
-) -> torch.Tensor:
+    processed_frames_permanent_save_path: Optional[Path] = None,
+    chunks_permanent_save_path: Optional[Path] = None
+) -> Tuple[torch.Tensor, List[Dict[str, Any]]]:
     """
     Process frames on single GPU using SESSION-BASED approach.
     Fixed: Now reuses model instead of recreating for each batch.
@@ -823,8 +919,20 @@ def _process_single_gpu_cli(
         # Concatenate all processed frames
         result_tensor = torch.cat(processed_frames, dim=0)
         
+        # Create chunk results for preview functionality
+        chunk_results = []
+        if chunks_permanent_save_path and seedvr2_config.enable_chunk_preview:
+            # For now, create a single chunk with the entire processed result
+            # This can be enhanced later to support actual chunking during processing
+            chunk_results.append({
+                'frames_tensor': result_tensor,
+                'chunk_id': 1,
+                'frame_count': result_tensor.shape[0],
+                'processing_time': time.time(),
+            })
+        
         logger.info(f"Processing complete: {result_tensor.shape[0]} frames processed with REUSED model")
-        return result_tensor
+        return result_tensor, chunk_results
         
     except Exception as e:
         logger.error(f"Single GPU processing failed: {e}")
@@ -841,8 +949,9 @@ def _process_multi_gpu_cli(
     progress_callback: Optional[callable] = None,
     logger: Optional[logging.Logger] = None,
     save_frames: bool = False,
-    processed_frames_permanent_save_path: Optional[Path] = None
-) -> torch.Tensor:
+    processed_frames_permanent_save_path: Optional[Path] = None,
+    chunks_permanent_save_path: Optional[Path] = None
+) -> Tuple[torch.Tensor, List[Dict[str, Any]]]:
     """
     Process frames using multiple GPUs with CLI approach.
     """
@@ -899,8 +1008,22 @@ def _process_multi_gpu_cli(
     # Concatenate results in original order
     result_tensor = torch.from_numpy(np.concatenate(results_np, axis=0)).to(torch.float16)
     
+    # Create chunk results for preview functionality
+    chunk_results = []
+    if chunks_permanent_save_path and seedvr2_config.enable_chunk_preview:
+        # For multi-GPU, create chunks based on device splits
+        for idx, device_result in enumerate(results_np):
+            chunk_tensor = torch.from_numpy(device_result).to(torch.float16)
+            chunk_results.append({
+                'frames_tensor': chunk_tensor,
+                'chunk_id': idx + 1,
+                'frame_count': chunk_tensor.shape[0],
+                'processing_time': time.time(),
+                'device_id': device_list[idx],
+            })
+    
     logger.info(f"Multi-GPU processing complete: {result_tensor.shape[0]} frames processed")
-    return result_tensor
+    return result_tensor, chunk_results
 
 
 def _worker_process_cli(proc_idx: int, device_id: str, frames_np: np.ndarray, shared_args: Dict[str, Any], return_queue):
@@ -1138,6 +1261,260 @@ def validate_and_fix_seedvr2_config(seedvr2_config, debug: bool = False):
         print("✅ SeedVR2 configuration validated and fixed")
     
     return seedvr2_config
+
+
+def _save_seedvr2_chunk_previews(
+    chunk_results: List[Dict[str, Any]], 
+    chunks_permanent_save_path: Path,
+    fps: float,
+    seedvr2_config,
+    ffmpeg_preset: str,
+    ffmpeg_quality: int,
+    ffmpeg_use_gpu: bool,
+    logger: Optional[logging.Logger] = None
+) -> Optional[str]:
+    """
+    Save SeedVR2 chunk previews following STAR pattern.
+    
+    Args:
+        chunk_results: List of chunk processing results
+        chunks_permanent_save_path: Path to save chunks
+        fps: Video frame rate
+        seedvr2_config: SeedVR2 configuration
+        ffmpeg_preset: FFmpeg encoding preset
+        ffmpeg_quality: FFmpeg quality setting
+        ffmpeg_use_gpu: Whether to use GPU encoding
+        logger: Optional logger
+        
+    Returns:
+        Path to last chunk video or None if no chunks
+    """
+    if not chunk_results or not chunks_permanent_save_path:
+        return None
+    
+    try:
+        # Import FFmpeg utilities
+        from .ffmpeg_utils import create_video_from_input_frames
+        
+        last_chunk_video_path = None
+        keep_chunks = getattr(seedvr2_config, 'keep_last_chunks', 5)
+        
+        # Create chunk videos for the last N chunks
+        chunks_to_save = chunk_results[-keep_chunks:] if len(chunk_results) > keep_chunks else chunk_results
+        
+        if logger:
+            logger.info(f"Saving {len(chunks_to_save)} chunk previews to {chunks_permanent_save_path}")
+        
+        for i, chunk_data in enumerate(chunks_to_save):
+            try:
+                chunk_num = len(chunk_results) - len(chunks_to_save) + i + 1
+                chunk_filename = f"chunk_{chunk_num:04d}.mp4"
+                chunk_video_path = chunks_permanent_save_path / chunk_filename
+                
+                # Get chunk frames (torch tensor)
+                chunk_frames = chunk_data.get('frames_tensor')
+                if chunk_frames is None:
+                    continue
+                
+                # Create temporary directory for this chunk's frames
+                import tempfile
+                with tempfile.TemporaryDirectory(prefix=f"seedvr2_chunk_{chunk_num}_") as temp_chunk_dir:
+                    # Save frames to temporary directory
+                    frame_count = chunk_frames.shape[0]
+                    preview_frames = min(frame_count, getattr(seedvr2_config, 'chunk_preview_frames', 125))
+                    
+                    # Take last N frames from chunk for preview
+                    preview_tensor = chunk_frames[-preview_frames:] if frame_count > preview_frames else chunk_frames
+                    
+                    # Save frames as images
+                    for frame_idx in range(preview_tensor.shape[0]):
+                        frame_tensor = preview_tensor[frame_idx]
+                        
+                        # Convert tensor to numpy array
+                        if frame_tensor.dim() == 3:  # CHW format
+                            frame_np = frame_tensor.permute(1, 2, 0).cpu().numpy()
+                        else:  # Already HWC format
+                            frame_np = frame_tensor.cpu().numpy()
+                        
+                        # Convert to uint8 if needed
+                        if frame_np.dtype != np.uint8:
+                            if frame_np.max() <= 1.0:
+                                frame_np = (frame_np * 255).astype(np.uint8)
+                            else:
+                                frame_np = frame_np.astype(np.uint8)
+                        
+                        # Convert RGB to BGR for OpenCV
+                        frame_bgr = cv2.cvtColor(frame_np, cv2.COLOR_RGB2BGR)
+                        
+                        # Save frame
+                        frame_filename = f"frame_{frame_idx+1:06d}.png"
+                        frame_path = os.path.join(temp_chunk_dir, frame_filename)
+                        cv2.imwrite(frame_path, frame_bgr)
+                    
+                    # Create video from frames using global FFmpeg settings
+                    success = create_video_from_input_frames(
+                        input_frames_dir=temp_chunk_dir,
+                        output_path=str(chunk_video_path),
+                        fps=fps,
+                        ffmpeg_preset=ffmpeg_preset,
+                        ffmpeg_quality_value=ffmpeg_quality,
+                        ffmpeg_use_gpu=ffmpeg_use_gpu,
+                        logger=logger
+                    )
+                    
+                    if success:
+                        last_chunk_video_path = str(chunk_video_path)
+                        if logger:
+                            logger.info(f"Saved chunk preview {chunk_num}: {chunk_filename} ({preview_frames} frames)")
+                    else:
+                        if logger:
+                            logger.warning(f"Failed to create chunk video: {chunk_filename}")
+                        
+            except Exception as e:
+                if logger:
+                    logger.error(f"Error saving chunk {chunk_num}: {e}")
+                continue
+        
+        # Clean up old chunks if we have more than keep_chunks
+        if chunks_permanent_save_path.exists():
+            try:
+                chunk_files = sorted([f for f in chunks_permanent_save_path.iterdir() 
+                                    if f.name.startswith('chunk_') and f.name.endswith('.mp4')])
+                
+                if len(chunk_files) > keep_chunks:
+                    files_to_remove = chunk_files[:-keep_chunks]
+                    for old_chunk in files_to_remove:
+                        old_chunk.unlink()
+                        if logger:
+                            logger.debug(f"Removed old chunk: {old_chunk.name}")
+                            
+            except Exception as e:
+                if logger:
+                    logger.warning(f"Error cleaning up old chunks: {e}")
+        
+        return last_chunk_video_path
+        
+    except Exception as e:
+        if logger:
+            logger.error(f"Error in chunk preview saving: {e}")
+        return None
+
+
+def _save_seedvr2_chunk_previews(
+    chunk_results: List[Dict[str, Any]], 
+    chunks_permanent_save_path: Path,
+    fps: float,
+    seedvr2_config,
+    ffmpeg_preset: str,
+    ffmpeg_quality: int,
+    ffmpeg_use_gpu: bool,
+    logger: Optional[logging.Logger] = None
+) -> Optional[str]:
+    """
+    Save SeedVR2 chunk previews following STAR pattern.
+    
+    Args:
+        chunk_results: List of chunk processing results
+        chunks_permanent_save_path: Path to save chunks
+        fps: Video frame rate
+        seedvr2_config: SeedVR2 configuration
+        ffmpeg_preset: FFmpeg encoding preset
+        ffmpeg_quality: FFmpeg quality setting
+        ffmpeg_use_gpu: Whether to use GPU encoding
+        logger: Optional logger
+        
+    Returns:
+        Path to last chunk video or None if no chunks
+    """
+    if not chunk_results or not seedvr2_config.enable_chunk_preview:
+        return None
+        
+    try:
+        chunks_permanent_save_path.mkdir(parents=True, exist_ok=True)
+        
+        # Sort chunks by processing time to get the most recent
+        sorted_chunks = sorted(chunk_results, key=lambda x: x.get('processing_time', 0))
+        
+        # Keep only the last N chunks as configured
+        chunks_to_keep = sorted_chunks[-seedvr2_config.keep_last_chunks:]
+        
+        saved_chunk_paths = []
+        
+        for i, chunk_info in enumerate(chunks_to_keep):
+            chunk_tensor = chunk_info['frames_tensor']
+            chunk_id = chunk_info.get('chunk_id', i + 1)
+            
+            # Generate chunk filename
+            chunk_filename = f"chunk_{chunk_id:04d}.mp4"
+            chunk_path = chunks_permanent_save_path / chunk_filename
+            
+            # Save chunk video using global FFmpeg settings
+            save_frames_to_video_cli(
+                chunk_tensor,
+                str(chunk_path),
+                fps,
+                debug=seedvr2_config.preserve_vram,
+                ffmpeg_preset=ffmpeg_preset,
+                ffmpeg_quality=ffmpeg_quality,
+                ffmpeg_use_gpu=ffmpeg_use_gpu,
+                logger=logger
+            )
+            
+            saved_chunk_paths.append(str(chunk_path))
+            
+            if logger:
+                logger.info(f"Saved chunk preview: {chunk_path}")
+        
+        # Generate preview video from last N frames of the most recent chunk
+        if saved_chunk_paths:
+            last_chunk_tensor = chunks_to_keep[-1]['frames_tensor']
+            preview_frames_count = min(seedvr2_config.chunk_preview_frames, last_chunk_tensor.shape[0])
+            
+            # Take the last N frames for preview
+            preview_tensor = last_chunk_tensor[-preview_frames_count:]
+            
+            # Save preview video
+            preview_filename = "last_processed_chunk_preview.mp4"
+            preview_path = chunks_permanent_save_path / preview_filename
+            
+            save_frames_to_video_cli(
+                preview_tensor,
+                str(preview_path),
+                fps,
+                debug=seedvr2_config.preserve_vram,
+                ffmpeg_preset=ffmpeg_preset,
+                ffmpeg_quality=ffmpeg_quality,
+                ffmpeg_use_gpu=ffmpeg_use_gpu,
+                logger=logger
+            )
+            
+            if logger:
+                logger.info(f"Saved chunk preview with {preview_frames_count} frames: {preview_path}")
+            
+            return str(preview_path)
+            
+        # Clean up old chunks if we have too many
+        existing_chunks = list(chunks_permanent_save_path.glob("chunk_*.mp4"))
+        if len(existing_chunks) > seedvr2_config.keep_last_chunks:
+            # Sort by modification time and remove oldest
+            existing_chunks.sort(key=lambda x: x.stat().st_mtime)
+            chunks_to_remove = existing_chunks[:-seedvr2_config.keep_last_chunks]
+            
+            for old_chunk in chunks_to_remove:
+                try:
+                    old_chunk.unlink()
+                    if logger:
+                        logger.info(f"Removed old chunk: {old_chunk}")
+                except Exception as e:
+                    if logger:
+                        logger.warning(f"Failed to remove old chunk {old_chunk}: {e}")
+                        
+    except Exception as e:
+        if logger:
+            logger.error(f"Error saving chunk previews: {e}")
+        return None
+    
+    return None
 
 
 def check_seedvr2_system_requirements(debug: bool = False) -> bool:

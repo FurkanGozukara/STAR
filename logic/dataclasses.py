@@ -175,6 +175,11 @@ DEFAULT_SEEDVR2_ENABLE_FRAME_PADDING = True  # Automatic frame padding like STAR
 DEFAULT_SEEDVR2_PAD_LAST_CHUNK = True  # Pad last chunk to same size as batch_size
 DEFAULT_SEEDVR2_SKIP_FIRST_FRAMES = 0  # Number of frames to skip at start
 
+# SeedVR2 Chunk Preview Configuration (same as STAR for consistency)
+DEFAULT_SEEDVR2_ENABLE_CHUNK_PREVIEW = True  # Enable chunk preview by default 
+DEFAULT_SEEDVR2_CHUNK_PREVIEW_FRAMES = 125  # Show last 125 frames as default
+DEFAULT_SEEDVR2_KEEP_LAST_CHUNKS = 5  # Keep last 5 chunk videos in chunks folder
+
 # SeedVR2 Model Configuration
 DEFAULT_SEEDVR2_MODEL_PRECISION = "auto"  # Options: "auto", "fp16", "fp8"
 DEFAULT_SEEDVR2_CFG_SCALE = 1.0  # Guidance scale for generation
@@ -452,6 +457,11 @@ class SeedVR2Config:
     enable_frame_padding: bool = DEFAULT_SEEDVR2_ENABLE_FRAME_PADDING
     pad_last_chunk: bool = DEFAULT_SEEDVR2_PAD_LAST_CHUNK
     skip_first_frames: int = DEFAULT_SEEDVR2_SKIP_FIRST_FRAMES
+    
+    # Chunk preview configuration
+    enable_chunk_preview: bool = DEFAULT_SEEDVR2_ENABLE_CHUNK_PREVIEW
+    chunk_preview_frames: int = DEFAULT_SEEDVR2_CHUNK_PREVIEW_FRAMES
+    keep_last_chunks: int = DEFAULT_SEEDVR2_KEEP_LAST_CHUNKS
     
     # Model configuration
     model_precision: str = DEFAULT_SEEDVR2_MODEL_PRECISION
