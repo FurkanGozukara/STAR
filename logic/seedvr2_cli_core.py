@@ -507,6 +507,25 @@ def process_video_with_seedvr2_cli(
     output_filename = f"{input_path.stem}_seedvr2_{timestamp}.mp4"
     output_path = output_dir / output_filename
     
+    # Setup permanent frame saving directories (STAR standard structure)
+    input_frames_permanent_save_path = None
+    processed_frames_permanent_save_path = None
+    
+    if save_frames:
+        # Create frame saving directories using STAR standard structure
+        base_output_filename_no_ext = input_path.stem
+        frames_output_subfolder = output_dir / base_output_filename_no_ext
+        frames_output_subfolder.mkdir(parents=True, exist_ok=True)
+        
+        input_frames_permanent_save_path = frames_output_subfolder / "input_frames"
+        processed_frames_permanent_save_path = frames_output_subfolder / "processed_frames"
+        input_frames_permanent_save_path.mkdir(parents=True, exist_ok=True)
+        processed_frames_permanent_save_path.mkdir(parents=True, exist_ok=True)
+        
+        if logger:
+            logger.info(f"Frame saving enabled - Input: {input_frames_permanent_save_path}")
+            logger.info(f"Frame saving enabled - Processed: {processed_frames_permanent_save_path}")
+    
     try:
         # Check for cancellation
         cancellation_manager.check_cancel()
@@ -522,6 +541,36 @@ def process_video_with_seedvr2_cli(
             skip_first_frames=0,  # Can be made configurable
             load_cap=None  # Process all frames
         )
+        
+        # Save input frames immediately if requested (STAR standard behavior)
+        if save_frames and input_frames_permanent_save_path:
+            total_frames = frames_tensor.shape[0]
+            if logger:
+                logger.info(f"Copying {total_frames} input frames to permanent storage...")
+            
+            # Convert frames tensor to images and save
+            frames_saved = 0
+            for frame_idx in range(total_frames):
+                frame_tensor = frames_tensor[frame_idx].cpu()
+                if frame_tensor.dtype != torch.uint8:
+                    frame_tensor = (frame_tensor * 255).clamp(0, 255).to(torch.uint8)
+                
+                frame_np = frame_tensor.numpy()
+                frame_bgr = cv2.cvtColor(frame_np, cv2.COLOR_RGB2BGR)
+                
+                # Generate frame filename
+                frame_filename = f"frame{frame_idx + 1:06d}.png"
+                frame_path = input_frames_permanent_save_path / frame_filename
+                
+                success = cv2.imwrite(str(frame_path), frame_bgr)
+                if success:
+                    frames_saved += 1
+                else:
+                    if logger:
+                        logger.warning(f"Failed to save input frame: {frame_filename}")
+            
+            if logger:
+                logger.info(f"Input frames copied: {frames_saved}/{total_frames}")
         
         if progress_callback:
             progress_callback(0.1, "Frames extracted, preparing for processing")
@@ -574,7 +623,9 @@ def process_video_with_seedvr2_cli(
             processing_args,
             seedvr2_config,
             progress_callback,
-            logger
+            logger,
+            save_frames=save_frames,
+            processed_frames_permanent_save_path=processed_frames_permanent_save_path
         )
         
         if progress_callback:
@@ -627,7 +678,9 @@ def _process_frames_with_seedvr2_cli(
     processing_args: Dict[str, Any],
     seedvr2_config,
     progress_callback: Optional[callable] = None,
-    logger: Optional[logging.Logger] = None
+    logger: Optional[logging.Logger] = None,
+    save_frames: bool = False,
+    processed_frames_permanent_save_path: Optional[Path] = None
 ) -> torch.Tensor:
     """
     Process frames using SeedVR2 CLI approach with multi-GPU support.
@@ -656,7 +709,9 @@ def _process_frames_with_seedvr2_cli(
             processing_args,
             seedvr2_config,
             progress_callback,
-            logger
+            logger,
+            save_frames=save_frames,
+            processed_frames_permanent_save_path=processed_frames_permanent_save_path
         )
     else:
         # Multi-GPU processing
@@ -666,7 +721,9 @@ def _process_frames_with_seedvr2_cli(
             processing_args,
             seedvr2_config,
             progress_callback,
-            logger
+            logger,
+            save_frames=save_frames,
+            processed_frames_permanent_save_path=processed_frames_permanent_save_path
         )
 
 
@@ -676,7 +733,9 @@ def _process_single_gpu_cli(
     processing_args: Dict[str, Any],
     seedvr2_config,
     progress_callback: Optional[callable] = None,
-    logger: Optional[logging.Logger] = None
+    logger: Optional[logging.Logger] = None,
+    save_frames: bool = False,
+    processed_frames_permanent_save_path: Optional[Path] = None
 ) -> torch.Tensor:
     """
     Process frames on single GPU using SESSION-BASED approach.
@@ -717,6 +776,39 @@ def _process_single_gpu_cli(
                 batch_args={"seed": processing_args.get("seed", -1)}  # Override seed per batch if needed
             )
             
+            # Save processed frames immediately after each batch (STAR standard behavior)
+            if save_frames and processed_frames_permanent_save_path and processed_batch is not None:
+                batch_num = i // batch_size + 1
+                total_batches = (total_frames + batch_size - 1) // batch_size
+                
+                # Save frames from this batch immediately
+                chunk_frames_saved = 0
+                for local_frame_idx in range(processed_batch.shape[0]):
+                    global_frame_idx = i + local_frame_idx
+                    
+                    # Convert tensor frame to image
+                    frame_tensor = processed_batch[local_frame_idx].cpu()
+                    if frame_tensor.dtype != torch.uint8:
+                        frame_tensor = (frame_tensor * 255).clamp(0, 255).to(torch.uint8)
+                    
+                    frame_np = frame_tensor.numpy()
+                    frame_bgr = cv2.cvtColor(frame_np, cv2.COLOR_RGB2BGR)
+                    
+                    # Generate frame filename
+                    frame_filename = f"frame{global_frame_idx + 1:06d}.png"
+                    dst_path = processed_frames_permanent_save_path / frame_filename
+                    
+                    if not dst_path.exists():  # Don't overwrite existing frames
+                        success = cv2.imwrite(str(dst_path), frame_bgr)
+                        if success:
+                            chunk_frames_saved += 1
+                        else:
+                            if logger:
+                                logger.warning(f"Failed to save frame: {frame_filename}")
+                
+                if chunk_frames_saved > 0 and logger:
+                    logger.info(f"Immediately saved {chunk_frames_saved} processed frames from batch {batch_num}/{total_batches}")
+            
             # Handle overlap
             if i > 0 and temporal_overlap > 0:
                 processed_batch = processed_batch[temporal_overlap:]
@@ -747,7 +839,9 @@ def _process_multi_gpu_cli(
     processing_args: Dict[str, Any],
     seedvr2_config,
     progress_callback: Optional[callable] = None,
-    logger: Optional[logging.Logger] = None
+    logger: Optional[logging.Logger] = None,
+    save_frames: bool = False,
+    processed_frames_permanent_save_path: Optional[Path] = None
 ) -> torch.Tensor:
     """
     Process frames using multiple GPUs with CLI approach.

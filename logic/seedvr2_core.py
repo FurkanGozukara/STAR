@@ -197,6 +197,26 @@ def process_video_with_seedvr2(
     os.makedirs(input_frames_dir, exist_ok=True)
     os.makedirs(output_frames_dir, exist_ok=True)
     
+    # Setup permanent frame saving directories (STAR standard structure)
+    input_frames_permanent_save_path = None
+    processed_frames_permanent_save_path = None
+    
+    if save_frames:
+        if is_batch_mode and batch_output_dir:
+            frames_output_subfolder = batch_output_dir
+        else:
+            frames_output_subfolder = os.path.join(output_dir, base_output_filename_no_ext)
+        
+        os.makedirs(frames_output_subfolder, exist_ok=True)
+        input_frames_permanent_save_path = os.path.join(frames_output_subfolder, "input_frames")
+        processed_frames_permanent_save_path = os.path.join(frames_output_subfolder, "processed_frames")
+        os.makedirs(input_frames_permanent_save_path, exist_ok=True)
+        os.makedirs(processed_frames_permanent_save_path, exist_ok=True)
+        
+        if logger:
+            logger.info(f"Frame saving enabled - Input: {input_frames_permanent_save_path}")
+            logger.info(f"Frame saving enabled - Processed: {processed_frames_permanent_save_path}")
+    
     # Extract frames using STAR's utility
     try:
         frame_files = util_extract_frames(
@@ -211,6 +231,22 @@ def process_video_with_seedvr2(
         total_frames = len(frame_files)
         if logger:
             logger.info(f"Extracted {total_frames} frames in {time.time() - frame_extraction_start:.2f}s")
+        
+        # Save input frames immediately if requested (STAR standard behavior)
+        if save_frames and input_frames_permanent_save_path:
+            if logger:
+                logger.info(f"Copying {total_frames} input frames to permanent storage...")
+            
+            frames_copied = 0
+            for frame_file in frame_files:
+                src_path = os.path.join(input_frames_dir, frame_file)
+                dst_path = os.path.join(input_frames_permanent_save_path, frame_file)
+                if os.path.exists(src_path):
+                    shutil.copy2(src_path, dst_path)
+                    frames_copied += 1
+            
+            if logger:
+                logger.info(f"Input frames copied: {frames_copied}/{total_frames}")
             
     except Exception as e:
         error_msg = f"Frame extraction failed: {e}"
@@ -460,6 +496,40 @@ def process_video_with_seedvr2(
                 
                 processed_chunks.append(chunk_result)
                 
+                # Save processed frames immediately after each batch (STAR standard behavior)
+                if save_frames and processed_frames_permanent_save_path and chunk_result is not None:
+                    # Calculate frame indices for this chunk
+                    frames_start_idx = chunk_idx * seedvr2_config.batch_size
+                    frames_end_idx = min(frames_start_idx + chunk_result.shape[0], total_frames)
+                    
+                    # Save frames from this chunk immediately
+                    chunk_frames_saved = 0
+                    for local_frame_idx in range(chunk_result.shape[0]):
+                        global_frame_idx = frames_start_idx + local_frame_idx
+                        if global_frame_idx < len(frame_files):
+                            frame_name = frame_files[global_frame_idx]
+                            
+                            # Convert tensor frame to image
+                            frame_tensor = chunk_result[local_frame_idx].cpu()
+                            if frame_tensor.dtype != torch.uint8:
+                                frame_tensor = (frame_tensor * 255).clamp(0, 255).to(torch.uint8)
+                            
+                            frame_np = frame_tensor.numpy()
+                            frame_bgr = cv2.cvtColor(frame_np, cv2.COLOR_RGB2BGR)
+                            
+                            # Save to permanent location
+                            dst_path = os.path.join(processed_frames_permanent_save_path, frame_name)
+                            if not os.path.exists(dst_path):  # Don't overwrite existing frames
+                                success = cv2.imwrite(dst_path, frame_bgr)
+                                if success:
+                                    chunk_frames_saved += 1
+                                else:
+                                    if logger:
+                                        logger.warning(f"Failed to save frame: {frame_name}")
+                    
+                    if chunk_frames_saved > 0 and logger:
+                        logger.info(f"Immediately saved {chunk_frames_saved} processed frames from batch {chunk_idx + 1}/{len(frame_chunks)}")
+                
                 if logger:
                     logger.info(f"Chunk {chunk_idx + 1}/{len(frame_chunks)} processed successfully")
                     
@@ -631,25 +701,26 @@ def process_video_with_seedvr2(
             logger.error(error_msg)
         raise RuntimeError(error_msg)
     
-    # Save frames for preservation if requested (global setting)
-    if save_frames:
+    # Save processed frames for preservation if requested (STAR standard structure)
+    if save_frames and processed_frames_permanent_save_path:
         try:
-            frames_save_dir = os.path.join(output_dir, f"{base_output_filename_no_ext}_frames")
-            os.makedirs(frames_save_dir, exist_ok=True)
-            
             # Copy processed frames to permanent location
             frame_files_processed = sorted([f for f in os.listdir(output_frames_dir) if f.endswith(('.png', '.jpg', '.jpeg'))])
+            frames_saved = 0
+            
             for frame_file in frame_files_processed:
                 src_path = os.path.join(output_frames_dir, frame_file)
-                dst_path = os.path.join(frames_save_dir, frame_file)
-                shutil.copy2(src_path, dst_path)
+                dst_path = os.path.join(processed_frames_permanent_save_path, frame_file)
+                if os.path.exists(src_path):
+                    shutil.copy2(src_path, dst_path)
+                    frames_saved += 1
             
             if logger:
-                logger.info(f"Frames saved to: {frames_save_dir}")
+                logger.info(f"Processed frames saved: {frames_saved}/{len(frame_files_processed)} to {processed_frames_permanent_save_path}")
                 
         except Exception as e:
             if logger:
-                logger.warning(f"Failed to save frames permanently: {e}")
+                logger.warning(f"Failed to save processed frames permanently: {e}")
     
     cancellation_manager.check_cancel()
     
