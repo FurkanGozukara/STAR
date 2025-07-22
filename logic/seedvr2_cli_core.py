@@ -770,7 +770,7 @@ def _process_batch_with_seedvr2_model(
             from src.core.model_manager import configure_runner
             from src.core.generation import generation_loop
             from src.utils.downloads import download_weight
-            from src.optimization.blockswap import SeedVR2BlockSwap
+            # Note: Using local SeedVR2BlockSwap class defined above, not importing from blockswap module
             
             if debug:
                 print("✅ SeedVR2 modules imported successfully")
