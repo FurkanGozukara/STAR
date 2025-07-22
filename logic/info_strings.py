@@ -781,3 +781,347 @@ GENERAL_ERROR_TEMPLATES = {
 # Auto-Caption Labels and Info
 AUTO_CAPTION_THEN_UPSCALE_LABEL = "Auto-Caption Then Upscale"
 AUTO_CAPTION_THEN_UPSCALE_INFO = "Generate automatic captions before upscaling using CogVLM2. Useful for videos without existing prompts." 
+
+# Parser and System Messages
+PARSER_HELP_OUTPUTS_FOLDER = "Main folder for output videos and related files"
+
+# Warning and Error Messages for Base Path Setup
+VIDEO_TO_VIDEO_DIR_NOT_FOUND_WARNING = "Warning: 'video_to_video' directory not found in inferred base_path: {base_path}. Attempting to use parent directory."
+BASE_PATH_AUTO_DETERMINE_ERROR = "Error: Could not auto-determine STAR repository root. Please set 'base_path' manually."
+BASE_PATH_USAGE_INFO = "Using STAR repository base_path: {base_path}"
+APP_PLACEMENT_ERROR = "Please ensure app.py is correctly placed or base_path is manually set."
+DEPENDENCIES_INSTALL_ERROR = "Please ensure the STAR repository is correctly in the Python path (set by base_path) and all dependencies from 'requirements.txt' are installed."
+
+# Logger Diagnostic Messages
+STREAM_HANDLER_LEVEL_SET_INFO = "Diagnostic: Explicitly set StreamHandler level to INFO."
+STREAM_HANDLER_ADDED_INFO = "Diagnostic: No StreamHandler found, added a new one with INFO level."
+
+# Model Path Error Messages
+LIGHT_DEG_MODEL_NOT_FOUND_ERROR = "FATAL: Light degradation model not found at {model_path}."
+HEAVY_DEG_MODEL_NOT_FOUND_ERROR = "FATAL: Heavy degradation model not found at {model_path}."
+
+# Preset Loading Messages
+PRESET_LAST_USED_FOUND_INFO = "Found last used preset: '{preset_name}'. Attempting to load."
+PRESET_NO_LAST_USED_INFO = "No last used preset found. Looking for 'Default' preset."
+PRESET_SUCCESSFULLY_LOADED_INFO = "Successfully loaded initial preset '{preset_name}'."
+PRESET_GPU_INDEX_OUT_OF_RANGE_WARNING = "GPU index {gpu_num} out of range. Defaulting to GPU {default_gpu}."
+PRESET_INVALID_GPU_VALUE_WARNING = "Invalid GPU device value '{value}'. Defaulting to GPU {default_gpu}."
+PRESET_CLEARING_FAILED_WARNING = "Clearing last used preset '{preset_name}' because it failed to load."
+PRESET_FALLBACK_ATTEMPT_WARNING = "Could not load initial preset '{preset_name}'. Reason: {message}. Trying fallback preset 'Image_Upscaler_Fast_Low_VRAM'."
+PRESET_FALLBACK_SUCCESS_INFO = "Successfully loaded fallback preset 'Image_Upscaler_Fast_Low_VRAM'."
+PRESET_FALLBACK_FAILED_WARNING = "Could not load fallback preset 'Image_Upscaler_Fast_Low_VRAM'. Reason: {message}."
+PRESET_TRYING_FIRST_AVAILABLE_INFO = "Trying to load first available preset: '{preset_name}'"
+PRESET_LAST_RESORT_SUCCESS_INFO = "Successfully loaded last resort preset '{preset_name}'."
+PRESET_LAST_RESORT_FAILED_WARNING = "Last resort preset '{preset_name}' also failed to load: {message}"
+PRESET_NO_PRESETS_LOADED_WARNING = "No presets could be loaded. Starting with application defaults."
+PRESET_INITIAL_FOR_DROPDOWN_INFO = "Initial preset for dropdown: '{preset_name}' (actually loaded)"
+PRESET_NO_PRESET_SUCCESSFULLY_LOADED_INFO = "No preset was successfully loaded, dropdown will show default"
+
+# UI Component Placeholders and Info
+PANDA_PLAYING_GUITAR_PLACEHOLDER = "e.g., A panda playing guitar by a lake at sunset."
+VIDEO_FRAMES_FOLDER_PLACEHOLDER = "C:/path/to/video.mp4 or C:/path/to/frames/folder/"
+PRESET_SELECTION_INFO = "Select a preset to auto-load, or type a new name and click Save."
+COMPARISON_IMAGE_GENERATION_DETAILED_INFO = "Generate side-by-side comparison image showing original vs upscaled"
+
+# Button Labels
+GENERATE_CAPTION_NO_UPSCALE_BUTTON = "Generate Caption with CogVLM2 (No Upscale)"
+CANCEL_UPSCALING_BUTTON = "Cancel Upscaling"
+CANCEL_PROCESSING_BUTTON = "Cancel Processing"
+
+# Accordion Labels
+PROMPT_SETTINGS_STAR_MODEL_ACCORDION = "Prompt Settings (Useful only for STAR Model)"
+TARGET_RESOLUTION_ASPECT_RATIO_ACCORDION = "Target Resolution - Maintains Your Input Video Aspect Ratio"
+AUTO_CAPTIONING_COGVLM2_STAR_ACCORDION = "Auto-Captioning Settings (CogVLM2) (Only for STAR Model)"
+CONTEXT_WINDOW_EXPERIMENTAL_ACCORDION = "Context Window - Previous Frames for Better Consistency - Experimental Probably Not Needed"
+PERFORMANCE_VRAM_32_FRAMES_ACCORDION = "Performance & VRAM Optimization - 32 Frames Yields Best Quality"
+TILING_HIGH_RES_LOW_VRAM_ACCORDION = "Advanced: Tiling (Very High Res / Low VRAM)"
+
+# Model and System Status Messages
+NO_MODELS_FOUND_UPSCALE_MODELS = "No models found - place models in upscale_models/"
+ERROR_SCANNING_UPSCALE_MODELS = "Error scanning models - check upscale_models/ directory"
+ERROR_SCANNING_SEEDVR2_MODELS = "Error scanning models - check SeedVR2/models/ directory"
+SELECT_MODEL_DETAILED_SPECIFICATIONS = "Select a model to see detailed specifications"
+
+# SeedVR2 Info Messages
+SEEDVR2_INSTALLATION_DEPENDENCY_STATUS_INFO = "Shows SeedVR2 installation and dependency status"
+SEEDVR2_MODEL_SPEED_QUALITY_BALANCE_INFO = "Select SeedVR2 model. 3B FP8 models offer best speed/VRAM balance, 7B models provide highest quality."
+SEEDVR2_MODEL_SPECIFICATIONS_INFO = "Detailed model specifications and requirements"
+SEEDVR2_QUALITY_PRESET_DETAILED_INFO = "Processing quality preset. Fast: prioritize speed, Balanced: good speed/quality balance, Quality: maximum quality."
+SEEDVR2_VRAM_OPTIMIZATION_SYSTEMS_INFO = "Optimize VRAM usage. Recommended for most systems."
+SEEDVR2_COLOR_FIX_WAVELET_RECONSTRUCTION_INFO = "Fix color shifts using wavelet reconstruction. Recommended."
+SEEDVR2_LAST_CHUNK_QUALITY_STAR_INFO = "Optimize last chunk quality like STAR model. Recommended."
+SEEDVR2_MEMORY_EFFICIENT_ATTENTION_DEFAULT_INFO = "Memory-efficient attention mechanism. Default enabled."
+SEEDVR2_SCENE_AWARE_BOUNDARY_HANDLING_INFO = "Enable scene-aware temporal processing for better scene boundary handling."
+SEEDVR2_TEMPORAL_CONSISTENCY_QUALITY_METRICS_INFO = "Validate temporal consistency during processing and report quality metrics."
+SEEDVR2_CHUNK_BOUNDARIES_LONGER_VIDEOS_INFO = "Optimize chunk boundaries for temporal coherence. Recommended for longer videos."
+SEEDVR2_SPEED_CONSISTENCY_BALANCE_INFO = "Balance between processing speed and temporal consistency quality."
+SEEDVR2_GPU_ACCELERATION_PROCESSING_INFO = "Enable GPU acceleration for SeedVR2 processing."
+SEEDVR2_MULTI_GPU_FASTER_PROCESSING_INFO = "Distribute processing across multiple GPUs for faster processing."
+SEEDVR2_GPU_DEVICES_COMMA_SEPARATED_INFO = "Comma-separated GPU IDs (e.g., '0,1,2'). Single GPU: '0'"
+SEEDVR2_GPU_VRAM_STATUS_INFO = "Shows available GPUs and their VRAM status"
+SEEDVR2_BLOCK_SWAP_LIMITED_VRAM_INFO = "Enable block swapping for large models on limited VRAM systems."
+SEEDVR2_BLOCK_SWAP_COUNTER_SAVINGS_INFO = "Number of blocks to swap (0=disabled). Higher = more VRAM savings but slower."
+SEEDVR2_IO_OFFLOAD_MAXIMUM_SAVINGS_INFO = "Offload input/output layers for maximum VRAM savings. Optional."
+SEEDVR2_MODEL_CACHE_FASTER_BATCH_INFO = "Keep model cached in RAM between runs. Faster batch processing."
+SEEDVR2_BLOCK_SWAP_CONFIG_SAVINGS_INFO = "Shows block swap configuration and estimated VRAM savings"
+SEEDVR2_CHUNK_PREVIEW_MAIN_TAB_INFO = "Enable chunk preview functionality to display processed chunks in main tab."
+SEEDVR2_PREVIEW_FRAME_COUNT_125_INFO = "Number of frames to show in chunk preview (default: 125 frames)."
+SEEDVR2_CHUNKS_FOLDER_DEFAULT_5_INFO = "Number of recent chunk videos to keep in chunks folder (default: 5)."
+SEEDVR2_GUIDANCE_SCALE_GENERATION_INFO = "Guidance scale for generation. Usually 1.0 for SeedVR2."
+
+# FFmpeg Settings Info
+FFMPEG_CONTROLS_ENCODING_NVENC_PRESETS_INFO = "Controls encoding speed vs. compression efficiency. 'ultrafast' is fastest with lowest quality/compression, 'veryslow' is slowest with highest quality/compression. Note: NVENC presets behave differently from CPU presets."
+FFMPEG_QUALITY_CRF_LIBX264_CQ_NVENC_LABEL = "FFmpeg Quality (CRF for libx264 / CQ for NVENC)"
+FFMPEG_QUALITY_DETAILED_CRF_CQ_INFO = "For libx264 (CPU): Constant Rate Factor (CRF). Lower values mean higher quality (0 is lossless, 23 is default). For h264_nvenc (GPU): Constrained Quality (CQ). Lower values generally mean better quality but larger files."
+FRAME_FOLDER_FPS_CONVERSION_SETTING_INFO = "FPS to use when converting frame folders to videos. This setting only applies when processing input frame folders (not regular videos). Common values: 23.976, 24, 25, 29.97, 30, 60."
+
+# Output Settings Info
+SAVE_PROCESSING_METADATA_TXT_INFO = "If checked, saves a .txt file (e.g., '0001.txt') in the main output folder, containing all processing parameters and total processing time."
+SAVE_CHUNKS_SUBFOLDER_FFMPEG_INFO = "If checked, saves each processed chunk as a video file in a 'chunks' subfolder (e.g., '0001/chunks/chunk_0001.mp4'). Uses the same FFmpeg settings as the final video."
+
+# Seed Settings Detailed Info
+SEED_REPRODUCIBILITY_RANDOM_GENERATION_INFO = "Seed for random number generation. Used for reproducibility. Set to -1 or check 'Random Seed' for a random seed. Value is ignored if 'Random Seed' is checked."
+RANDOM_SEED_GENERATION_IGNORING_VALUE_INFO = "If checked, a random seed will be generated and used, ignoring the 'Seed' value."
+
+# Video Comparison Settings
+VIDEO_COUNT_ADDITIONAL_INPUTS_SELECTION_INFO = "Select how many videos you want to compare. Additional video inputs will appear based on your selection."
+COMPARISON_LAYOUT_OPTIONS_VIDEO_SELECTION_INFO = "Layout options will update based on number of videos selected."
+
+# Batch Processing Settings
+BATCH_INPUT_FOLDER_CONTAINING_VIDEOS_PLACEHOLDER = "Path to folder containing videos to process..."
+BATCH_INPUT_FOLDER_PROCESS_MODE_INFO = "Folder containing video files to process in batch mode."
+BATCH_OUTPUT_FOLDER_PROCESSED_VIDEOS_PLACEHOLDER = "Path to output folder for processed videos..."
+BATCH_OUTPUT_FOLDER_ORGANIZED_STRUCTURE_INFO = "Folder where processed videos will be saved with organized structure."
+BATCH_FRAME_FOLDERS_SUBFOLDERS_SEQUENCES_INFO = "Enable to process subfolders containing frame sequences instead of video files. Each subfolder with images will be converted to video first."
+BATCH_DIRECT_IMAGE_UPSCALING_JPG_PNG_INFO = "Process individual image files (JPG, PNG, etc.) directly with selected image upscaler model. Ideal for batch upscaling photos/images."
+BATCH_SKIP_EXISTING_INTERRUPTED_JOBS_INFO = "Skip processing if the output file already exists. Useful for resuming interrupted batch jobs."
+
+# FPS Processing Settings
+FPS_DECREASE_FASTER_UPSCALING_VRAM_INFO = "Reduce video FPS before upscaling to speed up processing. Fewer frames = faster upscaling and lower VRAM usage."
+FPS_MODE_MULTIPLIER_FIXED_ADAPTATION_INFO = "Multiplier: Reduce by fraction (1/2x, 1/4x). Fixed: Set specific FPS value. Multiplier is recommended for automatic adaptation to input video."
+FPS_MULTIPLIER_PRESET_SPEED_QUALITY_INFO = "Choose common multiplier. 1/2x is recommended for good speed/quality balance."
+FPS_MULTIPLIER_CUSTOM_LOWER_FRAMES_INFO = "Custom multiplier value (0.1 to 1.0). Lower = fewer frames."
+FPS_TARGET_CINEMA_STANDARD_23976_INFO = "Target FPS for the reduced video. Lower FPS = faster upscaling. Common choices: 12-15 FPS for fast processing, 24 FPS for cinema standard. Supports precise values like 23.976."
+
+# Status and Control Info
+TARGET_RESOLUTION_SIMPLE_UPSCALE_FACTOR_INFO = "Check this to manually control the maximum output resolution instead of using the simple Upscale Factor."
+AUTO_CALCULATED_RESOLUTION_ASPECT_INFO = "Shows current auto-calculated resolution and aspect ratio information"
+FINAL_OUTPUT_RESOLUTION_UPSCALER_SETTINGS_INFO = "Shows the calculated final output resolution based on your current upscaler settings, target resolution, and input video"
+
+# Advanced Processing Info
+FPS_REDUCTION_DROP_BLEND_SMOOTHER_INFO = "Drop: Faster, simply removes frames. Blend: Smoother, blends frames together (slower but may preserve motion better)."
+
+# UI Resolution Control Info
+TARGET_RESOLUTION_MAXIMUM_OUTPUT_CONTROL_INFO = "Check this to manually control the maximum output resolution instead of using the simple Upscale Factor."
+
+# Additional Status Messages for Various Use Cases
+ENHANCED_INPUT_FRAMES_FOLDER_AUTO_DETECTED = "Auto-detects whether your input is a single video file or a folder containing frame sequences"
+SEEDVR2_MODELS_SPEED_VRAM_BALANCE_3B_7B = "3B FP8 models offer best speed/VRAM balance, 7B models provide highest quality"
+
+# Logger Configuration Messages 
+LOGGER_CONFIGURED_LEVEL_HANDLERS_INFO = "Logger '{logger_name}' configured with level: {level}. Handlers: {handlers}"
+
+# Video Processing Status
+FRAME_FOLDER_PROCESSING_MODE_ENABLED_LOG = "Batch frame folder processing mode enabled"
+
+# Image Processing Info
+COMPARISON_IMAGE_ORIGINAL_UPSCALED_SHOWING = "Generate side-by-side comparison image showing original vs upscaled"
+
+# Processing Time and Status Templates
+PROCESSING_TIME_ESTIMATE_UPLOAD_VIDEO = "📊 Upload video and enter ranges to see time estimate"
+CALCULATION_UPLOAD_VIDEO_FPS_REDUCTION = "**📊 Calculation:** Upload a video to see FPS reduction preview" 
+
+# Additional Long Strings from secourses_app.py
+
+# FFmpeg Quality Labels and Settings
+FFMPEG_QUALITY_CRF_LIBX264_ONLY_LABEL = "FFmpeg Quality (CRF for libx264)"
+FFMPEG_QUALITY_CQ_NVENC_ONLY_LABEL = "FFmpeg Quality (CQ for NVENC)"
+
+# Advanced Processing Messages
+SCENE_SPLITTING_ENABLED_AUTO_CAPTIONING_PER_SCENE = "Scene splitting enabled: Auto-captioning will be done per scene during upscaling."
+IMAGE_BASED_UPSCALING_AUTO_CAPTIONING_DISABLED = "Image-based upscaling is enabled. Auto-captioning is disabled as image upscalers don't use prompts."
+AUTO_CAPTIONING_UNAVAILABLE_ORIGINAL_PROMPT = "Auto-captioning requested but CogVLM2 is not available. Using original prompt."
+
+# Validation and Analysis Messages
+VALIDATION_ERROR_PREFIX = "❌ Validation Error: {error_message}"
+CUT_ANALYSIS_ERROR_PREFIX = "❌ Error: {error_message}"
+TIME_ESTIMATE_VALIDATION_ERROR = "❌ Cannot estimate due to validation error"
+TIME_ESTIMATE_ANALYSIS_ERROR = "❌ Error during analysis"
+
+# UI Loading and Status Messages
+UPLOAD_VIDEO_DETAILED_INFORMATION = "📹 Upload a video to see detailed information"
+UPLOAD_VIDEO_FIRST_MESSAGE = "✏️ Upload a video first"
+ENTER_RANGES_CUT_ANALYSIS = "✏️ Enter ranges above to see cut analysis"
+ENTER_RANGES_TIME_ESTIMATE = "📊 Upload video and enter ranges to see time estimate"
+COULD_NOT_READ_VIDEO_INFORMATION = "❌ Could not read video information"
+VIDEO_INFORMATION_ESTIMATE_ERROR = "❌ Cannot estimate without video info"
+
+# Processing Control Messages
+PLEASE_UPLOAD_VIDEO_FIRST = "❌ Please upload a video first"
+PLEASE_ENTER_CUT_RANGES = "❌ Please enter cut ranges"
+PROCESSING_CANCELLED_USER_REQUEST = "⚠️ Processing cancelled by user"
+PROCESSING_FAILED_CHECK_LOGS = "❌ Processing failed. Please check the logs for details."
+
+# Auto-Caption Status Messages  
+STARTING_AUTO_CAPTIONING = "Starting auto-captioning..."
+AUTO_CAPTIONING_CANCELLED_USER = "Auto-captioning cancelled by user"
+CAPTION_GENERATION_FAILED_CANCELLED = "Caption generation failed or was cancelled. Using original prompt."
+
+# GPU and System Messages
+GPU_INDEX_OUT_OF_RANGE_DEFAULTING = "GPU index {gpu_index} out of range. Available GPUs: {gpu_count}. Defaulting to 0."
+FAILED_PARSE_GPU_INDEX_DEFAULTING = "Failed to parse GPU index from '{gpu_choice}'. Defaulting to 0."
+GPU_CHOICE_NOT_FOUND_DEFAULTING = "GPU choice '{gpu_choice}' not found in available GPUs. Defaulting to 0."
+NO_CUDA_GPUS_DETECTED = "No CUDA GPUs detected"
+
+# Video Information and Status
+VIDEO_INFORMATION_UPLOADED_PREFIX = "Video uploaded: {filename}"
+VIDEO_DETAILS_FRAMES_FPS_DURATION = "Video details: {frames} frames, {fps:.2f} FPS, {duration:.2f}s, {width}x{height}"
+FAILED_GET_VIDEO_INFO_FOR = "Failed to get video info for: {video_path}"
+EXCEPTION_VIDEO_INFO_PREFIX = "Exception in video info: {error}"
+ERROR_READING_VIDEO_PREFIX = "❌ Error reading video: {error}"
+
+# Model and Processing Status
+SELECT_MODEL_SEE_INFORMATION = "Select a model to see its information"
+MODEL_LOAD_INFO_ERROR_PREFIX = "Error loading model: {error}"
+MODEL_INFO_LOAD_FAILED_PREFIX = "Could not load information for {model_name}"
+FAILED_GET_MODEL_INFO_PREFIX = "Failed to get model info for {model_name}: {error}"
+ERROR_LOADING_MODEL_INFO_PREFIX = "Error loading model info: {error}"
+
+# Preset and Configuration Messages
+EXPECTED_UI_ARGUMENTS_GOT_ADDING_DEFAULTS = "Expected {expected} UI arguments, got {got}. Adding default values for missing components."
+EXPECTED_UI_ARGUMENTS_BATCH_GOT_ADDING = "Expected {expected} UI arguments for batch processing, got {got}. Adding default values for missing components."
+EXPECTED_UI_ARGUMENTS_BATCH_GOT_TRIMMING = "Expected {expected} UI arguments for batch processing, got {got}. Trimming extra arguments."
+
+# Frame Folder Processing
+AUTO_DETECTED_FRAMES_FOLDER_PREFIX = "Auto-detected frames folder: {folder_path}"
+AUTO_DETECTED_VIDEO_FILE_PREFIX = "Auto-detected video file: {video_path}"
+
+# Processing Progress Messages
+STARTING_NEW_UPSCALE_CANCELLATION_RESET = "Starting new upscale process - cancellation state reset"
+AUTO_CAPTION_FIRST_USER_PROMPT_PREFIX = "In upscale_director_logic. Auto-caption first: {auto_caption}, User prompt: '{user_prompt}...'"
+
+# Temp Folder and Cleanup
+TEMP_CLEANUP_REQUESTED_UI_BUTTON = "Temp cleanup requested via UI button"
+TEMP_CLEANUP_COMPLETED_FREED_REMAINING = "Temp cleanup completed. Freed {freed_gb:.2f} GB (Remaining: {remaining_gb:.2f} GB)"
+
+# FFmpeg Quality Setting Updates
+FFMPEG_CRF_LIBX264_LOWER_VALUES_QUALITY = "For libx264 (CPU): Constant Rate Factor (CRF). Lower values mean higher quality (0 is lossless, 23 is default)."
+FFMPEG_CQ_NVENC_CONSTRAINED_QUALITY_RANGE = "For h24_nvenc (GPU): Constrained Quality (CQ). Lower values generally mean better quality. Typical range for NVENC CQ is 18-28."
+
+# UI Component Default Values and States
+DEFAULT_PREVIEW_STATUS_VALUE = "Upload a video and click a preview button to test upscaler models"
+SELECT_PRESET_CUSTOM_PROMPT_INFO = "Select a preset to auto-load, or type a new name and click Save."
+
+# Image Processing Status
+UPLOAD_IMAGE_SEE_DETAILS = "Upload an image to see details..."
+READY_PROCESS_IMAGES = "Ready to process images..."
+IMAGE_LOADED_PIXELS_STATUS = "✅ Image loaded: {width}×{height} pixels"
+ERROR_LOADING_IMAGE_PREFIX = "❌ Error loading image: {error}"
+PLEASE_UPLOAD_IMAGE_FIRST = "❌ Please upload an image first"
+
+# Advanced Settings and Configuration Messages
+COMPONENT_WITHOUT_LABEL_ATTRIBUTE_SKIPPING = "Component without label attribute found, skipping"
+SECTION_NOT_FOUND_DEFAULT_CONFIG = "Section '{section}' not found in default config, skipping component"
+ERROR_ACCESSING_SECTION_KEY_DEFAULT = "Error accessing {section}.{key}: {error}. Using default value."
+FALLBACK_VALUE_SECTION_KEY_PREFIX = "Using fallback value for {section}.{key}: {value}"
+COMPONENT_LABEL_NOT_FOUND_MAPPING = "Component with label '{label}' not found in component_key_map. Skipping update."
+
+# Video Processing and Conversion Messages
+CONVERTING_FRAME_FOLDER_VIDEO_GLOBAL = "Converting frame folder to video using global encoding settings..."
+SUCCESSFULLY_CONVERTED_FRAME_FOLDER = "✅ Successfully converted frame folder to video: {message}"
+FAILED_CONVERT_FRAME_FOLDER = "❌ Failed to convert frame folder: {message}"
+EXCEPTION_FRAME_FOLDER_CONVERSION = "❌ Exception during frame folder conversion: {error}"
+FAILED_CONVERT_ANY_FRAME_FOLDERS = "❌ Failed to convert any frame folders to videos"
+SUCCESSFULLY_CONVERTED_COUNT_FRAME_FOLDERS = "Successfully converted {count} frame folders to videos"
+
+# Model Information Display
+MODEL_INFO_DISPLAY_BASIC_TEMPLATE = "**{model_name}**\n📊 Scale Factor: {scale_factor}x\n💾 VRAM Usage: {vram_usage}\n🔧 Architecture: {architecture}\n📏 Input Size: {input_size}\n🎯 Output Size: {output_size}\n⚡ Supports BFloat16: {supports_bfloat16}"
+
+# Resolution and Preview Messages
+EXPECTED_OUTPUT_UPLOAD_VIDEO_SETTINGS = "📹 Upload a video and configure settings to see expected output resolution"
+INVALID_VIDEO_DIMENSIONS_PREFIX = "❌ Invalid video dimensions: {width}x{height}"
+ERROR_CALCULATING_RESOLUTION_PREFIX = "❌ Error calculating resolution: {error}"
+ERROR_CALCULATING_TARGET_RESOLUTION = "❌ Error calculating target resolution: {error}"
+ERROR_CALCULATING_PREVIEW_PREFIX = "❌ Error calculating preview ({error})"
+
+# Processing Success and Error Templates
+VIDEO_CUTTING_SUCCESS_BASIC_TEMPLATE = "✅ Video cutting completed successfully!\n\n📁 Output: {output_filename}\n⏱️ Processing Time: {processing_time:.2f} seconds\n✂️ Cuts Applied: {cuts_applied}\n\n{analysis_text}"
+
+# Batch and Multi-GPU Processing
+FOUND_SEEDVR2_MODELS_COUNT_LOG = "Found {count} SeedVR2 models"
+SEEDVR2_MODELS_DIRECTORY_EXISTS_NO_MODELS = "SeedVR2 models directory exists but no models found"
+FAILED_REFRESH_SEEDVR2_MODELS = "Failed to refresh SeedVR2 models: {error}"
+REFRESH_PRESET_LIST_LOG = "Refreshing preset list: {preset_list}"
+
+# Block Swap and GPU Configuration
+BLOCK_SWAP_MONITORING_ERROR_PREFIX = "Block swap monitoring error: {error}"
+FAILED_CHECK_SEEDVR2_DEPENDENCIES = "Failed to check SeedVR2 dependencies: {error}"
+FAILED_INITIALIZE_SEEDVR2_TAB = "Failed to initialize SeedVR2 tab: {error}"
+FAILED_UPDATE_PROFESSIONAL_GPU_STATUS = "Failed to update professional GPU status: {error}"
+FAILED_VALIDATE_GPU_DEVICES = "Failed to validate GPU devices: {error}"
+
+# Model and Processing Configuration
+MODEL_FILENAME_EXTRACTED_FROM_DROPDOWN = "Displaying info for model: {model_filename}"
+FAILED_GET_MODEL_INFO_FOR_CHOICE = "Failed to get model info for '{model_choice}': {error}"
+APPLYING_OPTIMAL_SETTINGS_MODEL_VRAM = "Applying optimal settings for {model_filename} with {total_vram:.1f}GB VRAM"
+APPLIED_SETTINGS_BATCH_BLOCK_MULTI = "Applied settings: batch_size={batch_size}, block_swap={enable_block_swap}, multi_gpu={enable_multi_gpu}"
+FAILED_APPLY_OPTIMAL_SETTINGS = "Failed to apply optimal settings: {error}"
+
+# Advanced Analysis and Recommendations
+GENERATED_BLOCK_SWAP_RECOMMENDATIONS = "Generated block swap recommendations for {model_filename}"
+FAILED_GET_BLOCK_SWAP_RECOMMENDATIONS = "Failed to get block swap recommendations: {error}"
+GENERATED_PROFESSIONAL_MULTI_GPU_RECOMMENDATIONS = "Generated professional multi-GPU recommendations for {model_filename}"
+FAILED_GET_MULTI_GPU_RECOMMENDATIONS = "Failed to get multi-GPU recommendations: {error}"
+FAILED_VALIDATE_MODEL_CHOICE = "Failed to validate model '{model_choice}': {error}"
+
+# System Startup and Configuration
+GRADIO_APP_STARTING_OUTPUT_DEFAULT = "Gradio App Starting. Default output to: {output_path}"
+STAR_MODELS_EXPECTED_PATHS = "STAR Models expected at: {light_path}, {heavy_path}"
+COGVLM2_MODEL_EXPECTED_PATH = "CogVLM2 Model expected at: {cogvlm_path}"
+INITIALIZED_DEFAULT_GPU_INFO = "Initialized with default GPU: {gpu_val} (GPU 0)"
+NO_CUDA_GPUS_CPU_FALLBACK_INFO = "No CUDA GPUs detected, attempting to set to GPU 0 (CPU fallback)."
+
+# Additional UI and Processing Messages
+CANCELLATION_REQUESTED_STOP_CHECKPOINT = "🚨 CANCELLATION REQUESTED: Processing will stop safely at the next checkpoint. Please wait for current operation to complete..."
+NO_ACTIVE_PROCESSING_CANCEL_ALREADY_REQUESTED = "⚠️ No active processing to cancel or cancellation already requested."
+PROCESS_CANCELLED_USER_DURING_AUTO_CAPTIONING = "⚠️ Process cancelled by user during auto-captioning"
+PROCESS_CANCELLED_MAIN_UPSCALING = "Process cancelled before main upscaling - stopping"
+
+# Template and Format Strings
+TEMP_FOLDER_CLEARED_FREED_REMAINING = "✅ Temp folder cleared. Freed {freed_gb:.2f} GB. Remaining: {remaining_label}"
+TEMP_FOLDER_CLEANUP_ERRORS_CHECK_LOGS = "⚠️ Temp folder cleanup encountered errors. Check logs."
+
+# Delete Temp Button Updates
+DELETE_TEMP_FOLDER_WITH_SIZE = "Delete Temp Folder ({size_label})"
+
+# Video and Processing Analysis
+VIDEO_EDITOR_VALIDATION_VIDEO_UPLOADED = "Video uploaded - {filename}"
+VIDEO_EDITOR_FAILED_VIDEO_INFO = "Video editor: Failed to get video info for: {video_path}"
+VIDEO_EDITOR_EXCEPTION_VIDEO_INFO = "Video editor: Exception in video info: {error}"
+VIDEO_EDITOR_ERROR_VALIDATION = "Video editor: Error in validation: {error}"
+
+# FFmpeg Settings and Configuration
+CURRENT_FFMPEG_SETTINGS_UNAVAILABLE = "Current FFmpeg settings unavailable, using defaults"
+
+# Processing Results and Status Updates
+CUT_COMPLETED_UPDATING_MAIN_TAB = "Video editor: Cut completed, updating main tab input: {output_path}"
+PROCESSING_CANCELLED_USER_DURING_CAPTION = "Processing was cancelled by user during captioning."
+PROCESSING_CANCELLED_USER_GENERAL = "Processing was cancelled by user."
+CURRENT_OUTPUT_VIDEO_CANCELLATION = "Current output video value at cancellation: {output_video}"
+
+# Partial Video Processing Messages
+PARTIAL_VIDEO_ALREADY_SET_GENERATOR = "Partial video already set from generator: {video_path}"
+PROCESSING_CANCELLED_PARTIAL_SAVED = "⚠️ Processing cancelled by user. Partial video saved: {filename}"
+FOUND_PARTIAL_VIDEO_AFTER_CANCELLATION = "Found partial video after cancellation: {video_path}"
+SEARCHING_PARTIAL_VIDEOS_PATTERN = "Searching for partial videos with pattern: {pattern}"
+FOUND_PARTIAL_FILES_LIST = "Found partial files: {files}"
+
+# Final Processing Messages
+PROCESSING_COMPLETED_UI_STATE_RESET = "Processing completed - UI state reset"
+ERROR_DURING_PROCESSING_PREFIX = "❌ Error during processing: {error}"
+FINAL_CANCELLATION_YIELD_STATUS = "Final cancellation yield - output video: {video_path}, status: {status}"
+FINAL_CANCELLATION_NO_PARTIAL_FOUND = "❌ Processing cancelled by user."
+
+# Image Processing and Upload Messages
+IMAGE_PROCESSING_FAILED_PREFIX = "❌ Image processing failed: {error}"
+ERROR_LOADING_IMAGE_DETAILS = "❌ Error loading image: {error}" 

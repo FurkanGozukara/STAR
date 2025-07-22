@@ -122,7 +122,7 @@ SELECTED_GPU_ID =0
 
 parser =ArgumentParser (description ="Ultimate SECourses STAR Video Upscaler")
 parser .add_argument ('--share',action ='store_true',help ="Enable Gradio live share")
-parser .add_argument ('--outputs_folder',type =str ,default ="outputs",help ="Main folder for output videos and related files")
+parser .add_argument ('--outputs_folder',type =str ,default ="outputs",help =PARSER_HELP_OUTPUTS_FOLDER)
 args =parser .parse_args ()
 
 try :
@@ -130,19 +130,19 @@ try :
     base_path =script_dir 
 
     if not os .path .isdir (os .path .join (base_path ,'video_to_video')):
-        print (f"Warning: 'video_to_video' directory not found in inferred base_path: {base_path}. Attempting to use parent directory.")
+        print (VIDEO_TO_VIDEO_DIR_NOT_FOUND_WARNING.format(base_path=base_path))
         base_path =os .path .dirname (base_path )
         if not os .path .isdir (os .path .join (base_path ,'video_to_video')):
-            print (f"Error: Could not auto-determine STAR repository root. Please set 'base_path' manually.")
+            print (BASE_PATH_AUTO_DETERMINE_ERROR)
             print (f"Current inferred base_path: {base_path}")
 
-    print (f"Using STAR repository base_path: {base_path}")
+    print (BASE_PATH_USAGE_INFO.format(base_path=base_path))
     if base_path not in sys .path :
         sys .path .insert (0 ,base_path )
 
 except Exception as e_path :
     print (f"Error setting up base_path: {e_path}")
-    print ("Please ensure app.py is correctly placed or base_path is manually set.")
+    print (APP_PLACEMENT_ERROR)
     sys .exit (1 )
 
 try :
@@ -156,7 +156,7 @@ try :
 except ImportError as e :
     print (f"Error importing STAR components: {e}")
     print (f"Searched in sys.path: {sys.path}")
-    print ("Please ensure the STAR repository is correctly in the Python path (set by base_path) and all dependencies from 'requirements.txt' are installed.")
+    print (DEPENDENCIES_INSTALL_ERROR)
     sys .exit (1 )
 
 logger =get_logger ()
@@ -166,13 +166,13 @@ for handler in logger .handlers :
     if isinstance (handler ,logging .StreamHandler ):
         handler .setLevel (logging .INFO )
         found_stream_handler =True 
-        logger .info ("Diagnostic: Explicitly set StreamHandler level to INFO.")
+        logger .info (STREAM_HANDLER_LEVEL_SET_INFO)
 if not found_stream_handler :
     ch =logging .StreamHandler ()
     ch .setLevel (logging .INFO )
     logger .addHandler (ch )
-    logger .info ("Diagnostic: No StreamHandler found, added a new one with INFO level.")
-logger .info (f"Logger '{logger.name}' configured with level: {logging.getLevelName(logger.level)}. Handlers: {logger.handlers}")
+    logger .info (STREAM_HANDLER_ADDED_INFO)
+logger .info (LOGGER_CONFIGURED_LEVEL_HANDLERS_INFO.format(logger_name=logger.name, level=logging.getLevelName(logger.level), handlers=logger.handlers))
 
 APP_CONFIG =create_app_config (base_path ,args .outputs_folder ,star_cfg )
 
@@ -181,9 +181,9 @@ app_config_module .initialize_paths_and_prompts (base_path ,args .outputs_folder
 os .makedirs (APP_CONFIG .paths .outputs_dir ,exist_ok =True )
 
 if not os .path .exists (APP_CONFIG .paths .light_deg_model_path ):
-     logger .error (f"FATAL: Light degradation model not found at {APP_CONFIG.paths.light_deg_model_path}.")
+     logger .error (LIGHT_DEG_MODEL_NOT_FOUND_ERROR.format(model_path=APP_CONFIG.paths.light_deg_model_path))
 if not os .path .exists (APP_CONFIG .paths .heavy_deg_model_path ):
-     logger .error (f"FATAL: Heavy degradation model not found at {APP_CONFIG.paths.heavy_deg_model_path}.")
+     logger .error (HEAVY_DEG_MODEL_NOT_FOUND_ERROR.format(model_path=APP_CONFIG.paths.heavy_deg_model_path))
 
 css = APP_CSS
 
@@ -196,15 +196,15 @@ def load_initial_preset ():
 
     preset_to_load =preset_handler .get_last_used_preset_name ()
     if preset_to_load :
-        logger .info (f"Found last used preset: '{preset_to_load}'. Attempting to load.")
+        logger .info (PRESET_LAST_USED_FOUND_INFO.format(preset_name=preset_to_load))
     else :
-        logger .info ("No last used preset found. Looking for 'Default' preset.")
+        logger .info (PRESET_NO_LAST_USED_INFO)
         preset_to_load ="Default"
 
     config_dict ,message =preset_handler .load_preset (preset_to_load )
 
     if config_dict :
-        logger .info (f"Successfully loaded initial preset '{preset_to_load}'.")
+        logger .info (PRESET_SUCCESSFULLY_LOADED_INFO.format(preset_name=preset_to_load))
 
         LOADED_PRESET_NAME =preset_to_load 
 
@@ -222,10 +222,10 @@ def load_initial_preset ():
                                     if 0 <=gpu_num <len (available_gpus ):
                                         setattr (section_obj ,key ,str (gpu_num ))
                                     else :
-                                        logger .warning (f"GPU index {gpu_num} out of range. Defaulting to GPU {DEFAULT_GPU_DEVICE}.")
+                                        logger .warning (PRESET_GPU_INDEX_OUT_OF_RANGE_WARNING.format(gpu_num=gpu_num, default_gpu=DEFAULT_GPU_DEVICE))
                                         setattr (section_obj ,key ,DEFAULT_GPU_DEVICE )
                                 except (ValueError ,TypeError ):
-                                    logger .warning (f"Invalid GPU device value '{value}'. Defaulting to GPU {DEFAULT_GPU_DEVICE}.")
+                                    logger .warning (PRESET_INVALID_GPU_VALUE_WARNING.format(value=value, default_gpu=DEFAULT_GPU_DEVICE))
                                     setattr (section_obj ,key ,DEFAULT_GPU_DEVICE )
                             else :
                                 setattr (section_obj ,key ,DEFAULT_GPU_DEVICE )
@@ -235,15 +235,15 @@ def load_initial_preset ():
     else :
 
         if preset_to_load !="Default":
-            logger .warning (f"Clearing last used preset '{preset_to_load}' because it failed to load.")
+            logger .warning (PRESET_CLEARING_FAILED_WARNING.format(preset_name=preset_to_load))
             preset_handler .save_last_used_preset_name ("")
 
-        logger .warning (f"Could not load initial preset '{preset_to_load}'. Reason: {message}. Trying fallback preset 'Image_Upscaler_Fast_Low_VRAM'.")
+        logger .warning (PRESET_FALLBACK_ATTEMPT_WARNING.format(preset_name=preset_to_load, message=message))
 
         fallback_config_dict ,fallback_message =preset_handler .load_preset ("Image_Upscaler_Fast_Low_VRAM")
 
         if fallback_config_dict :
-            logger .info ("Successfully loaded fallback preset 'Image_Upscaler_Fast_Low_VRAM'.")
+            logger .info (PRESET_FALLBACK_SUCCESS_INFO)
 
             LOADED_PRESET_NAME ="Image_Upscaler_Fast_Low_VRAM"
 
@@ -261,10 +261,10 @@ def load_initial_preset ():
                                         if 0 <=gpu_num <len (available_gpus ):
                                             setattr (section_obj ,key ,str (gpu_num ))
                                         else :
-                                            logger .warning (f"GPU index {gpu_num} out of range. Defaulting to GPU {DEFAULT_GPU_DEVICE}.")
+                                            logger .warning (PRESET_GPU_INDEX_OUT_OF_RANGE_WARNING.format(gpu_num=gpu_num, default_gpu=DEFAULT_GPU_DEVICE))
                                             setattr (section_obj ,key ,DEFAULT_GPU_DEVICE )
                                     except (ValueError ,TypeError ):
-                                        logger .warning (f"Invalid GPU device value '{value}'. Defaulting to GPU {DEFAULT_GPU_DEVICE}.")
+                                        logger .warning (PRESET_INVALID_GPU_VALUE_WARNING.format(value=value, default_gpu=DEFAULT_GPU_DEVICE))
                                         setattr (section_obj ,key ,DEFAULT_GPU_DEVICE )
                                 else :
                                     setattr (section_obj ,key ,DEFAULT_GPU_DEVICE )
@@ -272,18 +272,18 @@ def load_initial_preset ():
                                 setattr (section_obj ,key ,value )
             return base_config 
         else :
-            logger .warning (f"Could not load fallback preset 'Image_Upscaler_Fast_Low_VRAM'. Reason: {fallback_message}.")
+            logger .warning (PRESET_FALLBACK_FAILED_WARNING.format(message=fallback_message))
 
             available_presets =preset_handler .get_preset_list ()
             filtered_presets =[p for p in available_presets if p not in ["last_preset",preset_to_load ,"Image_Upscaler_Fast_Low_VRAM"]]
 
             if filtered_presets :
                 first_available =filtered_presets [0 ]
-                logger .info (f"Trying to load first available preset: '{first_available}'")
+                logger .info (PRESET_TRYING_FIRST_AVAILABLE_INFO.format(preset_name=first_available))
                 last_resort_config ,last_resort_message =preset_handler .load_preset (first_available )
 
                 if last_resort_config :
-                    logger .info (f"Successfully loaded last resort preset '{first_available}'.")
+                    logger .info (PRESET_LAST_RESORT_SUCCESS_INFO.format(preset_name=first_available))
                     LOADED_PRESET_NAME =first_available 
 
                     for section_name ,section_data in last_resort_config .items ():
@@ -299,10 +299,10 @@ def load_initial_preset ():
                                                 if 0 <=gpu_num <len (available_gpus ):
                                                     setattr (section_obj ,key ,str (gpu_num ))
                                                 else :
-                                                    logger .warning (f"GPU index {gpu_num} out of range. Defaulting to GPU {DEFAULT_GPU_DEVICE}.")
+                                                    logger .warning (PRESET_GPU_INDEX_OUT_OF_RANGE_WARNING.format(gpu_num=gpu_num, default_gpu=DEFAULT_GPU_DEVICE))
                                                     setattr (section_obj ,key ,DEFAULT_GPU_DEVICE )
                                             except (ValueError ,TypeError ):
-                                                logger .warning (f"Invalid GPU device value '{value}'. Defaulting to GPU {DEFAULT_GPU_DEVICE}.")
+                                                logger .warning (PRESET_INVALID_GPU_VALUE_WARNING.format(value=value, default_gpu=DEFAULT_GPU_DEVICE))
                                                 setattr (section_obj ,key ,DEFAULT_GPU_DEVICE )
                                         else :
                                             setattr (section_obj ,key ,DEFAULT_GPU_DEVICE )
@@ -310,9 +310,9 @@ def load_initial_preset ():
                                         setattr (section_obj ,key ,value )
                     return base_config 
                 else :
-                    logger .warning (f"Last resort preset '{first_available}' also failed to load: {last_resort_message}")
+                    logger .warning (PRESET_LAST_RESORT_FAILED_WARNING.format(preset_name=first_available, message=last_resort_message))
 
-            logger .warning ("No presets could be loaded. Starting with application defaults.")
+            logger .warning (PRESET_NO_PRESETS_LOADED_WARNING)
 
             LOADED_PRESET_NAME =None 
             return base_config 
@@ -331,10 +331,10 @@ def get_filtered_preset_list ():
 def get_initial_preset_name ():
 
     if LOADED_PRESET_NAME :
-        logger .info (f"Initial preset for dropdown: '{LOADED_PRESET_NAME}' (actually loaded)")
+        logger .info (PRESET_INITIAL_FOR_DROPDOWN_INFO.format(preset_name=LOADED_PRESET_NAME))
         return LOADED_PRESET_NAME 
     else :
-        logger .info ("No preset was successfully loaded, dropdown will show default")
+        logger .info (PRESET_NO_PRESET_SUCCESSFULLY_LOADED_INFO)
 
         return None 
 
@@ -382,7 +382,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             user_prompt =gr .Textbox (
                             label = DESCRIBE_VIDEO_CONTENT_LABEL,
                             lines =6 ,
-                            placeholder ="e.g., A panda playing guitar by a lake at sunset.",
+                            placeholder =PANDA_PLAYING_GUITAR_PLACEHOLDER,
                             value =INITIAL_APP_CONFIG .prompts .user ,
                             info = PROMPT_USER_INFO
                             )
@@ -404,14 +404,14 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
 
                         if UTIL_COG_VLM_AVAILABLE :
                             with gr .Row (elem_id ="row1"):
-                                auto_caption_btn =gr .Button ("Generate Caption with CogVLM2 (No Upscale)",variant ="primary",icon ="icons/caption.png")
+                                auto_caption_btn =gr .Button (GENERATE_CAPTION_NO_UPSCALE_BUTTON,variant ="primary",icon ="icons/caption.png")
                                 rife_fps_button =gr .Button ("RIFE FPS Increase (No Upscale)",variant ="primary",icon ="icons/fps.png")
 
                             with gr .Row (elem_id ="row2"):
                                 upscale_button =gr .Button ("Upscale Video",variant ="primary",icon ="icons/upscale.png")
 
                             with gr .Row (elem_id ="row3"):
-                                cancel_button =gr .Button ("Cancel Upscaling",variant ="stop",visible =True ,interactive =False ,icon ="icons/cancel.png")
+                                cancel_button =gr .Button (CANCEL_UPSCALING_BUTTON,variant ="stop",visible =True ,interactive =False ,icon ="icons/cancel.png")
 
                             with gr .Row (elem_id ="row4"):
                                 initial_temp_size_label =util_format_temp_folder_size (logger )
@@ -431,7 +431,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
 
                             caption_status =gr .Textbox (label ="Captioning Status",interactive =False ,visible =False )
 
-                    with gr .Accordion ("Prompt Settings (Useful only for STAR Model)",open =True ):
+                    with gr .Accordion (PROMPT_SETTINGS_STAR_MODEL_ACCORDION,open =True ):
                         pos_prompt =gr .Textbox (
                         label = DEFAULT_POSITIVE_PROMPT_LABEL,
                         value =INITIAL_APP_CONFIG .prompts .positive ,
@@ -450,7 +450,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
 
                         input_frames_folder =gr .Textbox (
                         label ="Input Video or Frames Folder Path",
-                        placeholder ="C:/path/to/video.mp4 or C:/path/to/frames/folder/",
+                        placeholder =VIDEO_FRAMES_FOLDER_PLACEHOLDER,
                         interactive =True ,
                         info = ENHANCED_INPUT_INFO
                         )
