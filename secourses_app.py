@@ -2754,7 +2754,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         ),
         seedvr2 =SeedVR2Config (
         enable =enable_seedvr2_from_type ,
-        model =seedvr2_model_val ,
+        model =util_extract_model_filename_from_dropdown(seedvr2_model_val) if seedvr2_model_val else None ,
         quality_preset =seedvr2_quality_preset_val ,
         batch_size =seedvr2_batch_size_val ,
         use_gpu =seedvr2_use_gpu_val ,
@@ -3825,7 +3825,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         ),
         seedvr2 =SeedVR2Config (
         enable =enable_seedvr2_from_type ,
-        model =seedvr2_model_val ,
+        model =util_extract_model_filename_from_dropdown(seedvr2_model_val) if seedvr2_model_val else None ,
         quality_preset =seedvr2_quality_preset_val ,
         batch_size =seedvr2_batch_size_val ,
         use_gpu =seedvr2_use_gpu_val ,
