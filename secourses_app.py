@@ -116,6 +116,7 @@ from logic.video_editor import (
     estimate_processing_time as util_estimate_processing_time,
     format_video_info_for_display as util_format_video_info_for_display
 )
+from logic.info_strings import *
 
 SELECTED_GPU_ID =0 
 
@@ -184,18 +185,7 @@ if not os .path .exists (APP_CONFIG .paths .light_deg_model_path ):
 if not os .path .exists (APP_CONFIG .paths .heavy_deg_model_path ):
      logger .error (f"FATAL: Heavy degradation model not found at {APP_CONFIG.paths.heavy_deg_model_path}.")
 
-css ="""
-.gradio-container { font-family: 'Inter', 'Roboto', 'Helvetica Neue', Arial, sans-serif !important; font-size: 16px !important; }
-.gradio-container * { font-family: 'Inter', 'Roboto', 'Helvetica Neue', Arial, sans-serif !important; font-size: 16px !important; }
-.gr-textbox, .gr-dropdown, .gr-radio, .gr-checkbox, .gr-slider, .gr-number, .gr-markdown { font-size: 16px !important; }
-label, .gr-form > label { font-size: 16px !important; }
-.gr-button { color: white; border-color: black; background: black; font-size: 16px !important; }
-#row1, #row2, #row3, #row4 {
-    margin-bottom: 20px !important;
-}
-input[type='range'] { accent-color: black; }
-.dark input[type='range'] { accent-color: #dfdfdf; }
-"""
+css = APP_CSS
 
 def load_initial_preset ():
 
@@ -394,8 +384,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             lines =6 ,
                             placeholder ="e.g., A panda playing guitar by a lake at sunset.",
                             value =INITIAL_APP_CONFIG .prompts .user ,
-                            info ="""Describe the main subject and action in the video. This guides the upscaling process.
-Combined with the Positive Prompt below, the effective text length influencing the model is limited to 77 tokens (STAR Model)."""
+                            info = PROMPT_USER_INFO
                             )
                         with gr .Row ():
                             auto_caption_then_upscale_check =gr .Checkbox (label ="Auto-caption then Upscale (Useful only for STAR Model)",value =INITIAL_APP_CONFIG .cogvlm .auto_caption_then_upscale ,info ="If checked, clicking 'Upscale Video' will first generate a caption and use it as the prompt.")
@@ -447,14 +436,13 @@ Combined with the Positive Prompt below, the effective text length influencing t
                         label ="Default Positive Prompt (Appended)",
                         value =INITIAL_APP_CONFIG .prompts .positive ,
                         lines =2 ,
-                        info ="""Appended to your 'Describe Video Content' prompt. Focuses on desired quality aspects (e.g., realism, detail).
-The total combined prompt length is limited to 77 tokens."""
+                        info = PROMPT_POSITIVE_INFO
                         )
                         neg_prompt =gr .Textbox (
                         label ="Default Negative Prompt (Appended)",
                         value =INITIAL_APP_CONFIG .prompts .negative ,
                         lines =2 ,
-                        info ="Guides the model *away* from undesired aspects (e.g., bad quality, artifacts, specific styles). This does NOT count towards the 77 token limit for positive guidance."
+                        info = PROMPT_NEGATIVE_INFO
                         )
                     with gr .Group ():
                         gr .Markdown ("### 📁 Enhanced Input: Video Files & Frame Folders")
@@ -464,14 +452,14 @@ The total combined prompt length is limited to 77 tokens."""
                         label ="Input Video or Frames Folder Path",
                         placeholder ="C:/path/to/video.mp4 or C:/path/to/frames/folder/",
                         interactive =True ,
-                        info ="Enter path to either a video file (mp4, avi, mov, etc.) or folder containing image frames (jpg, png, tiff, etc.). Automatically detected - works on Windows and Linux."
+                        info = ENHANCED_INPUT_INFO
                         )
                         frames_folder_status =gr .Textbox (
                         label ="Input Path Status",
                         interactive =False ,
                         lines =3 ,
                         visible =True ,
-                        value ="Enter a video file path or frames folder path above to validate"
+                        value = DEFAULT_STATUS_MESSAGES['validate_input']
                         )
 
                 with gr .Column (scale =1 ):
@@ -501,7 +489,7 @@ The total combined prompt length is limited to 77 tokens."""
                         show_label =False ,
                         interactive =False ,
                         lines =1 ,
-                        value =f"✅ Loaded on startup: {LOADED_PRESET_NAME}"if LOADED_PRESET_NAME else "⚠️ No preset loaded on startup - using defaults",
+                        value = PRESET_STATUS_LOADED.format(preset_name=LOADED_PRESET_NAME) if LOADED_PRESET_NAME else PRESET_STATUS_NO_PRESET,
                         placeholder ="..."
                         )
 
@@ -546,9 +534,7 @@ The total combined prompt length is limited to 77 tokens."""
                         label ="Select Image Upscaler Type",
                         choices =["Use SeedVR2 for Images","Use Image Based Upscalers"],
                         value ="Use SeedVR2 for Images",
-                        info ="""Choose your preferred upscaling method:
-• SeedVR2: Advanced AI upscaling with superior quality and detail preservation
-• Image Based: Fast traditional upscalers (RealESRGAN, ESRGAN, etc.)"""
+                        info = UPSCALER_TYPE_INFO
                         )
 
                     with gr .Accordion ("Image Processing Settings",open =True ):
@@ -556,13 +542,13 @@ The total combined prompt length is limited to 77 tokens."""
                             image_preserve_aspect_ratio =gr .Checkbox (
                             label ="Preserve Aspect Ratio",
                             value =True ,
-                            info ="Maintain the original image aspect ratio during upscaling"
+                            info = IMAGE_PRESERVE_ASPECT_RATIO_INFO
                             )
                             image_output_format =gr .Dropdown (
                             label ="Output Format",
                             choices =["PNG","JPEG","WEBP"],
                             value ="PNG",
-                            info ="Choose output image format. PNG for lossless, JPEG for smaller files"
+                            info = IMAGE_OUTPUT_FORMAT_INFO
                             )
 
                         with gr .Row ():
@@ -572,7 +558,7 @@ The total combined prompt length is limited to 77 tokens."""
                             maximum =100 ,
                             value =95 ,
                             step =1 ,
-                            info ="Quality level for JPEG/WEBP output (70-100, higher = better quality)"
+                            info = IMAGE_QUALITY_INFO
                             )
 
                     with gr .Accordion ("Advanced Image Settings",open =False ):
@@ -585,7 +571,7 @@ The total combined prompt length is limited to 77 tokens."""
                             image_preserve_metadata =gr .Checkbox (
                             label ="Preserve Image Metadata",
                             value =True ,
-                            info ="Keep original image EXIF data and metadata in the output"
+                            info = IMAGE_PRESERVE_METADATA_INFO
                             )
 
                         with gr .Row ():
@@ -593,7 +579,7 @@ The total combined prompt length is limited to 77 tokens."""
                             label ="Custom Output Suffix",
                             value ="_upscaled",
                             placeholder ="_upscaled",
-                            info ="Custom suffix added to output filename (e.g., 'image_upscaled.png')"
+                            info = IMAGE_CUSTOM_SUFFIX_INFO
                             )
 
                     with gr .Group ():
@@ -606,7 +592,7 @@ The total combined prompt length is limited to 77 tokens."""
                         label ="Processing Status",
                         interactive =False ,
                         lines =3 ,
-                        value ="Ready to process images..."
+                        value = DEFAULT_STATUS_MESSAGES['ready_image_processing']
                         )
 
                 with gr .Column (scale =1 ):
@@ -636,7 +622,7 @@ The total combined prompt length is limited to 77 tokens."""
                         label ="Image Details",
                         interactive =False ,
                         lines =8 ,
-                        value ="Upload an image to see details..."
+                        value = DEFAULT_STATUS_MESSAGES['ready_image_details']
                         )
 
                     with gr .Accordion ("Processing Log",open =False ):
@@ -644,7 +630,7 @@ The total combined prompt length is limited to 77 tokens."""
                         label ="Detailed Processing Log",
                         interactive =False ,
                         lines =6 ,
-                        value ="Processing log will appear here..."
+                        value = DEFAULT_STATUS_MESSAGES['ready_processing_log']
                         )
 
         with gr .Tab ("Resolution & Scene Split",id ="resolution_tab"):
@@ -660,26 +646,18 @@ The total combined prompt length is limited to 77 tokens."""
                         target_res_mode_radio =gr .Radio (
                         label ="Target Resolution Mode",
                         choices =['Ratio Upscale','Downscale then Upscale'],value =INITIAL_APP_CONFIG .resolution .target_res_mode ,
-                        info ="""How to apply the target H/W limits.
-'Ratio Upscale': Upscales by the largest factor possible without exceeding Target H/W, preserving aspect ratio. Ratio upscale doesn't work for Image Based Upscaler and yields very poor results for STAR model.
-'Downscale then 4x': For STAR models, downscales towards Target H/W ÷ 4, then applies 4x upscale. For image upscalers, adapts to model scale (e.g., 2x model = Target H/W ÷ 2). Can clean noisy high-res input before upscaling."""
+                        info = TARGET_RESOLUTION_MODE_INFO
                         )
                         with gr .Row ():
                             target_w_num =gr .Slider (
                             label ="Max Target Width (px)",
                             value =INITIAL_APP_CONFIG .resolution .target_w ,minimum =128 ,maximum =4096 ,step =16 ,
-                            info ="""Maximum allowed width for the output video. Overrides Upscale Factor if enabled.
-- VRAM Impact: Very High (Lower value = Less VRAM).
-- Quality Impact: Direct (Lower value = Less detail).
-- Speed Impact: Faster (Lower value = Faster)."""
+                            info = TARGET_WIDTH_INFO
                             )
                             target_h_num =gr .Slider (
                             label ="Max Target Height (px)",
                             value =INITIAL_APP_CONFIG .resolution .target_h ,minimum =128 ,maximum =4096 ,step =16 ,
-                            info ="""Maximum allowed height for the output video. Overrides Upscale Factor if enabled.
-- VRAM Impact: Very High (Lower value = Less VRAM).
-- Quality Impact: Direct (Lower value = Less detail).
-- Speed Impact: Faster (Lower value = Faster)."""
+                            info = TARGET_HEIGHT_INFO
                             )
 
                         gr .Markdown ("---")
@@ -688,11 +666,7 @@ The total combined prompt length is limited to 77 tokens."""
                         enable_auto_aspect_resolution_check =gr .Checkbox (
                         label ="Enable Auto Aspect Resolution",
                         value =INITIAL_APP_CONFIG .resolution .enable_auto_aspect_resolution ,
-                        info ="""Automatically calculate optimal resolution that maintains input video aspect ratio within the pixel budget (Target H × Target W).
-- Triggered whenever you change video or process batch videos
-- Maintains exact aspect ratio while maximizing quality within pixel limits
-- Prevents manual resolution adjustment for different aspect ratios
-- Example: 1024×1024 budget + 360×640 input → auto-sets to 720×1280 (maintains 9:16 ratio, uses 921,600 pixels)"""
+                        info = AUTO_ASPECT_RESOLUTION_INFO
                         )
 
                         auto_resolution_status_display =gr .Textbox (
@@ -709,7 +683,7 @@ The total combined prompt length is limited to 77 tokens."""
 
                         output_resolution_preview =gr .Textbox (
                         label ="Expected Output Resolution",
-                        value ="📹 Upload a video and configure settings to see expected output resolution",
+                        value = DEFAULT_STATUS_MESSAGES['expected_resolution'],
                         interactive =False ,
                         lines =10 ,
                         info ="Shows the calculated final output resolution based on your current upscaler settings, target resolution, and input video"
@@ -720,17 +694,13 @@ The total combined prompt length is limited to 77 tokens."""
                         enable_scene_split_check =gr .Checkbox (
                         label ="Enable Scene Splitting - Recommended",
                         value =INITIAL_APP_CONFIG .scene_split .enable ,
-                        info ="""Split video into scenes and process each scene individually.
-- Quality Impact: Better temporal consistency within scenes, and excellent quality with auto-captioning per scene.
-- You can also cancel and use processed scenes later, saves each scene individually as well
-- Not useful for Image Based Upscalers since no prompt or temporal consistency is utilized."""
+                        info = SCENE_SPLIT_INFO
                         )
                         with gr .Row ():
                             scene_split_mode_radio =gr .Radio (
                             label ="Split Mode",
                             choices =['automatic','manual'],value =INITIAL_APP_CONFIG .scene_split .mode ,
-                            info ="""'automatic': Uses scene detection algorithms to find natural scene boundaries.
-'manual': Splits video at fixed intervals (duration or frame count)."""
+                            info = SCENE_SPLIT_MODE_INFO
                             )
                         with gr .Group ():
                             gr .Markdown ("**Automatic Scene Detection Settings**")
@@ -802,9 +772,7 @@ The total combined prompt length is limited to 77 tokens."""
                                 cogvlm_unload_radio =gr .Radio (
                                 label ="CogVLM2 After-Use",
                                 choices =['full','cpu'],value =INITIAL_APP_CONFIG .cogvlm .unload_after_use ,
-                                info ="""Memory management after captioning.
-'full': Unload model completely from VRAM/RAM (frees most memory).
-'cpu': Move model to RAM (faster next time, uses RAM, not for quantized models)."""
+                                info = CAPTION_UNLOAD_STRATEGY_INFO
                                 )
                     else :
                         gr .Markdown ("_(Auto-captioning disabled as CogVLM2 components are not fully available.)_")
@@ -815,11 +783,7 @@ The total combined prompt length is limited to 77 tokens."""
                         enable_face_restoration_check =gr .Checkbox (
                         label ="Enable Face Restoration",
                         value =INITIAL_APP_CONFIG .face_restoration .enable ,
-                        info ="""Enhance faces in the video using CodeFormer. Works with all upscaler types.
-- Detects and restores faces automatically
-- Can be applied before or after upscaling
-- Supports both face restoration and colorization
-- Requires CodeFormer models in pretrained_weight/ directory"""
+                        info = FACE_RESTORATION_ENABLE_INFO
                         )
 
                         face_restoration_fidelity_slider =gr .Slider (
@@ -847,9 +811,7 @@ The total combined prompt length is limited to 77 tokens."""
                             label ="Apply Timing",
                             choices =['before','after'],
                             value =INITIAL_APP_CONFIG .face_restoration .when ,
-                            info ="""When to apply face restoration:
-'before': Apply before upscaling (may be enhanced further)
-'after': Apply after upscaling (final enhancement)""",
+                            info = FACE_RESTORATION_TIMING_INFO,
                             interactive =True 
                             )
 
@@ -886,9 +848,7 @@ The total combined prompt length is limited to 77 tokens."""
                         label ="STAR Model - Temporal Upscaling",
                         choices =["Light Degradation","Heavy Degradation"],
                         value =INITIAL_APP_CONFIG .star_model .model_choice ,
-                        info ="""Choose the model based on input video quality.
-'Light Degradation': Better for relatively clean inputs (e.g., downloaded web videos).
-'Heavy Degradation': Better for inputs with significant compression artifacts, noise, or blur."""
+                                                    info = CODEFORMER_MODEL_SELECTION_INFO
                         )
                         upscale_factor_slider =gr .Slider (
                         label ="Upscale Factor (if Target Res disabled)",
@@ -904,9 +864,7 @@ The total combined prompt length is limited to 77 tokens."""
                             solver_mode_radio =gr .Radio (
                             label ="Solver Mode",
                             choices =['fast','normal'],value =INITIAL_APP_CONFIG .star_model .solver_mode ,
-                            info ="""Diffusion solver type.
-'fast': Fewer steps (default ~15), much faster, good quality usually.
-'normal': More steps (default ~50), slower, potentially slightly better detail/coherence."""
+                            info = SOLVER_MODE_INFO
                             )
                             steps_slider =gr .Slider (
                             label ="Diffusion Steps",
@@ -917,20 +875,14 @@ The total combined prompt length is limited to 77 tokens."""
                         color_fix_dropdown =gr .Dropdown (
                         label ="Color Correction",
                         choices =['AdaIN','Wavelet','None'],value =INITIAL_APP_CONFIG .star_model .color_fix_method ,
-                        info ="""Attempts to match the color tone of the output to the input video. Helps prevent color shifts.
-'AdaIN' / 'Wavelet': Different algorithms for color matching. AdaIN is often a good default.
-'None': Disables color correction."""
+                        info = COLOR_CORRECTION_INFO
                         )
 
                     with gr .Accordion ("Context Window - Previous Frames for Better Consistency - Experimental Probably Not Needed",open =True ):
                         enable_context_window_check =gr .Checkbox (
                         label ="Enable Context Window",
                         value =INITIAL_APP_CONFIG .context_window .enable ,
-                        info ="""Include previous frames as context when processing each chunk (except the first). Similar to "Optimize Last Chunk Quality" but applied to all chunks.
-- Mechanism: Each chunk (except first) includes N previous frames as context, but only outputs new frames. Provides temporal consistency without complex overlap logic.
-- Quality Impact: Better temporal consistency and reduced flickering between chunks. More context = better consistency.
-- VRAM Impact: Medium increase due to processing context frames (recommend 25-50% of Max Frames per Chunk).
-- Speed Impact: Slower due to processing additional context frames, but simpler and more predictable than traditional sliding window."""
+                        info = CONTEXT_WINDOW_INFO
                         )
                         context_overlap_num =gr .Slider (
                         label ="Context Overlap (frames)",
@@ -943,41 +895,29 @@ The total combined prompt length is limited to 77 tokens."""
                         max_chunk_len_slider =gr .Slider (
                         label ="Max Frames per Chunk (VRAM)",
                         minimum =1 ,maximum =1000 ,value =INITIAL_APP_CONFIG .performance .max_chunk_len ,step =1 ,
-                        info ="""IMPORTANT for VRAM. This is the standard way the application manages VRAM. It divides the entire sequence of video frames into sequential, non-overlapping chunks.
-- Mechanism: The STAR model processes one complete chunk (of this many frames) at a time.
-- 32 Frames is best quality and uses a lot of VRAM. So reduce frame count if you get Out of Memory Error"""
+                        info = MAX_CHUNK_LEN_INFO
                         )
                         enable_chunk_optimization_check =gr .Checkbox (
                         label ="Optimize Last Chunk Quality",
                         value =INITIAL_APP_CONFIG .performance .enable_chunk_optimization ,
-                        info ="""Process extra frames for last chunks to ensure optimal quality. When the last chunk is not equal to the user-set chunk size, this processes additional frames but only keeps the necessary output.
-- Example: For 70 frames with 32-frame chunks, instead of processing only 6 frames for the last chunk (poor quality), it processes 32 frames (38-69) but keeps only the last 6 (64-69).
-- Quality Impact: Ensures all chunks have optimal processing conditions by always processing the full user-set chunk size."""
+                        info = CONTEXT_OVERLAP_INFO
                         )
                         vae_chunk_slider =gr .Slider (
                         label ="VAE Decode Chunk (VRAM)",
                         minimum =1 ,maximum =16 ,value =INITIAL_APP_CONFIG .performance .vae_chunk ,step =1 ,
-                        info ="""Controls max latent frames decoded back to pixels by VAE simultaneouslyç
-- No quality impact.
-- Higher may yield faster decoding but uses more VRAM."""
+                        info = VAE_DECODE_BATCH_SIZE_INFO
                         )
                         enable_vram_optimization_check =gr .Checkbox (
                         label ="Enable Advanced VRAM Optimization",
                         value =INITIAL_APP_CONFIG .performance .enable_vram_optimization ,
-                        info ="""Advanced memory management for STAR model components. Automatically moves models to CPU/unloads when not in use.
-- Text Encoder: Completely unloaded after encoding, reloaded only for new prompts
-- VAE: Moved to CPU when not actively encoding/decoding
-- VRAM Impact: Slightly reduces peak VRAM
-- Quality Impact: None - identical results with optimized memory usage"""
+                        info = ADVANCED_MEMORY_MANAGEMENT_INFO
                         )
 
                     with gr .Accordion ("Advanced: Tiling (Very High Res / Low VRAM)",open =True ,visible =False ):
                         enable_tiling_check =gr .Checkbox (
                         label ="Enable Tiled Upscaling",
                         value =INITIAL_APP_CONFIG .tiling .enable ,
-                        info ="""Processes each frame in small spatial patches (tiles).
-- Speed Impact: Extremely Slow.
-- I didn't find use case for this but still implemented"""
+                        info = TILING_INFO
                         )
                         with gr .Row ():
                             tile_size_num =gr .Number (
@@ -1078,23 +1018,14 @@ The total combined prompt length is limited to 77 tokens."""
 
                         refresh_models_btn =gr .Button ("🔄 Refresh Model List",variant ="secondary")
 
-                        gr .Markdown ("""
-**💡 Optimization Tips:**
-- **Batch Size**: Start with 2-4, increase if you have more VRAM
-- **2x Models**: Significantly faster and uses lesser VRAM
-- **4x Models**: Better for very low resolution videos to upscale like 960p to 3840p
-- **Popular Models**: 
-  - 2xLiveActionV1_SPAN_490000: Excellent for live-action video
-  - RealESRGAN_x4plus: Good general-purpose 4x upscaler
-  - DAT-2 series: High quality but slower
-""")
+                        gr .Markdown (IMAGE_UPSCALER_OPTIMIZATION_TIPS)
 
         with gr .Tab ("SeedVR2 Upscaler",id ="seedvr2_tab"):
             with gr .Row ():
                 with gr .Column (scale =1 ):
                     with gr .Group ():
                         gr .Markdown ("### SeedVR2 Video Upscaler - Advanced AI Video Enhancement")
-                        gr .Markdown ("**🚀 Real-time Temporal Consistency & Superior Quality**")
+                        gr .Markdown (SEEDVR2_DESCRIPTION)
 
                         seedvr2_dependency_status =gr .Textbox (
                         label ="SeedVR2 Status",
@@ -1150,7 +1081,7 @@ The total combined prompt length is limited to 77 tokens."""
                             maximum =32 ,
                             value =max (5 ,INITIAL_APP_CONFIG .seedvr2 .batch_size ),
                             step =1 ,
-                            info ="Frames processed simultaneously. Min 5 for temporal consistency. Higher = better quality but more VRAM."
+                            info = SEEDVR2_BATCH_SIZE_INFO
                             )
 
                         with gr .Row ():
@@ -1160,7 +1091,7 @@ The total combined prompt length is limited to 77 tokens."""
                             maximum =8 ,
                             value =INITIAL_APP_CONFIG .seedvr2 .temporal_overlap ,
                             step =1 ,
-                            info ="Frame overlap between batches for smoother transitions. Higher = smoother but slower."
+                            info = SEEDVR2_TEMPORAL_OVERLAP_INFO
                             )
 
                         with gr .Row ():
@@ -1359,9 +1290,7 @@ The total combined prompt length is limited to 77 tokens."""
                         create_comparison_video_check =gr .Checkbox (
                         label ="Generate Comparison Video",
                         value =INITIAL_APP_CONFIG .outputs .create_comparison_video ,
-                        info ="""Create a side-by-side or top-bottom comparison video showing original vs upscaled quality.
-The layout is automatically chosen based on aspect ratio to stay within 1920x1080 bounds when possible.
-This helps visualize the quality improvement from upscaling."""
+                        info = COMPARISON_VIDEO_INFO
                         )
                         save_frames_checkbox =gr .Checkbox (label ="Save Input and Processed Frames",value =INITIAL_APP_CONFIG .outputs .save_frames ,info ="If checked, saves the extracted input frames and the upscaled output frames into a subfolder named after the output video (e.g., '0001/input_frames' and '0001/processed_frames').")
                         save_metadata_checkbox =gr .Checkbox (label ="Save Processing Metadata",value =INITIAL_APP_CONFIG .outputs .save_metadata ,info ="If checked, saves a .txt file (e.g., '0001.txt') in the main output folder, containing all processing parameters and total processing time.")
@@ -1494,13 +1423,13 @@ This helps visualize the quality improvement from upscaling."""
                     batch_use_prompt_files =gr .Checkbox (
                     label ="Use Prompt Files (filename.txt)",
                     value =INITIAL_APP_CONFIG .batch .use_prompt_files ,
-                    info ="Look for text files with same name as video (e.g., video.txt) to use as custom prompts. Takes priority over user prompt and auto-caption."
+                    info = BATCH_USE_PROMPT_FILES_INFO
                     )
 
                     batch_save_captions =gr .Checkbox (
                     label ="Save Auto-Generated Captions",
                     value =INITIAL_APP_CONFIG .batch .save_captions ,
-                    info ="Save auto-generated captions as filename.txt in the input folder for future reuse. Never overwrites existing prompt files."
+                    info = BATCH_SAVE_CAPTIONS_INFO
                     )
 
                 if UTIL_COG_VLM_AVAILABLE :
@@ -1508,7 +1437,7 @@ This helps visualize the quality improvement from upscaling."""
                         batch_enable_auto_caption =gr .Checkbox (
                         label ="Enable Auto-Caption for Batch",
                         value =INITIAL_APP_CONFIG .batch .enable_auto_caption ,
-                        info ="Generate automatic captions for videos that don't have prompt files. Uses the same CogVLM2 settings as Core Settings tab."
+                        info = BATCH_ENABLE_AUTO_CAPTION_INFO
                         )
                 else :
 
@@ -1524,12 +1453,12 @@ This helps visualize the quality improvement from upscaling."""
                 with gr .Column (scale =1 ):
                     with gr .Accordion ("RIFE Interpolation Settings",open =True ):
                         gr .Markdown ("### Frame Interpolation (RIFE)")
-                        gr .Markdown ("**RIFE (Real-time Intermediate Flow Estimation)** uses AI to intelligently generate intermediate frames between existing frames, increasing video smoothness and frame rate.")
+                        gr .Markdown (RIFE_DESCRIPTION)
 
                         enable_rife_interpolation =gr .Checkbox (
                         label ="Enable RIFE Interpolation",
                         value =INITIAL_APP_CONFIG .rife .enable ,
-                        info ="Enable AI-powered frame interpolation to increase video FPS. When enabled, RIFE will be applied to the final upscaled video and can optionally be applied to intermediate chunks and scenes."
+                        info = RIFE_INTERPOLATION_INFO
                         )
 
                         with gr .Row ():
@@ -1721,7 +1650,7 @@ This helps visualize the quality improvement from upscaling."""
                         interactive =False ,
                         lines =3 ,
                         info ="Shows details about the cuts being made",
-                        value ="✏️ Enter ranges above to see cut analysis"
+                        value = DEFAULT_STATUS_MESSAGES['cut_analysis']
                         )
 
                     with gr .Accordion ("Options",open =True ):
@@ -1765,29 +1694,11 @@ This helps visualize the quality improvement from upscaling."""
                         interactive =False ,
                         lines =8 ,
                         max_lines =15 ,
-                        value ="🎞️ Ready to edit videos. Upload a video and specify cut ranges to begin."
+                        value = DEFAULT_STATUS_MESSAGES['ready_video']
                         )
 
                     with gr .Accordion ("Quick Help & Examples",open =True ):
-                        gr .Markdown ("""
-**Time Range Examples:**
-- `1-3` → Cut from 1 to 3 seconds
-- `1.5-3.2` → Cut from 1.5 to 3.2 seconds  
-- `1:30-2:45` → Cut from 1 minute 30 seconds to 2 minutes 45 seconds
-- `0:05-0:10,0:20-0:30` → Multiple segments
-
-**Frame Range Examples:**
-- `30-90` → Cut frames 30 to 90
-- `30-90,150-210` → Cut frames 30-90 and 150-210
-- `0-120,240-360` → Multiple frame segments
-
-**Tips:**
-- Use time ranges for easier input (supports MM:SS format)
-- Use frame ranges for frame-perfect editing
-- Preview first segment to verify before processing
-- All cuts use your current FFmpeg settings from Output & Comparison tab
-- Cut videos are saved in organized folders with metadata
-""")
+                        gr .Markdown (VIDEO_EDITING_HELP)
 
         with gr .Tab ("Face Restoration",id ="face_restoration_tab"):
             gr .Markdown ("# Standalone Face Restoration - CodeFormer Processing")
@@ -1902,7 +1813,7 @@ This helps visualize the quality improvement from upscaling."""
                         interactive =False ,
                         lines =10 ,
                         max_lines =20 ,
-                        value ="🎭 Ready for face restoration processing. Upload a video and configure settings to begin."
+                        value = DEFAULT_STATUS_MESSAGES['ready_face_restoration']
                         )
 
                     with gr .Accordion ("Processing Statistics",open =True ):
@@ -1910,28 +1821,11 @@ This helps visualize the quality improvement from upscaling."""
                         label ="Processing Stats",
                         interactive =False ,
                         lines =4 ,
-                        value ="📊 Processing statistics will appear here during face restoration."
+                        value = DEFAULT_STATUS_MESSAGES['ready_processing_stats']
                         )
 
                     with gr .Accordion ("Face Restoration Help",open =True ):
-                        gr .Markdown ("""
-**Face Restoration Tips:**
-- **Fidelity Weight 0.3-0.5**: Focus on quality enhancement, may change face slightly
-- **Fidelity Weight 0.7-0.8**: Balance between quality and identity preservation  
-- **Fidelity Weight 0.8-1.0**: Maximum identity preservation, minimal changes
-
-**Best Practices:**
-- Use comparison video to evaluate results before final processing
-- Start with fidelity weight 0.7 for most videos
-- Enable colorization only for grayscale/black & white content
-- Higher batch sizes speed up processing but use more VRAM
-- Face restoration works best on videos with clear, visible faces
-
-**Model Requirements:**
-- CodeFormer models should be placed in `pretrained_weight/` directory
-- The system will automatically detect available models
-- 'Auto' mode uses the default CodeFormer model with optimal settings
-""")
+                        gr .Markdown (FACE_RESTORATION_HELP)
 
     def update_steps_display (mode ):
         if mode =='fast':
@@ -1960,7 +1854,7 @@ This helps visualize the quality improvement from upscaling."""
     def validate_enhanced_input_wrapper (input_path ):
 
         if not input_path or not input_path .strip ():
-            return "Enter a video file path or frames folder path above to validate"
+            return DEFAULT_STATUS_MESSAGES['validate_input']
 
         from logic .frame_folder_utils import validate_input_path 
         is_valid ,message ,metadata =validate_input_path (input_path ,logger )
@@ -2032,15 +1926,15 @@ This helps visualize the quality improvement from upscaling."""
         if enable_direct_upscaling :
             if upscaler_type !="Use Image Based Upscalers":
                 return gr .update (
-                info ="⚠️ Direct Image Upscaling enabled: Automatically uses Image Based Upscalers. Switch to 'Use Image Based Upscalers' in Core Settings for optimal results."
+                info = DIRECT_IMAGE_UPSCALING_WARNING
                 )
             else :
                 return gr .update (
-                info ="✅ Direct Image Upscaling enabled: Will process JPG, PNG, etc. files directly with the selected image upscaler model."
+                info = DIRECT_IMAGE_UPSCALING_SUCCESS
                 )
         else :
             return gr .update (
-            info ="Process individual image files (JPG, PNG, etc.) directly with selected image upscaler model. Ideal for batch upscaling photos/images."
+            info = DIRECT_IMAGE_UPSCALING_DEFAULT
             )
 
     face_restoration_mode .change (
@@ -6292,12 +6186,13 @@ Please ensure:
                     comparison_update =gr .update (visible =False )
                     comparison_download_update =gr .update (visible =False )
 
-                processing_log =f"""✅ Image processing completed successfully!
-
-📁 Output: {os.path.basename(output_image_path)}
-📊 Details: {image_info.get('output_width', 0)}×{image_info.get('output_height', 0)} pixels
-⏱️ Time: {image_info.get('processing_time', 0):.2f} seconds
-🔍 Upscale: {image_info.get('upscale_factor_x', 1):.2f}x"""
+                processing_log = PROCESSING_SUCCESS_TEMPLATES['image_processing_complete'].format(
+                    output_filename=os.path.basename(output_image_path),
+                    width=image_info.get('output_width', 0),
+                    height=image_info.get('output_height', 0),
+                    processing_time=image_info.get('processing_time', 0),
+                    upscale_factor=image_info.get('upscale_factor_x', 1)
+                )
 
                 return (
                 output_image_update ,
@@ -6309,7 +6204,7 @@ Please ensure:
                 processing_log 
                 )
             else :
-                error_msg ="❌ No results returned from image processing"
+                error_msg = GENERAL_ERROR_TEMPLATES['no_results_error']
                 return (
                 gr .update (),
                 gr .update (visible =False ),
