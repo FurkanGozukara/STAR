@@ -380,14 +380,14 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         )
                         with gr .Row ():
                             user_prompt =gr .Textbox (
-                            label ="Describe the Video Content (Prompt) (Useful only for STAR Model)",
+                            label = DESCRIBE_VIDEO_CONTENT_LABEL,
                             lines =6 ,
                             placeholder ="e.g., A panda playing guitar by a lake at sunset.",
                             value =INITIAL_APP_CONFIG .prompts .user ,
                             info = PROMPT_USER_INFO
                             )
                         with gr .Row ():
-                            auto_caption_then_upscale_check =gr .Checkbox (label ="Auto-caption then Upscale (Useful only for STAR Model)",value =INITIAL_APP_CONFIG .cogvlm .auto_caption_then_upscale ,info ="If checked, clicking 'Upscale Video' will first generate a caption and use it as the prompt.")
+                            auto_caption_then_upscale_check =gr .Checkbox (label = AUTO_CAPTION_THEN_UPSCALE_LABEL,value =INITIAL_APP_CONFIG .cogvlm .auto_caption_then_upscale ,info = AUTO_CAPTION_THEN_UPSCALE_INFO)
 
                             available_gpus =util_get_available_gpus ()
                             gpu_choices =available_gpus if available_gpus else ["No CUDA GPUs detected"]
@@ -398,7 +398,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             label ="GPU Selection",
                             choices =gpu_choices ,
                             value =default_gpu ,
-                            info ="Select which GPU to use for processing. Defaults to GPU 0.",
+                            info = GPU_SELECTOR_INFO,
                             scale =1 
                             )
 
@@ -433,13 +433,13 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
 
                     with gr .Accordion ("Prompt Settings (Useful only for STAR Model)",open =True ):
                         pos_prompt =gr .Textbox (
-                        label ="Default Positive Prompt (Appended)",
+                        label = DEFAULT_POSITIVE_PROMPT_LABEL,
                         value =INITIAL_APP_CONFIG .prompts .positive ,
                         lines =2 ,
                         info = PROMPT_POSITIVE_INFO
                         )
                         neg_prompt =gr .Textbox (
-                        label ="Default Negative Prompt (Appended)",
+                        label = DEFAULT_NEGATIVE_PROMPT_LABEL,
                         value =INITIAL_APP_CONFIG .prompts .negative ,
                         lines =2 ,
                         info = PROMPT_NEGATIVE_INFO
@@ -692,7 +692,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                     split_only_button =gr .Button ("Split Video Only (No Upscaling)",icon ="icons/split.png",variant ="primary")
                     with gr .Accordion ("Scene Splitting",open =True ):
                         enable_scene_split_check =gr .Checkbox (
-                        label ="Enable Scene Splitting - Recommended",
+                        label = ENABLE_SCENE_SPLITTING_LABEL,
                         value =INITIAL_APP_CONFIG .scene_split .enable ,
                         info = SCENE_SPLIT_INFO
                         )
@@ -705,29 +705,29 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         with gr .Group ():
                             gr .Markdown ("**Automatic Scene Detection Settings**")
                             with gr .Row ():
-                                scene_min_scene_len_num =gr .Number (label ="Min Scene Length (seconds)",value =INITIAL_APP_CONFIG .scene_split .min_scene_len ,minimum =0.1 ,step =0.1 ,info ="Minimum duration for a scene. Shorter scenes will be merged or dropped.")
-                                scene_threshold_num =gr .Number (label ="Detection Threshold",value =INITIAL_APP_CONFIG .scene_split .threshold ,minimum =0.1 ,maximum =10.0 ,step =0.1 ,info ="Sensitivity of scene detection. Lower values detect more scenes.")
+                                scene_min_scene_len_num =gr .Number (label ="Min Scene Length (seconds)",value =INITIAL_APP_CONFIG .scene_split .min_scene_len ,minimum =0.1 ,step =0.1 ,info = SCENE_MIN_LENGTH_INFO)
+                                scene_threshold_num =gr .Number (label ="Detection Threshold",value =INITIAL_APP_CONFIG .scene_split .threshold ,minimum =0.1 ,maximum =10.0 ,step =0.1 ,info = SCENE_THRESHOLD_INFO)
                             with gr .Row ():
-                                scene_drop_short_check =gr .Checkbox (label ="Drop Short Scenes",value =INITIAL_APP_CONFIG .scene_split .drop_short ,info ="If enabled, scenes shorter than minimum length are dropped instead of merged.")
-                                scene_merge_last_check =gr .Checkbox (label ="Merge Last Scene",value =INITIAL_APP_CONFIG .scene_split .merge_last ,info ="If the last scene is too short, merge it with the previous scene.")
+                                scene_drop_short_check =gr .Checkbox (label ="Drop Short Scenes",value =INITIAL_APP_CONFIG .scene_split .drop_short ,info = SCENE_DROP_SHORT_INFO)
+                                scene_merge_last_check =gr .Checkbox (label ="Merge Last Scene",value =INITIAL_APP_CONFIG .scene_split .merge_last ,info = SCENE_MERGE_LAST_INFO)
                             with gr .Row ():
-                                scene_frame_skip_num =gr .Number (label ="Frame Skip",value =INITIAL_APP_CONFIG .scene_split .frame_skip ,minimum =0 ,step =1 ,info ="Skip frames during detection to speed up processing. 0 = analyze every frame.")
-                                scene_min_content_val_num =gr .Number (label ="Min Content Value",value =INITIAL_APP_CONFIG .scene_split .min_content_val ,minimum =0.0 ,step =1.0 ,info ="Minimum content change required to detect a scene boundary.")
-                                scene_frame_window_num =gr .Number (label ="Frame Window",value =INITIAL_APP_CONFIG .scene_split .frame_window ,minimum =1 ,step =1 ,info ="Number of frames to analyze for scene detection.")
+                                scene_frame_skip_num =gr .Number (label ="Frame Skip",value =INITIAL_APP_CONFIG .scene_split .frame_skip ,minimum =0 ,step =1 ,info = SCENE_FRAME_SKIP_INFO)
+                                scene_min_content_val_num =gr .Number (label ="Min Content Value",value =INITIAL_APP_CONFIG .scene_split .min_content_val ,minimum =0.0 ,step =1.0 ,info = SCENE_MIN_CONTENT_INFO)
+                                scene_frame_window_num =gr .Number (label ="Frame Window",value =INITIAL_APP_CONFIG .scene_split .frame_window ,minimum =1 ,step =1 ,info = SCENE_FRAME_WINDOW_INFO)
                         with gr .Group ():
                             gr .Markdown ("**Manual Split Settings**")
                             with gr .Row ():
-                                scene_manual_split_type_radio =gr .Radio (label ="Manual Split Type",choices =['duration','frame_count'],value =INITIAL_APP_CONFIG .scene_split .manual_split_type ,info ="'duration': Split every N seconds.\n'frame_count': Split every N frames.")
-                                scene_manual_split_value_num =gr .Number (label ="Split Value",value =INITIAL_APP_CONFIG .scene_split .manual_split_value ,minimum =1.0 ,step =1.0 ,info ="Duration in seconds or number of frames for manual splitting.")
+                                scene_manual_split_type_radio =gr .Radio (label ="Manual Split Type",choices =['duration','frame_count'],value =INITIAL_APP_CONFIG .scene_split .manual_split_type ,info = SCENE_MANUAL_SPLIT_TYPE_INFO)
+                                scene_manual_split_value_num =gr .Number (label ="Split Value",value =INITIAL_APP_CONFIG .scene_split .manual_split_value ,minimum =1.0 ,step =1.0 ,info = SCENE_MANUAL_SPLIT_VALUE_INFO)
                         with gr .Group ():
                             gr .Markdown ("**Encoding Settings (for scene segments)**")
                             with gr .Row ():
-                                scene_copy_streams_check =gr .Checkbox (label ="Copy Streams",value =INITIAL_APP_CONFIG .scene_split .copy_streams ,info ="Copy video/audio streams without re-encoding during scene splitting (faster) but can generate inaccurate splits.")
-                                scene_use_mkvmerge_check =gr .Checkbox (label ="Use MKVMerge",value =INITIAL_APP_CONFIG .scene_split .use_mkvmerge ,info ="Use mkvmerge instead of ffmpeg for splitting (if available).")
+                                scene_copy_streams_check =gr .Checkbox (label ="Copy Streams",value =INITIAL_APP_CONFIG .scene_split .copy_streams ,info = SCENE_COPY_STREAMS_INFO)
+                                scene_use_mkvmerge_check =gr .Checkbox (label ="Use MKVMerge",value =INITIAL_APP_CONFIG .scene_split .use_mkvmerge ,info = SCENE_USE_MKVMERGE_INFO)
                             with gr .Row ():
-                                scene_rate_factor_num =gr .Number (label ="Rate Factor (CRF)",value =INITIAL_APP_CONFIG .scene_split .rate_factor ,minimum =0 ,maximum =51 ,step =1 ,info ="Quality setting for re-encoding (lower = better quality). Only used if Copy Streams is disabled.")
-                                scene_preset_dropdown =gr .Dropdown (label ="Encoding Preset",choices =['ultrafast','superfast','veryfast','faster','fast','medium','slow','slower','veryslow'],value =INITIAL_APP_CONFIG .scene_split .encoding_preset ,info ="Encoding speed vs quality trade-off. Only used if Copy Streams is disabled.")
-                            scene_quiet_ffmpeg_check =gr .Checkbox (label ="Quiet FFmpeg",value =INITIAL_APP_CONFIG .scene_split .quiet_ffmpeg ,info ="Suppress ffmpeg output during scene splitting.")
+                                scene_rate_factor_num =gr .Number (label ="Rate Factor (CRF)",value =INITIAL_APP_CONFIG .scene_split .rate_factor ,minimum =0 ,maximum =51 ,step =1 ,info = SCENE_RATE_FACTOR_INFO)
+                                scene_preset_dropdown =gr .Dropdown (label ="Encoding Preset",choices =['ultrafast','superfast','veryfast','faster','fast','medium','slow','slower','veryslow'],value =INITIAL_APP_CONFIG .scene_split .encoding_preset ,info = SCENE_ENCODING_PRESET_INFO)
+                            scene_quiet_ffmpeg_check =gr .Checkbox (label ="Quiet FFmpeg",value =INITIAL_APP_CONFIG .scene_split .quiet_ffmpeg ,info = SCENE_QUIET_FFMPEG_INFO)
 
         with gr .Tab ("Core Settings",id ="core_tab"):
             with gr .Row ():
@@ -749,10 +749,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         label ="Choose Your Upscaler Type",
                         choices =["Use STAR Model Upscaler","Use Image Based Upscalers","Use SeedVR2 Video Upscaler"],
                         value =initial_upscaler_display ,
-                        info ="""Select the upscaling method:
-• STAR Model: AI temporal upscaler with prompts and advanced settings
-• Image Based: Fast deterministic spatial upscaling (RealESRGAN, etc.)  
-• SeedVR2: Upcoming advanced video upscaler (coming soon)"""
+                        info = UPSCALER_TYPE_SELECTION_INFO
                         )
 
                     if UTIL_COG_VLM_AVAILABLE :
@@ -766,7 +763,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                                 label ="CogVLM2 Quantization",
                                 choices =cogvlm_quant_radio_choices_display ,
                                 value =INITIAL_APP_CONFIG .cogvlm .quant_display ,
-                                info ="Quantization for the CogVLM2 captioning model (uses less VRAM). INT4/8 require CUDA & bitsandbytes.",
+                                info = COGVLM_QUANTIZATION_INFO,
                                 interactive =True if len (cogvlm_quant_radio_choices_display )>1 else False 
                                 )
                                 cogvlm_unload_radio =gr .Radio (
@@ -792,10 +789,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         maximum =1.0 ,
                         value =INITIAL_APP_CONFIG .face_restoration .fidelity_weight ,
                         step =0.1 ,
-                        info ="""Balance between quality and identity preservation:
-- 0.0-0.3: Prioritize quality/detail (may change facial features)
-- 0.4-0.6: Balanced approach
-- 0.7-1.0: Prioritize identity preservation (may reduce enhancement)""",
+                        info = FACE_RESTORATION_FIDELITY_INFO,
                         interactive =True 
                         )
 
@@ -803,7 +797,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             enable_face_colorization_check =gr .Checkbox (
                             label ="Enable Colorization",
                             value =INITIAL_APP_CONFIG .face_restoration .enable_colorization ,
-                            info ="Apply colorization to grayscale faces (experimental feature)",
+                            info = FACE_COLORIZATION_INFO,
                             interactive =True 
                             )
 
@@ -825,7 +819,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             label ="CodeFormer Model",
                             choices =model_choices ,
                             value =default_model_choice ,
-                            info ="Select the CodeFormer model. 'Auto' uses the default model. Models should be in pretrained_weight/ directory.",
+                            info = CODEFORMER_MODEL_SELECTION_DETAILED_INFO,
                             interactive =True 
                             )
 
@@ -835,7 +829,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         maximum =50 ,
                         value =INITIAL_APP_CONFIG .face_restoration .batch_size ,
                         step =1 ,
-                        info ="Number of frames to process simultaneously for face restoration. Higher values = faster processing but more VRAM usage.",
+                        info = FACE_RESTORATION_BATCH_SIZE_INFO,
                         interactive =True 
                         )
 
@@ -845,20 +839,20 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                     with gr .Group ():
                         gr .Markdown ("### STAR Model Settings - Temporal Upscaling")
                         model_selector =gr .Dropdown (
-                        label ="STAR Model - Temporal Upscaling",
+                        label = STAR_MODEL_TEMPORAL_UPSCALING_LABEL,
                         choices =["Light Degradation","Heavy Degradation"],
                         value =INITIAL_APP_CONFIG .star_model .model_choice ,
                                                     info = CODEFORMER_MODEL_SELECTION_INFO
                         )
                         upscale_factor_slider =gr .Slider (
-                        label ="Upscale Factor (if Target Res disabled)",
+                        label = UPSCALE_FACTOR_TARGET_RES_DISABLED_LABEL,
                         minimum =1.0 ,maximum =8.0 ,value =INITIAL_APP_CONFIG .resolution .upscale_factor ,step =0.1 ,
-                        info ="Simple multiplication factor for output resolution if 'Enable Max Target Resolution' is OFF. E.g., 4.0 means 4x height and 4x width."
+                        info = UPSCALE_FACTOR_INFO
                         )
                         cfg_slider =gr .Slider (
                         label ="Guidance Scale (CFG)",
                         minimum =1.0 ,maximum =15.0 ,value =INITIAL_APP_CONFIG .star_model .cfg_scale ,step =0.5 ,
-                        info ="Controls how strongly the model follows your combined text prompt. Higher values mean stricter adherence, lower values allow more creativity. Typical values: 5.0-10.0."
+                        info = GUIDANCE_SCALE_INFO
                         )
                         with gr .Row ():
                             solver_mode_radio =gr .Radio (
@@ -869,7 +863,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             steps_slider =gr .Slider (
                             label ="Diffusion Steps",
                             minimum =5 ,maximum =100 ,value =INITIAL_APP_CONFIG .star_model .steps ,step =1 ,
-                            info ="Number of denoising steps. 'Fast' mode uses a fixed ~15 steps. 'Normal' mode uses the value set here.",
+                            info = DENOISING_STEPS_INFO,
                             interactive =False 
                             )
                         color_fix_dropdown =gr .Dropdown (
@@ -887,7 +881,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         context_overlap_num =gr .Slider (
                         label ="Context Overlap (frames)",
                         value =INITIAL_APP_CONFIG .context_window .overlap ,minimum =0 ,maximum =31 ,step =1 ,
-                        info ="Number of previous frames to include as context for each chunk (except first). 0 = disabled (same as normal chunking). Higher values = better consistency but more VRAM and slower processing. Recommend: 25-50% of Max Frames per Chunk."
+                        info = CONTEXT_FRAMES_INFO
                         )
 
                 with gr .Column (scale =1 ):
@@ -908,7 +902,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         info = VAE_DECODE_BATCH_SIZE_INFO
                         )
                         enable_vram_optimization_check =gr .Checkbox (
-                        label ="Enable Advanced VRAM Optimization",
+                        label = ENABLE_ADVANCED_VRAM_OPTIMIZATION_LABEL,
                         value =INITIAL_APP_CONFIG .performance .enable_vram_optimization ,
                         info = ADVANCED_MEMORY_MANAGEMENT_INFO
                         )
@@ -923,12 +917,12 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             tile_size_num =gr .Number (
                             label ="Tile Size (px, input res)",
                             value =INITIAL_APP_CONFIG .tiling .tile_size ,minimum =64 ,step =32 ,
-                            info ="Size of the square patches (in input resolution pixels) to process. Smaller = less VRAM per tile but more tiles = slower."
+                            info = TILE_SIZE_INFO
                             )
                             tile_overlap_num =gr .Number (
                             label ="Tile Overlap (px, input res)",
                             value =INITIAL_APP_CONFIG .tiling .tile_overlap ,minimum =0 ,step =16 ,
-                            info ="How much the tiles overlap (in input resolution pixels). Higher overlap helps reduce seams but increases processing time. Recommend 1/4 to 1/2 of Tile Size."
+                            info = TILE_OVERLAP_INFO
                             )
 
         with gr .Tab ("Image Based Upscalers",id ="image_upscaler_tab"):
@@ -959,10 +953,10 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             default_model_choice =model_choices [0 ]
 
                         image_upscaler_model_dropdown =gr .Dropdown (
-                        label ="Select Upscaler Model - Spatial Upscaling",
+                        label = SELECT_UPSCALER_MODEL_SPATIAL_LABEL,
                         choices =model_choices ,
                         value =default_model_choice ,
-                        info ="Select the image upscaler model. Models should be placed in the 'upscale_models/' directory. Recommended: 2xLiveActionV1_SPAN_490000.pth for video content.",
+                        info = IMAGE_UPSCALER_MODEL_INFO,
                         interactive =True 
                         )
 
@@ -972,7 +966,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         maximum =50 ,
                         value =INITIAL_APP_CONFIG .image_upscaler .batch_size ,
                         step =1 ,
-                        info ="Number of frames to process simultaneously. Higher values = faster processing but more VRAM usage. Adjust based on your GPU memory.",
+                        info = IMAGE_UPSCALER_BATCH_SIZE_INFO,
                         interactive =True 
                         )
 
@@ -989,12 +983,12 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         interactive =False ,
                         lines =2 ,
                         visible =True ,
-                        value ="Upload a video and click a preview button to test upscaler models",
+                        value = DEFAULT_PREVIEW_STATUS,
                         show_label =True 
                         )
 
                         preview_slider =gr .ImageSlider (
-                        label ="Before/After Comparison (Original ← Slider → Upscaled)",
+                        label = BEFORE_AFTER_COMPARISON_SLIDER_LABEL,
                         interactive =True ,
                         visible =False ,
                         height =400 ,
@@ -1013,7 +1007,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         value ="Select a model to see its information",
                         interactive =False ,
                         lines =10 ,
-                        info ="Shows architecture, scale factor, and other model details"
+                        info = MODEL_DETAILS_DISPLAY_INFO
                         )
 
                         refresh_models_btn =gr .Button ("🔄 Refresh Model List",variant ="secondary")
@@ -1076,7 +1070,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                     with gr .Accordion ("Processing Settings",open =True ):
                         with gr .Row ():
                             seedvr2_batch_size_slider =gr .Slider (
-                            label ="Batch Size (Temporal Consistency)",
+                            label = BATCH_SIZE_TEMPORAL_CONSISTENCY_LABEL,
                             minimum =5 ,
                             maximum =32 ,
                             value =max (5 ,INITIAL_APP_CONFIG .seedvr2 .batch_size ),
@@ -1262,9 +1256,9 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                 with gr .Column (scale =1 ):
                     with gr .Accordion ("FFmpeg Encoding Settings",open =True ):
                         ffmpeg_use_gpu_check =gr .Checkbox (
-                        label ="Use NVIDIA GPU for FFmpeg (h264_nvenc)",
+                        label = USE_NVIDIA_GPU_FFMPEG_LABEL,
                         value =INITIAL_APP_CONFIG .ffmpeg .use_gpu ,
-                        info ="If checked, uses NVIDIA's NVENC for FFmpeg video encoding (downscaling and final video creation). Requires NVIDIA GPU and correctly configured FFmpeg with NVENC support."
+                        info = FFMPEG_GPU_ENCODING_INFO
                         )
                         with gr .Row ():
                             ffmpeg_preset_dropdown =gr .Dropdown (
@@ -1292,10 +1286,10 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         value =INITIAL_APP_CONFIG .outputs .create_comparison_video ,
                         info = COMPARISON_VIDEO_INFO
                         )
-                        save_frames_checkbox =gr .Checkbox (label ="Save Input and Processed Frames",value =INITIAL_APP_CONFIG .outputs .save_frames ,info ="If checked, saves the extracted input frames and the upscaled output frames into a subfolder named after the output video (e.g., '0001/input_frames' and '0001/processed_frames').")
+                        save_frames_checkbox =gr .Checkbox (label = SAVE_INPUT_PROCESSED_FRAMES_LABEL,value =INITIAL_APP_CONFIG .outputs .save_frames ,info = SAVE_FRAMES_INFO)
                         save_metadata_checkbox =gr .Checkbox (label ="Save Processing Metadata",value =INITIAL_APP_CONFIG .outputs .save_metadata ,info ="If checked, saves a .txt file (e.g., '0001.txt') in the main output folder, containing all processing parameters and total processing time.")
                         save_chunks_checkbox =gr .Checkbox (label ="Save Processed Chunks",value =INITIAL_APP_CONFIG .outputs .save_chunks ,info ="If checked, saves each processed chunk as a video file in a 'chunks' subfolder (e.g., '0001/chunks/chunk_0001.mp4'). Uses the same FFmpeg settings as the final video.")
-                        save_chunk_frames_checkbox =gr .Checkbox (label ="Save Chunk Input Frames (Debug)",value =INITIAL_APP_CONFIG .outputs .save_chunk_frames ,info ="If checked, saves the input frames for each chunk before processing into a 'chunk_frames' subfolder (e.g., '0001/chunk_frames/chunk_01_frame_012.png'). Useful for debugging which frames are processed in each chunk.")
+                        save_chunk_frames_checkbox =gr .Checkbox (label = SAVE_CHUNK_INPUT_FRAMES_DEBUG_LABEL,value =INITIAL_APP_CONFIG .outputs .save_chunk_frames ,info = SAVE_CHUNK_FRAMES_INFO)
 
                     with gr .Accordion ("Advanced: Seeding (Reproducibility)",open =True ):
                         with gr .Row ():
@@ -1466,31 +1460,31 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             label ="FPS Multiplier",
                             choices =[2 ,4 ],
                             value =INITIAL_APP_CONFIG .rife .multiplier ,
-                            info ="Choose how much to increase the frame rate. 2x doubles FPS (e.g., 24→48), 4x quadruples FPS (e.g., 24→96)."
+                            info = RIFE_MULTIPLIER_INFO
                             )
 
                         with gr .Row ():
                             rife_fp16 =gr .Checkbox (
                             label ="Use FP16 Precision",
                             value =INITIAL_APP_CONFIG .rife .fp16 ,
-                            info ="Use half-precision floating point for faster processing and lower VRAM usage. Recommended for most users."
+                            info = RIFE_FP16_INFO
                             )
                             rife_uhd =gr .Checkbox (
                             label ="UHD Mode",
                             value =INITIAL_APP_CONFIG .rife .uhd ,
-                            info ="Enable UHD mode for 4K+ videos. May improve quality for very high resolution content but requires more VRAM."
+                            info = RIFE_UHD_INFO
                             )
 
                         rife_scale =gr .Slider (
                         label ="Scale Factor",
                         minimum =0.25 ,maximum =2.0 ,value =INITIAL_APP_CONFIG .rife .scale ,step =0.25 ,
-                        info ="Scale factor for RIFE processing. 1.0 = original size. Lower values use less VRAM but may reduce quality. Higher values may improve quality but use more VRAM."
+                        info = RIFE_SCALE_INFO
                         )
 
                         rife_skip_static =gr .Checkbox (
                         label ="Skip Static Frames",
                         value =INITIAL_APP_CONFIG .rife .skip_static ,
-                        info ="Automatically detect and skip interpolating static (non-moving) frames to save processing time and avoid unnecessary interpolation."
+                        info = RIFE_SKIP_STATIC_INFO
                         )
 
                     with gr .Accordion ("Intermediate Processing",open =True ):
@@ -1498,12 +1492,12 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         rife_apply_to_chunks =gr .Checkbox (
                         label ="Apply to Chunks",
                         value =INITIAL_APP_CONFIG .rife .apply_to_chunks ,
-                        info ="Apply RIFE interpolation to individual video chunks during processing. Enabled by default for smoother intermediate results."
+                        info = RIFE_APPLY_TO_CHUNKS_INFO
                         )
                         rife_apply_to_scenes =gr .Checkbox (
                         label ="Apply to Scenes",
                         value =INITIAL_APP_CONFIG .rife .apply_to_scenes ,
-                        info ="Apply RIFE interpolation to individual scene videos when scene splitting is enabled. Enabled by default for consistent results."
+                        info = RIFE_APPLY_TO_SCENES_INFO
                         )
 
                         gr .Markdown ("**Note:** When RIFE is enabled, the system will return RIFE-interpolated versions to the interface instead of originals, ensuring you get the smoothest possible results throughout the processing pipeline.")
@@ -1671,7 +1665,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         label ="Processing Time Estimate",
                         interactive =False ,
                         lines =1 ,
-                        value ="📊 Upload video and enter ranges to see time estimate"
+                        value = DEFAULT_TIME_ESTIMATE_STATUS
                         )
 
                 with gr .Column (scale =1 ):
@@ -1963,7 +1957,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
         except Exception as e :
             logger .warning (f"Failed to refresh upscaler models: {e}")
             return gr .update (choices =["Error scanning models - check upscale_models/ directory"],
-            value ="Error scanning models - check upscale_models/ directory")
+                                    value = MODEL_SCAN_ERROR_STATUS)
 
     refresh_models_btn .click (
     fn =refresh_upscaler_models ,
@@ -5531,7 +5525,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
                 else :
                     logger .info ("SeedVR2 models directory exists but no models found")
                     return gr .update (choices =["No SeedVR2 models found - Place .safetensors files in SeedVR2/models/"],
-                    value ="No SeedVR2 models found - Place .safetensors files in SeedVR2/models/")
+                    value = SEEDVR2_NO_MODELS_STATUS)
         except Exception as e :
             logger .error (f"Failed to refresh SeedVR2 models: {e}")
             return gr .update (choices =[f"Error: {str(e)}"],value =f"Error: {str(e)}")
@@ -5586,7 +5580,7 @@ Please check the logs for more details and ensure:
                 logger .info (f"Displaying info for model: {model_filename}")
                 return gr .update (value =model_info )
             else :
-                return gr .update (value ="Could not extract model information from selection")
+                return gr .update (value = MODEL_INFO_EXTRACTION_ERROR)
         except Exception as e :
             logger .error (f"Failed to get model info for '{model_choice}': {e}")
             return gr .update (value =f"Error loading model information: {e}")

@@ -321,3 +321,288 @@ PROCESSING_CANCELLED_MESSAGES = {
     'main_process_cancelled': "⚠️ Process cancelled by user",
     'caption_generation_cancelled': "Caption generation failed or was cancelled. Using original prompt."
 } 
+
+# Additional UI Component Info Strings
+UPSCALER_TYPE_SELECTION_INFO = """Select the upscaling method:
+• STAR Model: AI temporal upscaler with prompts and advanced settings
+• Image Based: Fast deterministic spatial upscaling (RealESRGAN, etc.)  
+• SeedVR2: Upcoming advanced video upscaler (coming soon)"""
+
+COGVLM_QUANTIZATION_INFO = "Quantization for the CogVLM2 captioning model (uses less VRAM). INT4/8 require CUDA & bitsandbytes."
+
+FACE_RESTORATION_FIDELITY_INFO = """Balance between quality and identity preservation:
+- 0.0-0.3: Prioritize quality/detail (may change facial features)
+- 0.4-0.6: Balanced approach
+- 0.7-1.0: Prioritize identity preservation (may reduce enhancement)"""
+
+AUTO_CAPTION_THEN_UPSCALE_INFO = "If checked, clicking 'Upscale Video' will first generate a caption and use it as the prompt."
+
+GPU_SELECTOR_INFO = "Select which GPU to use for processing. Defaults to GPU 0."
+
+PRESET_SELECTOR_INFO = "Select a preset to auto-load, or type a new name and click Save."
+
+COMPARISON_IMAGE_GENERATION_INFO = "Generate side-by-side comparison image showing original vs upscaled"
+
+TARGET_RESOLUTION_ENABLE_INFO = "Check this to manually control the maximum output resolution instead of using the simple Upscale Factor."
+
+AUTO_RESOLUTION_DISPLAY_INFO = "Shows current auto-calculated resolution and aspect ratio information"
+
+OUTPUT_RESOLUTION_DISPLAY_INFO = "Shows the calculated final output resolution based on your current upscaler settings, target resolution, and input video"
+
+# Scene Splitting Info Strings
+SCENE_MIN_LENGTH_INFO = "Minimum duration for a scene. Shorter scenes will be merged or dropped."
+
+SCENE_THRESHOLD_INFO = "Sensitivity of scene detection. Lower values detect more scenes."
+
+SCENE_DROP_SHORT_INFO = "If enabled, scenes shorter than minimum length are dropped instead of merged."
+
+SCENE_MERGE_LAST_INFO = "If the last scene is too short, merge it with the previous scene."
+
+SCENE_FRAME_SKIP_INFO = "Skip frames during detection to speed up processing. 0 = analyze every frame."
+
+SCENE_MIN_CONTENT_INFO = "Minimum content change required to detect a scene boundary."
+
+SCENE_FRAME_WINDOW_INFO = "Number of frames to analyze for scene detection."
+
+SCENE_MANUAL_SPLIT_TYPE_INFO = "'duration': Split every N seconds.\n'frame_count': Split every N frames."
+
+SCENE_MANUAL_SPLIT_VALUE_INFO = "Duration in seconds or number of frames for manual splitting."
+
+SCENE_COPY_STREAMS_INFO = "Copy video/audio streams without re-encoding during scene splitting (faster) but can generate inaccurate splits."
+
+SCENE_USE_MKVMERGE_INFO = "Use mkvmerge instead of ffmpeg for splitting (if available)."
+
+SCENE_RATE_FACTOR_INFO = "Quality setting for re-encoding (lower = better quality). Only used if Copy Streams is disabled."
+
+SCENE_ENCODING_PRESET_INFO = "Encoding speed vs quality trade-off. Only used if Copy Streams is disabled."
+
+SCENE_QUIET_FFMPEG_INFO = "Suppress ffmpeg output during scene splitting."
+
+# Face Restoration Additional Info
+FACE_COLORIZATION_INFO = "Apply colorization to grayscale faces (experimental feature)"
+
+CODEFORMER_MODEL_SELECTION_DETAILED_INFO = "Select the CodeFormer model. 'Auto' uses the default model. Models should be in pretrained_weight/ directory."
+
+FACE_RESTORATION_BATCH_SIZE_INFO = "Number of frames to process simultaneously for face restoration. Higher values = faster processing but more VRAM usage."
+
+# Core Model Settings Info
+UPSCALE_FACTOR_INFO = "Simple multiplication factor for output resolution if 'Enable Max Target Resolution' is OFF. E.g., 4.0 means 4x height and 4x width."
+
+GUIDANCE_SCALE_INFO = "Controls how strongly the model follows your combined text prompt. Higher values mean stricter adherence, lower values allow more creativity. Typical values: 5.0-10.0."
+
+DENOISING_STEPS_INFO = "Number of denoising steps. 'Fast' mode uses a fixed ~15 steps. 'Normal' mode uses the value set here."
+
+CONTEXT_FRAMES_INFO = "Number of previous frames to include as context for each chunk (except first). 0 = disabled (same as normal chunking). Higher values = better consistency but more VRAM and slower processing. Recommended: 25-50% of Max Frames per Chunk."
+
+# Tiling Settings Info
+TILE_SIZE_INFO = "Size of the square patches (in input resolution pixels) to process. Smaller = less VRAM per tile but more tiles = slower."
+
+TILE_OVERLAP_INFO = "How much the tiles overlap (in input resolution pixels). Higher overlap helps reduce seams but increases processing time. Recommend 1/4 to 1/2 of Tile Size."
+
+# Image Upscaler Info
+IMAGE_UPSCALER_MODEL_INFO = "Select the image upscaler model. Models should be placed in the 'upscale_models/' directory. Recommended: 2xLiveActionV1_SPAN_490000.pth for video content."
+
+IMAGE_UPSCALER_BATCH_SIZE_INFO = "Number of frames to process simultaneously. Higher values = faster processing but more VRAM usage. Adjust based on your GPU memory."
+
+MODEL_DETAILS_DISPLAY_INFO = "Shows architecture, scale factor, and other model details"
+
+# SeedVR2 Info Strings
+SEEDVR2_STATUS_DISPLAY_INFO = "Shows SeedVR2 installation and dependency status"
+
+SEEDVR2_MODEL_SELECTION_INFO = "Select SeedVR2 model. 3B FP8 models offer best speed/VRAM balance, 7B models provide highest quality."
+
+SEEDVR2_MODEL_INFO_DISPLAY_INFO = "Detailed model specifications and requirements"
+
+SEEDVR2_QUALITY_PRESET_INFO = "Processing quality preset. Fast: prioritize speed, Balanced: good speed/quality balance, Quality: maximum quality."
+
+SEEDVR2_VRAM_OPTIMIZATION_INFO = "Optimize VRAM usage. Recommended for most systems."
+
+SEEDVR2_COLOR_FIX_INFO = "Fix color shifts using wavelet reconstruction. Recommended."
+
+SEEDVR2_OPTIMIZE_LAST_CHUNK_INFO = "Optimize last chunk quality like STAR model. Recommended."
+
+SEEDVR2_MEMORY_EFFICIENT_ATTENTION_INFO = "Memory-efficient attention mechanism. Default enabled."
+
+SEEDVR2_SCENE_AWARE_PROCESSING_INFO = "Enable scene-aware temporal processing for better scene boundary handling."
+
+SEEDVR2_TEMPORAL_VALIDATION_INFO = "Validate temporal consistency during processing and report quality metrics."
+
+SEEDVR2_CHUNK_OPTIMIZATION_INFO = "Optimize chunk boundaries for temporal coherence. Recommended for longer videos."
+
+SEEDVR2_TEMPORAL_CONSISTENCY_INFO = "Balance between processing speed and temporal consistency quality."
+
+SEEDVR2_GPU_ACCELERATION_INFO = "Enable GPU acceleration for SeedVR2 processing."
+
+SEEDVR2_MULTI_GPU_INFO = "Distribute processing across multiple GPUs for faster processing."
+
+SEEDVR2_GPU_DEVICES_INFO = "Comma-separated GPU IDs (e.g., '0,1,2'). Single GPU: '0'"
+
+SEEDVR2_GPU_STATUS_INFO = "Shows available GPUs and their VRAM status"
+
+SEEDVR2_BLOCK_SWAP_INFO = "Enable block swapping for large models on limited VRAM systems."
+
+SEEDVR2_BLOCK_SWAP_COUNTER_INFO = "Number of blocks to swap (0=disabled). Higher = more VRAM savings but slower."
+
+SEEDVR2_BLOCK_SWAP_IO_INFO = "Offload input/output layers for maximum VRAM savings. Optional."
+
+SEEDVR2_MODEL_CACHE_INFO = "Keep model cached in RAM between runs. Faster batch processing."
+
+SEEDVR2_BLOCK_SWAP_STATUS_INFO = "Shows block swap configuration and estimated VRAM savings"
+
+SEEDVR2_CHUNK_PREVIEW_INFO = "Enable chunk preview functionality to display processed chunks in main tab."
+
+SEEDVR2_PREVIEW_FRAMES_INFO = "Number of frames to show in chunk preview (default: 125 frames)."
+
+SEEDVR2_CHUNK_RETENTION_INFO = "Number of recent chunk videos to keep in chunks folder (default: 5)."
+
+SEEDVR2_GUIDANCE_SCALE_INFO = "Guidance scale for generation. Usually 1.0 for SeedVR2."
+
+# FFmpeg Settings Info
+FFMPEG_GPU_ENCODING_INFO = "If checked, uses NVIDIA's NVENC for FFmpeg video encoding (downscaling and final video creation). Requires NVIDIA GPU and correctly configured FFmpeg with NVENC support."
+
+FFMPEG_PRESET_INFO = "Controls encoding speed vs. compression efficiency. 'ultrafast' is fastest with lowest quality/compression, 'veryslow' is slowest with highest quality/compression. Note: NVENC presets behave differently from CPU presets."
+
+FFMPEG_QUALITY_INFO = "For libx264 (CPU): Constant Rate Factor (CRF). Lower values mean higher quality (0 is lossless, 23 is default). For h264_nvenc (GPU): Constrained Quality (CQ). Lower values generally mean better quality but larger files."
+
+FRAMES_TO_VIDEO_FPS_INFO = "FPS to use when converting frame folders to videos. This setting only applies when processing input frame folders (not regular videos). Common values: 23.976, 24, 25, 29.97, 30, 60."
+
+# Output Settings Info
+SAVE_FRAMES_INFO = "If checked, saves the extracted input frames and the upscaled output frames into a subfolder named after the output video (e.g., '0001/input_frames' and '0001/processed_frames')."
+
+SAVE_METADATA_INFO = "If checked, saves a .txt file (e.g., '0001.txt') in the main output folder, containing all processing parameters and total processing time."
+
+SAVE_CHUNKS_INFO = "If checked, saves each processed chunk as a video file in a 'chunks' subfolder (e.g., '0001/chunks/chunk_0001.mp4'). Uses the same FFmpeg settings as the final video."
+
+SAVE_CHUNK_FRAMES_INFO = "If checked, saves the input frames for each chunk before processing into a 'chunk_frames' subfolder (e.g., '0001/chunk_frames/chunk_01_frame_012.png'). Useful for debugging which frames are processed in each chunk."
+
+# Seed Settings Info
+SEED_INFO = "Seed for random number generation. Used for reproducibility. Set to -1 or check 'Random Seed' for a random seed. Value is ignored if 'Random Seed' is checked."
+
+RANDOM_SEED_INFO = "If checked, a random seed will be generated and used, ignoring the 'Seed' value."
+
+# Video Comparison Info
+VIDEO_COUNT_SELECTOR_INFO = "Select how many videos you want to compare. Additional video inputs will appear based on your selection."
+
+COMPARISON_LAYOUT_INFO = "Layout options will update based on number of videos selected."
+
+# Batch Processing Additional Info
+BATCH_INPUT_FOLDER_INFO = "Folder containing video files to process in batch mode."
+
+BATCH_OUTPUT_FOLDER_INFO = "Folder where processed videos will be saved with organized structure."
+
+BATCH_FRAME_FOLDERS_INFO = "Enable to process subfolders containing frame sequences instead of video files. Each subfolder with images will be converted to video first."
+
+BATCH_DIRECT_IMAGE_UPSCALING_INFO = "Process individual image files (JPG, PNG, etc.) directly with selected image upscaler model. Ideal for batch upscaling photos/images."
+
+BATCH_SKIP_EXISTING_INFO = "Skip processing if the output file already exists. Useful for resuming interrupted batch jobs."
+
+# RIFE Processing Info
+RIFE_MULTIPLIER_INFO = "Choose how much to increase the frame rate. 2x doubles FPS (e.g., 24→48), 4x quadruples FPS (e.g., 24→96)."
+
+RIFE_FP16_INFO = "Use half-precision floating point for faster processing and lower VRAM usage. Recommended for most users."
+
+RIFE_UHD_INFO = "Enable UHD mode for 4K+ videos. May improve quality for very high resolution content but requires more VRAM."
+
+RIFE_SCALE_INFO = "Scale factor for RIFE processing. 1.0 = original size. Lower values use less VRAM but may reduce quality. Higher values may improve quality but use more VRAM."
+
+RIFE_SKIP_STATIC_INFO = "Automatically detect and skip interpolating static (non-moving) frames to save processing time and avoid unnecessary interpolation."
+
+RIFE_APPLY_TO_CHUNKS_INFO = "Apply RIFE interpolation to individual video chunks during processing. Enabled by default for smoother intermediate results."
+
+RIFE_APPLY_TO_SCENES_INFO = "Apply RIFE interpolation to individual scene videos when scene splitting is enabled. Enabled by default for consistent results."
+
+# FPS Control Info
+FPS_DECREASE_ENABLE_INFO = "Reduce video FPS before upscaling to speed up processing. Fewer frames = faster upscaling and lower VRAM usage."
+
+FPS_MODE_INFO = "Multiplier: Reduce by fraction (1/2x, 1/4x). Fixed: Set specific FPS value. Multiplier is recommended for automatic adaptation to input video."
+
+FPS_MULTIPLIER_PRESET_INFO = "Choose common multiplier. 1/2x is recommended for good speed/quality balance."
+
+FPS_MULTIPLIER_CUSTOM_INFO = "Custom multiplier value (0.1 to 1.0). Lower = fewer frames."
+
+FPS_TARGET_INFO = "Target FPS for the reduced video. Lower FPS = faster upscaling. Common choices: 12-15 FPS for fast processing, 24 FPS for cinema standard. Supports precise values like 23.976."
+
+FPS_REDUCTION_METHOD_INFO = "Drop: Faster, simply removes frames. Blend: Smoother, blends frames together (slower but may preserve motion better)."
+
+# RIFE Output Control Info
+RIFE_ENABLE_FPS_LIMIT_INFO = "Limit the output FPS to specific common values instead of unlimited interpolation. Useful for compatibility with displays and media players."
+
+RIFE_MAX_FPS_LIMIT_INFO = "Maximum FPS when limiting is enabled. NTSC rates: 23.976/29.970/59.940 (film/TV), Standard: 24/25/30/50/60, Gaming: 120/144/240+. Choose based on your target format and display."
+
+RIFE_KEEP_ORIGINAL_INFO = "Keep the original (non-interpolated) video files alongside the RIFE-processed versions. Recommended to compare results."
+
+RIFE_REPLACE_OUTPUT_INFO = "Replace the original upscaled video with the RIFE version as the primary output. When disabled, both versions are available."
+
+# Video Information Display Info
+VIDEO_INFO_DISPLAY_INFO = "Shows duration, FPS, frame count, resolution"
+
+# Video Editing Info
+CUTTING_MODE_INFO = "Choose between time-based or frame-based cutting"
+
+TIME_RANGES_INFO = "Format: start1-end1,start2-end2,... (supports decimal seconds and MM:SS format)"
+
+FRAME_RANGES_INFO = "Format: start1-end1,start2-end2,... (frame numbers are 0-indexed)"
+
+CUT_ANALYSIS_INFO = "Shows details about the cuts being made"
+
+# Status Messages for Various Components
+DEFAULT_PREVIEW_STATUS = "Upload a video and click a preview button to test upscaler models"
+
+DEFAULT_TIME_ESTIMATE_STATUS = "📊 Upload video and enter ranges to see time estimate"
+
+MODEL_SCAN_ERROR_STATUS = "Error scanning models - check upscale_models/ directory"
+
+SEEDVR2_NO_MODELS_STATUS = "No SeedVR2 models found - Place .safetensors files in SeedVR2/models/"
+
+MODEL_INFO_EXTRACTION_ERROR = "Could not extract model information from selection"
+
+# Labels for Longer Components
+DESCRIBE_VIDEO_CONTENT_LABEL = "Describe the Video Content (Prompt) (Useful only for STAR Model)"
+
+AUTO_CAPTION_THEN_UPSCALE_LABEL = "Auto-caption then Upscale (Useful only for STAR Model)"
+
+DEFAULT_POSITIVE_PROMPT_LABEL = "Default Positive Prompt (Appended)"
+
+DEFAULT_NEGATIVE_PROMPT_LABEL = "Default Negative Prompt (Appended)"
+
+INPUT_VIDEO_OR_FRAMES_LABEL = "Input Video or Frames Folder Path"
+
+OUTPUT_QUALITY_JPEG_LABEL = "Output Quality (JPEG/WEBP only)"
+
+CREATE_BEFORE_AFTER_COMPARISON_LABEL = "Create Before/After Comparison"
+
+ENABLE_SCENE_SPLITTING_LABEL = "Enable Scene Splitting - Recommended"
+
+STAR_MODEL_TEMPORAL_UPSCALING_LABEL = "STAR Model - Temporal Upscaling"
+
+UPSCALE_FACTOR_TARGET_RES_DISABLED_LABEL = "Upscale Factor (if Target Res disabled)"
+
+ENABLE_ADVANCED_VRAM_OPTIMIZATION_LABEL = "Enable Advanced VRAM Optimization"
+
+SELECT_UPSCALER_MODEL_SPATIAL_LABEL = "Select Upscaler Model - Spatial Upscaling"
+
+BEFORE_AFTER_COMPARISON_SLIDER_LABEL = "Before/After Comparison (Original ← Slider → Upscaled)"
+
+BATCH_SIZE_TEMPORAL_CONSISTENCY_LABEL = "Batch Size (Temporal Consistency)"
+
+USE_NVIDIA_GPU_FFMPEG_LABEL = "Use NVIDIA GPU for FFmpeg (h264_nvenc)"
+
+FFMPEG_QUALITY_CRF_CQ_LABEL = "FFmpeg Quality (CRF for libx264 / CQ for NVENC)"
+
+SAVE_INPUT_PROCESSED_FRAMES_LABEL = "Save Input and Processed Frames"
+
+SAVE_CHUNK_INPUT_FRAMES_DEBUG_LABEL = "Save Chunk Input Frames (Debug)"
+
+PROCESS_FRAME_FOLDERS_BATCH_LABEL = "Process Frame Folders in Batch"
+
+USE_PROMPT_FILES_FILENAME_LABEL = "Use Prompt Files (filename.txt)"
+
+GENERATE_PREVIEW_FIRST_SEGMENT_LABEL = "Generate Preview of First Segment"
+
+INPUT_VIDEO_FACE_RESTORATION_LABEL = "Input Video for Face Restoration"
+
+FACE_RESTORATION_FIDELITY_WEIGHT_LABEL = "Face Restoration Fidelity Weight"
+
+CREATE_BEFORE_AFTER_COMPARISON_VIDEO_LABEL = "Create Before/After Comparison Video"
+
+FFMPEG_QUALITY_CRF_LIBX264_LABEL = "FFmpeg Quality (CRF for libx264)" 
