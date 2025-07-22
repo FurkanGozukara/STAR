@@ -142,7 +142,7 @@ DEFAULT_IMAGE_UPSCALER_CACHE_MODELS = True
 # Upscaler Type Selection
 DEFAULT_UPSCALER_TYPE = "image_upscaler"  # Options: "star", "image_upscaler", "seedvr2"
 
-# SeedVR2 Upscaler
+# SeedVR2 Upscaler - now controlled by upscaler_type setting
 DEFAULT_ENABLE_SEEDVR2 = False
 DEFAULT_SEEDVR2_MODEL = None
 DEFAULT_SEEDVR2_BATCH_SIZE = 5  # Minimum 5 for temporal consistency
@@ -414,8 +414,9 @@ class UpscalerTypeConfig:
 
 @dataclass
 class SeedVR2Config:
-    """Configuration for SeedVR2 upscaler with advanced features."""
-    # Basic settings
+    """Configuration for SeedVR2 upscaler with advanced features.
+    Note: 'enable' is now controlled by the upscaler_type setting in Core Settings."""
+    # Basic settings (enable is derived from upscaler_type == "seedvr2")
     enable: bool = DEFAULT_ENABLE_SEEDVR2
     model: Optional[str] = DEFAULT_SEEDVR2_MODEL
     batch_size: int = DEFAULT_SEEDVR2_BATCH_SIZE
