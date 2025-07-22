@@ -906,12 +906,12 @@ def run_upscale (
                     if logger:
                         logger.debug(f"SeedVR2 progress wrapper error (ignored): {prog_exc}")
 
-            # Import SeedVR2 core here to avoid circular imports
-            from .seedvr2_core import process_video_with_seedvr2
+            # Import SeedVR2 CLI core here to avoid circular imports and ComfyUI dependencies
+            from .seedvr2_cli_core import process_video_with_seedvr2_cli
 
             try:
-                # Process with SeedVR2
-                for result in process_video_with_seedvr2(
+                # Process with SeedVR2 CLI
+                output_video_path = process_video_with_seedvr2_cli(
                     input_video_path=current_input_video_for_frames,
                     seedvr2_config=seedvr2_config,
                     
@@ -929,81 +929,61 @@ def run_upscale (
                     
                     # Scene processing parameters
                     enable_scene_split=enable_scene_split,
-                    scene_video_paths=scene_video_paths,
+                    scene_min_scene_len=scene_min_scene_len,
+                    scene_threshold=scene_threshold,
                     
-                    # Directory and file management
-                    temp_dir=temp_dir,
-                    output_dir=main_output_dir,
-                    base_output_filename_no_ext=base_output_filename_no_ext,
+                    # Output parameters
+                    output_folder=main_output_dir,
+                    temp_folder=temp_dir,
+                    create_comparison_video=create_comparison_video_enabled,
                     
-                    # FPS parameters
-                    input_fps=input_fps_val,
-                    
-                    # FFmpeg parameters
+                    # Global settings
                     ffmpeg_preset=ffmpeg_preset,
-                    ffmpeg_quality_value=ffmpeg_quality_value,
+                    ffmpeg_quality=ffmpeg_quality_value,
                     ffmpeg_use_gpu=ffmpeg_use_gpu,
+                    seed=current_seed,
+                    
+                    # Callbacks
+                    progress_callback=_seedvr2_progress_wrapper,
+                    status_callback=lambda msg: status_log.append(msg),
                     
                     # Dependencies
-                    logger=logger,
-                    progress=_seedvr2_progress_wrapper,
+                    logger=logger
+                )
+                
+                # SeedVR2 processing completed successfully
+                if output_video_path and os.path.exists(output_video_path):
+                    status_log.append(f"✅ SeedVR2 processing completed: {os.path.basename(output_video_path)}")
+                    final_output_video_path = output_video_path
                     
-                    # Utility functions (injected dependencies)
-                    util_extract_frames=util_extract_frames,
-                    util_create_video_from_frames=util_create_video_from_frames,
-                    util_get_gpu_device=util_get_gpu_device,
-                    format_time=format_time,
-                    
-                    # Metadata parameters
-                    params_for_metadata=params_for_metadata,
-                    metadata_handler_module=metadata_handler_module,
-                    
-                    # Status tracking
-                    status_log=status_log,
-                    current_seed=current_seed
-                ):
-                    # SeedVR2 yields: (output_video_path, status_message, chunk_video_path, chunk_status, comparison_video_path)
-                    output_video_path, status_message, chunk_video_path, chunk_status, comparison_video_path = result
-                    
-                    if output_video_path is not None:
-                        # For scene splitting with SeedVR2, ensure proper naming for audio merging
-                        if enable_scene_split:
-                            # Use STAR naming pattern for intermediate file
-                            silent_upscaled_video_path = os.path.join(temp_dir, "silent_upscaled_video.mp4")
-                            # Copy/move the SeedVR2 output to the expected path
-                            if output_video_path != silent_upscaled_video_path:
-                                shutil.copy2(output_video_path, silent_upscaled_video_path)
-                                logger.info(f"SeedVR2: Copied output to intermediate path for audio merge: {silent_upscaled_video_path}")
-                            
-                            # Handle partial results for cancellation
-                            current_final_path = params_for_metadata.get("final_output_path")
-                            if current_final_path and not any(indicator in os.path.basename(output_video_path) for indicator in ["partial", "cancelled"]):
-                                # Complete result - use the permanent target path
-                                seedvr2_temp_output = output_video_path  # Save the temp path returned by SeedVR2
-                                output_video_path = current_final_path  # Restore the permanent target path
-                                logger.info(f"SeedVR2: Restoring permanent output path: {output_video_path} (was temp: {seedvr2_temp_output})")
-                            else:
-                                # Partial result or no permanent path set - preserve the path returned by SeedVR2
-                                logger.info(f"SeedVR2: Using partial/cancelled result path: {output_video_path}")
-                        else:
-                            # Direct upscaling without scene splitting
-                            silent_upscaled_video_path = output_video_path
+                    # For scene splitting with SeedVR2, ensure proper naming for audio merging
+                    if enable_scene_split:
+                        # Use STAR naming pattern for intermediate file
+                        silent_upscaled_video_path = os.path.join(temp_dir, "silent_upscaled_video.mp4")
+                        # Copy/move the SeedVR2 output to the expected path
+                        if output_video_path != silent_upscaled_video_path:
+                            shutil.copy2(output_video_path, silent_upscaled_video_path)
+                            logger.info(f"SeedVR2: Copied output to intermediate path for audio merge: {silent_upscaled_video_path}")
                         
-                        params_for_metadata["input_fps"] = input_fps_val
-                        # Final result - break out of loop
-                        break
+                        # Handle partial results for cancellation
+                        current_final_path = params_for_metadata.get("final_output_path")
+                        if current_final_path and not any(indicator in os.path.basename(output_video_path) for indicator in ["partial", "cancelled"]):
+                            # Complete result - use the permanent target path
+                            seedvr2_temp_output = output_video_path  # Save the temp path returned by SeedVR2
+                            output_video_path = current_final_path  # Restore the permanent target path
+                            logger.info(f"SeedVR2: Restoring permanent output path: {output_video_path} (was temp: {seedvr2_temp_output})")
+                        else:
+                            # Partial result or no permanent path set - preserve the path returned by SeedVR2
+                            logger.info(f"SeedVR2: Using partial/cancelled result path: {output_video_path}")
+                    else:
+                        # Direct upscaling without scene splitting
+                        silent_upscaled_video_path = output_video_path
                     
-                    if status_message:
-                        status_log.append(status_message)
-                    
-                    if chunk_video_path is not None:
-                        last_chunk_video_path = chunk_video_path
-                    
-                    if chunk_status:
-                        last_chunk_status = chunk_status
-                    
-                    # Yield progress update
-                    yield None, "\n".join(status_log), last_chunk_video_path, last_chunk_status, comparison_video_path
+                    params_for_metadata["input_fps"] = input_fps_val
+                else:
+                    logger.error("SeedVR2 processing failed: no output video generated")
+                    status_log.append("❌ SeedVR2 processing failed")
+                    raise gr.Error("SeedVR2 processing failed to generate output video")
                 
                 # Update progress after SeedVR2 processing
                 current_overall_progress = upscaling_loop_progress_start + stage_weights["upscaling_loop"]

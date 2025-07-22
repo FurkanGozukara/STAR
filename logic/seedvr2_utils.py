@@ -1431,4 +1431,188 @@ def check_seedvr2_dependencies(logger: logging.Logger = None) -> Tuple[bool, Lis
         else:
             logger.warning(f"Missing SeedVR2 dependencies: {missing_deps}")
     
-    return all_available, missing_deps 
+    return all_available, missing_deps
+
+
+def get_real_time_block_swap_status(logger: logging.Logger = None) -> Dict[str, Any]:
+    """
+    Get real-time block swap and memory status.
+    
+    Args:
+        logger: Logger instance
+        
+    Returns:
+        Dictionary with current system status
+    """
+    try:
+        status = {}
+        
+        # Get VRAM info
+        if torch.cuda.is_available():
+            vram_allocated = torch.cuda.memory_allocated() / (1024**3)  # GB
+            vram_reserved = torch.cuda.memory_reserved() / (1024**3)  # GB
+            vram_max = torch.cuda.max_memory_allocated() / (1024**3)  # GB
+            
+            status.update({
+                "vram_allocated": vram_allocated,
+                "vram_reserved": vram_reserved,
+                "vram_max": vram_max,
+                "memory_info": f"{vram_allocated:.1f}GB allocated, {vram_reserved:.1f}GB reserved"
+            })
+        else:
+            status.update({
+                "vram_allocated": 0,
+                "vram_reserved": 0,
+                "vram_max": 0,
+                "memory_info": "CUDA not available"
+            })
+        
+        # Get CPU memory info
+        try:
+            import psutil
+            cpu_memory = psutil.virtual_memory()
+            status["cpu_memory_percent"] = cpu_memory.percent
+            status["cpu_memory_available_gb"] = cpu_memory.available / (1024**3)
+        except ImportError:
+            status["cpu_memory_percent"] = 0
+            status["cpu_memory_available_gb"] = 0
+        
+        return status
+        
+    except Exception as e:
+        if logger:
+            logger.warning(f"Failed to get real-time status: {e}")
+        return {
+            "vram_allocated": 0,
+            "vram_reserved": 0,
+            "vram_max": 0,
+            "memory_info": "Status unavailable",
+            "cpu_memory_percent": 0,
+            "cpu_memory_available_gb": 0
+        }
+
+
+def get_recommended_settings_for_vram(
+    total_vram_gb: float,
+    model_filename: str,
+    target_quality: str = "balanced",
+    logger: logging.Logger = None
+) -> Dict[str, Any]:
+    """
+    Get recommended SeedVR2 settings based on available VRAM.
+    
+    Args:
+        total_vram_gb: Total available VRAM in GB
+        model_filename: Selected model filename
+        target_quality: Target quality level ("fast", "balanced", "quality")
+        logger: Logger instance
+        
+    Returns:
+        Dictionary with recommended settings
+    """
+    try:
+        recommendations = {}
+        
+        # Determine model size from filename
+        if "3b" in model_filename.lower():
+            model_size = "3B"
+            base_vram_requirement = 6.0  # GB
+        elif "7b" in model_filename.lower():
+            model_size = "7B"
+            base_vram_requirement = 12.0  # GB
+        else:
+            model_size = "Unknown"
+            base_vram_requirement = 8.0  # GB (default estimate)
+        
+        # Determine precision from filename
+        if "fp8" in model_filename.lower():
+            precision = "FP8"
+            vram_multiplier = 0.7  # FP8 uses less VRAM
+        elif "fp16" in model_filename.lower():
+            precision = "FP16"
+            vram_multiplier = 1.0
+        else:
+            precision = "FP16"  # Default
+            vram_multiplier = 1.0
+        
+        estimated_vram_needed = base_vram_requirement * vram_multiplier
+        
+        # Basic recommendations based on VRAM availability
+        if total_vram_gb >= estimated_vram_needed * 1.5:
+            # Plenty of VRAM
+            recommendations.update({
+                "batch_size": 8 if target_quality == "quality" else 6,
+                "temporal_overlap": 3,
+                "enable_block_swap": False,
+                "block_swap_counter": 0,
+                "preserve_vram": False,
+                "enable_multi_gpu": False,
+                "flash_attention": True,
+                "color_correction": True,
+                "enable_frame_padding": True
+            })
+        elif total_vram_gb >= estimated_vram_needed:
+            # Adequate VRAM
+            recommendations.update({
+                "batch_size": 6 if target_quality == "quality" else 5,
+                "temporal_overlap": 2,
+                "enable_block_swap": False,
+                "block_swap_counter": 0,
+                "preserve_vram": True,
+                "enable_multi_gpu": False,
+                "flash_attention": True,
+                "color_correction": True,
+                "enable_frame_padding": True
+            })
+        else:
+            # Limited VRAM - enable optimizations
+            block_swap_blocks = min(8, max(2, int((estimated_vram_needed - total_vram_gb) * 2)))
+            recommendations.update({
+                "batch_size": 5,  # Minimum for temporal consistency
+                "temporal_overlap": 1,
+                "enable_block_swap": True,
+                "block_swap_counter": block_swap_blocks,
+                "preserve_vram": True,
+                "enable_multi_gpu": False,
+                "flash_attention": True,
+                "color_correction": True,
+                "enable_frame_padding": False  # Disable for VRAM savings
+            })
+        
+        # Quality-based adjustments
+        if target_quality == "fast":
+            recommendations["batch_size"] = max(5, recommendations["batch_size"] - 1)
+            recommendations["temporal_overlap"] = max(1, recommendations["temporal_overlap"] - 1)
+        elif target_quality == "quality":
+            recommendations["batch_size"] = min(12, recommendations["batch_size"] + 2)
+            recommendations["temporal_overlap"] = min(4, recommendations["temporal_overlap"] + 1)
+        
+        # Add metadata
+        recommendations.update({
+            "model_size": model_size,
+            "precision": precision,
+            "estimated_vram_gb": estimated_vram_needed,
+            "available_vram_gb": total_vram_gb,
+            "vram_ratio": total_vram_gb / estimated_vram_needed if estimated_vram_needed > 0 else 0,
+            "target_quality": target_quality
+        })
+        
+        if logger:
+            logger.info(f"Generated SeedVR2 recommendations for {model_filename}: {recommendations}")
+        
+        return recommendations
+        
+    except Exception as e:
+        if logger:
+            logger.error(f"Failed to generate recommendations: {e}")
+        return {
+            "batch_size": 5,
+            "temporal_overlap": 2,
+            "enable_block_swap": False,
+            "block_swap_counter": 0,
+            "preserve_vram": True,
+            "enable_multi_gpu": False,
+            "flash_attention": True,
+            "color_correction": True,
+            "enable_frame_padding": True
+        } 

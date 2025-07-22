@@ -140,6 +140,12 @@ from logic .temp_folder_utils import (
     clear_temp_folder as util_clear_temp_folder 
 )
 
+from logic .seedvr2_cli_core import (
+    process_video_with_seedvr2_cli as util_process_video_with_seedvr2_cli ,
+    SeedVR2BlockSwap as util_SeedVR2BlockSwap ,
+    apply_wavelet_color_correction as util_apply_wavelet_color_correction 
+)
+
 from logic .seedvr2_image_core import (
     process_single_image as util_process_single_image ,
     format_image_info_display as util_format_image_info_display 
@@ -158,8 +164,8 @@ from logic .seedvr2_utils import (
     setup_block_swap_config as util_setup_block_swap_config ,
     get_optimal_batch_size_for_vram as util_get_optimal_batch_size_for_vram ,
     get_recommended_settings_for_vram as util_get_recommended_settings_for_vram ,
-    estimate_processing_time as util_estimate_processing_time ,
     get_real_time_block_swap_status as util_get_real_time_block_swap_status ,
+    estimate_processing_time as util_estimate_processing_time ,
     get_intelligent_block_swap_recommendations as util_get_intelligent_block_swap_recommendations ,
     format_block_swap_recommendations_for_ui as util_format_block_swap_recommendations_for_ui ,
     get_multi_gpu_status_display as util_get_multi_gpu_status_display ,
@@ -1226,6 +1232,14 @@ The total combined prompt length is limited to 77 tokens."""
                             )
 
                         with gr .Row ():
+                            seedvr2_quality_preset_radio =gr .Radio (
+                            label ="Quality Preset",
+                            choices =["fast","balanced","quality"],
+                            value =INITIAL_APP_CONFIG .seedvr2 .quality_preset ,
+                            info ="Processing quality preset. Fast: prioritize speed, Balanced: good speed/quality balance, Quality: maximum quality."
+                            )
+
+                        with gr .Row ():
                             seedvr2_preserve_vram_check =gr .Checkbox (
                             label ="Preserve VRAM",
                             value =INITIAL_APP_CONFIG .seedvr2 .preserve_vram ,
@@ -1279,6 +1293,11 @@ The total combined prompt length is limited to 77 tokens."""
                 with gr .Column (scale =1 ):
                     with gr .Accordion ("GPU Configuration",open =True ):
                         with gr .Row ():
+                            seedvr2_use_gpu_check =gr .Checkbox (
+                            label ="Use GPU",
+                            value =INITIAL_APP_CONFIG .seedvr2 .use_gpu ,
+                            info ="Enable GPU acceleration for SeedVR2 processing."
+                            )
                             seedvr2_enable_multi_gpu_check =gr .Checkbox (
                             label ="Enable Multi-GPU",
                             value =INITIAL_APP_CONFIG .seedvr2 .enable_multi_gpu ,
@@ -2536,7 +2555,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         image_upscaler_model_val ,image_upscaler_batch_size_val ,
         enable_face_restoration_val ,face_restoration_fidelity_val ,enable_face_colorization_val ,
         face_restoration_when_val ,codeformer_model_val ,face_restoration_batch_size_val ,
-        enable_seedvr2_val ,seedvr2_model_val ,seedvr2_batch_size_val ,
+        enable_seedvr2_val ,seedvr2_model_val ,seedvr2_quality_preset_val ,seedvr2_batch_size_val ,seedvr2_use_gpu_val ,
         seedvr2_temporal_overlap_val ,seedvr2_preserve_vram_val ,seedvr2_color_correction_val ,
         seedvr2_scene_awareness_val ,seedvr2_consistency_validation_val ,
         seedvr2_chunk_optimization_val ,seedvr2_temporal_quality_val ,
@@ -2770,7 +2789,9 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         seedvr2 =SeedVR2Config (
         enable =enable_seedvr2_from_type and enable_seedvr2_val ,
         model =seedvr2_model_val ,
+        quality_preset =seedvr2_quality_preset_val ,
         batch_size =seedvr2_batch_size_val ,
+        use_gpu =seedvr2_use_gpu_val ,
         temporal_overlap =seedvr2_temporal_overlap_val ,
         scene_awareness =seedvr2_scene_awareness_val ,
         temporal_quality =seedvr2_temporal_quality_val ,
@@ -3180,6 +3201,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
             codeformer_model =app_config .face_restoration .model ,
             face_restoration_batch_size =app_config .face_restoration .batch_size ,
 
+            # SeedVR2 parameters
             enable_seedvr2 =app_config .seedvr2 .enable ,
             seedvr2_config =app_config .seedvr2 
             )
@@ -3633,13 +3655,13 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
     def build_batch_app_config_from_ui (*args ):
         
         # Add parameter count validation similar to the regular build_app_config_from_ui function
-        if len (args )<97 :
-            logger .warning (f"Expected 97 UI arguments for batch processing, got {len(args)}. Adding default values for missing components.")
-            missing_count =97 -len (args )
+        if len (args )<99 :  # Updated to 99 to account for new SeedVR2 parameters
+            logger .warning (f"Expected 99 UI arguments for batch processing, got {len(args)}. Adding default values for missing components.")
+            missing_count =99 -len (args )
             args =list (args )+[None ]*missing_count 
-        elif len (args )>97 :
-            logger .warning (f"Expected 97 UI arguments for batch processing, got {len(args)}. Trimming extra arguments.")
-            args =args [:97 ]
+        elif len (args )>99 :
+            logger .warning (f"Expected 99 UI arguments for batch processing, got {len(args)}. Trimming extra arguments.")
+            args =args [:99 ]
 
         (
         input_video_val ,user_prompt_val ,pos_prompt_val ,neg_prompt_val ,model_selector_val ,
@@ -3666,7 +3688,7 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         image_upscaler_model_val ,image_upscaler_batch_size_val ,
         enable_face_restoration_val ,face_restoration_fidelity_val ,enable_face_colorization_val ,
         face_restoration_when_val ,codeformer_model_val ,face_restoration_batch_size_val ,
-        enable_seedvr2_val ,seedvr2_model_val ,seedvr2_batch_size_val ,
+        enable_seedvr2_val ,seedvr2_model_val ,seedvr2_quality_preset_val ,seedvr2_batch_size_val ,seedvr2_use_gpu_val ,
         seedvr2_temporal_overlap_val ,seedvr2_preserve_vram_val ,seedvr2_color_correction_val ,
         seedvr2_scene_awareness_val ,seedvr2_consistency_validation_val ,
         seedvr2_chunk_optimization_val ,seedvr2_temporal_quality_val ,
@@ -3834,7 +3856,9 @@ Supports BFloat16: {model_info.get('supports_bfloat16', False)}"""
         seedvr2 =SeedVR2Config (
         enable =enable_seedvr2_from_type and enable_seedvr2_val ,
         model =seedvr2_model_val ,
+        quality_preset =seedvr2_quality_preset_val ,
         batch_size =seedvr2_batch_size_val ,
+        use_gpu =seedvr2_use_gpu_val ,
         temporal_overlap =seedvr2_temporal_overlap_val ,
         scene_awareness =seedvr2_scene_awareness_val ,
         temporal_quality =seedvr2_temporal_quality_val ,

@@ -336,18 +336,16 @@ def _process_with_seedvr2(
         sys.path.insert(0, seedvr2_base_path)
     
     try:
-        # Import SeedVR2 modules
-        from src.core.model_manager import configure_runner
-        from src.core.generation import generation_loop
-        from src.utils.downloads import download_weight
+        # Import SeedVR2 CLI processing to avoid ComfyUI dependencies
+        from .seedvr2_cli_core import _process_batch_with_seedvr2_model, SeedVR2BlockSwap
         
         if logger:
-            logger.info("SeedVR2 modules imported successfully")
+            logger.info("SeedVR2 CLI modules imported successfully")
             
     except ImportError as e:
-        error_msg = f"Failed to import SeedVR2 modules: {e}. Ensure SeedVR2 is properly installed."
+        error_msg = f"Failed to import SeedVR2 CLI modules: {e}. Using fallback processing."
         if logger:
-            logger.error(error_msg)
+            logger.warning(error_msg)
         raise RuntimeError(error_msg)
     
     # Setup model path
@@ -380,54 +378,40 @@ def _process_with_seedvr2(
     if progress:
         progress(0.4, "🔧 Configuring SeedVR2 model...")
     
-    # Configure SeedVR2 runner
-    try:
-        runner = configure_runner(
-            model=seedvr2_config.model,
-            base_cache_dir=models_dir,
-            preserve_vram=seedvr2_config.preserve_vram,
-            debug=logger.level <= logging.DEBUG if logger else False
-        )
-        
-        if logger:
-            logger.info("SeedVR2 runner configured successfully")
-            
-    except Exception as e:
-        error_msg = f"Failed to configure SeedVR2 runner: {e}"
-        if logger:
-            logger.error(error_msg)
-        raise RuntimeError(error_msg)
-    
-    if progress:
-        progress(0.5, "🚀 Processing with SeedVR2...")
-    
-    # Setup generation parameters for single image
-    generation_params = {
+    # Setup CLI-based SeedVR2 processing parameters
+    processing_args = {
+        "model": seedvr2_config.model,
+        "model_dir": models_dir,
+        "preserve_vram": seedvr2_config.preserve_vram,
+        "debug": logger.level <= logging.DEBUG if logger else False,
         "cfg_scale": seedvr2_config.cfg_scale,
         "seed": seedvr2_config.seed if seedvr2_config.seed >= 0 else current_seed,
         "res_w": seedvr2_config.custom_width if seedvr2_config.resolution_mode == "custom" else None,
         "batch_size": 1,  # Single image processing
-        "preserve_vram": seedvr2_config.preserve_vram,
         "temporal_overlap": 0,  # No temporal processing for single image
-        "debug": logger.level <= logging.DEBUG if logger else False
     }
     
-    # Add progress callback for SeedVR2 processing
+    # Setup block swap if enabled
+    block_swap = None
+    if seedvr2_config.enable_block_swap and seedvr2_config.block_swap_counter > 0:
+        block_swap = SeedVR2BlockSwap(enable_debug=processing_args.get("debug", False))
+        if logger:
+            logger.info(f"Block swap enabled for image processing: {seedvr2_config.block_swap_counter} blocks")
+    
     if progress:
-        def progress_callback(batch_num, total_batches, current_frame, status):
-            # Map to progress range 0.5 to 0.7 (SeedVR2 processing phase)
-            batch_progress = batch_num / total_batches if total_batches > 0 else 0
-            overall_progress = 0.5 + (batch_progress * 0.2)
-            progress(overall_progress, f"🚀 {status}")
-        
-        generation_params["progress_callback"] = progress_callback
+        progress(0.5, "🚀 Processing with SeedVR2...")
     
     try:
-        # Run SeedVR2 generation
-        result_tensor = generation_loop(
-            runner=runner,
-            images=image_tensor,
-            **generation_params
+        # Add batch dimension for processing: [H, W, C] -> [1, H, W, C]
+        if image_tensor.ndim == 3:
+            image_tensor = image_tensor.unsqueeze(0)
+        
+        # Process with SeedVR2 CLI
+        result_tensor = _process_batch_with_seedvr2_model(
+            image_tensor,
+            processing_args,
+            seedvr2_config,
+            block_swap
         )
         
         # Convert tensor back to numpy array
@@ -441,11 +425,14 @@ def _process_with_seedvr2(
         if result_array.max() <= 1.0:
             result_array = (result_array * 255).astype(np.uint8)
         
+        if logger:
+            logger.info(f"SeedVR2 image processing completed: {result_array.shape}")
+        
         return result_array
         
     except Exception as e:
         if logger:
-            logger.error(f"SeedVR2 processing failed: {e}")
+            logger.error(f"SeedVR2 image processing failed: {e}")
         raise
 
 
