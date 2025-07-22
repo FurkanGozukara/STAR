@@ -1,176 +1,120 @@
 
-import gradio as gr 
-import os 
+# Standard library imports
+import gc, logging, math, os, platform, re, shutil, subprocess, sys, tempfile, threading, time, webbrowser
+from argparse import ArgumentParser, Namespace
+from functools import partial
+from pathlib import Path
 
-os .environ ["HF_HUB_ENABLE_HF_TRANSFER"]="0"
-import platform 
-import sys 
-import torch 
-import torchvision 
-import subprocess 
-import cv2 
-import numpy as np 
-import math 
-import time 
-import shutil 
-import tempfile 
-import threading 
-import gc 
-from easydict import EasyDict 
-from argparse import ArgumentParser ,Namespace 
-import logging 
-import re 
-import webbrowser 
-from pathlib import Path 
-from functools import partial 
+# Set environment variable before other imports
+os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
 
-from logic .dataclasses import (
-AppConfig ,create_app_config ,
-UTIL_COG_VLM_AVAILABLE ,UTIL_BITSANDBYTES_AVAILABLE ,
-get_cogvlm_quant_choices_map ,get_default_cogvlm_quant_display ,
-PathConfig ,PromptConfig ,StarModelConfig ,PerformanceConfig ,ResolutionConfig ,
-ContextWindowConfig ,TilingConfig ,FfmpegConfig ,FrameFolderConfig ,SceneSplitConfig ,
-CogVLMConfig ,OutputConfig ,SeedConfig ,RifeConfig ,FpsDecreaseConfig ,BatchConfig ,
-ImageUpscalerConfig ,FaceRestorationConfig ,GpuConfig ,UpscalerTypeConfig ,SeedVR2Config ,
-ManualComparisonConfig ,StandaloneFaceRestorationConfig ,PresetSystemConfig ,
+# Third-party imports
+import cv2, gradio as gr, numpy as np, torch, torchvision
+from easydict import EasyDict
 
-DEFAULT_GPU_DEVICE ,DEFAULT_VIDEO_COUNT_THRESHOLD_3 ,DEFAULT_VIDEO_COUNT_THRESHOLD_4 ,
-DEFAULT_PROGRESS_OFFSET ,DEFAULT_PROGRESS_SCALE ,DEFAULT_BATCH_PROGRESS_OFFSET ,DEFAULT_BATCH_PROGRESS_SCALE 
+# Local logic imports
+from logic import metadata_handler, config as app_config_module, preset_handler
+from logic.dataclasses import (
+    AppConfig, create_app_config, UTIL_COG_VLM_AVAILABLE, UTIL_BITSANDBYTES_AVAILABLE,
+    get_cogvlm_quant_choices_map, get_default_cogvlm_quant_display,
+    PathConfig, PromptConfig, StarModelConfig, PerformanceConfig, ResolutionConfig,
+    ContextWindowConfig, TilingConfig, FfmpegConfig, FrameFolderConfig, SceneSplitConfig,
+    CogVLMConfig, OutputConfig, SeedConfig, RifeConfig, FpsDecreaseConfig, BatchConfig,
+    ImageUpscalerConfig, FaceRestorationConfig, GpuConfig, UpscalerTypeConfig, SeedVR2Config,
+    ManualComparisonConfig, StandaloneFaceRestorationConfig, PresetSystemConfig,
+    DEFAULT_GPU_DEVICE, DEFAULT_VIDEO_COUNT_THRESHOLD_3, DEFAULT_VIDEO_COUNT_THRESHOLD_4,
+    DEFAULT_PROGRESS_OFFSET, DEFAULT_PROGRESS_SCALE, DEFAULT_BATCH_PROGRESS_OFFSET, DEFAULT_BATCH_PROGRESS_SCALE
 )
-from logic import metadata_handler 
-from logic import config as app_config_module 
-from logic import preset_handler 
-
-from logic .cogvlm_utils import (
-load_cogvlm_model as util_load_cogvlm_model ,
-unload_cogvlm_model as util_unload_cogvlm_model ,
-auto_caption as util_auto_caption ,
+from logic.batch_operations import process_batch_videos
+from logic.batch_processing_help import create_batch_processing_help
+from logic.cancellation_manager import cancellation_manager, CancelledError
+from logic.cogvlm_utils import (
+    load_cogvlm_model as util_load_cogvlm_model,
+    unload_cogvlm_model as util_unload_cogvlm_model,
+    auto_caption as util_auto_caption
 )
-
-from logic .common_utils import format_time 
-
-from logic .ffmpeg_utils import (
-run_ffmpeg_command as util_run_ffmpeg_command ,
-extract_frames as util_extract_frames ,
-create_video_from_frames as util_create_video_from_frames ,
-decrease_fps as util_decrease_fps ,
-decrease_fps_with_multiplier as util_decrease_fps_with_multiplier ,
-calculate_target_fps_from_multiplier as util_calculate_target_fps_from_multiplier ,
-get_common_fps_multipliers as util_get_common_fps_multipliers ,
-get_video_info as util_get_video_info ,
-get_video_info_fast as util_get_video_info_fast ,
-format_video_info_message as util_format_video_info_message 
+from logic.common_utils import format_time
+from logic.ffmpeg_utils import (
+    run_ffmpeg_command as util_run_ffmpeg_command,
+    extract_frames as util_extract_frames,
+    create_video_from_frames as util_create_video_from_frames,
+    decrease_fps as util_decrease_fps,
+    decrease_fps_with_multiplier as util_decrease_fps_with_multiplier,
+    calculate_target_fps_from_multiplier as util_calculate_target_fps_from_multiplier,
+    get_common_fps_multipliers as util_get_common_fps_multipliers,
+    get_video_info as util_get_video_info,
+    get_video_info_fast as util_get_video_info_fast,
+    format_video_info_message as util_format_video_info_message
 )
-
-from logic .file_utils import (
-sanitize_filename as util_sanitize_filename ,
-get_batch_filename as util_get_batch_filename ,
-get_next_filename as util_get_next_filename ,
-cleanup_temp_dir as util_cleanup_temp_dir ,
-get_video_resolution as util_get_video_resolution ,
-get_available_drives as util_get_available_drives ,
-open_folder as util_open_folder 
+from logic.file_utils import (
+    sanitize_filename as util_sanitize_filename,
+    get_batch_filename as util_get_batch_filename,
+    get_next_filename as util_get_next_filename,
+    cleanup_temp_dir as util_cleanup_temp_dir,
+    get_video_resolution as util_get_video_resolution,
+    get_available_drives as util_get_available_drives,
+    open_folder as util_open_folder
 )
-
-from logic .scene_utils import (
-split_video_into_scenes as util_split_video_into_scenes ,
-merge_scene_videos as util_merge_scene_videos ,
-split_video_only as util_split_video_only 
+from logic.frame_folder_utils import (
+    validate_frame_folder_input as util_validate_frame_folder_input,
+    process_frame_folder_to_video as util_process_frame_folder_to_video,
+    find_frame_folders_in_directory as util_find_frame_folders_in_directory
 )
-
-from logic .upscaling_utils import (
-calculate_upscale_params as util_calculate_upscale_params 
+from logic.gpu_utils import (
+    get_available_gpus as util_get_available_gpus,
+    set_gpu_device as util_set_gpu_device,
+    get_gpu_device as util_get_gpu_device,
+    validate_gpu_availability as util_validate_gpu_availability
 )
-
-from logic .gpu_utils import (
-get_available_gpus as util_get_available_gpus ,
-set_gpu_device as util_set_gpu_device ,
-get_gpu_device as util_get_gpu_device ,
-validate_gpu_availability as util_validate_gpu_availability 
+from logic.image_upscaler_utils import (
+    scan_for_models as util_scan_for_models,
+    get_model_info as util_get_model_info
 )
-
-from logic .nvenc_utils import (
-is_resolution_too_small_for_nvenc 
+from logic.manual_comparison import (
+    generate_manual_comparison_video as util_generate_manual_comparison_video,
+    generate_multi_video_comparison as util_generate_multi_video_comparison
 )
-
-from logic .batch_operations import (
-process_batch_videos 
+from logic.nvenc_utils import is_resolution_too_small_for_nvenc
+from logic.preview_utils import (
+    preview_single_model as util_preview_single_model,
+    preview_all_models as util_preview_all_models
 )
-
-from logic .batch_processing_help import create_batch_processing_help 
-
-from logic .upscaling_core import run_upscale as core_run_upscale 
-
-from logic .manual_comparison import (
-generate_manual_comparison_video as util_generate_manual_comparison_video ,
-generate_multi_video_comparison as util_generate_multi_video_comparison 
+from logic.rife_interpolation import rife_fps_only_wrapper as util_rife_fps_only_wrapper
+from logic.scene_utils import (
+    split_video_into_scenes as util_split_video_into_scenes,
+    merge_scene_videos as util_merge_scene_videos,
+    split_video_only as util_split_video_only
 )
-
-from logic .rife_interpolation import (
-rife_fps_only_wrapper as util_rife_fps_only_wrapper 
+from logic.seedvr2_cli_core import (
+    process_video_with_seedvr2_cli as util_process_video_with_seedvr2_cli,
+    SeedVR2BlockSwap as util_SeedVR2BlockSwap,
+    apply_wavelet_color_correction as util_apply_wavelet_color_correction
 )
-
-from logic .cancellation_manager import cancellation_manager ,CancelledError 
-
-from logic .image_upscaler_utils import (
-scan_for_models as util_scan_for_models ,
-get_model_info as util_get_model_info 
+from logic.seedvr2_utils import (
+    util_check_seedvr2_dependencies, util_scan_seedvr2_models, util_get_seedvr2_model_info,
+    util_format_model_info_display, util_get_vram_info, util_get_block_swap_recommendations,
+    util_format_model_display_name, util_validate_seedvr2_model, util_extract_model_filename_from_dropdown,
+    util_format_vram_status, util_format_block_swap_status, util_validate_seedvr2_config,
+    util_get_recommended_settings_for_vram, util_get_suggested_settings, util_estimate_processing_time,
+    util_cleanup_seedvr2_resources, util_detect_available_gpus, util_validate_gpu_selection
 )
-
-from logic .seedvr2_utils import (
-util_check_seedvr2_dependencies ,
-util_scan_seedvr2_models ,
-util_get_seedvr2_model_info ,
-util_format_model_info_display ,
-util_get_vram_info ,
-util_get_block_swap_recommendations ,
-util_format_model_display_name ,
-util_validate_seedvr2_model ,
-util_extract_model_filename_from_dropdown ,
-util_format_vram_status ,
-util_format_block_swap_status ,
-util_validate_seedvr2_config ,
-util_get_recommended_settings_for_vram ,
-util_get_suggested_settings ,
-util_estimate_processing_time ,
-util_cleanup_seedvr2_resources ,
-util_detect_available_gpus ,
-util_validate_gpu_selection 
+from logic.temp_folder_utils import (
+    get_temp_folder_path as util_get_temp_folder_path,
+    calculate_temp_folder_size as util_calculate_temp_folder_size,
+    format_temp_folder_size as util_format_temp_folder_size,
+    clear_temp_folder as util_clear_temp_folder
 )
-
-from logic .preview_utils import (
-preview_single_model as util_preview_single_model ,
-preview_all_models as util_preview_all_models 
-)
-
-from logic .video_editor import (
-parse_time_ranges as util_parse_time_ranges ,
-parse_frame_ranges as util_parse_frame_ranges ,
-validate_ranges as util_validate_ranges ,
-get_video_detailed_info as util_get_video_detailed_info ,
-cut_video_segments as util_cut_video_segments ,
-create_preview_segment as util_create_preview_segment ,
-estimate_processing_time as util_estimate_processing_time ,
-format_video_info_for_display as util_format_video_info_for_display 
-)
-
-from logic .temp_folder_utils import (
-get_temp_folder_path as util_get_temp_folder_path ,
-calculate_temp_folder_size as util_calculate_temp_folder_size ,
-format_temp_folder_size as util_format_temp_folder_size ,
-clear_temp_folder as util_clear_temp_folder 
-)
-
-from logic .seedvr2_cli_core import (
-process_video_with_seedvr2_cli as util_process_video_with_seedvr2_cli ,
-SeedVR2BlockSwap as util_SeedVR2BlockSwap ,
-apply_wavelet_color_correction as util_apply_wavelet_color_correction 
-)
-
-from logic .frame_folder_utils import (
-validate_frame_folder_input as util_validate_frame_folder_input ,
-process_frame_folder_to_video as util_process_frame_folder_to_video ,
-find_frame_folders_in_directory as util_find_frame_folders_in_directory 
+from logic.upscaling_core import run_upscale as core_run_upscale
+from logic.upscaling_utils import calculate_upscale_params as util_calculate_upscale_params
+from logic.video_editor import (
+    parse_time_ranges as util_parse_time_ranges,
+    parse_frame_ranges as util_parse_frame_ranges,
+    validate_ranges as util_validate_ranges,
+    get_video_detailed_info as util_get_video_detailed_info,
+    cut_video_segments as util_cut_video_segments,
+    create_preview_segment as util_create_preview_segment,
+    estimate_processing_time as util_estimate_processing_time,
+    format_video_info_for_display as util_format_video_info_for_display
 )
 
 SELECTED_GPU_ID =0 
