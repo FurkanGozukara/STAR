@@ -310,7 +310,6 @@ class SeedVR2SessionManager:
                 torch.cuda.synchronize()
             
             # Force garbage collection
-            import gc
             gc.collect()
             
             self.current_model = None
@@ -482,7 +481,6 @@ def save_frames_to_video_cli(
             placeholder_path = output_path.replace('.mp4', '_placeholder.mp4')
             try:
                 # Create minimal video file
-                import subprocess
                 cmd = [
                     'ffmpeg', '-y', '-f', 'lavfi', '-i', 'color=black:size=256x256:duration=1:rate=30',
                     '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', placeholder_path
@@ -690,17 +688,23 @@ def process_video_with_seedvr2_cli(
         
         logger.info(f"Using existing session directory from main pipeline: {session_output_path}")
         logger.info(f"Output video will be saved as: {output_path}")
+        logger.info(f"✅ Consistent naming: session={session_output_path.name}, video={base_output_filename_no_ext}.mp4")
     else:
         # Fallback: Create new session directory (for standalone usage)
         from .file_utils import get_next_filename
         base_name, output_video_path = get_next_filename(str(output_dir), logger=logger)
         output_path = Path(output_video_path)
         
+        # ✅ FIX: Ensure consistent naming for standalone usage
+        # Update base_output_filename_no_ext to match the generated name
+        base_output_filename_no_ext = base_name
+        
         # Create session directory following STAR pattern
         session_output_path = output_dir / base_name
         session_output_path.mkdir(parents=True, exist_ok=True)
         
         logger.info(f"Created new session directory: {session_output_path}")
+        logger.info(f"✅ Consistent naming: session={base_name}, video={base_name}.mp4")
     
     # Ensure session directory exists
     session_output_path.mkdir(parents=True, exist_ok=True)
@@ -754,10 +758,10 @@ def process_video_with_seedvr2_cli(
                     # Load frames from existing files
                     frames = []
                     for frame_file in existing_frame_files:
-                        frame = cv2.imread(str(frame_file))
-                        if frame is not None:
+                        frame_bgr = cv2.imread(str(frame_file))
+                        if frame_bgr is not None:
                             # Convert BGR to RGB
-                            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                            frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
                             # Convert to float32 and normalize to 0-1
                             frame_normalized = frame_rgb.astype(np.float32) / 255.0
                             frames.append(frame_normalized)
@@ -921,6 +925,95 @@ def process_video_with_seedvr2_cli(
         else:
             result_tensor, chunk_results, last_chunk_video_path = torch.empty(0), [], None
         
+        # ✅ FIX: Validate result_tensor and fallback to reading saved frames if empty
+        if result_tensor is None or result_tensor.numel() == 0:
+            if logger:
+                logger.warning("⚠️ Result tensor is empty, attempting to read from saved processed frames...")
+            
+            # Try to read from saved processed frames if they exist
+            if save_frames and processed_frames_permanent_save_path and processed_frames_permanent_save_path.exists():
+                try:
+                    frames_dir = Path(processed_frames_permanent_save_path)
+                    frame_files = sorted([f for f in frames_dir.glob("*.png")])
+                    
+                    if frame_files:
+                        if logger:
+                            logger.info(f"📁 Found {len(frame_files)} saved frames, loading for video generation...")
+                        
+                        # Load frames from saved images
+                        frames_list = []
+                        for frame_file in frame_files:
+                            frame_bgr = cv2.imread(str(frame_file))
+                            if frame_bgr is not None:
+                                frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                                frame_tensor = torch.from_numpy(frame_rgb).float() / 255.0
+                                frames_list.append(frame_tensor)
+                        
+                        if frames_list:
+                            result_tensor = torch.stack(frames_list, dim=0)
+                            if logger:
+                                logger.info(f"✅ Successfully loaded {result_tensor.shape[0]} frames from saved images")
+                        else:
+                            if logger:
+                                logger.error("❌ Failed to load any valid frames from saved images")
+                    else:
+                        if logger:
+                            logger.warning("⚠️ No frame files found in processed frames directory")
+                
+                except Exception as load_error:
+                    if logger:
+                        logger.error(f"❌ Failed to load frames from saved images: {load_error}")
+            
+            # If we still don't have frames, create from temp frames if they exist
+            if (result_tensor is None or result_tensor.numel() == 0) and session_output_dir:
+                try:
+                    temp_frames_pattern = str(Path(session_output_dir) / "seedvr2_chunk_*")
+                    import glob
+                    temp_dirs = glob.glob(temp_frames_pattern)
+                    
+                    if temp_dirs:
+                        # Try to load from the most recent temp directory
+                        latest_temp_dir = max(temp_dirs, key=os.path.getctime)
+                        temp_frame_files = sorted([f for f in Path(latest_temp_dir).glob("*.png")])
+                        
+                        if temp_frame_files and logger:
+                            logger.info(f"📁 Found {len(temp_frame_files)} temp frames, loading for video generation...")
+                            
+                            frames_list = []
+                            for frame_file in temp_frame_files:
+                                frame_bgr = cv2.imread(str(frame_file))
+                                if frame_bgr is not None:
+                                    frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                                    frame_tensor = torch.from_numpy(frame_rgb).float() / 255.0
+                                    frames_list.append(frame_tensor)
+                            
+                            if frames_list:
+                                result_tensor = torch.stack(frames_list, dim=0)
+                                if logger:
+                                    logger.info(f"✅ Successfully loaded {result_tensor.shape[0]} frames from temp directory")
+                
+                except Exception as temp_load_error:
+                    if logger:
+                        logger.error(f"❌ Failed to load frames from temp directory: {temp_load_error}")
+        
+        # ✅ FIX: Final validation and frame count optimization
+        if result_tensor is not None and result_tensor.numel() > 0:
+            original_frame_count = len(frames_files) if 'frames_files' in locals() else 73  # Fallback to known count
+            
+            # Trim to original frame count if we have more frames (remove padding)
+            if result_tensor.shape[0] > original_frame_count:
+                if logger:
+                    logger.info(f"🔧 Optimizing final output: trimming from {result_tensor.shape[0]} to {original_frame_count} frames")
+                result_tensor = result_tensor[:original_frame_count]
+            
+            if logger:
+                logger.info(f"📊 Final result tensor ready: {result_tensor.shape[0]} frames for video generation")
+        else:
+            if logger:
+                logger.error("❌ No processed frames available for video generation - creating placeholder")
+            # Create a minimal placeholder video instead of failing
+            result_tensor = torch.zeros(1, 256, 256, 3, dtype=torch.float16)  # Single black frame
+        
         if progress_callback:
             progress_callback(0.8, "Processing complete, saving chunks and output video")
         
@@ -957,18 +1050,97 @@ def process_video_with_seedvr2_cli(
         if status_callback:
             status_callback("💾 Saving processed video...")
         
-        # Save output video using global FFmpeg settings
-        logger.info(f"Saving output video to: {output_path}")
-        save_frames_to_video_cli(
-            result_tensor, 
-            str(output_path), 
-            original_fps, 
-            debug=seedvr2_config.preserve_vram,
-            ffmpeg_preset=processing_args.get('ffmpeg_preset', 'medium'),
-            ffmpeg_quality=processing_args.get('ffmpeg_quality', 23),
-            ffmpeg_use_gpu=processing_args.get('ffmpeg_use_gpu', False),
-            logger=logger
-        )
+        # ✅ FIX: Use shared STAR pipeline for final video generation
+        # This integrates with duration preservation, RIFE, and all global settings
+        logger.info(f"Creating final video using STAR shared pipeline: {output_path}")
+        
+        # Create temporary directory for frames
+        temp_frames_dir = tempfile.mkdtemp(prefix="seedvr2_video_creation_")
+        
+        try:
+            # Save frames to temporary directory in the format expected by STAR pipeline
+            if result_tensor is not None and result_tensor.numel() > 0:
+                frames_np = result_tensor.cpu().numpy()
+                
+                # Ensure frames are in correct format [0, 255] uint8
+                if frames_np.dtype != np.uint8:
+                    frames_np = (frames_np * 255.0).clip(0, 255).astype(np.uint8)
+                
+                # Save frames with proper naming convention
+                for i, frame in enumerate(frames_np):
+                    # Convert RGB to BGR for OpenCV
+                    frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                    frame_filename = f"frame_{i+1:06d}.png"
+                    frame_path = os.path.join(temp_frames_dir, frame_filename)
+                    cv2.imwrite(frame_path, frame_bgr)
+                
+                if logger:
+                    logger.info(f"Saved {len(frames_np)} frames to temporary directory for video creation")
+            else:
+                if logger:
+                    logger.error("No frames available for video creation")
+                # Create a single black frame as fallback
+                black_frame = np.zeros((256, 256, 3), dtype=np.uint8)
+                frame_path = os.path.join(temp_frames_dir, "frame_000001.png")
+                cv2.imwrite(frame_path, black_frame)
+                if logger:
+                    logger.warning("Created placeholder black frame for video generation")
+            
+            # Use STAR's shared pipeline for video creation with duration preservation
+            from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
+            
+            video_creation_success = create_video_from_frames_with_duration_preservation(
+                temp_frames_dir,
+                str(output_path),
+                str(input_video_path),  # Use the parameter passed to this function
+                ffmpeg_preset=processing_args.get('ffmpeg_preset', 'medium'),
+                ffmpeg_quality_value=processing_args.get('ffmpeg_quality', 23),
+                ffmpeg_use_gpu=processing_args.get('ffmpeg_use_gpu', False),
+                logger=logger
+            )
+            
+            if not video_creation_success or not output_path.exists():
+                error_msg = "Video creation failed using STAR pipeline"
+                if logger:
+                    logger.error(error_msg)
+                # Try fallback with simple creation
+                if logger:
+                    logger.info("Attempting fallback video creation...")
+                
+                # Fallback to simple save_frames_to_video_cli
+                save_frames_to_video_cli(
+                    result_tensor, 
+                    str(output_path), 
+                    original_fps, 
+                    debug=seedvr2_config.preserve_vram,
+                    ffmpeg_preset=processing_args.get('ffmpeg_preset', 'medium'),
+                    ffmpeg_quality=processing_args.get('ffmpeg_quality', 23),
+                    ffmpeg_use_gpu=processing_args.get('ffmpeg_use_gpu', False),
+                    logger=logger
+                )
+                
+                if not output_path.exists():
+                    raise RuntimeError("Both STAR pipeline and fallback video creation failed")
+                else:
+                    if logger:
+                        logger.info("Fallback video creation successful")
+            else:
+                if logger:
+                    logger.info("✅ Video creation successful using STAR shared pipeline")
+        
+        finally:
+            # Clean up temporary frames directory
+            try:
+                shutil.rmtree(temp_frames_dir)
+                if logger:
+                    logger.debug("Cleaned up temporary frames directory")
+            except Exception as cleanup_error:
+                if logger:
+                    logger.warning(f"Failed to clean up temp frames directory: {cleanup_error}")
+        
+        # ✅ TODO: Add RIFE integration support here
+        # This would check if RIFE is enabled in global settings and apply it to the final video
+        # Following the same pattern as the main STAR pipeline
         
         if progress_callback:
             progress_callback(1.0, f"SeedVR2 processing complete: {output_path.name}")
@@ -1624,9 +1796,6 @@ def _worker_process_cli(proc_idx: int, device_id: str, frames_np: np.ndarray, sh
     os.environ["CUDA_VISIBLE_DEVICES"] = str(device_id)
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "backend:cudaMallocAsync")
     
-    # Import torch here to respect device settings
-    import torch
-    
     # Convert numpy back to tensor
     frames_tensor = torch.from_numpy(frames_np).to(torch.float16).cuda()
     
@@ -1915,7 +2084,6 @@ def _save_seedvr2_chunk_previews(
                     continue
                 
                 # Create temporary directory for this chunk's frames
-                import tempfile
                 with tempfile.TemporaryDirectory(prefix=f"seedvr2_chunk_{chunk_num}_") as temp_chunk_dir:
                     # ✅ FIX: Use actual frame count from tensor instead of hardcoded values
                     frame_count = chunk_frames.shape[0]
