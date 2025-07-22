@@ -47,6 +47,92 @@ def util_scan_seedvr2_models(logger: Optional[logging.Logger] = None) -> List[Di
     model_manager = get_seedvr2_model_manager(logger)
     return model_manager.scan_available_models()
 
+def util_format_model_info_display(model_filename: str, logger: Optional[logging.Logger] = None) -> str:
+    """
+    Format model information for display in UI
+    
+    Args:
+        model_filename: Model filename
+        logger: Optional logger instance
+        
+    Returns:
+        Formatted information string for UI display
+    """
+    if not model_filename:
+        return "No model selected"
+    
+    try:
+        # Get model information
+        model_info = util_get_seedvr2_model_info(model_filename, logger)
+        
+        if 'error' in model_info:
+            return f"❌ Error loading model info: {model_info['error']}"
+        
+        # Extract information
+        display_name = model_info.get('display_name', model_filename)
+        variant = model_info.get('variant', 'Unknown')
+        precision = model_info.get('precision', 'Unknown')
+        params = model_info.get('params', 'Unknown')
+        recommended_vram = model_info.get('recommended_vram_gb', 8)
+        description = model_info.get('description', '')
+        available = model_info.get('available', False)
+        size_mb = model_info.get('size_mb', 0)
+        
+        # Create formatted display
+        display_text = f"""📋 **{display_name}**
+
+🔧 **Specifications:**
+• Parameters: {params}
+• Precision: {precision}
+• Variant: {variant}
+
+💾 **Memory Requirements:**
+• Recommended VRAM: {recommended_vram:.1f} GB
+• Model Size: {size_mb:.0f} MB
+"""
+        
+        if description:
+            display_text += f"\n📝 **Description:**\n{description}\n"
+        
+        # Add availability status
+        if available:
+            display_text += "\n✅ **Status:** Model available and ready to use"
+        else:
+            display_text += "\n📥 **Status:** Model not found - will be downloaded when needed"
+        
+        # Add performance recommendations
+        vram_info = util_get_vram_info(logger)
+        if 'error' not in vram_info:
+            available_vram = vram_info.get('free_gb', 0)
+            recommendations = util_get_block_swap_recommendations(model_filename, logger)
+            
+            display_text += f"\n\n🎯 **Recommendations for your system ({available_vram:.1f}GB VRAM):**"
+            
+            if recommendations.get('blocks_to_swap', 0) == 0:
+                display_text += "\n• ✅ No optimization needed - sufficient VRAM"
+                display_text += f"\n• 🚀 Recommended batch size: {max(8, int(available_vram / 3))}"
+            else:
+                blocks = recommendations.get('blocks_to_swap', 0)
+                display_text += f"\n• 🔧 Enable Block Swap: {blocks} blocks"
+                if recommendations.get('offload_io_components', False):
+                    display_text += "\n• 💾 Enable I/O component offloading"
+                display_text += f"\n• 📊 Recommended batch size: 5 (minimum for temporal consistency)"
+        
+        # Add performance tips
+        display_text += """\n\n💡 **Performance Tips:**
+• Use batch size ≥ 5 for temporal consistency
+• Enable Flash Attention for 15-20% speedup
+• Use FP8 models for better VRAM efficiency
+• Consider block swap for low VRAM systems"""
+        
+        return display_text
+        
+    except Exception as e:
+        error_msg = f"Error formatting model info: {e}"
+        if logger:
+            logger.error(error_msg)
+        return f"❌ {error_msg}"
+
 def util_get_seedvr2_model_info(model_name: str, logger: Optional[logging.Logger] = None) -> Dict[str, Any]:
     """
     Get information about a specific SeedVR2 model
@@ -121,6 +207,77 @@ def util_format_model_display_name(model_info: Dict[str, Any]) -> str:
         name += " (Download Required)"
     
     return name
+
+def util_validate_seedvr2_model(model_filename: str, logger: Optional[logging.Logger] = None) -> Tuple[bool, str]:
+    """
+    Validate a SeedVR2 model file
+    
+    Args:
+        model_filename: Name of the model file to validate
+        logger: Optional logger instance
+        
+    Returns:
+        Tuple of (is_valid, validation_message)
+    """
+    if not model_filename:
+        return False, "No model filename provided"
+    
+    try:
+        # Check if SeedVR2 is available
+        if not SEEDVR2_AVAILABLE:
+            return False, "SeedVR2 modules not available"
+        
+        # Get model manager and check if model exists
+        model_manager = get_seedvr2_model_manager(logger)
+        model_info = model_manager.get_model_info(model_filename)
+        
+        if not model_info:
+            return False, f"Model information not found for {model_filename}"
+        
+        # Check if model file exists
+        model_path = model_info.get('path')
+        if not model_path or not os.path.exists(model_path):
+            return False, f"Model file not found: {model_filename}"
+        
+        # Check file size (models should be at least 100MB)
+        try:
+            file_size = os.path.getsize(model_path)
+            if file_size < 100 * 1024 * 1024:  # 100MB minimum
+                return False, f"Model file appears corrupted (too small): {file_size / (1024*1024):.1f} MB"
+        except Exception as e:
+            return False, f"Error checking model file size: {e}"
+        
+        # Check file extension
+        if not model_filename.endswith('.safetensors'):
+            return False, f"Invalid model format. Expected .safetensors, got: {model_filename}"
+        
+        # Additional model-specific validation
+        variant = model_info.get('variant', 'unknown')
+        precision = model_info.get('precision', 'unknown')
+        
+        if variant == 'unknown' or precision == 'unknown':
+            if logger:
+                logger.warning(f"Could not determine model variant/precision for {model_filename}")
+        
+        # Check VRAM requirements vs available VRAM
+        vram_info = util_get_vram_info(logger)
+        if 'error' not in vram_info:
+            available_vram = vram_info.get('free_gb', 0)
+            recommended_vram = model_info.get('recommended_vram_gb', 8)
+            
+            if available_vram < recommended_vram * 0.5:  # Less than half the recommended VRAM
+                return False, f"Insufficient VRAM: {available_vram:.1f}GB available, {recommended_vram:.1f}GB recommended"
+        
+        if logger:
+            logger.info(f"Model validation successful: {model_filename}")
+        
+        return True, f"Model validation successful: {variant} {precision}"
+        
+    except Exception as e:
+        error_msg = f"Model validation error: {e}"
+        if logger:
+            logger.error(error_msg)
+        return False, error_msg
 
 def util_extract_model_filename_from_dropdown(dropdown_choice: str, logger: Optional[logging.Logger] = None) -> Optional[str]:
     """
@@ -260,6 +417,128 @@ def util_validate_seedvr2_config(config_dict: Dict[str, Any]) -> Tuple[bool, Lis
     
     is_valid = len(errors) == 0
     return is_valid, errors
+
+def util_get_recommended_settings_for_vram(total_vram_gb: float, model_filename: str, 
+                                          target_quality: str = "balanced", 
+                                          logger: Optional[logging.Logger] = None) -> Dict[str, Any]:
+    """
+    Get recommended SeedVR2 settings based on available VRAM and model
+    
+    Args:
+        total_vram_gb: Total available VRAM in GB
+        model_filename: Selected model filename
+        target_quality: Target quality level ("fast", "balanced", "quality")
+        logger: Optional logger instance
+        
+    Returns:
+        Dictionary with recommended settings
+    """
+    try:
+        # Parse model info from filename
+        if '3b' in model_filename.lower():
+            model_size = '3B'
+            base_vram_requirement = 6.0  # GB
+        elif '7b' in model_filename.lower():
+            model_size = '7B'
+            base_vram_requirement = 12.0  # GB
+        else:
+            model_size = 'Unknown'
+            base_vram_requirement = 8.0  # GB (default estimate)
+        
+        # Adjust for precision
+        if 'fp8' in model_filename.lower():
+            precision = 'FP8'
+            vram_multiplier = 0.7  # FP8 uses less VRAM
+        else:
+            precision = 'FP16'
+            vram_multiplier = 1.0
+        
+        estimated_vram_needed = base_vram_requirement * vram_multiplier
+        
+        # Basic recommendations based on VRAM availability
+        if total_vram_gb >= estimated_vram_needed * 1.5:
+            # Plenty of VRAM
+            recommendations = {
+                'batch_size': 8 if target_quality == "quality" else 6,
+                'temporal_overlap': 3,
+                'enable_block_swap': False,
+                'block_swap_counter': 0,
+                'preserve_vram': False,
+                'enable_multi_gpu': False,
+                'flash_attention': True,
+                'color_correction': True,
+                'enable_frame_padding': True
+            }
+        elif total_vram_gb >= estimated_vram_needed:
+            # Adequate VRAM
+            recommendations = {
+                'batch_size': 6 if target_quality == "quality" else 5,
+                'temporal_overlap': 2,
+                'enable_block_swap': False,
+                'block_swap_counter': 0,
+                'preserve_vram': True,
+                'enable_multi_gpu': False,
+                'flash_attention': True,
+                'color_correction': True,
+                'enable_frame_padding': True
+            }
+        else:
+            # Limited VRAM - enable optimizations
+            block_swap_blocks = min(16, max(4, int((estimated_vram_needed - total_vram_gb) * 3)))
+            recommendations = {
+                'batch_size': 5,  # Minimum for temporal consistency
+                'temporal_overlap': 1,
+                'enable_block_swap': True,
+                'block_swap_counter': block_swap_blocks,
+                'preserve_vram': True,
+                'enable_multi_gpu': False,
+                'flash_attention': True,
+                'color_correction': True,
+                'enable_frame_padding': False  # Disable for VRAM savings
+            }
+        
+        # Quality-based adjustments
+        if target_quality == "fast":
+            recommendations['batch_size'] = max(5, recommendations['batch_size'] - 1)
+            recommendations['temporal_overlap'] = max(1, recommendations['temporal_overlap'] - 1)
+        elif target_quality == "quality":
+            recommendations['batch_size'] = min(12, recommendations['batch_size'] + 2)
+            recommendations['temporal_overlap'] = min(4, recommendations['temporal_overlap'] + 1)
+        
+        # Add metadata
+        recommendations.update({
+            'model_size': model_size,
+            'precision': precision,
+            'estimated_vram_gb': estimated_vram_needed,
+            'available_vram_gb': total_vram_gb,
+            'vram_ratio': total_vram_gb / estimated_vram_needed if estimated_vram_needed > 0 else 0,
+            'target_quality': target_quality
+        })
+        
+        if logger:
+            logger.info(f"Generated SeedVR2 recommendations for {model_filename}: batch_size={recommendations['batch_size']}, block_swap={recommendations['enable_block_swap']}")
+        
+        return recommendations
+        
+    except Exception as e:
+        if logger:
+            logger.error(f"Failed to generate recommendations: {e}")
+        return {
+            'batch_size': 5,
+            'temporal_overlap': 2,
+            'enable_block_swap': False,
+            'block_swap_counter': 0,
+            'preserve_vram': True,
+            'enable_multi_gpu': False,
+            'flash_attention': True,
+            'color_correction': True,
+            'enable_frame_padding': True,
+            'model_size': 'Unknown',
+            'precision': 'Unknown',
+            'estimated_vram_gb': 0,
+            'available_vram_gb': total_vram_gb,
+            'target_quality': target_quality
+        }
 
 def util_get_suggested_settings(model_name: str, vram_gb: float) -> Dict[str, Any]:
     """
