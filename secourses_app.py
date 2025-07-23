@@ -913,20 +913,30 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
 
                         # Convert stored filename to display name for initial value
                         def convert_seedvr2_filename_to_display_name(filename, available_models_list, model_choices_list):
-                            if not filename or not available_models_list:
-                                return model_choices_list[0] if model_choices_list else "No SeedVR2 models found"
+                            if not model_choices_list:
+                                return "No SeedVR2 models found"
                             
-                            # Find the model info that matches the filename
-                            for model_info in available_models_list:
-                                if model_info.get('filename') == filename:
-                                    return util_format_model_display_name(model_info)
+                            # If we have a filename from config/preset, try to find it
+                            if filename and available_models_list:
+                                for model_info in available_models_list:
+                                    if model_info.get('filename') == filename:
+                                        return util_format_model_display_name(model_info)
                             
-                            # If not found, return the first available choice
-                            return model_choices_list[0] if model_choices_list else "No SeedVR2 models found"
+                            # Only if no filename specified in config/preset - look for 3B FP8 model as default
+                            if not filename:
+                                for choice in model_choices_list:
+                                    if "3B" in choice and "FP8" in choice:
+                                        return choice
+                            
+                            # If 3B FP8 not found or filename was specified but not found, return first available choice
+                            return model_choices_list[0]
 
+                        # Get the model to display (respecting config/preset if set, otherwise defaulting to 3B FP8)
                         initial_seedvr2_display = convert_seedvr2_filename_to_display_name(
                             INITIAL_APP_CONFIG.seedvr2.model, available_models, model_choices
                         )
+                        
+                        logger.info(f"SeedVR2 Model Dropdown - Config model: {INITIAL_APP_CONFIG.seedvr2.model}, Choices: {model_choices}, Selected: {initial_seedvr2_display}")
 
                         seedvr2_model_dropdown = create_dropdown(
                             config_path=('seedvr2', 'model'), ui_dict=ui_components,
@@ -3848,17 +3858,25 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
 
         def reverse_seedvr2_model_filename_to_display_name(filename):
             """Convert SeedVR2 model filename to display name for dropdown"""
-            if not filename:
-                return "No SeedVR2 models found"
             try:
                 available_models = util_scan_seedvr2_models(logger=logger)
                 if available_models:
-                    # Find the model info that matches the filename
-                    for model_info in available_models:
-                        if model_info.get('filename') == filename:
-                            return util_format_model_display_name(model_info)
-                    # If filename not found, return first available model
-                    return util_format_model_display_name(available_models[0])
+                    model_choices = [util_format_model_display_name(model) for model in available_models]
+                    
+                    # If we have a filename from preset, try to find it
+                    if filename:
+                        for model_info in available_models:
+                            if model_info.get('filename') == filename:
+                                return util_format_model_display_name(model_info)
+                    
+                    # Only if no filename in preset - look for 3B FP8 model as default
+                    if not filename:
+                        for choice in model_choices:
+                            if "3B" in choice and "FP8" in choice:
+                                return choice
+                    
+                    # If 3B FP8 not found or filename was specified but not found, return first available model
+                    return model_choices[0]
                 else:
                     return "No SeedVR2 models found"
             except Exception as e:
@@ -4006,14 +4024,29 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             outputs=fps_calculation_info
         )
 
-    def refresh_seedvr2_models():
+    def refresh_seedvr2_models(current_selection=None):
         try:
             available_models = util_scan_seedvr2_models(logger=logger)
             if available_models:
                 model_choices = [util_format_model_display_name(model) for model in available_models]
-                default_model = model_choices[0]
-                logger.info(f"Found {len(available_models)} SeedVR2 models")
-                return gr.update(choices=model_choices, value=default_model)
+                
+                # Keep current selection if it's still valid
+                selected_model = None
+                if current_selection and current_selection in model_choices:
+                    selected_model = current_selection
+                else:
+                    # Only default to 3B FP8 if no valid current selection
+                    for choice in model_choices:
+                        if "3B" in choice and "FP8" in choice:
+                            selected_model = choice
+                            break
+                    
+                    # If not found, use the first available model
+                    if not selected_model:
+                        selected_model = model_choices[0]
+                
+                logger.info(f"Found {len(available_models)} SeedVR2 models, selected: {selected_model}")
+                return gr.update(choices=model_choices, value=selected_model)
             else:
                 seedvr2_models_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'SeedVR2', 'models')
                 if not os.path.exists(seedvr2_models_path):
@@ -4273,7 +4306,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
 
     refresh_seedvr2_models_btn.click(
         fn=refresh_seedvr2_models,
-        inputs=[],
+        inputs=[seedvr2_model_dropdown],
         outputs=[seedvr2_model_dropdown]
     )
 
