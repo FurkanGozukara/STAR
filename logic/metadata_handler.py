@@ -47,6 +47,18 @@ def _prepare_metadata_dict(params_dict: dict, status_info: dict = None) -> dict:
     if params_dict.get("is_batch_mode"):
         metadata["is_batch_mode"] = True
         metadata["batch_output_dir"] = params_dict.get("batch_output_dir", "N/A")
+        if params_dict.get("original_filename"):
+            metadata["original_filename"] = params_dict.get("original_filename")
+    
+    # Output settings (common to all)
+    if params_dict.get("save_frames"):
+        metadata["save_frames"] = True
+    if params_dict.get("save_chunks"):
+        metadata["save_chunks"] = True
+    if params_dict.get("save_chunk_frames"):
+        metadata["save_chunk_frames"] = True
+    if params_dict.get("create_comparison_video_enabled"):
+        metadata["create_comparison_video_enabled"] = True
     
     # Add upscaler-specific fields based on type
     if upscaler_type.lower() == "star":
@@ -63,6 +75,14 @@ def _prepare_metadata_dict(params_dict: dict, status_info: dict = None) -> dict:
             "vae_chunk": params_dict.get("vae_chunk", "N/A"),
             "color_fix_method": params_dict.get("color_fix_method", "N/A"),
         })
+        
+        # Additional STAR optimization settings
+        if params_dict.get("enable_chunk_optimization"):
+            metadata["enable_chunk_optimization"] = True
+        if params_dict.get("enable_vram_optimization"):
+            metadata["enable_vram_optimization"] = True
+        if params_dict.get("enable_fp16_processing"):
+            metadata["enable_fp16_processing"] = True
         
         # STAR tiling settings
         if params_dict.get("enable_tiling"):
@@ -84,10 +104,30 @@ def _prepare_metadata_dict(params_dict: dict, status_info: dict = None) -> dict:
             if params_dict.get("scene_split_mode") == "Manual":
                 metadata["scene_manual_split_type"] = params_dict.get("scene_manual_split_type", "N/A")
                 metadata["scene_manual_split_value"] = params_dict.get("scene_manual_split_value", "N/A")
+            # Additional scene split parameters for STAR
+            metadata["scene_drop_short"] = params_dict.get("scene_drop_short", False)
+            metadata["scene_merge_last"] = params_dict.get("scene_merge_last", False)
+            metadata["scene_frame_skip"] = params_dict.get("scene_frame_skip", "N/A")
+            metadata["scene_min_content_val"] = params_dict.get("scene_min_content_val", "N/A")
         
         # Scene-specific prompt if used
         if params_dict.get("scene_prompt_used_for_chunk") and params_dict.get("scene_prompt_used_for_chunk") != "N/A":
             metadata["scene_prompt_used_for_chunk"] = params_dict.get("scene_prompt_used_for_chunk")
+        
+        # Face restoration settings for STAR
+        if params_dict.get("face_restoration_enabled"):
+            metadata["face_restoration_enabled"] = True
+            metadata["face_restoration_fidelity"] = params_dict.get("face_restoration_fidelity", "N/A")
+            metadata["face_colorization_enabled"] = params_dict.get("face_colorization_enabled", False)
+            metadata["face_restoration_timing"] = params_dict.get("face_restoration_timing", "N/A")
+            metadata["codeformer_model"] = params_dict.get("codeformer_model", "N/A")
+            metadata["face_restoration_batch_size"] = params_dict.get("face_restoration_batch_size", "N/A")
+        
+        # Auto-caption settings for STAR
+        if params_dict.get("enable_auto_caption_per_scene"):
+            metadata["enable_auto_caption_per_scene"] = True
+            metadata["cogvlm_quant"] = params_dict.get("cogvlm_quant", "N/A")
+            metadata["cogvlm_unload"] = params_dict.get("cogvlm_unload", "N/A")
             
     elif upscaler_type.lower() == "seedvr2":
         # SeedVR2-specific fields only
@@ -106,6 +146,22 @@ def _prepare_metadata_dict(params_dict: dict, status_info: dict = None) -> dict:
             "seedvr2_frames_processed": params_dict.get("seedvr2_frames_processed"),
             "seedvr2_frames_failed": params_dict.get("seedvr2_frames_failed"),
             "seedvr2_avg_fps": params_dict.get("seedvr2_avg_fps"),
+            # Additional SeedVR2 fields that were missing
+            "seedvr2_quality_preset": params_dict.get("seedvr2_quality_preset"),
+            "seedvr2_temporal_quality": params_dict.get("seedvr2_temporal_quality"),
+            "seedvr2_enable_temporal_consistency": params_dict.get("seedvr2_enable_temporal_consistency"),
+            "seedvr2_scene_awareness": params_dict.get("seedvr2_scene_awareness"),
+            "seedvr2_consistency_validation": params_dict.get("seedvr2_consistency_validation"),
+            "seedvr2_chunk_optimization": params_dict.get("seedvr2_chunk_optimization"),
+            "seedvr2_pad_last_chunk": params_dict.get("seedvr2_pad_last_chunk"),
+            "seedvr2_skip_first_frames": params_dict.get("seedvr2_skip_first_frames"),
+            "seedvr2_enable_chunk_preview": params_dict.get("seedvr2_enable_chunk_preview"),
+            "seedvr2_chunk_preview_frames": params_dict.get("seedvr2_chunk_preview_frames"),
+            "seedvr2_keep_last_chunks": params_dict.get("seedvr2_keep_last_chunks"),
+            "seedvr2_model_precision": params_dict.get("seedvr2_model_precision"),
+            "seedvr2_seed": params_dict.get("seedvr2_seed"),
+            "seedvr2_upscale_factor": params_dict.get("seedvr2_upscale_factor"),
+            "seedvr2_total_frames": params_dict.get("seedvr2_total_frames"),
         }
         
         # Add processing time if available
@@ -125,6 +181,22 @@ def _prepare_metadata_dict(params_dict: dict, status_info: dict = None) -> dict:
         for key, value in seedvr2_fields.items():
             if value is not None and value != "N/A":
                 metadata[key] = value
+        
+        # Add temporal consistency nested metadata if available
+        if params_dict.get("temporal_consistency"):
+            tc_data = params_dict.get("temporal_consistency")
+            if isinstance(tc_data, dict):
+                tc_metadata = {}
+                if tc_data.get("enabled") is not None:
+                    tc_metadata["temporal_consistency_enabled"] = tc_data.get("enabled")
+                if tc_data.get("chunk_count"):
+                    tc_metadata["temporal_consistency_chunk_count"] = tc_data.get("chunk_count")
+                if tc_data.get("scene_awareness") is not None:
+                    tc_metadata["temporal_consistency_scene_awareness"] = tc_data.get("scene_awareness")
+                if tc_data.get("batch_size_corrected") is not None:
+                    tc_metadata["temporal_consistency_batch_corrected"] = tc_data.get("batch_size_corrected")
+                # Add to metadata
+                metadata.update(tc_metadata)
                 
     elif upscaler_type.lower() == "image_upscaler":
         # Image upscaler-specific fields only
@@ -138,6 +210,13 @@ def _prepare_metadata_dict(params_dict: dict, status_info: dict = None) -> dict:
             "image_upscaler_device": params_dict.get("image_upscaler_device"),
             "image_upscaler_frames_processed": params_dict.get("image_upscaler_frames_processed"),
             "image_upscaler_frames_failed": params_dict.get("image_upscaler_frames_failed"),
+            # Additional image upscaler fields
+            "image_upscaler_cache_models": params_dict.get("image_upscaler_cache_models"),
+            "actual_model_scale": params_dict.get("actual_model_scale"),
+            "image_upscaler_supports_half": params_dict.get("supports_half"),
+            "image_upscaler_supports_bfloat16": params_dict.get("supports_bfloat16"),
+            "image_upscaler_input_channels": params_dict.get("input_channels"),
+            "image_upscaler_output_channels": params_dict.get("output_channels"),
         }
         
         # Add processing time if available
