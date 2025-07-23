@@ -451,7 +451,7 @@ def process_video_with_seedvr2(
         
         frame_chunk_info = []  # No enhanced chunk info for simple processing
     
-    # Calculate resolution for SeedVR2 (using 2x upscale by default)
+    # Calculate resolution for SeedVR2 (using 4x upscale by default)
     calculated_resolution = calculate_seedvr2_resolution(
         input_video_path, enable_target_res, target_h, target_w, target_res_mode, 
         logger=logger

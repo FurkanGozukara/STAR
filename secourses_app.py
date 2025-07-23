@@ -3181,7 +3181,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             elif internal_upscaler_type == "seedvr2":
                 from logic.dataclasses import DEFAULT_SEEDVR2_UPSCALE_FACTOR
                 effective_upscale_factor = DEFAULT_SEEDVR2_UPSCALE_FACTOR
-                model_name = "SeedVR2 (2x)"
+                model_name = "SeedVR2 (4x)"
             else:
                 effective_upscale_factor = upscale_factor
                 model_name = f"Unknown Upscaler ({upscale_factor}x)"
@@ -3304,7 +3304,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             elif internal_upscaler_type == "seedvr2":
                 from logic.dataclasses import DEFAULT_SEEDVR2_UPSCALE_FACTOR
                 effective_upscale_factor = DEFAULT_SEEDVR2_UPSCALE_FACTOR
-                model_name = "SeedVR2 (2x)"
+                model_name = "SeedVR2 (4x)"
             else:
                 effective_upscale_factor = upscale_factor
                 model_name = f"Upscaler ({upscale_factor}x)"

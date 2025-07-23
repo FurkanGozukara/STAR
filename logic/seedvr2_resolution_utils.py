@@ -37,7 +37,7 @@ Cache Management:
 - Thread-safe cache operations
 
 Constants Used:
-- DEFAULT_SEEDVR2_UPSCALE_FACTOR: 2.0x (vs 4x for STAR models)
+- DEFAULT_SEEDVR2_UPSCALE_FACTOR: 4.0x (same as STAR models)
 - DEFAULT_SEEDVR2_DEFAULT_RESOLUTION: 1072 (safe fallback)
 - Resolution bounds: 256-4096 pixels (ensures compatibility)
 - Cache limits: 1000 entries maximum for memory efficiency
@@ -477,7 +477,7 @@ def calculate_seedvr2_image_resolution(input_image_path: str, upscale_factor: fl
     
     return calculate_seedvr2_resolution(
         input_path=input_image_path,
-        enable_target_res=False,  # Images use simple 2x upscale by default
+        enable_target_res=False,  # Images use simple 4x upscale by default
         upscale_factor=upscale_factor,
         logger=logger
     ) 

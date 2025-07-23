@@ -195,11 +195,11 @@ class SeedVR2SessionManager:
             
             # Calculate target resolution width (maintaining aspect ratio if possible)
             if current_height == current_width:  # Square video
-                res_w = max(512, min(1920, current_width * 2))  # Conservative 2x upscale
+                res_w = max(512, min(1920, current_width * 4))  # Conservative 4x upscale
             else:
                 # Use larger dimension as base, cap at reasonable size
                 base_res = max(current_height, current_width)
-                res_w = max(512, min(1920, base_res * 2))
+                res_w = max(512, min(1920, base_res * 4))
             
             # ✅ ADD DEBUGGING: Log tensor format before processing
             self.logger.info(f"🔍 Processing batch - Input tensor shape: {batch_frames.shape}, dtype: {batch_frames.dtype}")
@@ -1890,17 +1890,17 @@ def _apply_placeholder_upscaling(batch_frames: torch.Tensor, debug: bool = False
     """
     Apply placeholder upscaling when SeedVR2 is not available.
     
-    Uses simple 2x nearest neighbor upscaling as fallback.
+    Uses simple 4x nearest neighbor upscaling as fallback.
     """
     if debug:
-        print("🔄 Applying placeholder 2x upscaling")
+        print("🔄 Applying placeholder 4x upscaling")
     
     try:
-        # Simple 2x upscaling using interpolation
+        # Simple 4x upscaling using interpolation
         T, H, W, C = batch_frames.shape
         upscaled = torch.nn.functional.interpolate(
             batch_frames.permute(0, 3, 1, 2),  # [T, C, H, W]
-            scale_factor=2.0,
+            scale_factor=4.0,
             mode='bicubic',
             align_corners=False
         ).permute(0, 2, 3, 1)  # Back to [T, H, W, C]
