@@ -13,7 +13,7 @@ import cv2, gradio as gr, numpy as np, torch, torchvision
 from easydict import EasyDict
 
 # Local logic imports
-from logic import metadata_handler, config as app_config_module, preset_handler
+from logic import metadata_handler, config as app_config_module, preset_handler, info_strings
 from logic.dataclasses import (
     AppConfig, create_app_config, UTIL_COG_VLM_AVAILABLE, UTIL_BITSANDBYTES_AVAILABLE,
     get_cogvlm_quant_choices_map, get_default_cogvlm_quant_display,
@@ -166,13 +166,13 @@ for handler in logger .handlers :
     if isinstance (handler ,logging .StreamHandler ):
         handler .setLevel (logging .INFO )
         found_stream_handler =True 
-        logger .info (STREAM_HANDLER_LEVEL_SET_INFO)
+        logger .info (info_strings.STREAM_HANDLER_LEVEL_SET_INFO)
 if not found_stream_handler :
     ch =logging .StreamHandler ()
     ch .setLevel (logging .INFO )
     logger .addHandler (ch )
-    logger .info (STREAM_HANDLER_ADDED_INFO)
-logger .info (LOGGER_CONFIGURED_LEVEL_HANDLERS_INFO.format(logger_name=logger.name, level=logging.getLevelName(logger.level), handlers=logger.handlers))
+    logger .info (info_strings.STREAM_HANDLER_ADDED_INFO)
+logger .info (info_strings.LOGGER_CONFIGURED_LEVEL_HANDLERS_INFO.format(logger_name=logger.name, level=logging.getLevelName(logger.level), handlers=logger.handlers))
 
 APP_CONFIG =create_app_config (base_path ,args .outputs_folder ,star_cfg )
 
@@ -480,7 +480,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             value =INITIAL_PRESET_NAME or "Default",
                             allow_custom_value =True ,
                             scale =3 ,
-                            info ="Select a preset to auto-load, or type a new name and click Save."
+                            info =info_strings.PRESET_AUTO_LOAD_OR_NEW_NAME_INFO
                             )
                             refresh_presets_btn =gr .Button ("🔄",scale =1 ,variant ="secondary")
                             save_preset_btn =gr .Button ("Save",variant ="primary",scale =1 )
@@ -566,7 +566,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             image_enable_comparison =gr .Checkbox (
                             label ="Create Before/After Comparison",
                             value =True ,
-                            info ="Generate side-by-side comparison image showing original vs upscaled"
+                            info =info_strings.COMPARISON_IMAGE_SIDE_BY_SIDE_INFO
                             )
                             image_preserve_metadata =gr .Checkbox (
                             label ="Preserve Image Metadata",
@@ -636,12 +636,12 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
         with gr .Tab ("Resolution & Scene Split",id ="resolution_tab"):
             with gr .Row ():
                 with gr .Column (scale =1 ):
-                    with gr .Accordion ("Target Resolution - Maintains Your Input Video Aspect Ratio",open =True ):
+                    with gr .Accordion (info_strings.TARGET_RESOLUTION_MAINTAINS_ASPECT_RATIO_ACCORDION,open =True ):
                         gr .Markdown (IMAGE_UPSCALER_SUPPORT_NOTE)
                         enable_target_res_check =gr .Checkbox (
                         label ="Enable Max Target Resolution",
                         value =INITIAL_APP_CONFIG .resolution .enable_target_res ,
-                        info ="Check this to manually control the maximum output resolution instead of using the simple Upscale Factor."
+                        info =info_strings.ENABLE_TARGET_RESOLUTION_MANUAL_CONTROL_INFO
                         )
                         target_res_mode_radio =gr .Radio (
                         label ="Target Resolution Mode",
@@ -674,7 +674,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         value =INITIAL_APP_CONFIG .resolution .auto_resolution_status ,
                         interactive =False ,
                         lines =3 ,
-                        info ="Shows current auto-calculated resolution and aspect ratio information"
+                        info =info_strings.AUTO_CALCULATED_RESOLUTION_ASPECT_RATIO_INFO
                         )
 
                         gr .Markdown ("---")
@@ -686,7 +686,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         value = DEFAULT_STATUS_MESSAGES['expected_resolution'],
                         interactive =False ,
                         lines =10 ,
-                        info ="Shows the calculated final output resolution based on your current upscaler settings, target resolution, and input video"
+                        info =info_strings.FINAL_OUTPUT_RESOLUTION_BASED_SETTINGS_INFO
                         )
                 with gr .Column (scale =1 ):
                     split_only_button =gr .Button ("Split Video Only (No Upscaling)",icon ="icons/split.png",variant ="primary")
@@ -753,7 +753,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         )
 
                     if UTIL_COG_VLM_AVAILABLE :
-                        with gr .Accordion ("Auto-Captioning Settings (CogVLM2) (Only for STAR Model)",open =True ):
+                        with gr .Accordion (info_strings.AUTO_CAPTIONING_COGVLM2_STAR_MODEL_ACCORDION,open =True ):
                             cogvlm_quant_choices_map =get_cogvlm_quant_choices_map (torch .cuda .is_available (),UTIL_BITSANDBYTES_AVAILABLE )
                             cogvlm_quant_radio_choices_display =list (cogvlm_quant_choices_map .values ())
                             default_quant_display_val =get_default_cogvlm_quant_display (cogvlm_quant_choices_map )
@@ -872,7 +872,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         info = COLOR_CORRECTION_INFO
                         )
 
-                    with gr .Accordion ("Context Window - Previous Frames for Better Consistency - Experimental Probably Not Needed",open =True ):
+                    with gr .Accordion (info_strings.CONTEXT_WINDOW_PREVIOUS_FRAMES_EXPERIMENTAL_ACCORDION,open =True ):
                         enable_context_window_check =gr .Checkbox (
                         label ="Enable Context Window",
                         value =INITIAL_APP_CONFIG .context_window .enable ,
@@ -885,7 +885,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         )
 
                 with gr .Column (scale =1 ):
-                    with gr .Accordion ("Performance & VRAM Optimization - 32 Frames Yields Best Quality",open =True ):
+                    with gr .Accordion (info_strings.PERFORMANCE_VRAM_32_FRAMES_BEST_QUALITY_ACCORDION,open =True ):
                         max_chunk_len_slider =gr .Slider (
                         label ="Max Frames per Chunk (VRAM)",
                         minimum =1 ,maximum =1000 ,value =INITIAL_APP_CONFIG .performance .max_chunk_len ,step =1 ,
@@ -945,11 +945,11 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                                 else :
                                     default_model_choice =model_choices [0 ]
                             else :
-                                model_choices =["No models found - place models in upscale_models/"]
+                                model_choices =[info_strings.NO_MODELS_FOUND_PLACE_UPSCALE_MODELS_STATUS]
                                 default_model_choice =model_choices [0 ]
                         except Exception as e :
                             logger .warning (f"Failed to scan for upscaler models: {e}")
-                            model_choices =["Error scanning models - check upscale_models/ directory"]
+                            model_choices =[info_strings.ERROR_SCANNING_UPSCALE_MODELS_DIRECTORY_STATUS]
                             default_model_choice =model_choices [0 ]
 
                         image_upscaler_model_dropdown =gr .Dropdown (
@@ -1026,7 +1026,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         value ="Checking SeedVR2 dependencies...",
                         interactive =False ,
                         lines =2 ,
-                        info ="Shows SeedVR2 installation and dependency status"
+                        info =info_strings.SEEDVR2_INSTALLATION_DEPENDENCY_STATUS_INFO
                         )
 
                     with gr .Accordion ("Model Selection",open =True ):
@@ -1041,14 +1041,14 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                                 default_model ="No SeedVR2 models found"
                         except Exception as e :
                             logger .warning (f"Failed to scan for SeedVR2 models: {e}")
-                            model_choices =["Error scanning models - check SeedVR2/models/ directory"]
+                            model_choices =[info_strings.ERROR_SCANNING_SEEDVR2_MODELS_DIRECTORY_STATUS]
                             default_model =model_choices [0 ]
 
                         seedvr2_model_dropdown =gr .Dropdown (
                         label ="SeedVR2 Model",
                         choices =model_choices if 'model_choices'in locals ()else [default_model ],
                         value =default_model ,
-                        info ="Select SeedVR2 model. 3B FP8 models offer best speed/VRAM balance, 7B models provide highest quality."
+                        info =info_strings.SEEDVR2_MODEL_3B_7B_SPEED_QUALITY_INFO
                         )
 
                         with gr .Row ():
@@ -1061,10 +1061,10 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
 
                         seedvr2_model_info_display =gr .Textbox (
                         label ="Model Information",
-                        value ="Select a model to see detailed specifications",
+                        value =info_strings.SELECT_MODEL_DETAILED_SPECIFICATIONS_INFO,
                         interactive =False ,
                         lines =8 ,
-                        info ="Detailed model specifications and requirements"
+                        info =info_strings.DETAILED_MODEL_SPECIFICATIONS_REQUIREMENTS_INFO
                         )
 
                     with gr .Accordion ("Processing Settings",open =True ):
@@ -1093,31 +1093,31 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             label ="Quality Preset",
                             choices =["fast","balanced","quality"],
                             value =INITIAL_APP_CONFIG .seedvr2 .quality_preset ,
-                            info ="Processing quality preset. Fast: prioritize speed, Balanced: good speed/quality balance, Quality: maximum quality."
+                            info =info_strings.PROCESSING_QUALITY_FAST_BALANCED_QUALITY_INFO
                             )
 
                         with gr .Row ():
                             seedvr2_preserve_vram_check =gr .Checkbox (
                             label ="Preserve VRAM",
                             value =INITIAL_APP_CONFIG .seedvr2 .preserve_vram ,
-                            info ="Optimize VRAM usage. Recommended for most systems."
+                            info =info_strings.OPTIMIZE_VRAM_USAGE_RECOMMENDED_SYSTEMS_INFO
                             )
                             seedvr2_color_correction_check =gr .Checkbox (
                             label ="Color Correction (Wavelet)",
                             value =INITIAL_APP_CONFIG .seedvr2 .color_correction ,
-                            info ="Fix color shifts using wavelet reconstruction. Recommended."
+                            info =info_strings.COLOR_FIX_WAVELET_RECONSTRUCTION_RECOMMENDED_INFO
                             )
 
                         with gr .Row ():
                             seedvr2_enable_frame_padding_check =gr .Checkbox (
                             label ="Automatic Frame Padding",
                             value =INITIAL_APP_CONFIG .seedvr2 .enable_frame_padding ,
-                            info ="Optimize last chunk quality like STAR model. Recommended."
+                            info =info_strings.OPTIMIZE_LAST_CHUNK_STAR_MODEL_RECOMMENDED_INFO
                             )
                             seedvr2_flash_attention_check =gr .Checkbox (
                             label ="Flash Attention",
                             value =INITIAL_APP_CONFIG .seedvr2 .flash_attention ,
-                            info ="Memory-efficient attention mechanism. Default enabled."
+                            info =info_strings.MEMORY_EFFICIENT_ATTENTION_DEFAULT_ENABLED_INFO
                             )
 
                         with gr .Accordion ("🎬 Temporal Consistency",open =False ):
@@ -1125,25 +1125,25 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                                 seedvr2_scene_awareness_check =gr .Checkbox (
                                 label ="🎭 Scene Awareness",
                                 value =INITIAL_APP_CONFIG .seedvr2 .scene_awareness ,
-                                info ="Enable scene-aware temporal processing for better scene boundary handling."
+                                info =info_strings.SCENE_AWARE_TEMPORAL_PROCESSING_BOUNDARIES_INFO
                                 )
                                 seedvr2_consistency_validation_check =gr .Checkbox (
                                 label ="🎯 Consistency Validation",
                                 value =INITIAL_APP_CONFIG .seedvr2 .consistency_validation ,
-                                info ="Validate temporal consistency during processing and report quality metrics."
+                                info =info_strings.TEMPORAL_CONSISTENCY_VALIDATION_QUALITY_METRICS_INFO
                                 )
 
                             with gr .Row ():
                                 seedvr2_chunk_optimization_check =gr .Checkbox (
                                 label ="🔧 Chunk Optimization",
                                 value =INITIAL_APP_CONFIG .seedvr2 .chunk_optimization ,
-                                info ="Optimize chunk boundaries for temporal coherence. Recommended for longer videos."
+                                info =info_strings.CHUNK_BOUNDARIES_TEMPORAL_COHERENCE_RECOMMENDED_INFO
                                 )
                                 seedvr2_temporal_quality_radio =gr .Radio (
                                 choices =["fast","balanced","quality"],
                                 value =INITIAL_APP_CONFIG .seedvr2 .temporal_quality ,
                                 label ="🏆 Temporal Quality",
-                                info ="Balance between processing speed and temporal consistency quality."
+                                info =info_strings.PROCESSING_SPEED_TEMPORAL_CONSISTENCY_BALANCE_INFO
                                 )
 
                 with gr .Column (scale =1 ):
@@ -1152,19 +1152,19 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             seedvr2_use_gpu_check =gr .Checkbox (
                             label ="Use GPU",
                             value =INITIAL_APP_CONFIG .seedvr2 .use_gpu ,
-                            info ="Enable GPU acceleration for SeedVR2 processing."
+                            info =info_strings.GPU_ACCELERATION_SEEDVR2_PROCESSING_INFO
                             )
                             seedvr2_enable_multi_gpu_check =gr .Checkbox (
                             label ="Enable Multi-GPU",
                             value =INITIAL_APP_CONFIG .seedvr2 .enable_multi_gpu ,
-                            info ="Distribute processing across multiple GPUs for faster processing."
+                            info =info_strings.MULTI_GPU_DISTRIBUTE_FASTER_PROCESSING_INFO
                             )
 
                         seedvr2_gpu_devices_textbox =gr .Textbox (
                         label ="GPU Device IDs",
                         value =INITIAL_APP_CONFIG .seedvr2 .gpu_devices ,
                         placeholder ="0,1,2",
-                        info ="Comma-separated GPU IDs (e.g., '0,1,2'). Single GPU: '0'"
+                        info =info_strings.GPU_DEVICES_COMMA_SEPARATED_IDS_INFO
                         )
 
                         seedvr2_gpu_status_display =gr .Textbox (
@@ -1172,7 +1172,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         value ="Detecting available GPUs...",
                         interactive =False ,
                         lines =4 ,
-                        info ="Shows available GPUs and their VRAM status"
+                        info =info_strings.AVAILABLE_GPUS_VRAM_STATUS_INFO
                         )
 
                     with gr .Accordion ("Block Swap - VRAM Optimization",open =False ):
@@ -1181,7 +1181,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         seedvr2_enable_block_swap_check =gr .Checkbox (
                         label ="Enable Block Swap",
                         value =INITIAL_APP_CONFIG .seedvr2 .enable_block_swap ,
-                        info ="Enable block swapping for large models on limited VRAM systems."
+                        info =info_strings.BLOCK_SWAP_LARGE_MODELS_LIMITED_VRAM_INFO
                         )
 
                         seedvr2_block_swap_counter_slider =gr .Slider (
@@ -1190,19 +1190,19 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         maximum =20 ,
                         value =INITIAL_APP_CONFIG .seedvr2 .block_swap_counter ,
                         step =1 ,
-                        info ="Number of blocks to swap (0=disabled). Higher = more VRAM savings but slower."
+                        info =info_strings.BLOCK_SWAP_COUNTER_VRAM_SAVINGS_SLOWER_INFO
                         )
 
                         with gr .Row ():
                             seedvr2_block_swap_offload_io_check =gr .Checkbox (
                             label ="I/O Component Offloading",
                             value =INITIAL_APP_CONFIG .seedvr2 .block_swap_offload_io ,
-                            info ="Offload input/output layers for maximum VRAM savings. Optional."
+                            info =info_strings.OFFLOAD_IO_LAYERS_MAXIMUM_VRAM_SAVINGS_INFO
                             )
                             seedvr2_block_swap_model_caching_check =gr .Checkbox (
                             label ="Model Caching",
                             value =INITIAL_APP_CONFIG .seedvr2 .block_swap_model_caching ,
-                            info ="Keep model cached in RAM between runs. Faster batch processing."
+                            info =info_strings.MODEL_CACHE_RAM_FASTER_BATCH_PROCESSING_INFO
                             )
 
                         seedvr2_block_swap_info_display =gr .Textbox (
@@ -1210,7 +1210,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         value ="Block swap disabled",
                         interactive =False ,
                         lines =3 ,
-                        info ="Shows block swap configuration and estimated VRAM savings"
+                        info =info_strings.BLOCK_SWAP_CONFIGURATION_ESTIMATED_SAVINGS_INFO
                         )
 
                     with gr .Accordion ("Chunk Preview Settings",open =True ):
@@ -1219,7 +1219,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         seedvr2_enable_chunk_preview_check =gr .Checkbox (
                         label ="Enable Chunk Preview",
                         value =INITIAL_APP_CONFIG .seedvr2 .enable_chunk_preview ,
-                        info ="Enable chunk preview functionality to display processed chunks in main tab."
+                        info =info_strings.CHUNK_PREVIEW_FUNCTIONALITY_MAIN_TAB_INFO
                         )
 
                         with gr .Row ():
@@ -1229,7 +1229,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             maximum =500 ,
                             value =INITIAL_APP_CONFIG .seedvr2 .chunk_preview_frames ,
                             step =25 ,
-                            info ="Number of frames to show in chunk preview (default: 125 frames)."
+                            info =info_strings.PREVIEW_FRAMES_DEFAULT_125_FRAMES_INFO
                             )
                             seedvr2_keep_last_chunks_slider =gr .Slider (
                             label ="Keep Last N Chunks",
@@ -1237,7 +1237,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             maximum =1000 ,
                             value =INITIAL_APP_CONFIG .seedvr2 .keep_last_chunks ,
                             step =1 ,
-                            info ="Number of recent chunk videos to keep in chunks folder (default: 5)."
+                            info =info_strings.CHUNK_RETENTION_DEFAULT_5_VIDEOS_INFO
                             )
 
                     with gr .Accordion ("Advanced Settings",open =False ):
@@ -1248,7 +1248,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             maximum =2.0 ,
                             value =INITIAL_APP_CONFIG .seedvr2 .cfg_scale ,
                             step =0.1 ,
-                            info ="Guidance scale for generation. Usually 1.0 for SeedVR2."
+                            info =info_strings.GUIDANCE_SCALE_GENERATION_USUALLY_1_0_INFO
                             )
 
         with gr .Tab ("Output & Comparison",id ="output_tab"):
@@ -1265,18 +1265,18 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             label ="FFmpeg Preset",
                             choices =['ultrafast','superfast','veryfast','faster','fast','medium','slow','slower','veryslow'],
                             value =INITIAL_APP_CONFIG .ffmpeg .preset ,
-                            info ="Controls encoding speed vs. compression efficiency. 'ultrafast' is fastest with lowest quality/compression, 'veryslow' is slowest with highest quality/compression. Note: NVENC presets behave differently (e.g. p1-p7 or specific names like 'slow', 'medium', 'fast')."
+                            info =info_strings.FFMPEG_PRESET_ENCODING_SPEED_COMPRESSION_INFO
                             )
                             ffmpeg_quality_slider =gr .Slider (
-                            label ="FFmpeg Quality (CRF for libx264 / CQ for NVENC)",
+                            label =info_strings.FFMPEG_QUALITY_CRF_LIBX264_CQ_NVENC_INFO,
                             minimum =0 ,maximum =51 ,value =INITIAL_APP_CONFIG .ffmpeg .quality ,step =1 ,
-                            info ="For libx264 (CPU): Constant Rate Factor (CRF). Lower values mean higher quality (0 is lossless, 23 is default). For h264_nvenc (GPU): Constrained Quality (CQ). Lower values generally mean better quality. Typical range for NVENC CQ is 18-28."
+                            info =info_strings.FFMPEG_QUALITY_DETAILED_CRF_CQ_RANGES_INFO
                             )
 
                         frame_folder_fps_slider =gr .Slider (
                         label ="Frame Folder FPS",
                         minimum =1.0 ,maximum =120.0 ,value =INITIAL_APP_CONFIG .frame_folder .fps ,step =0.001 ,
-                        info ="FPS to use when converting frame folders to videos. This setting only applies when processing input frame folders (not regular videos). Common values: 23.976, 24, 25, 29.97, 30, 60."
+                        info =info_strings.FRAME_FOLDER_FPS_CONVERSION_COMMON_VALUES_INFO
                         )
 
                 with gr .Column (scale =1 ):
@@ -1287,8 +1287,8 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         info = COMPARISON_VIDEO_INFO
                         )
                         save_frames_checkbox =gr .Checkbox (label = SAVE_INPUT_PROCESSED_FRAMES_LABEL,value =INITIAL_APP_CONFIG .outputs .save_frames ,info = SAVE_FRAMES_INFO)
-                        save_metadata_checkbox =gr .Checkbox (label ="Save Processing Metadata",value =INITIAL_APP_CONFIG .outputs .save_metadata ,info ="If checked, saves a .txt file (e.g., '0001.txt') in the main output folder, containing all processing parameters and total processing time.")
-                        save_chunks_checkbox =gr .Checkbox (label ="Save Processed Chunks",value =INITIAL_APP_CONFIG .outputs .save_chunks ,info ="If checked, saves each processed chunk as a video file in a 'chunks' subfolder (e.g., '0001/chunks/chunk_0001.mp4'). Uses the same FFmpeg settings as the final video.")
+                        save_metadata_checkbox =gr .Checkbox (label ="Save Processing Metadata",value =INITIAL_APP_CONFIG .outputs .save_metadata ,info =info_strings.SAVE_METADATA_TXT_PROCESSING_PARAMETERS_INFO)
+                        save_chunks_checkbox =gr .Checkbox (label ="Save Processed Chunks",value =INITIAL_APP_CONFIG .outputs .save_chunks ,info =info_strings.SAVE_CHUNKS_SUBFOLDER_FFMPEG_SETTINGS_INFO)
                         save_chunk_frames_checkbox =gr .Checkbox (label = SAVE_CHUNK_INPUT_FRAMES_DEBUG_LABEL,value =INITIAL_APP_CONFIG .outputs .save_chunk_frames ,info = SAVE_CHUNK_FRAMES_INFO)
 
                     with gr .Accordion ("Advanced: Seeding (Reproducibility)",open =True ):
@@ -1299,13 +1299,13 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             minimum =-1 ,
                             maximum =2 **32 -1 ,
                             step =1 ,
-                            info ="Seed for random number generation. Used for reproducibility. Set to -1 or check 'Random Seed' for a random seed. Value is ignored if 'Random Seed' is checked.",
+                            info =info_strings.SEED_REPRODUCIBILITY_RANDOM_IGNORED_INFO,
                             interactive =not INITIAL_APP_CONFIG .seed .use_random 
                             )
                             random_seed_check =gr .Checkbox (
                             label ="Random Seed",
                             value =INITIAL_APP_CONFIG .seed .use_random ,
-                            info ="If checked, a random seed will be generated and used, ignoring the 'Seed' value."
+                            info =info_strings.RANDOM_SEED_GENERATED_IGNORING_VALUE_INFO
                             )
 
                 with gr .Column (scale =1 ):
@@ -1318,7 +1318,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         label ="Number of Videos",
                         choices =[2 ,3 ,4 ],
                         value =INITIAL_APP_CONFIG .manual_comparison .video_count ,
-                        info ="Select how many videos you want to compare. Additional video inputs will appear based on your selection."
+                        info =info_strings.VIDEO_COUNT_ADDITIONAL_INPUTS_SELECTION_INFO
                         )
 
                         gr .Markdown (CUSTOM_COMPARISON_STEP2)
@@ -1357,7 +1357,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         label ="Comparison Layout",
                         choices =["auto","side_by_side","top_bottom"],
                         value ="auto",
-                        info ="Layout options will update based on number of videos selected.",
+                        info =info_strings.LAYOUT_OPTIONS_VIDEO_SELECTION_INFO,
                         interactive =True 
                         )
 
@@ -1384,26 +1384,26 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                 with gr .Row ():
                     batch_input_folder =gr .Textbox (
                     label ="Input Folder",
-                    placeholder ="Path to folder containing videos to process...",
-                    info ="Folder containing video files to process in batch mode."
+                    placeholder =info_strings.BATCH_INPUT_FOLDER_VIDEOS_PROCESS_PLACEHOLDER,
+                    info =info_strings.BATCH_INPUT_FOLDER_VIDEO_FILES_MODE_INFO
                     )
                     batch_output_folder =gr .Textbox (
                     label ="Output Folder",
-                    placeholder ="Path to output folder for processed videos...",
-                    info ="Folder where processed videos will be saved with organized structure."
+                    placeholder =info_strings.BATCH_OUTPUT_FOLDER_PROCESSED_VIDEOS_PLACEHOLDER,
+                    info =info_strings.BATCH_OUTPUT_FOLDER_ORGANIZED_STRUCTURE_INFO
                     )
 
                 with gr .Row ():
                     enable_batch_frame_folders =gr .Checkbox (
                     label ="Process Frame Folders in Batch",
                     value =False ,
-                    info ="Enable to process subfolders containing frame sequences instead of video files. Each subfolder with images will be converted to video first."
+                    info =info_strings.BATCH_FRAME_FOLDERS_SUBFOLDERS_SEQUENCES_INFO
                     )
 
                     enable_direct_image_upscaling =gr .Checkbox (
                     label ="Direct Image Upscaling",
                     value =False ,
-                    info ="Process individual image files (JPG, PNG, etc.) directly with selected image upscaler model. Ideal for batch upscaling photos/images."
+                    info =info_strings.BATCH_DIRECT_IMAGE_JPG_PNG_UPSCALER_INFO
                     )
 
                 with gr .Row ():
@@ -1411,7 +1411,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                     batch_skip_existing =gr .Checkbox (
                     label ="Skip Existing Outputs",
                     value =INITIAL_APP_CONFIG .batch .skip_existing ,
-                    info ="Skip processing if the output file already exists. Useful for resuming interrupted batch jobs."
+                    info =info_strings.BATCH_SKIP_EXISTING_INTERRUPTED_JOBS_INFO
                     )
 
                     batch_use_prompt_files =gr .Checkbox (
@@ -1510,14 +1510,14 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         enable_fps_decrease =gr .Checkbox (
                         label ="Enable FPS Decrease",
                         value =INITIAL_APP_CONFIG .fps_decrease .enable ,
-                        info ="Reduce video FPS before upscaling to speed up processing. Fewer frames = faster upscaling and lower VRAM usage."
+                        info =info_strings.FPS_REDUCE_BEFORE_UPSCALING_SPEED_VRAM_INFO
                         )
 
                         fps_decrease_mode =gr .Radio (
                         label ="FPS Reduction Mode",
                         choices =["multiplier","fixed"],
                         value =INITIAL_APP_CONFIG .fps_decrease .mode ,
-                        info ="Multiplier: Reduce by fraction (1/2x, 1/4x). Fixed: Set specific FPS value. Multiplier is recommended for automatic adaptation to input video."
+                        info =info_strings.FPS_MODE_MULTIPLIER_FIXED_AUTOMATIC_ADAPTATION_INFO
                         )
 
                         with gr .Group ()as multiplier_controls :
@@ -1526,7 +1526,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                                 label ="FPS Multiplier",
                                 choices =list (util_get_common_fps_multipliers ().values ())+["Custom"],
                                 value =INITIAL_APP_CONFIG .fps_decrease .multiplier_preset ,
-                                info ="Choose common multiplier. 1/2x is recommended for good speed/quality balance."
+                                info =info_strings.FPS_MULTIPLIER_PRESET_SPEED_QUALITY_BALANCE_INFO
                                 )
                                 fps_multiplier_custom =gr .Number (
                                 label ="Custom Multiplier",
@@ -1536,7 +1536,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                                 step =0.05 ,
                                 precision =2 ,
                                 visible =False ,
-                                info ="Custom multiplier value (0.1 to 1.0). Lower = fewer frames."
+                                info =info_strings.FPS_MULTIPLIER_CUSTOM_LOWER_FRAMES_INFO
                                 )
 
                         with gr .Group (visible =False )as fixed_controls :
@@ -1546,14 +1546,14 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             maximum =60.0 ,
                             value =INITIAL_APP_CONFIG .fps_decrease .target_fps ,
                             step =0.001 ,
-                            info ="Target FPS for the reduced video. Lower FPS = faster upscaling. Common choices: 12-15 FPS for fast processing, 24 FPS for cinema standard. Supports precise values like 23.976."
+                            info =info_strings.FPS_TARGET_FAST_CINEMA_STANDARD_INFO
                             )
 
                         fps_interpolation_method =gr .Radio (
                         label ="Frame Reduction Method",
                         choices =["drop","blend"],
                         value =INITIAL_APP_CONFIG .fps_decrease .interpolation_method ,
-                        info ="Drop: Faster, simply removes frames. Blend: Smoother, blends frames together (slower but may preserve motion better)."
+                        info =info_strings.FPS_REDUCTION_DROP_BLEND_MOTION_PRESERVATION_INFO
                         )
 
                         fps_calculation_info =gr .Markdown (
@@ -1567,26 +1567,26 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         rife_enable_fps_limit =gr .Checkbox (
                         label ="Enable FPS Limiting",
                         value =INITIAL_APP_CONFIG .rife .enable_fps_limit ,
-                        info ="Limit the output FPS to specific common values instead of unlimited interpolation. Useful for compatibility with displays and media players."
+                        info =info_strings.RIFE_FPS_LIMIT_COMMON_VALUES_COMPATIBILITY_INFO
                         )
 
                         rife_max_fps_limit =gr .Radio (
                         label ="Max FPS Limit",
                         choices =[23.976 ,24 ,25 ,29.970 ,30 ,47.952 ,48 ,50 ,59.940 ,60 ,75 ,90 ,100 ,119.880 ,120 ,144 ,165 ,180 ,240 ,360 ],
                         value =INITIAL_APP_CONFIG .rife .max_fps_limit ,
-                        info ="Maximum FPS when limiting is enabled. NTSC rates: 23.976/29.970/59.940 (film/TV), Standard: 24/25/30/50/60, Gaming: 120/144/240+. Choose based on your target format and display."
+                        info =info_strings.RIFE_MAX_FPS_NTSC_STANDARD_GAMING_INFO
                         )
 
                         with gr .Row ():
                             rife_keep_original =gr .Checkbox (
                             label ="Keep Original Files",
                             value =INITIAL_APP_CONFIG .rife .keep_original ,
-                            info ="Keep the original (non-interpolated) video files alongside the RIFE-processed versions. Recommended to compare results."
+                            info =info_strings.RIFE_KEEP_ORIGINAL_COMPARE_RESULTS_INFO
                             )
                             rife_overwrite_original =gr .Checkbox (
                             label ="Overwrite Original",
                             value =INITIAL_APP_CONFIG .rife .overwrite_original ,
-                            info ="Replace the original upscaled video with the RIFE version as the primary output. When disabled, both versions are available."
+                            info =info_strings.RIFE_REPLACE_OUTPUT_PRIMARY_VERSION_INFO
                             )
 
         with gr .Tab ("Edit Videos",id ="edit_tab"):
@@ -1607,8 +1607,8 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         label ="Video Information",
                         interactive =False ,
                         lines =6 ,
-                        info ="Shows duration, FPS, frame count, resolution",
-                        value ="📹 Upload a video to see detailed information"
+                        info =info_strings.VIDEO_INFO_DURATION_FPS_FRAMES_RESOLUTION_INFO,
+                        value =info_strings.VIDEO_INFO_UPLOAD_DETAILED_INFORMATION
                         )
 
                     with gr .Row ():
@@ -1620,14 +1620,14 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         label ="Cutting Mode",
                         choices =['time_ranges','frame_ranges'],
                         value ='time_ranges',
-                        info ="Choose between time-based or frame-based cutting"
+                        info =info_strings.CUTTING_MODE_TIME_FRAME_BASED_INFO
                         )
 
                         with gr .Group ()as time_range_controls :
                             time_ranges_input =gr .Textbox (
                             label ="Time Ranges (seconds)",
                             placeholder ="1-3,5-8,10-15 or 1:30-2:45,3:00-4:30",
-                            info ="Format: start1-end1,start2-end2,... (supports decimal seconds and MM:SS format)",
+                            info =info_strings.TIME_RANGES_FORMAT_DECIMAL_MM_SS_INFO,
                             lines =2 
                             )
 
@@ -1635,7 +1635,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             frame_ranges_input =gr .Textbox (
                             label ="Frame Ranges",
                             placeholder ="30-90,150-210,300-450",
-                            info ="Format: start1-end1,start2-end2,... (frame numbers are 0-indexed)",
+                            info =info_strings.FRAME_RANGES_FORMAT_ZERO_INDEXED_INFO,
                             lines =2 
                             )
 
@@ -1652,13 +1652,13 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         label ="Cutting Precision",
                         choices =['precise','fast'],
                         value ='precise',
-                        info ="Precise: Frame-accurate re-encoding. Fast: Stream copy (faster but may be less accurate)"
+                        info =info_strings.PRECISE_CUTTING_FRAME_ACCURATE_FAST_COPY_INFO
                         )
 
                         preview_first_segment =gr .Checkbox (
                         label ="Generate Preview of First Segment",
                         value =INITIAL_APP_CONFIG .video_editing .preview_first_segment ,
-                        info ="Create a preview video of the first cut segment for verification"
+                        info =info_strings.PREVIEW_FIRST_SEGMENT_VERIFICATION_INFO
                         )
 
                         processing_estimate =gr .Textbox (
@@ -1712,19 +1712,19 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         label ="Processing Mode",
                         choices =["Single Video","Batch Folder"],
                         value ="Single Video",
-                        info ="Choose between processing a single video or batch processing a folder of videos"
+                        info =info_strings.PROCESSING_MODE_SINGLE_BATCH_FOLDER_INFO
                         )
 
                         with gr .Group (visible =False )as batch_folder_controls :
                             batch_input_folder_face =gr .Textbox (
                             label ="Input Folder Path",
                             placeholder ="C:/path/to/input/videos/",
-                            info ="Folder containing videos to process with face restoration"
+                            info =info_strings.FACE_RESTORATION_INPUT_FOLDER_VIDEOS_INFO
                             )
                             batch_output_folder_face =gr .Textbox (
                             label ="Output Folder Path",
                             placeholder ="C:/path/to/output/videos/",
-                            info ="Folder where face-restored videos will be saved"
+                            info =info_strings.FACE_RESTORATION_OUTPUT_FOLDER_VIDEOS_INFO
                             )
 
                     with gr .Row ():
@@ -1735,19 +1735,19 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                         standalone_enable_face_restoration =gr .Checkbox (
                         label ="Enable Face Restoration",
                         value =INITIAL_APP_CONFIG .face_restoration .enable ,
-                        info ="Enable CodeFormer face restoration processing. Must be enabled for any processing to occur."
+                        info =info_strings.FACE_RESTORATION_ENABLE_PROCESSING_OCCUR_INFO
                         )
 
                         standalone_face_restoration_fidelity =gr .Slider (
                         label ="Face Restoration Fidelity Weight",
                         minimum =0.0 ,maximum =1.0 ,value =INITIAL_APP_CONFIG .standalone_face_restoration .fidelity_weight ,step =0.05 ,
-                        info ="Balance between quality (0.3) and identity preservation (0.8). 0.7 is recommended for most videos."
+                        info =info_strings.FACE_RESTORATION_FIDELITY_BALANCE_RECOMMENDED_INFO
                         )
 
                         standalone_enable_face_colorization =gr .Checkbox (
                         label ="Enable Face Colorization",
                         value =INITIAL_APP_CONFIG .standalone_face_restoration .enable_colorization ,
-                        info ="Enable colorization for grayscale faces. Useful for old black & white videos or grayscale content."
+                        info =info_strings.FACE_COLORIZATION_GRAYSCALE_OLD_VIDEOS_INFO
                         )
 
                         with gr .Row ():
@@ -1758,32 +1758,32 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                             label ="CodeFormer Model",
                             choices =standalone_model_choices ,
                             value =standalone_default_model_choice ,
-                            info ="Select the CodeFormer model. 'Auto' uses the default model. Models should be in pretrained_weight/ directory."
+                            info =info_strings.CODEFORMER_MODEL_AUTO_PRETRAINED_WEIGHT_INFO
                             )
 
                         standalone_face_restoration_batch_size =gr .Slider (
                         label ="Processing Batch Size",
                         minimum =1 ,maximum =50 ,value =INITIAL_APP_CONFIG .standalone_face_restoration .batch_size ,step =1 ,
-                        info ="Number of frames to process simultaneously. Higher values = faster processing but more VRAM usage."
+                        info =info_strings.FACE_RESTORATION_BATCH_SIZE_SIMULTANEOUS_VRAM_INFO
                         )
 
                     with gr .Accordion ("Advanced Options",open =True ):
                         standalone_save_frames =gr .Checkbox (
                         label ="Save Individual Frames",
                         value =INITIAL_APP_CONFIG .standalone_face_restoration .save_frames ,
-                        info ="Save processed frames as individual image files alongside the video"
+                        info =info_strings.SAVE_PROCESSED_FRAMES_INDIVIDUAL_FILES_INFO
                         )
 
                         standalone_create_comparison =gr .Checkbox (
                         label ="Create Before/After Comparison Video",
                         value =INITIAL_APP_CONFIG .standalone_face_restoration .create_comparison ,
-                        info ="Create a side-by-side comparison video showing original vs face-restored results"
+                        info =info_strings.COMPARISON_VIDEO_SIDE_BY_SIDE_ORIGINAL_RESTORED_INFO
                         )
 
                         standalone_preserve_audio =gr .Checkbox (
                         label ="Preserve Original Audio",
                         value =INITIAL_APP_CONFIG .standalone_face_restoration .preserve_audio ,
-                        info ="Keep the original audio track in the processed video"
+                        info =info_strings.PRESERVE_AUDIO_TRACK_PROCESSED_VIDEO_INFO
                         )
 
                 with gr .Column (scale =1 ):
@@ -1951,12 +1951,12 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                 model_choices =available_model_files 
                 default_choice =model_choices [0 ]
             else :
-                model_choices =["No models found - place models in upscale_models/"]
+                model_choices =[info_strings.NO_MODELS_FOUND_PLACE_UPSCALE_MODELS_STATUS]
                 default_choice =model_choices [0 ]
             return gr .update (choices =model_choices ,value =default_choice )
         except Exception as e :
             logger .warning (f"Failed to refresh upscaler models: {e}")
-            return gr .update (choices =["Error scanning models - check upscale_models/ directory"],
+            return gr .update (choices =[info_strings.ERROR_SCANNING_UPSCALE_MODELS_DIRECTORY_STATUS],
                                     value = MODEL_SCAN_ERROR_STATUS)
 
     refresh_models_btn .click (
@@ -2209,9 +2209,9 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
     def update_ffmpeg_quality_settings (use_gpu_ffmpeg ):
         from logic .dataclasses import DEFAULT_FFMPEG_QUALITY_GPU ,DEFAULT_FFMPEG_QUALITY_CPU 
         if use_gpu_ffmpeg :
-            return gr .Slider (label ="FFmpeg Quality (CQ for NVENC)",value =DEFAULT_FFMPEG_QUALITY_GPU ,info ="For h24_nvenc (GPU): Constrained Quality (CQ). Lower values generally mean better quality. Typical range for NVENC CQ is 18-28.")
+            return gr .Slider (label ="FFmpeg Quality (CQ for NVENC)",value =DEFAULT_FFMPEG_QUALITY_GPU ,info =info_strings.FFMPEG_H264_NVENC_CQ_QUALITY_RANGE_INFO)
         else :
-            return gr .Slider (label ="FFmpeg Quality (CRF for libx264)",value =DEFAULT_FFMPEG_QUALITY_CPU ,info ="For libx264 (CPU): Constant Rate Factor (CRF). Lower values mean higher quality (0 is lossless, 23 is default).")
+            return gr .Slider (label ="FFmpeg Quality (CRF for libx264)",value =DEFAULT_FFMPEG_QUALITY_CPU ,info =info_strings.FFMPEG_LIBX264_CRF_QUALITY_LOSSLESS_DEFAULT_INFO)
 
     ffmpeg_use_gpu_check .change (
     fn =update_ffmpeg_quality_settings ,
@@ -2674,7 +2674,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
     def upscale_director_logic (app_config :AppConfig ,progress =gr .Progress (track_tqdm =True )):
 
         cancellation_manager .reset ()
-        logger .info ("Starting new upscale process - cancellation state reset")
+        logger .info (info_strings.STARTING_NEW_UPSCALE_CANCELLATION_RESET_STATUS)
 
         current_output_video_val =None 
         current_status_text_val =""
@@ -2818,10 +2818,10 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
         if should_auto_caption_entire_video :
 
             if "cancelled"in current_user_prompt_val .lower ()or "error"in current_user_prompt_val .lower ():
-                logger .info ("Skipping auto-caption because prompt contains error/cancelled text from previous run")
+                logger .info (info_strings.SKIPPING_AUTO_CAPTION_ERROR_CANCELLED_PROMPT)
                 current_user_prompt_val ="..."
                 app_config .prompts .user =current_user_prompt_val 
-            logger .info ("Attempting auto-captioning entire video before upscale (scene splitting disabled).")
+            logger .info (info_strings.AUTO_CAPTIONING_ENTIRE_VIDEO_SCENE_DISABLED)
             progress (0 ,desc ="Starting auto-captioning before upscale...")
 
             current_status_text_val ="Starting auto-captioning..."
@@ -2856,7 +2856,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                     logger .info (f"Auto-caption successful. Updated current_user_prompt_val to: '{current_user_prompt_val[:100]}...'")
                 else :
 
-                    log_accumulator_director .append ("Caption generation failed or was cancelled. Using original prompt.")
+                    log_accumulator_director .append (info_strings.CAPTION_GENERATION_FAILED_ORIGINAL_PROMPT)
                     logger .warning (f"Auto-caption failed or cancelled. Keeping original prompt: '{current_user_prompt_val[:100]}...'")
 
                 current_status_text_val ="\n".join (log_accumulator_director )
@@ -2875,8 +2875,8 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                     current_caption_status_visible_val =False 
 
             except CancelledError as e_cancel :
-                logger .info ("Auto-captioning cancelled by user - stopping process")
-                log_accumulator_director .append ("⚠️ Process cancelled by user during auto-captioning")
+                logger .info (info_strings.AUTO_CAPTIONING_CANCELLED_USER_STOPPING)
+                log_accumulator_director .append (info_strings.PROCESS_CANCELLED_USER_AUTO_CAPTIONING)
                 current_status_text_val ="\n".join (log_accumulator_director )
                 if UTIL_COG_VLM_AVAILABLE :
                     current_caption_status_text_val ="Auto-captioning cancelled by user"
@@ -2908,7 +2908,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
             log_accumulator_director =[]
 
         elif app_config .cogvlm .auto_caption_then_upscale and app_config .scene_split .enable and not app_config .image_upscaler .enable and UTIL_COG_VLM_AVAILABLE :
-            msg ="Scene splitting enabled: Auto-captioning will be done per scene during upscaling."
+            msg =info_strings.SCENE_SPLITTING_AUTO_CAPTIONING_PER_SCENE
             logger .info (msg )
             log_accumulator_director .append (msg )
             current_status_text_val ="\n".join (log_accumulator_director )
@@ -2920,7 +2920,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
             gr .update (value =current_comparison_video_val ))
 
         elif app_config .cogvlm .auto_caption_then_upscale and app_config .image_upscaler .enable :
-            msg ="Image-based upscaling is enabled. Auto-captioning is disabled as image upscalers don't use prompts."
+            msg =info_strings.IMAGE_UPSCALING_AUTO_CAPTIONING_DISABLED
             logger .info (msg )
             log_accumulator_director .append (msg )
             current_status_text_val ="\n".join (log_accumulator_director )
@@ -2932,13 +2932,13 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
             gr .update (value =current_comparison_video_val ))
 
         elif app_config .cogvlm .auto_caption_then_upscale and not UTIL_COG_VLM_AVAILABLE :
-            msg ="Auto-captioning requested but CogVLM2 is not available. Using original prompt."
+            msg =info_strings.AUTO_CAPTIONING_COGVLM2_UNAVAILABLE_ORIGINAL
             logger .warning (msg )
 
         try :
             cancellation_manager .check_cancel ()
         except CancelledError :
-            logger .info ("Process cancelled before main upscaling - stopping")
+            logger .info (info_strings.PROCESS_CANCELLED_MAIN_UPSCALING_STOPPING)
             log_accumulator_director .append ("⚠️ Process cancelled by user")
             current_status_text_val ="\n".join (log_accumulator_director )
             yield (gr .update (value =current_output_video_val ),gr .update (value =current_status_text_val ),
@@ -3307,13 +3307,13 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
 
     def cancel_processing ():
 
-        logger .warning ("🚨 CANCEL button clicked by user. Requesting cancellation.")
+        logger .warning (info_strings.CANCEL_BUTTON_CLICKED_USER_REQUESTING)
         success =cancellation_manager .request_cancellation ()
 
         if success :
-            return "🚨 CANCELLATION REQUESTED: Processing will stop safely at the next checkpoint. Please wait for current operation to complete..."
+            return info_strings.CANCELLATION_REQUESTED_STOP_SAFELY_CHECKPOINT
         else :
-            return "⚠️ No active processing to cancel or cancellation already requested."
+            return info_strings.NO_ACTIVE_PROCESSING_CANCEL_REQUESTED
 
     cancel_button .click (
     fn =cancel_processing ,
@@ -3812,7 +3812,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                 actual_seed =seed_num_val 
 
             if not enable_face_restoration_val :
-                return None ,None ,"⚠️ Face restoration is disabled. Please enable it to process videos.","❌ Processing disabled"
+                return None ,None ,info_strings.FACE_RESTORATION_DISABLED_ENABLE_PROCESS,"❌ Processing disabled"
 
             if face_restoration_mode_val =="Single Video":
                 if not input_video_val :
@@ -3822,7 +3822,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                 processing_mode ="single"
             else :
                 if not batch_input_folder_val or not batch_output_folder_val :
-                    return None ,None ,"⚠️ Please specify both input and output folder paths for batch processing.","❌ Missing folder paths"
+                    return None ,None ,info_strings.BATCH_PROCESSING_SPECIFY_FOLDER_PATHS,"❌ Missing folder paths"
                 if not os .path .exists (batch_input_folder_val ):
                     return None ,None ,f"⚠️ Input folder does not exist: {batch_input_folder_val}","❌ Input folder not found"
                 input_path =batch_input_folder_val 
@@ -3946,7 +3946,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
                     status_msg =f"✅ Batch processing completed!\n\n📊 Results:\n✅ Successfully processed: {processed_count} videos\n❌ Failed: {failed_count} videos\n📁 Output saved to: {output_dir}\n\n⏱️ Total processing time: {processing_time:.1f} seconds"
                     return None ,None ,status_msg ,stats_msg 
                 else :
-                    return None ,None ,f"❌ Batch processing failed: No videos were processed successfully.","❌ Batch processing failed"
+                    return None ,None ,finfo_strings.BATCH_PROCESSING_FAILED_NO_VIDEOS,"❌ Batch processing failed"
 
         except Exception as e :
             logger .error (f"Standalone face restoration error: {str(e)}")
@@ -3991,9 +3991,9 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
         }
 
         layout_info_map ={
-        2 :"Auto: Choose best layout based on aspect ratio. Side-by-Side: Force horizontal layout. Top-Bottom: Force vertical layout.",
-        3 :"Auto: Choose best layout automatically. 3x1: Horizontal row. 1x3: Vertical column. L-shape: 2 videos on top, 1 on bottom full width.",
-        4 :"Auto: Choose best layout automatically. 2x2 Grid: Square arrangement. 4x1: Horizontal row. 1x4: Vertical column."
+        2 :info_strings.COMPARISON_AUTO_SIDE_BY_SIDE_TOP_BOTTOM_INFO,
+        3 :info_strings.COMPARISON_AUTO_3X1_1X3_L_SHAPE_INFO,
+        4 :info_strings.COMPARISON_AUTO_2X2_4X1_1X4_INFO
         }
 
         choices =layout_choices_map .get (video_count ,layout_choices_map [2 ])
@@ -4282,7 +4282,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
     ):
 
         if video_path is None :
-            return "📹 Upload a video to see expected output resolution"
+            return info_strings.UPLOAD_VIDEO_EXPECTED_OUTPUT_RESOLUTION
 
         try :
 
@@ -4764,7 +4764,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
 
     def display_detailed_video_info_edit (video_path ):
         if video_path is None :
-            return "📹 Upload a video to see detailed information"
+            return info_strings.VIDEO_INFO_UPLOAD_DETAILED_INFORMATION
 
         try :
             video_info =util_get_video_detailed_info (video_path ,logger )
@@ -4784,10 +4784,10 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
 
     def validate_and_analyze_cuts (ranges_input ,cutting_mode_val ,video_path ):
         if video_path is None :
-            return "✏️ Upload a video first","📊 Upload video and enter ranges to see time estimate"
+            return "✏️ Upload a video first",info_strings.CUT_ANALYSIS_UPLOAD_RANGES_TIME_ESTIMATE_INFO
 
         if not ranges_input or not ranges_input .strip ():
-            return "✏️ Enter ranges above to see cut analysis","📊 Upload video and enter ranges to see time estimate"
+            return "✏️ Enter ranges above to see cut analysis",info_strings.CUT_ANALYSIS_UPLOAD_RANGES_TIME_ESTIMATE_INFO
 
         try :
             video_info =util_get_video_detailed_info (video_path ,logger )
@@ -5132,7 +5132,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
         preset_name =preset_name .strip ()
 
         if preset_name =="last_preset":
-            return [gr .update (value ="Cannot load 'last_preset' - this is a system file")]+[gr .update ()for _ in preset_components ]+[gr .update ()for _ in range (APP_CONFIG .preset_system .conditional_updates_count )]
+            return [gr .update (value =info_strings.CANNOT_LOAD_LAST_PRESET_SYSTEM_FILE)]+[gr .update ()for _ in preset_components ]+[gr .update ()for _ in range (APP_CONFIG .preset_system .conditional_updates_count )]
 
         config_dict ,message =None ,None 
         max_retries =APP_CONFIG .preset_system .load_retries 
@@ -5661,26 +5661,26 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
             recommendation_lines =["\n🎯 Professional Recommendations:"]
 
             if total_vram >=16 :
-                recommendation_lines .append ("🏆 Single GPU: 7B FP16 model (maximum quality)")
+                recommendation_lines .append (info_strings.SINGLE_GPU_7B_FP16_MAXIMUM_QUALITY)
             elif total_vram >=12 :
-                recommendation_lines .append ("⚡ Single GPU: 7B FP8 model (high quality, efficient)")
+                recommendation_lines .append (info_strings.SINGLE_GPU_7B_FP8_HIGH_QUALITY_EFFICIENT)
             elif total_vram >=8 :
                 recommendation_lines .append ("💡 Single GPU: 3B FP16 model (balanced)")
             elif total_vram >=6 :
-                recommendation_lines .append ("⚙️ Single GPU: 3B FP8 + Block Swap (optimized)")
+                recommendation_lines .append (info_strings.SINGLE_GPU_3B_FP8_BLOCK_SWAP_OPTIMIZED)
             else :
-                recommendation_lines .append ("🔧 Single GPU: 3B FP8 + Aggressive Block Swap")
+                recommendation_lines .append (info_strings.SINGLE_GPU_3B_FP8_AGGRESSIVE_BLOCK_SWAP)
 
             if len (gpus )>=2 :
                 recommendation_lines .append (f"🚀 Multi-GPU: {len(gpus)} GPUs detected for parallel processing")
-                recommendation_lines .append ("✅ Multi-GPU enabled for increased performance")
+                recommendation_lines .append (info_strings.MULTI_GPU_ENABLED_INCREASED_PERFORMANCE)
             else :
-                recommendation_lines .append ("ℹ️ Multi-GPU: Not available (need 2+ GPUs)")
+                recommendation_lines .append (info_strings.MULTI_GPU_NOT_AVAILABLE_NEED_2_PLUS)
 
             recommendation_lines .append ("\n🔧 Performance Tips:")
-            recommendation_lines .append ("• Use 'Apply Optimal Settings' for automatic configuration")
-            recommendation_lines .append ("• Enable Flash Attention for 15-20% speedup")
-            recommendation_lines .append ("• Use 'Smart Block Swap' for VRAM optimization")
+            recommendation_lines .append (info_strings.OPTIMAL_SETTINGS_AUTOMATIC_CONFIGURATION)
+            recommendation_lines .append (info_strings.FLASH_ATTENTION_15_20_SPEEDUP)
+            recommendation_lines .append (info_strings.SMART_BLOCK_SWAP_VRAM_OPTIMIZATION)
 
             complete_status ="\n".join (status_lines +recommendation_lines )
 
@@ -5779,7 +5779,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
 
         try :
             if not current_model or any (error in current_model for error in ["Error:","No SeedVR2","SeedVR2 directory"]):
-                return gr .update (value ="Please select a valid SeedVR2 model first.")
+                return gr .update (value =info_strings.SELECT_VALID_SEEDVR2_MODEL_FIRST)
 
             model_filename =util_extract_model_filename_from_dropdown (current_model )
             if not model_filename :
@@ -5814,7 +5814,7 @@ with gr .Blocks (css =css ,theme =gr .themes .Soft ())as demo :
 
         try :
             if not current_model or any (error in current_model for error in ["Error:","No SeedVR2","SeedVR2 directory"]):
-                return gr .update (value ="Please select a valid SeedVR2 model first.")
+                return gr .update (value =info_strings.SELECT_VALID_SEEDVR2_MODEL_FIRST)
 
             model_filename =util_extract_model_filename_from_dropdown (current_model )
             if not model_filename :
@@ -6219,7 +6219,7 @@ if __name__ =="__main__":
         util_set_gpu_device (default_gpu_main_val ,logger =logger )
         logger .info (f"Initialized with default GPU: {default_gpu_main_val} (GPU 0)")
     else :
-        logger .info ("No CUDA GPUs detected, attempting to set to GPU 0 (CPU fallback).")
+        logger .info (info_strings.NO_CUDA_GPUS_CPU_FALLBACK)
         util_set_gpu_device (None ,logger =logger )
 
     effective_allowed_paths =util_get_available_drives (APP_CONFIG .paths .outputs_dir ,base_path ,logger =logger )
