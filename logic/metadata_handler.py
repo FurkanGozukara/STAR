@@ -6,104 +6,206 @@ from .common_utils import format_time
 def _prepare_metadata_dict(params_dict: dict, status_info: dict = None) -> dict:
     """
     Creates the structured dictionary for metadata from a flat params_dict and status_info.
-    Internal helper function.
+    Only includes fields relevant to the specific upscaler type being used.
     """
+    upscaler_type = params_dict.get("upscaler_type", "STAR")
+    
+    # Start with common metadata fields used by all upscalers
     metadata = {
+        "upscaler_type": upscaler_type,
         "input_video_path": os.path.abspath(params_dict.get("input_video_path", "")) if params_dict.get("input_video_path") else "N/A",
-        "user_prompt": params_dict.get("user_prompt", "N/A"),
-        "positive_prompt": params_dict.get("positive_prompt", "N/A"),
-        "negative_prompt": params_dict.get("negative_prompt", "N/A"),
-        "model_choice": params_dict.get("model_choice", "N/A"),
-        "upscale_factor_slider_if_target_res_disabled": params_dict.get("upscale_factor_slider", "N/A"),
-        "cfg_scale": params_dict.get("cfg_scale", "N/A"),
-        "steps": params_dict.get("ui_total_diffusion_steps", "N/A"),
-        "solver_mode": params_dict.get("solver_mode", "N/A"),
-        "max_chunk_len": params_dict.get("max_chunk_len", "N/A"),
-        "vae_chunk": params_dict.get("vae_chunk", "N/A"),
-        "color_fix_method": params_dict.get("color_fix_method", "N/A"),
-        "enable_tiling": params_dict.get("enable_tiling", False),
-        "tile_size_if_tiling_enabled": params_dict.get("tile_size", "N/A") if params_dict.get("enable_tiling") else "N/A",
-        "tile_overlap_if_tiling_enabled": params_dict.get("tile_overlap", "N/A") if params_dict.get("enable_tiling") else "N/A",
-        "enable_context_window": params_dict.get("enable_context_window", False),
-        "context_overlap_if_enabled": params_dict.get("context_overlap", "N/A") if params_dict.get("enable_context_window") else "N/A",
-        "enable_target_res": params_dict.get("enable_target_res", False),
-        "target_h_if_target_res_enabled": params_dict.get("target_h", "N/A") if params_dict.get("enable_target_res") else "N/A",
-        "target_w_if_target_res_enabled": params_dict.get("target_w", "N/A") if params_dict.get("enable_target_res") else "N/A",
-        "target_res_mode_if_target_res_enabled": params_dict.get("target_res_mode", "N/A") if params_dict.get("enable_target_res") else "N/A",
-        "ffmpeg_preset": params_dict.get("ffmpeg_preset", "N/A"),
-        "ffmpeg_quality_value": params_dict.get("ffmpeg_quality_value", "N/A"),
-        "ffmpeg_use_gpu": params_dict.get("ffmpeg_use_gpu", False),
-        "enable_scene_split": params_dict.get("enable_scene_split", False),
-        "scene_split_mode_if_enabled": params_dict.get("scene_split_mode", "N/A") if params_dict.get("enable_scene_split") else "N/A",
-        "scene_min_scene_len_if_enabled": params_dict.get("scene_min_scene_len", "N/A") if params_dict.get("enable_scene_split") else "N/A",
-        "scene_threshold_if_enabled": params_dict.get("scene_threshold", "N/A") if params_dict.get("enable_scene_split") else "N/A",
-        "scene_manual_split_type_if_enabled": params_dict.get("scene_manual_split_type", "N/A") if params_dict.get("enable_scene_split") else "N/A",
-        "scene_manual_split_value_if_enabled": params_dict.get("scene_manual_split_value", "N/A") if params_dict.get("enable_scene_split") else "N/A",
-        "is_batch_mode": params_dict.get("is_batch_mode", False),
-        "batch_output_dir_if_batch": params_dict.get("batch_output_dir", "N/A") if params_dict.get("is_batch_mode") else "N/A",
         "final_output_video_path": os.path.abspath(params_dict.get("final_output_path", "")) if params_dict.get("final_output_path") else "N/A",
-        "original_video_resolution_wh": (params_dict.get("orig_w"), params_dict.get("orig_h")) if params_dict.get("orig_w") is not None and params_dict.get("orig_h") is not None else "N/A",
-        "effective_input_fps": f"{params_dict.get('input_fps'):.2f}" if params_dict.get("input_fps") is not None else "N/A",
-        "calculated_upscale_factor": f"{params_dict.get('upscale_factor'):.2f}" if params_dict.get("upscale_factor") is not None else "N/A",
-        "final_output_resolution_wh": (params_dict.get("final_w"), params_dict.get("final_h")) if params_dict.get("final_w") is not None and params_dict.get("final_h") is not None else "N/A",
-        "scene_prompt_used_for_chunk": params_dict.get("scene_prompt_used_for_chunk", "N/A"),
         "current_seed": params_dict.get("current_seed", "N/A"),
-        # RIFE interpolation metadata
-        "rife_enabled": params_dict.get("rife_enabled", False),
-        "rife_multiplier_if_enabled": params_dict.get("rife_multiplier", "N/A") if params_dict.get("rife_enabled") else "N/A",
-        "rife_actual_multiplier_if_enabled": params_dict.get("rife_actual_multiplier", "N/A") if params_dict.get("rife_enabled") else "N/A",
-        "rife_fp16_if_enabled": params_dict.get("rife_fp16", "N/A") if params_dict.get("rife_enabled") else "N/A",
-        "rife_uhd_if_enabled": params_dict.get("rife_uhd", "N/A") if params_dict.get("rife_enabled") else "N/A",
-        "rife_scale_if_enabled": params_dict.get("rife_scale", "N/A") if params_dict.get("rife_enabled") else "N/A",
-        "rife_skip_static_if_enabled": params_dict.get("rife_skip_static", "N/A") if params_dict.get("rife_enabled") else "N/A",
-        "rife_original_fps_if_enabled": f"{params_dict.get('rife_original_fps'):.2f}" if params_dict.get("rife_enabled") and params_dict.get('rife_original_fps') is not None else "N/A",
-        "rife_target_fps_if_enabled": f"{params_dict.get('rife_target_fps'):.2f}" if params_dict.get("rife_enabled") and params_dict.get('rife_target_fps') is not None else "N/A",
-        "rife_final_fps_if_enabled": f"{params_dict.get('rife_final_fps'):.2f}" if params_dict.get("rife_enabled") and params_dict.get('rife_final_fps') is not None else "N/A",
-        "rife_fps_limit_enabled_if_rife_enabled": params_dict.get("rife_fps_limit_enabled", "N/A") if params_dict.get("rife_enabled") else "N/A",
-        "rife_fps_limit_value_if_limit_enabled": params_dict.get("rife_fps_limit", "N/A") if params_dict.get("rife_enabled") and params_dict.get("rife_fps_limit_enabled") else "N/A",
-        "rife_apply_to_chunks_if_enabled": params_dict.get("rife_apply_to_chunks", "N/A") if params_dict.get("rife_enabled") else "N/A",
-        "rife_apply_to_scenes_if_enabled": params_dict.get("rife_apply_to_scenes", "N/A") if params_dict.get("rife_enabled") else "N/A",
-        "rife_keep_original_if_enabled": params_dict.get("rife_keep_original", "N/A") if params_dict.get("rife_enabled") else "N/A",
-        "rife_overwrite_original_if_enabled": params_dict.get("rife_overwrite_original", "N/A") if params_dict.get("rife_enabled") else "N/A",
-        "rife_processing_time_seconds_if_enabled": f"{params_dict.get('rife_processing_time'):.2f}" if params_dict.get("rife_enabled") and params_dict.get('rife_processing_time') is not None else "N/A",
-        "rife_output_video_path_if_enabled": os.path.abspath(params_dict.get("rife_output_path", "")) if params_dict.get("rife_enabled") and params_dict.get("rife_output_path") else "N/A",
-        
-        # Image upscaler metadata
-        "image_upscaler_enabled": params_dict.get("image_upscaler_enabled", False),
-        "upscaler_type": params_dict.get("upscaler_type", "STAR"),
-        "image_upscaler_model_if_enabled": params_dict.get("image_upscaler_model", "N/A") if params_dict.get("image_upscaler_enabled") else "N/A",
-        "image_upscaler_model_display_if_enabled": params_dict.get("image_upscaler_model_display", "N/A") if params_dict.get("image_upscaler_enabled") else "N/A",
-        "image_upscaler_architecture_if_enabled": params_dict.get("image_upscaler_architecture", "N/A") if params_dict.get("image_upscaler_enabled") else "N/A",
-        "image_upscaler_scale_factor_if_enabled": params_dict.get("image_upscaler_scale_factor", "N/A") if params_dict.get("image_upscaler_enabled") else "N/A",
-        "image_upscaler_batch_size_if_enabled": params_dict.get("image_upscaler_batch_size", "N/A") if params_dict.get("image_upscaler_enabled") else "N/A",
-        "image_upscaler_device_if_enabled": params_dict.get("image_upscaler_device", "N/A") if params_dict.get("image_upscaler_enabled") else "N/A",
-        "image_upscaler_processing_time_seconds_if_enabled": f"{params_dict.get('image_upscaler_processing_time'):.2f}" if params_dict.get("image_upscaler_enabled") and params_dict.get('image_upscaler_processing_time') is not None else "N/A",
-        "image_upscaler_frames_processed_if_enabled": params_dict.get("image_upscaler_frames_processed", "N/A") if params_dict.get("image_upscaler_enabled") else "N/A",
-        "image_upscaler_frames_failed_if_enabled": params_dict.get("image_upscaler_frames_failed", "N/A") if params_dict.get("image_upscaler_enabled") else "N/A",
     }
     
-    # Add SeedVR2-specific metadata if it's SeedVR2
-    if params_dict.get("upscaler_type") == "seedvr2":
-        seedvr2_model = params_dict.get("seedvr2_model", "N/A")
-        if seedvr2_model != "N/A":
-            metadata["seedvr2_model"] = seedvr2_model
-        seedvr2_batch_size = params_dict.get("seedvr2_batch_size", "N/A")
-        if seedvr2_batch_size != "N/A":
-            metadata["seedvr2_batch_size"] = seedvr2_batch_size
-        seedvr2_device = params_dict.get("seedvr2_device", "N/A")
-        if seedvr2_device != "N/A":
-            metadata["seedvr2_device"] = seedvr2_device
-        seedvr2_processing_time = params_dict.get("seedvr2_processing_time")
-        if seedvr2_processing_time is not None:
-            metadata["seedvr2_processing_time"] = f"{seedvr2_processing_time:.2f}"
-        seedvr2_frames_processed = params_dict.get("seedvr2_frames_processed", "N/A")
-        if seedvr2_frames_processed != "N/A":
-            metadata["seedvr2_frames_processed"] = seedvr2_frames_processed
-        seedvr2_frames_failed = params_dict.get("seedvr2_frames_failed", "N/A")
-        if seedvr2_frames_failed != "N/A":
-            metadata["seedvr2_frames_failed"] = seedvr2_frames_failed
-
-    # Add frame range information for chunks, scenes, and sliding windows
+    # Add resolution and upscale information (common to all)
+    if params_dict.get("orig_w") is not None and params_dict.get("orig_h") is not None:
+        metadata["original_video_resolution_wh"] = (params_dict.get("orig_w"), params_dict.get("orig_h"))
+    if params_dict.get("final_w") is not None and params_dict.get("final_h") is not None:
+        metadata["final_output_resolution_wh"] = (params_dict.get("final_w"), params_dict.get("final_h"))
+    if params_dict.get("upscale_factor") is not None:
+        metadata["calculated_upscale_factor"] = f"{params_dict.get('upscale_factor'):.2f}"
+    if params_dict.get("input_fps") is not None:
+        metadata["effective_input_fps"] = f"{params_dict.get('input_fps'):.2f}"
+    
+    # Target resolution settings (common to all)
+    if params_dict.get("enable_target_res"):
+        metadata["enable_target_res"] = True
+        metadata["target_h"] = params_dict.get("target_h", "N/A")
+        metadata["target_w"] = params_dict.get("target_w", "N/A")
+        metadata["target_res_mode"] = params_dict.get("target_res_mode", "N/A")
+    elif not params_dict.get("enable_target_res") and params_dict.get("upscale_factor_slider") is not None:
+        metadata["upscale_factor_slider"] = params_dict.get("upscale_factor_slider")
+    
+    # FFmpeg settings (common to all)
+    metadata["ffmpeg_preset"] = params_dict.get("ffmpeg_preset", "N/A")
+    metadata["ffmpeg_quality_value"] = params_dict.get("ffmpeg_quality_value", "N/A")
+    if params_dict.get("ffmpeg_use_gpu"):
+        metadata["ffmpeg_use_gpu"] = True
+    
+    # Batch mode (common to all)
+    if params_dict.get("is_batch_mode"):
+        metadata["is_batch_mode"] = True
+        metadata["batch_output_dir"] = params_dict.get("batch_output_dir", "N/A")
+    
+    # Add upscaler-specific fields based on type
+    if upscaler_type.lower() == "star":
+        # STAR-specific fields only
+        metadata.update({
+            "user_prompt": params_dict.get("user_prompt", "N/A"),
+            "positive_prompt": params_dict.get("positive_prompt", "N/A"),
+            "negative_prompt": params_dict.get("negative_prompt", "N/A"),
+            "model_choice": params_dict.get("model_choice", "N/A"),
+            "cfg_scale": params_dict.get("cfg_scale", "N/A"),
+            "steps": params_dict.get("ui_total_diffusion_steps", "N/A"),
+            "solver_mode": params_dict.get("solver_mode", "N/A"),
+            "max_chunk_len": params_dict.get("max_chunk_len", "N/A"),
+            "vae_chunk": params_dict.get("vae_chunk", "N/A"),
+            "color_fix_method": params_dict.get("color_fix_method", "N/A"),
+        })
+        
+        # STAR tiling settings
+        if params_dict.get("enable_tiling"):
+            metadata["enable_tiling"] = True
+            metadata["tile_size"] = params_dict.get("tile_size", "N/A")
+            metadata["tile_overlap"] = params_dict.get("tile_overlap", "N/A")
+        
+        # STAR context window settings
+        if params_dict.get("enable_context_window"):
+            metadata["enable_context_window"] = True
+            metadata["context_overlap"] = params_dict.get("context_overlap", "N/A")
+        
+        # Scene split settings (STAR uses this for prompts)
+        if params_dict.get("enable_scene_split"):
+            metadata["enable_scene_split"] = True
+            metadata["scene_split_mode"] = params_dict.get("scene_split_mode", "N/A")
+            metadata["scene_min_scene_len"] = params_dict.get("scene_min_scene_len", "N/A")
+            metadata["scene_threshold"] = params_dict.get("scene_threshold", "N/A")
+            if params_dict.get("scene_split_mode") == "Manual":
+                metadata["scene_manual_split_type"] = params_dict.get("scene_manual_split_type", "N/A")
+                metadata["scene_manual_split_value"] = params_dict.get("scene_manual_split_value", "N/A")
+        
+        # Scene-specific prompt if used
+        if params_dict.get("scene_prompt_used_for_chunk") and params_dict.get("scene_prompt_used_for_chunk") != "N/A":
+            metadata["scene_prompt_used_for_chunk"] = params_dict.get("scene_prompt_used_for_chunk")
+            
+    elif upscaler_type.lower() == "seedvr2":
+        # SeedVR2-specific fields only
+        seedvr2_fields = {
+            "seedvr2_model": params_dict.get("seedvr2_model"),
+            "seedvr2_batch_size": params_dict.get("seedvr2_batch_size"),
+            "seedvr2_device": params_dict.get("seedvr2_device"),
+            "seedvr2_frame_overlap": params_dict.get("seedvr2_frame_overlap"),
+            "seedvr2_preserve_vram": params_dict.get("seedvr2_preserve_vram"),
+            "seedvr2_color_correction": params_dict.get("seedvr2_color_correction"),
+            "seedvr2_enable_frame_padding": params_dict.get("seedvr2_enable_frame_padding"),
+            "seedvr2_flash_attention": params_dict.get("seedvr2_flash_attention"),
+            "seedvr2_enable_multi_gpu": params_dict.get("seedvr2_enable_multi_gpu"),
+            "seedvr2_gpu_devices": params_dict.get("seedvr2_gpu_devices"),
+            "seedvr2_cfg_scale": params_dict.get("seedvr2_cfg_scale"),
+            "seedvr2_frames_processed": params_dict.get("seedvr2_frames_processed"),
+            "seedvr2_frames_failed": params_dict.get("seedvr2_frames_failed"),
+            "seedvr2_avg_fps": params_dict.get("seedvr2_avg_fps"),
+        }
+        
+        # Add processing time if available
+        if params_dict.get("seedvr2_processing_time") is not None:
+            seedvr2_fields["seedvr2_processing_time"] = f"{params_dict.get('seedvr2_processing_time'):.2f}"
+        
+        # Block swap settings if enabled
+        if params_dict.get("seedvr2_enable_block_swap"):
+            seedvr2_fields.update({
+                "seedvr2_enable_block_swap": True,
+                "seedvr2_block_swap_counter": params_dict.get("seedvr2_block_swap_counter"),
+                "seedvr2_block_swap_offload_io": params_dict.get("seedvr2_block_swap_offload_io"),
+                "seedvr2_block_swap_model_caching": params_dict.get("seedvr2_block_swap_model_caching"),
+            })
+        
+        # Only add non-None values
+        for key, value in seedvr2_fields.items():
+            if value is not None and value != "N/A":
+                metadata[key] = value
+                
+    elif upscaler_type.lower() == "image_upscaler":
+        # Image upscaler-specific fields only
+        metadata["image_upscaler_enabled"] = True
+        image_upscaler_fields = {
+            "image_upscaler_model": params_dict.get("image_upscaler_model"),
+            "image_upscaler_model_display": params_dict.get("image_upscaler_model_display"),
+            "image_upscaler_architecture": params_dict.get("image_upscaler_architecture"),
+            "image_upscaler_scale_factor": params_dict.get("image_upscaler_scale_factor"),
+            "image_upscaler_batch_size": params_dict.get("image_upscaler_batch_size"),
+            "image_upscaler_device": params_dict.get("image_upscaler_device"),
+            "image_upscaler_frames_processed": params_dict.get("image_upscaler_frames_processed"),
+            "image_upscaler_frames_failed": params_dict.get("image_upscaler_frames_failed"),
+        }
+        
+        # Add processing time if available
+        if params_dict.get("image_upscaler_processing_time") is not None:
+            image_upscaler_fields["image_upscaler_processing_time"] = f"{params_dict.get('image_upscaler_processing_time'):.2f}"
+        
+        # Only add non-None values
+        for key, value in image_upscaler_fields.items():
+            if value is not None and value != "N/A":
+                metadata[key] = value
+    
+    # RIFE interpolation metadata (applies to any upscaler output)
+    if params_dict.get("rife_enabled"):
+        metadata["rife_enabled"] = True
+        rife_fields = {
+            "rife_multiplier": params_dict.get("rife_multiplier"),
+            "rife_actual_multiplier": params_dict.get("rife_actual_multiplier"),
+            "rife_fp16": params_dict.get("rife_fp16"),
+            "rife_uhd": params_dict.get("rife_uhd"),
+            "rife_scale": params_dict.get("rife_scale"),
+            "rife_skip_static": params_dict.get("rife_skip_static"),
+            "rife_apply_to_chunks": params_dict.get("rife_apply_to_chunks"),
+            "rife_apply_to_scenes": params_dict.get("rife_apply_to_scenes"),
+            "rife_keep_original": params_dict.get("rife_keep_original"),
+            "rife_overwrite_original": params_dict.get("rife_overwrite_original"),
+        }
+        
+        # FPS values
+        if params_dict.get("rife_original_fps") is not None:
+            rife_fields["rife_original_fps"] = f"{params_dict.get('rife_original_fps'):.2f}"
+        if params_dict.get("rife_target_fps") is not None:
+            rife_fields["rife_target_fps"] = f"{params_dict.get('rife_target_fps'):.2f}"
+        if params_dict.get("rife_final_fps") is not None:
+            rife_fields["rife_final_fps"] = f"{params_dict.get('rife_final_fps'):.2f}"
+        
+        # FPS limit if enabled
+        if params_dict.get("rife_fps_limit_enabled"):
+            rife_fields["rife_fps_limit_enabled"] = True
+            rife_fields["rife_fps_limit"] = params_dict.get("rife_fps_limit")
+        
+        # Processing time and output path
+        if params_dict.get("rife_processing_time") is not None:
+            rife_fields["rife_processing_time"] = f"{params_dict.get('rife_processing_time'):.2f}"
+        if params_dict.get("rife_output_path"):
+            rife_fields["rife_output_path"] = os.path.abspath(params_dict.get("rife_output_path"))
+        
+        # Only add non-None values
+        for key, value in rife_fields.items():
+            if value is not None and value != "N/A":
+                metadata[key] = value
+    
+    # FPS decrease metadata (applies to any upscaler)
+    if params_dict.get("fps_decrease_applied"):
+        metadata["fps_decrease_applied"] = True
+        fps_fields = {
+            "original_fps_before_decrease": params_dict.get("original_fps"),
+            "fps_decrease_mode": params_dict.get("fps_decrease_actual_mode"),
+            "fps_decrease_multiplier": params_dict.get("fps_decrease_actual_multiplier"),
+            "fps_decrease_target": params_dict.get("fps_decrease_actual_target"),
+            "fps_decrease_calculated_fps": params_dict.get("fps_decrease_calculated_fps"),
+            "fps_decrease_saved_path": params_dict.get("fps_decrease_saved_path"),
+        }
+        # Only add non-None values
+        for key, value in fps_fields.items():
+            if value is not None and value != "N/A" and value != "Failed to save":
+                metadata[key] = value
+    
+    # Add frame range information and processing status
     if status_info:
         processing_time_total = status_info.get("processing_time_total")
         overall_process_start_time = status_info.get("overall_process_start_time")
@@ -111,106 +213,66 @@ def _prepare_metadata_dict(params_dict: dict, status_info: dict = None) -> dict:
         total_chunks = status_info.get("total_chunks")
         scene_specific_data = status_info.get("scene_specific_data")
         
-        # Frame range information
-        chunk_frame_range = status_info.get("chunk_frame_range")
-        scene_frame_range = status_info.get("scene_frame_range")
-        sliding_window_frame_range = status_info.get("sliding_window_frame_range")
-        effective_chunk_ranges = status_info.get("effective_chunk_ranges")
-        video_frame_range = status_info.get("video_frame_range")
-
+        # Calculate processing time
         current_processing_time = None
         if overall_process_start_time is not None and processing_time_total is None:
             current_processing_time = time.time() - overall_process_start_time
         
         effective_processing_time = processing_time_total if processing_time_total is not None else current_processing_time
-
+        
         if effective_processing_time is not None:
             metadata["processing_time_seconds"] = f"{effective_processing_time:.2f}"
             metadata["processing_time_formatted"] = format_time(effective_processing_time)
-        else:
-            metadata["processing_time_seconds"] = "N/A"
-            metadata["processing_time_formatted"] = "N/A"
-
-        # Add overall video frame range information
-        if video_frame_range:
-            metadata["overall_video_frame_range"] = f"frames {video_frame_range[0]}-{video_frame_range[1]}"
-            metadata["overall_video_frame_count"] = video_frame_range[1] - video_frame_range[0] + 1
-        else:
-            metadata["overall_video_frame_range"] = "N/A"
-            metadata["overall_video_frame_count"] = "N/A"
-
+        
+        # Processing status
         if current_chunk is not None and total_chunks is not None:
             metadata["current_chunk_progress"] = f"{current_chunk}/{total_chunks}"
             metadata["processing_status"] = f"In progress - chunk {current_chunk} of {total_chunks} completed"
-            
-            # Add frame range for current chunk
-            if chunk_frame_range:
-                metadata["current_chunk_frame_range"] = f"frames {chunk_frame_range[0]}-{chunk_frame_range[1]}"
-                metadata["current_chunk_frame_count"] = chunk_frame_range[1] - chunk_frame_range[0] + 1
-            else:
-                metadata["current_chunk_frame_range"] = "N/A"
-                metadata["current_chunk_frame_count"] = "N/A"
-                
         elif processing_time_total is not None:
             metadata["processing_status"] = "Completed"
         else:
-            metadata["processing_status"] = "In progress" # Default if no other status applies
-
-        # Add sliding window frame range information
-        if sliding_window_frame_range:
-            metadata["sliding_window_frame_range"] = f"frames {sliding_window_frame_range[0]}-{sliding_window_frame_range[1]}"
-            metadata["sliding_window_frame_count"] = sliding_window_frame_range[1] - sliding_window_frame_range[0] + 1
-        else:
-            metadata["sliding_window_frame_range"] = "N/A"
-            metadata["sliding_window_frame_count"] = "N/A"
-
-        # Add effective chunk ranges for sliding window processing
-        if effective_chunk_ranges:
-            chunk_ranges_str = []
-            for i, (start, end) in enumerate(effective_chunk_ranges):
-                chunk_ranges_str.append(f"Chunk {i+1}: frames {start+1}-{end}")
-            metadata["effective_chunk_ranges"] = "; ".join(chunk_ranges_str)
-        else:
-            metadata["effective_chunk_ranges"] = "N/A"
-
-        if scene_specific_data:
-            metadata.update({
-                "scene_index": scene_specific_data.get("scene_index", "N/A"),
-                "scene_name": scene_specific_data.get("scene_name", "N/A"),
-                "scene_prompt_used": scene_specific_data.get("scene_prompt", "N/A"),
-                "scene_frame_count": scene_specific_data.get("scene_frame_count", "N/A"),
-                "scene_fps": f"{scene_specific_data.get('scene_fps', 0):.2f}" if scene_specific_data.get("scene_fps") else "N/A",
-                "scene_processing_time_seconds": f"{scene_specific_data.get('scene_processing_time', 0):.2f}" if scene_specific_data.get("scene_processing_time") else "N/A",
-                "scene_processing_time_formatted": format_time(scene_specific_data.get("scene_processing_time", 0)) if scene_specific_data.get("scene_processing_time") else "N/A",
-                "scene_video_path": os.path.abspath(scene_specific_data.get("scene_video_path", "")) if scene_specific_data.get("scene_video_path") else "N/A"
-            })
-            
-            # Add scene frame range information
-            scene_frame_range_from_data = scene_specific_data.get("scene_frame_range")
-            if scene_frame_range_from_data:
-                metadata["scene_frame_range"] = f"frames {scene_frame_range_from_data[0]}-{scene_frame_range_from_data[1]}"
-                metadata["scene_total_frames"] = scene_frame_range_from_data[1] - scene_frame_range_from_data[0] + 1
-            elif scene_frame_range:
-                metadata["scene_frame_range"] = f"frames {scene_frame_range[0]}-{scene_frame_range[1]}"
-                metadata["scene_total_frames"] = scene_frame_range[1] - scene_frame_range[0] + 1
-            else:
-                metadata["scene_frame_range"] = "N/A"
-                metadata["scene_total_frames"] = "N/A"
-    else: # No status_info, assume basic fields might be missing timing/progress
-        metadata["processing_time_seconds"] = "N/A"
-        metadata["processing_time_formatted"] = "N/A"
-        metadata["current_chunk_frame_range"] = "N/A"
-        metadata["current_chunk_frame_count"] = "N/A"
-        metadata["sliding_window_frame_range"] = "N/A"
-        metadata["sliding_window_frame_count"] = "N/A"
-        metadata["effective_chunk_ranges"] = "N/A"
-        metadata["scene_frame_range"] = "N/A"
-        metadata["scene_total_frames"] = "N/A"
-        metadata["overall_video_frame_range"] = "N/A"
-        metadata["overall_video_frame_count"] = "N/A"
-        if "processing_status" not in metadata: # Only set if not already set by other logic
-             metadata["processing_status"] = "Unknown"
+            metadata["processing_status"] = "In progress"
         
+        # Video frame range
+        video_frame_range = status_info.get("video_frame_range")
+        if video_frame_range:
+            metadata["overall_video_frame_range"] = f"frames {video_frame_range[0]}-{video_frame_range[1]}"
+            metadata["overall_video_frame_count"] = video_frame_range[1] - video_frame_range[0] + 1
+        
+        # Chunk frame range
+        chunk_frame_range = status_info.get("chunk_frame_range")
+        if chunk_frame_range:
+            metadata["current_chunk_frame_range"] = f"frames {chunk_frame_range[0]}-{chunk_frame_range[1]}"
+            metadata["current_chunk_frame_count"] = chunk_frame_range[1] - chunk_frame_range[0] + 1
+        
+        # Scene-specific data (mainly for STAR)
+        if scene_specific_data and upscaler_type.lower() == "star":
+            scene_fields = {
+                "scene_index": scene_specific_data.get("scene_index"),
+                "scene_name": scene_specific_data.get("scene_name"),
+                "scene_prompt_used": scene_specific_data.get("scene_prompt"),
+                "scene_frame_count": scene_specific_data.get("scene_frame_count"),
+            }
+            
+            if scene_specific_data.get("scene_fps"):
+                scene_fields["scene_fps"] = f"{scene_specific_data.get('scene_fps'):.2f}"
+            if scene_specific_data.get("scene_processing_time"):
+                scene_fields["scene_processing_time_seconds"] = f"{scene_specific_data.get('scene_processing_time'):.2f}"
+                scene_fields["scene_processing_time_formatted"] = format_time(scene_specific_data.get("scene_processing_time"))
+            if scene_specific_data.get("scene_video_path"):
+                scene_fields["scene_video_path"] = os.path.abspath(scene_specific_data.get("scene_video_path"))
+            
+            # Scene frame range
+            scene_frame_range_data = scene_specific_data.get("scene_frame_range")
+            if scene_frame_range_data:
+                scene_fields["scene_frame_range"] = f"frames {scene_frame_range_data[0]}-{scene_frame_range_data[1]}"
+                scene_fields["scene_total_frames"] = scene_frame_range_data[1] - scene_frame_range_data[0] + 1
+            
+            # Only add non-None values
+            for key, value in scene_fields.items():
+                if value is not None and value != "N/A":
+                    metadata[key] = value
+    
     return metadata
 
 def _save_metadata_to_file_internal(metadata_params: dict, filepath: str, logger: logging.Logger = None) -> tuple[bool, str]:
