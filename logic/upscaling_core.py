@@ -143,6 +143,7 @@ def run_upscale (
     "scene_manual_split_type":scene_manual_split_type ,"scene_manual_split_value":scene_manual_split_value ,
     "is_batch_mode":is_batch_mode ,"batch_output_dir":batch_output_dir ,
     "current_seed": current_seed, # Added current_seed
+    "upscaler_type": "seedvr2" if enable_seedvr2 else "STAR",
     
     # FPS decrease metadata
     "fps_decrease_enabled":enable_fps_decrease ,"fps_decrease_mode":fps_decrease_mode ,

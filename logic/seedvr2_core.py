@@ -792,8 +792,17 @@ def process_video_with_seedvr2(
             params_for_metadata.update(seedvr2_metadata)
             
             # Save metadata using global handler
+            output_dir = os.path.dirname(output_video_path)
+            base_filename = os.path.splitext(os.path.basename(output_video_path))[0]
+            status_info = {"processing_time_total": time.time() - overall_process_start_time}
+            
             metadata_handler_module.save_metadata(
-                output_video_path, params_for_metadata, logger=logger
+                save_flag=True,
+                output_dir=output_dir,
+                base_filename_no_ext=base_filename,
+                params_dict=params_for_metadata,
+                status_info=status_info,
+                logger=logger
             )
             
             if logger:

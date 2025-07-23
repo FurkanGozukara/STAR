@@ -81,6 +81,27 @@ def _prepare_metadata_dict(params_dict: dict, status_info: dict = None) -> dict:
         "image_upscaler_frames_processed_if_enabled": params_dict.get("image_upscaler_frames_processed", "N/A") if params_dict.get("image_upscaler_enabled") else "N/A",
         "image_upscaler_frames_failed_if_enabled": params_dict.get("image_upscaler_frames_failed", "N/A") if params_dict.get("image_upscaler_enabled") else "N/A",
     }
+    
+    # Add SeedVR2-specific metadata if it's SeedVR2
+    if params_dict.get("upscaler_type") == "seedvr2":
+        seedvr2_model = params_dict.get("seedvr2_model", "N/A")
+        if seedvr2_model != "N/A":
+            metadata["seedvr2_model"] = seedvr2_model
+        seedvr2_batch_size = params_dict.get("seedvr2_batch_size", "N/A")
+        if seedvr2_batch_size != "N/A":
+            metadata["seedvr2_batch_size"] = seedvr2_batch_size
+        seedvr2_device = params_dict.get("seedvr2_device", "N/A")
+        if seedvr2_device != "N/A":
+            metadata["seedvr2_device"] = seedvr2_device
+        seedvr2_processing_time = params_dict.get("seedvr2_processing_time")
+        if seedvr2_processing_time is not None:
+            metadata["seedvr2_processing_time"] = f"{seedvr2_processing_time:.2f}"
+        seedvr2_frames_processed = params_dict.get("seedvr2_frames_processed", "N/A")
+        if seedvr2_frames_processed != "N/A":
+            metadata["seedvr2_frames_processed"] = seedvr2_frames_processed
+        seedvr2_frames_failed = params_dict.get("seedvr2_frames_failed", "N/A")
+        if seedvr2_frames_failed != "N/A":
+            metadata["seedvr2_frames_failed"] = seedvr2_frames_failed
 
     # Add frame range information for chunks, scenes, and sliding windows
     if status_info:
@@ -193,11 +214,13 @@ def _prepare_metadata_dict(params_dict: dict, status_info: dict = None) -> dict:
     return metadata
 
 def _save_metadata_to_file_internal(metadata_params: dict, filepath: str, logger: logging.Logger = None) -> tuple[bool, str]:
-    """Writes the metadata dictionary to a file."""
+    """Writes the metadata dictionary to a file, excluding N/A values."""
     try:
         with open(filepath, 'w', encoding='utf-8') as f:
             for key, value in metadata_params.items():
-                f.write(f"{key}: {value}\n")
+                # Skip N/A values to reduce clutter
+                if value != "N/A":
+                    f.write(f"{key}: {value}\n")
         if logger:
             logger.info(f"Metadata saved to: {filepath}")
         return True, f"Metadata saved to: {filepath}"
