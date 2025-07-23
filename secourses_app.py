@@ -172,9 +172,7 @@ if not found_stream_handler:
 logger.info(info_strings.LOGGER_CONFIGURED_LEVEL_HANDLERS_INFO.format(logger_name=logger.name, level=logging.getLevelName(logger.level), handlers=logger.handlers))
 
 APP_CONFIG = create_app_config(base_path, args.outputs_folder, star_cfg)
-
 app_config_module.initialize_paths_and_prompts(base_path, args.outputs_folder, star_cfg)
-
 os.makedirs(APP_CONFIG.paths.outputs_dir, exist_ok=True)
 
 if not os.path.exists(APP_CONFIG.paths.light_deg_model_path):
@@ -335,6 +333,43 @@ def wrapper_split_video_only_for_gradio(
         progress=progress
     )
 
+# --- Refactoring Helper Functions ---
+
+def create_component(component_type, config_path, ui_dict, **kwargs):
+    """
+    Creates a Gradio component, sets its initial value from config,
+    and registers it in the UI components dictionary.
+    """
+    section, key = config_path
+    # Get the initial value from the loaded config if not explicitly provided
+    if 'value' not in kwargs:
+        # Gracefully handle nested attribute access
+        section_obj = getattr(INITIAL_APP_CONFIG, section, None)
+        if section_obj:
+            kwargs['value'] = getattr(section_obj, key, None)
+        else:
+            kwargs['value'] = None
+
+    # Create the component
+    component = component_type(**kwargs)
+    
+    # Register it
+    ui_dict[config_path] = component
+    
+    return component
+
+# Create convenient partials for common components
+create_slider = partial(create_component, gr.Slider)
+create_checkbox = partial(create_component, gr.Checkbox)
+create_textbox = partial(create_component, gr.Textbox)
+create_dropdown = partial(create_component, gr.Dropdown)
+create_radio = partial(create_component, gr.Radio)
+create_number = partial(create_component, gr.Number)
+create_video_component = partial(create_component, gr.Video)
+
+# --- End of Refactoring Helper Functions ---
+
+
 with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
     # Central dictionary to hold UI components that map to AppConfig
     ui_components = {}
@@ -359,29 +394,35 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                             value=""
                         )
                         with gr.Row():
-                            user_prompt = gr.Textbox(
-                                label=DESCRIBE_VIDEO_CONTENT_LABEL,
-                                lines=6,
-                                placeholder=PANDA_PLAYING_GUITAR_PLACEHOLDER,
-                                value=INITIAL_APP_CONFIG.prompts.user,
-                                info=PROMPT_USER_INFO
+                            user_prompt = create_textbox(
+                                config_path=('prompts', 'user'), ui_dict=ui_components,
+                                label=DESCRIBE_VIDEO_CONTENT_LABEL, lines=6,
+                                placeholder=PANDA_PLAYING_GUITAR_PLACEHOLDER, info=PROMPT_USER_INFO
                             )
-                            ui_components[('prompts', 'user')] = user_prompt
                         with gr.Row():
-                            auto_caption_then_upscale_check = gr.Checkbox(label=AUTO_CAPTION_THEN_UPSCALE_LABEL, value=INITIAL_APP_CONFIG.cogvlm.auto_caption_then_upscale, info=AUTO_CAPTION_THEN_UPSCALE_INFO)
-                            ui_components[('cogvlm', 'auto_caption_then_upscale')] = auto_caption_then_upscale_check
+                            auto_caption_then_upscale_check = create_checkbox(
+                                config_path=('cogvlm', 'auto_caption_then_upscale'), ui_dict=ui_components,
+                                label=AUTO_CAPTION_THEN_UPSCALE_LABEL, info=AUTO_CAPTION_THEN_UPSCALE_INFO
+                            )
 
                             available_gpus = util_get_available_gpus()
                             gpu_choices = available_gpus if available_gpus else ["No CUDA GPUs detected"]
-                            default_gpu = available_gpus[0] if available_gpus else "No CUDA GPUs detected"
-                            gpu_selector = gr.Dropdown(
-                                label="GPU Selection",
-                                choices=gpu_choices,
-                                value=default_gpu,
-                                info=GPU_SELECTOR_INFO,
-                                scale=1
+                            # The initial value must be converted from the stored index to the display string
+                            def convert_gpu_index_to_dropdown(gpu_index, available_gpus_list):
+                                if not available_gpus_list: return "No CUDA GPUs detected"
+                                try:
+                                    gpu_num = int(gpu_index)
+                                    if 0 <= gpu_num < len(available_gpus_list): return available_gpus_list[gpu_num]
+                                except (ValueError, TypeError): pass
+                                return available_gpus_list[0]
+
+                            initial_gpu_display = convert_gpu_index_to_dropdown(INITIAL_APP_CONFIG.gpu.device, available_gpus)
+                            
+                            gpu_selector = create_dropdown(
+                                config_path=('gpu', 'device'), ui_dict=ui_components,
+                                label="GPU Selection", choices=gpu_choices, value=initial_gpu_display,
+                                info=GPU_SELECTOR_INFO, scale=1
                             )
-                            ui_components[('gpu', 'device')] = gpu_selector
 
                         if UTIL_COG_VLM_AVAILABLE:
                             with gr.Row(elem_id="row1"):
@@ -407,35 +448,25 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                             caption_status = gr.Textbox(label="Captioning Status", interactive=False, visible=False)
 
                     with gr.Accordion(PROMPT_SETTINGS_STAR_MODEL_ACCORDION, open=True):
-                        pos_prompt = gr.Textbox(
-                            label=DEFAULT_POSITIVE_PROMPT_LABEL,
-                            value=INITIAL_APP_CONFIG.prompts.positive,
-                            lines=2,
-                            info=PROMPT_POSITIVE_INFO
+                        pos_prompt = create_textbox(
+                            config_path=('prompts', 'positive'), ui_dict=ui_components,
+                            label=DEFAULT_POSITIVE_PROMPT_LABEL, lines=2, info=PROMPT_POSITIVE_INFO
                         )
-                        ui_components[('prompts', 'positive')] = pos_prompt
-                        neg_prompt = gr.Textbox(
-                            label=DEFAULT_NEGATIVE_PROMPT_LABEL,
-                            value=INITIAL_APP_CONFIG.prompts.negative,
-                            lines=2,
-                            info=PROMPT_NEGATIVE_INFO
+                        neg_prompt = create_textbox(
+                            config_path=('prompts', 'negative'), ui_dict=ui_components,
+                            label=DEFAULT_NEGATIVE_PROMPT_LABEL, lines=2, info=PROMPT_NEGATIVE_INFO
                         )
-                        ui_components[('prompts', 'negative')] = neg_prompt
                     with gr.Group():
                         gr.Markdown(ENHANCED_INPUT_HEADER)
                         gr.Markdown(ENHANCED_INPUT_DESCRIPTION)
-                        input_frames_folder = gr.Textbox(
+                        input_frames_folder = create_textbox(
+                            config_path=('frame_folder', 'input_path'), ui_dict=ui_components,
                             label="Input Video or Frames Folder Path",
-                            placeholder=VIDEO_FRAMES_FOLDER_PLACEHOLDER,
-                            interactive=True,
+                            placeholder=VIDEO_FRAMES_FOLDER_PLACEHOLDER, interactive=True,
                             info=ENHANCED_INPUT_INFO
                         )
-                        ui_components[('frame_folder', 'input_path')] = input_frames_folder
                         frames_folder_status = gr.Textbox(
-                            label="Input Path Status",
-                            interactive=False,
-                            lines=3,
-                            visible=True,
+                            label="Input Path Status", interactive=False, lines=3, visible=True,
                             value=DEFAULT_STATUS_MESSAGES['validate_input']
                         )
 
@@ -452,31 +483,22 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                                 label="Select or Create Preset",
                                 choices=get_filtered_preset_list(),
                                 value=INITIAL_PRESET_NAME or "Default",
-                                allow_custom_value=True,
-                                scale=3,
+                                allow_custom_value=True, scale=3,
                                 info=info_strings.PRESET_AUTO_LOAD_OR_NEW_NAME_INFO
                             )
                             refresh_presets_btn = gr.Button("🔄", scale=1, variant="secondary")
                             save_preset_btn = gr.Button("Save", variant="primary", scale=1)
                         preset_status = gr.Textbox(
-                            label="Preset Status",
-                            show_label=False,
-                            interactive=False,
-                            lines=1,
+                            label="Preset Status", show_label=False, interactive=False, lines=1,
                             value=PRESET_STATUS_LOADED.format(preset_name=LOADED_PRESET_NAME) if LOADED_PRESET_NAME else PRESET_STATUS_NO_PRESET,
                             placeholder="..."
                         )
                     with gr.Accordion("Last Processed Chunk", open=True):
                         last_chunk_video = gr.Video(
-                            label="Last Processed Chunk Preview",
-                            interactive=False,
-                            height=512,
-                            visible=True
+                            label="Last Processed Chunk Preview", interactive=False, height=512, visible=True
                         )
                         chunk_status_text = gr.Textbox(
-                            label="Chunk Status",
-                            interactive=False,
-                            lines=1,
+                            label="Chunk Status", interactive=False, lines=1,
                             value="No chunks processed yet"
                         )
 
@@ -485,66 +507,47 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 with gr.Column(scale=1):
                     with gr.Group():
                         input_image = gr.Image(
-                            label="Input Image",
-                            sources=["upload"],
-                            interactive=True,
-                            height=512,
-                            type="filepath"
+                            label="Input Image", sources=["upload"], interactive=True,
+                            height=512, type="filepath"
                         )
                         image_integration_status = gr.Textbox(
-                            label="Image Processing Status",
-                            interactive=False,
-                            lines=2,
-                            visible=False,
-                            value=""
+                            label="Image Processing Status", interactive=False, lines=2,
+                            visible=False, value=""
                         )
                     with gr.Accordion("Image Upscaler Selection", open=True):
                         gr.Markdown(CHOOSE_IMAGE_UPSCALING_METHOD)
                         image_upscaler_type_radio = gr.Radio(
-                            label="Select Image Upscaler Type",
-                            choices=["Use SeedVR2 for Images", "Use Image Based Upscalers"],
-                            value="Use SeedVR2 for Images",
-                            info=UPSCALER_TYPE_INFO
+                            label="Select Image Upscaler Type", choices=["Use SeedVR2 for Images", "Use Image Based Upscalers"],
+                            value="Use SeedVR2 for Images", info=UPSCALER_TYPE_INFO
                         )
                     with gr.Accordion("Image Processing Settings", open=True):
                         with gr.Row():
                             image_preserve_aspect_ratio = gr.Checkbox(
-                                label="Preserve Aspect Ratio",
-                                value=True,
+                                label="Preserve Aspect Ratio", value=True,
                                 info=IMAGE_PRESERVE_ASPECT_RATIO_INFO
                             )
                             image_output_format = gr.Dropdown(
-                                label="Output Format",
-                                choices=["PNG", "JPEG", "WEBP"],
-                                value="PNG",
+                                label="Output Format", choices=["PNG", "JPEG", "WEBP"], value="PNG",
                                 info=IMAGE_OUTPUT_FORMAT_INFO
                             )
                         with gr.Row():
                             image_quality_level = gr.Slider(
-                                label="Output Quality (JPEG/WEBP only)",
-                                minimum=70,
-                                maximum=100,
-                                value=95,
-                                step=1,
-                                info=IMAGE_QUALITY_INFO
+                                label="Output Quality (JPEG/WEBP only)", minimum=70, maximum=100,
+                                value=95, step=1, info=IMAGE_QUALITY_INFO
                             )
                     with gr.Accordion("Advanced Image Settings", open=False):
                         with gr.Row():
                             image_enable_comparison = gr.Checkbox(
-                                label=CREATE_BEFORE_AFTER_COMPARISON_LABEL,
-                                value=True,
+                                label=CREATE_BEFORE_AFTER_COMPARISON_LABEL, value=True,
                                 info=info_strings.COMPARISON_IMAGE_SIDE_BY_SIDE_INFO
                             )
                             image_preserve_metadata = gr.Checkbox(
-                                label="Preserve Image Metadata",
-                                value=True,
+                                label="Preserve Image Metadata", value=True,
                                 info=IMAGE_PRESERVE_METADATA_INFO
                             )
                         with gr.Row():
                             image_custom_suffix = gr.Textbox(
-                                label="Custom Output Suffix",
-                                value="_upscaled",
-                                placeholder="_upscaled",
+                                label="Custom Output Suffix", value="_upscaled", placeholder="_upscaled",
                                 info=IMAGE_CUSTOM_SUFFIX_INFO
                             )
                     with gr.Group():
@@ -553,42 +556,25 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                             image_upscale_button = gr.Button("Upscale Image", variant="primary", icon="icons/upscale.png")
                             image_cancel_button = gr.Button(CANCEL_PROCESSING_BUTTON, variant="stop", visible=True, interactive=False, icon="icons/cancel.png")
                         image_processing_status = gr.Textbox(
-                            label="Processing Status",
-                            interactive=False,
-                            lines=3,
+                            label="Processing Status", interactive=False, lines=3,
                             value=DEFAULT_STATUS_MESSAGES['ready_image_processing']
                         )
                 with gr.Column(scale=1):
                     with gr.Accordion("Upscaled Image Results", open=True):
-                        output_image = gr.Image(
-                            label="Upscaled Image",
-                            interactive=False,
-                            height=512,
-                            type="filepath"
-                        )
+                        output_image = gr.Image(label="Upscaled Image", interactive=False, height=512, type="filepath")
                         image_download_button = gr.Button("📥 Download Upscaled Image", variant="primary", visible=False)
                     with gr.Accordion("Before/After Comparison", open=True):
                         comparison_image = gr.Image(
-                            label="Before/After Comparison",
-                            interactive=False,
-                            height=512,
-                            type="filepath",
-                            visible=False
+                            label="Before/After Comparison", interactive=False, height=512, type="filepath", visible=False
                         )
                         comparison_download_button = gr.Button("📥 Download Comparison", variant="secondary", visible=False)
                     with gr.Accordion("Image Information", open=True):
                         image_info_display = gr.Textbox(
-                            label="Image Details",
-                            interactive=False,
-                            lines=8,
-                            value=DEFAULT_STATUS_MESSAGES['ready_image_details']
+                            label="Image Details", interactive=False, lines=8, value=DEFAULT_STATUS_MESSAGES['ready_image_details']
                         )
                     with gr.Accordion("Processing Log", open=False):
                         image_log_display = gr.Textbox(
-                            label="Detailed Processing Log",
-                            interactive=False,
-                            lines=6,
-                            value=DEFAULT_STATUS_MESSAGES['ready_processing_log']
+                            label="Detailed Processing Log", interactive=False, lines=6, value=DEFAULT_STATUS_MESSAGES['ready_processing_log']
                         )
 
         with gr.Tab("Resolution & Scene Split", id="resolution_tab"):
@@ -596,113 +582,123 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 with gr.Column(scale=1):
                     with gr.Accordion(info_strings.TARGET_RESOLUTION_MAINTAINS_ASPECT_RATIO_ACCORDION, open=True):
                         gr.Markdown(IMAGE_UPSCALER_SUPPORT_NOTE)
-                        enable_target_res_check = gr.Checkbox(
-                            label="Enable Max Target Resolution",
-                            value=INITIAL_APP_CONFIG.resolution.enable_target_res,
-                            info=info_strings.ENABLE_TARGET_RESOLUTION_MANUAL_CONTROL_INFO
+                        enable_target_res_check = create_checkbox(
+                            config_path=('resolution', 'enable_target_res'), ui_dict=ui_components,
+                            label="Enable Max Target Resolution", info=info_strings.ENABLE_TARGET_RESOLUTION_MANUAL_CONTROL_INFO
                         )
-                        ui_components[('resolution', 'enable_target_res')] = enable_target_res_check
-                        target_res_mode_radio = gr.Radio(
-                            label="Target Resolution Mode",
-                            choices=['Ratio Upscale', 'Downscale then Upscale'], value=INITIAL_APP_CONFIG.resolution.target_res_mode,
+                        target_res_mode_radio = create_radio(
+                            config_path=('resolution', 'target_res_mode'), ui_dict=ui_components,
+                            label="Target Resolution Mode", choices=['Ratio Upscale', 'Downscale then Upscale'],
                             info=TARGET_RESOLUTION_MODE_INFO
                         )
-                        ui_components[('resolution', 'target_res_mode')] = target_res_mode_radio
                         with gr.Row():
-                            target_w_num = gr.Slider(
-                                label="Max Target Width (px)",
-                                value=INITIAL_APP_CONFIG.resolution.target_w, minimum=128, maximum=4096, step=16,
-                                info=TARGET_WIDTH_INFO
+                            target_w_num = create_slider(
+                                config_path=('resolution', 'target_w'), ui_dict=ui_components,
+                                label="Max Target Width (px)", minimum=128, maximum=4096, step=16, info=TARGET_WIDTH_INFO
                             )
-                            ui_components[('resolution', 'target_w')] = target_w_num
-                            target_h_num = gr.Slider(
-                                label="Max Target Height (px)",
-                                value=INITIAL_APP_CONFIG.resolution.target_h, minimum=128, maximum=4096, step=16,
-                                info=TARGET_HEIGHT_INFO
+                            target_h_num = create_slider(
+                                config_path=('resolution', 'target_h'), ui_dict=ui_components,
+                                label="Max Target Height (px)", minimum=128, maximum=4096, step=16, info=TARGET_HEIGHT_INFO
                             )
-                            ui_components[('resolution', 'target_h')] = target_h_num
                         gr.Markdown("---")
                         gr.Markdown(AUTO_RESOLUTION_HEADER)
-                        enable_auto_aspect_resolution_check = gr.Checkbox(
-                            label="Enable Auto Aspect Resolution",
-                            value=INITIAL_APP_CONFIG.resolution.enable_auto_aspect_resolution,
-                            info=AUTO_ASPECT_RESOLUTION_INFO
+                        enable_auto_aspect_resolution_check = create_checkbox(
+                            config_path=('resolution', 'enable_auto_aspect_resolution'), ui_dict=ui_components,
+                            label="Enable Auto Aspect Resolution", info=AUTO_ASPECT_RESOLUTION_INFO
                         )
-                        ui_components[('resolution', 'enable_auto_aspect_resolution')] = enable_auto_aspect_resolution_check
-                        auto_resolution_status_display = gr.Textbox(
-                            label="Auto-Resolution Status",
-                            value=INITIAL_APP_CONFIG.resolution.auto_resolution_status,
-                            interactive=False,
-                            lines=3,
+                        auto_resolution_status_display = create_textbox(
+                            config_path=('resolution', 'auto_resolution_status'), ui_dict=ui_components,
+                            label="Auto-Resolution Status", interactive=False, lines=3,
                             info=info_strings.AUTO_CALCULATED_RESOLUTION_ASPECT_RATIO_INFO
                         )
-                        ui_components[('resolution', 'auto_resolution_status')] = auto_resolution_status_display
                         gr.Markdown("---")
                         gr.Markdown(EXPECTED_OUTPUT_RESOLUTION_HEADER)
                         gr.Markdown(EXPECTED_OUTPUT_RESOLUTION_DESCRIPTION)
                         output_resolution_preview = gr.Textbox(
-                            label="Expected Output Resolution",
-                            value=DEFAULT_STATUS_MESSAGES['expected_resolution'],
-                            interactive=False,
-                            lines=10,
-                            info=info_strings.FINAL_OUTPUT_RESOLUTION_BASED_SETTINGS_INFO
+                            label="Expected Output Resolution", value=DEFAULT_STATUS_MESSAGES['expected_resolution'],
+                            interactive=False, lines=10, info=info_strings.FINAL_OUTPUT_RESOLUTION_BASED_SETTINGS_INFO
                         )
                 with gr.Column(scale=1):
                     split_only_button = gr.Button("Split Video Only (No Upscaling)", icon="icons/split.png", variant="primary")
                     with gr.Accordion("Scene Splitting", open=True):
-                        enable_scene_split_check = gr.Checkbox(
-                            label=ENABLE_SCENE_SPLITTING_LABEL,
-                            value=INITIAL_APP_CONFIG.scene_split.enable,
-                            info=SCENE_SPLIT_INFO
+                        enable_scene_split_check = create_checkbox(
+                            config_path=('scene_split', 'enable'), ui_dict=ui_components,
+                            label=ENABLE_SCENE_SPLITTING_LABEL, info=SCENE_SPLIT_INFO
                         )
-                        ui_components[('scene_split', 'enable')] = enable_scene_split_check
                         with gr.Row():
-                            scene_split_mode_radio = gr.Radio(
-                                label="Split Mode",
-                                choices=['automatic', 'manual'], value=INITIAL_APP_CONFIG.scene_split.mode,
-                                info=SCENE_SPLIT_MODE_INFO
+                            scene_split_mode_radio = create_radio(
+                                config_path=('scene_split', 'mode'), ui_dict=ui_components,
+                                label="Split Mode", choices=['automatic', 'manual'], info=SCENE_SPLIT_MODE_INFO
                             )
-                            ui_components[('scene_split', 'mode')] = scene_split_mode_radio
                         with gr.Group():
                             gr.Markdown(AUTOMATIC_SCENE_DETECTION_SETTINGS)
                             with gr.Row():
-                                scene_min_scene_len_num = gr.Number(label="Min Scene Length (seconds)", value=INITIAL_APP_CONFIG.scene_split.min_scene_len, minimum=0.1, step=0.1, info=SCENE_MIN_LENGTH_INFO)
-                                ui_components[('scene_split', 'min_scene_len')] = scene_min_scene_len_num
-                                scene_threshold_num = gr.Number(label="Detection Threshold", value=INITIAL_APP_CONFIG.scene_split.threshold, minimum=0.1, maximum=10.0, step=0.1, info=SCENE_THRESHOLD_INFO)
-                                ui_components[('scene_split', 'threshold')] = scene_threshold_num
+                                scene_min_scene_len_num = create_number(
+                                    config_path=('scene_split', 'min_scene_len'), ui_dict=ui_components,
+                                    label="Min Scene Length (seconds)", minimum=0.1, step=0.1, info=SCENE_MIN_LENGTH_INFO
+                                )
+                                scene_threshold_num = create_number(
+                                    config_path=('scene_split', 'threshold'), ui_dict=ui_components,
+                                    label="Detection Threshold", minimum=0.1, maximum=10.0, step=0.1, info=SCENE_THRESHOLD_INFO
+                                )
                             with gr.Row():
-                                scene_drop_short_check = gr.Checkbox(label="Drop Short Scenes", value=INITIAL_APP_CONFIG.scene_split.drop_short, info=SCENE_DROP_SHORT_INFO)
-                                ui_components[('scene_split', 'drop_short')] = scene_drop_short_check
-                                scene_merge_last_check = gr.Checkbox(label="Merge Last Scene", value=INITIAL_APP_CONFIG.scene_split.merge_last, info=SCENE_MERGE_LAST_INFO)
-                                ui_components[('scene_split', 'merge_last')] = scene_merge_last_check
+                                scene_drop_short_check = create_checkbox(
+                                    config_path=('scene_split', 'drop_short'), ui_dict=ui_components,
+                                    label="Drop Short Scenes", info=SCENE_DROP_SHORT_INFO
+                                )
+                                scene_merge_last_check = create_checkbox(
+                                    config_path=('scene_split', 'merge_last'), ui_dict=ui_components,
+                                    label="Merge Last Scene", info=SCENE_MERGE_LAST_INFO
+                                )
                             with gr.Row():
-                                scene_frame_skip_num = gr.Number(label="Frame Skip", value=INITIAL_APP_CONFIG.scene_split.frame_skip, minimum=0, step=1, info=SCENE_FRAME_SKIP_INFO)
-                                ui_components[('scene_split', 'frame_skip')] = scene_frame_skip_num
-                                scene_min_content_val_num = gr.Number(label="Min Content Value", value=INITIAL_APP_CONFIG.scene_split.min_content_val, minimum=0.0, step=1.0, info=SCENE_MIN_CONTENT_INFO)
-                                ui_components[('scene_split', 'min_content_val')] = scene_min_content_val_num
-                                scene_frame_window_num = gr.Number(label="Frame Window", value=INITIAL_APP_CONFIG.scene_split.frame_window, minimum=1, step=1, info=SCENE_FRAME_WINDOW_INFO)
-                                ui_components[('scene_split', 'frame_window')] = scene_frame_window_num
+                                scene_frame_skip_num = create_number(
+                                    config_path=('scene_split', 'frame_skip'), ui_dict=ui_components,
+                                    label="Frame Skip", minimum=0, step=1, info=SCENE_FRAME_SKIP_INFO
+                                )
+                                scene_min_content_val_num = create_number(
+                                    config_path=('scene_split', 'min_content_val'), ui_dict=ui_components,
+                                    label="Min Content Value", minimum=0.0, step=1.0, info=SCENE_MIN_CONTENT_INFO
+                                )
+                                scene_frame_window_num = create_number(
+                                    config_path=('scene_split', 'frame_window'), ui_dict=ui_components,
+                                    label="Frame Window", minimum=1, step=1, info=SCENE_FRAME_WINDOW_INFO
+                                )
                         with gr.Group():
                             gr.Markdown(MANUAL_SPLIT_SETTINGS)
                             with gr.Row():
-                                scene_manual_split_type_radio = gr.Radio(label="Manual Split Type", choices=['duration', 'frame_count'], value=INITIAL_APP_CONFIG.scene_split.manual_split_type, info=SCENE_MANUAL_SPLIT_TYPE_INFO)
-                                ui_components[('scene_split', 'manual_split_type')] = scene_manual_split_type_radio
-                                scene_manual_split_value_num = gr.Number(label="Split Value", value=INITIAL_APP_CONFIG.scene_split.manual_split_value, minimum=1.0, step=1.0, info=SCENE_MANUAL_SPLIT_VALUE_INFO)
-                                ui_components[('scene_split', 'manual_split_value')] = scene_manual_split_value_num
+                                scene_manual_split_type_radio = create_radio(
+                                    config_path=('scene_split', 'manual_split_type'), ui_dict=ui_components,
+                                    label="Manual Split Type", choices=['duration', 'frame_count'], info=SCENE_MANUAL_SPLIT_TYPE_INFO
+                                )
+                                scene_manual_split_value_num = create_number(
+                                    config_path=('scene_split', 'manual_split_value'), ui_dict=ui_components,
+                                    label="Split Value", minimum=1.0, step=1.0, info=SCENE_MANUAL_SPLIT_VALUE_INFO
+                                )
                         with gr.Group():
                             gr.Markdown(ENCODING_SETTINGS_SCENE_SEGMENTS)
                             with gr.Row():
-                                scene_copy_streams_check = gr.Checkbox(label="Copy Streams", value=INITIAL_APP_CONFIG.scene_split.copy_streams, info=SCENE_COPY_STREAMS_INFO)
-                                ui_components[('scene_split', 'copy_streams')] = scene_copy_streams_check
-                                scene_use_mkvmerge_check = gr.Checkbox(label="Use MKVMerge", value=INITIAL_APP_CONFIG.scene_split.use_mkvmerge, info=SCENE_USE_MKVMERGE_INFO)
-                                ui_components[('scene_split', 'use_mkvmerge')] = scene_use_mkvmerge_check
+                                scene_copy_streams_check = create_checkbox(
+                                    config_path=('scene_split', 'copy_streams'), ui_dict=ui_components,
+                                    label="Copy Streams", info=SCENE_COPY_STREAMS_INFO
+                                )
+                                scene_use_mkvmerge_check = create_checkbox(
+                                    config_path=('scene_split', 'use_mkvmerge'), ui_dict=ui_components,
+                                    label="Use MKVMerge", info=SCENE_USE_MKVMERGE_INFO
+                                )
                             with gr.Row():
-                                scene_rate_factor_num = gr.Number(label="Rate Factor (CRF)", value=INITIAL_APP_CONFIG.scene_split.rate_factor, minimum=0, maximum=51, step=1, info=SCENE_RATE_FACTOR_INFO)
-                                ui_components[('scene_split', 'rate_factor')] = scene_rate_factor_num
-                                scene_preset_dropdown = gr.Dropdown(label="Encoding Preset", choices=['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow'], value=INITIAL_APP_CONFIG.scene_split.encoding_preset, info=SCENE_ENCODING_PRESET_INFO)
-                                ui_components[('scene_split', 'encoding_preset')] = scene_preset_dropdown
-                            scene_quiet_ffmpeg_check = gr.Checkbox(label="Quiet FFmpeg", value=INITIAL_APP_CONFIG.scene_split.quiet_ffmpeg, info=SCENE_QUIET_FFMPEG_INFO)
-                            ui_components[('scene_split', 'quiet_ffmpeg')] = scene_quiet_ffmpeg_check
+                                scene_rate_factor_num = create_number(
+                                    config_path=('scene_split', 'rate_factor'), ui_dict=ui_components,
+                                    label="Rate Factor (CRF)", minimum=0, maximum=51, step=1, info=SCENE_RATE_FACTOR_INFO
+                                )
+                                scene_preset_dropdown = create_dropdown(
+                                    config_path=('scene_split', 'encoding_preset'), ui_dict=ui_components,
+                                    label="Encoding Preset", choices=['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow'],
+                                    info=SCENE_ENCODING_PRESET_INFO
+                                )
+                            scene_quiet_ffmpeg_check = create_checkbox(
+                                config_path=('scene_split', 'quiet_ffmpeg'), ui_dict=ui_components,
+                                label="Quiet FFmpeg", info=SCENE_QUIET_FFMPEG_INFO
+                            )
 
         with gr.Tab("Core Settings", id="core_tab"):
             with gr.Row():
@@ -710,200 +706,144 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                     with gr.Group():
                         gr.Markdown(UPSCALER_SELECTION_HEADER)
                         def get_upscaler_display_value(internal_value):
-                            reverse_map = {"star": "Use STAR Model Upscaler", "image_upscaler": "Use Image Based Upscalers", "seedvr2": "Use SeedVR2 Video Upscaler"}
-                            return reverse_map.get(internal_value, "Use Image Based Upscalers")
+                            return {"star": "Use STAR Model Upscaler", "image_upscaler": "Use Image Based Upscalers", "seedvr2": "Use SeedVR2 Video Upscaler"}.get(internal_value, "Use Image Based Upscalers")
+                        
                         initial_upscaler_display = get_upscaler_display_value(INITIAL_APP_CONFIG.upscaler_type.upscaler_type)
-                        upscaler_type_radio = gr.Radio(
+                        
+                        upscaler_type_radio = create_radio(
+                            config_path=('upscaler_type', 'upscaler_type'), ui_dict=ui_components,
                             label="Choose Your Upscaler Type",
                             choices=["Use STAR Model Upscaler", "Use Image Based Upscalers", "Use SeedVR2 Video Upscaler"],
                             value=initial_upscaler_display,
                             info=UPSCALER_TYPE_SELECTION_INFO
                         )
-                        ui_components[('upscaler_type', 'upscaler_type')] = upscaler_type_radio
                     if UTIL_COG_VLM_AVAILABLE:
                         with gr.Accordion(info_strings.AUTO_CAPTIONING_COGVLM2_STAR_MODEL_ACCORDION, open=True):
                             cogvlm_quant_choices_map = get_cogvlm_quant_choices_map(torch.cuda.is_available(), UTIL_BITSANDBYTES_AVAILABLE)
                             cogvlm_quant_radio_choices_display = list(cogvlm_quant_choices_map.values())
-                            default_quant_display_val = get_default_cogvlm_quant_display(cogvlm_quant_choices_map)
+                            
                             with gr.Row():
-                                cogvlm_quant_radio = gr.Radio(
-                                    label="CogVLM2 Quantization",
-                                    choices=cogvlm_quant_radio_choices_display,
-                                    value=INITIAL_APP_CONFIG.cogvlm.quant_display,
-                                    info=COGVLM_QUANTIZATION_INFO,
-                                    interactive=True if len(cogvlm_quant_radio_choices_display) > 1 else False
+                                cogvlm_quant_radio = create_radio(
+                                    config_path=('cogvlm', 'quant_display'), ui_dict=ui_components,
+                                    label="CogVLM2 Quantization", choices=cogvlm_quant_radio_choices_display,
+                                    info=COGVLM_QUANTIZATION_INFO, interactive=len(cogvlm_quant_radio_choices_display) > 1
                                 )
-                                ui_components[('cogvlm', 'quant_display')] = cogvlm_quant_radio
-                                cogvlm_unload_radio = gr.Radio(
-                                    label="CogVLM2 After-Use",
-                                    choices=['full', 'cpu'], value=INITIAL_APP_CONFIG.cogvlm.unload_after_use,
-                                    info=CAPTION_UNLOAD_STRATEGY_INFO
+                                cogvlm_unload_radio = create_radio(
+                                    config_path=('cogvlm', 'unload_after_use'), ui_dict=ui_components,
+                                    label="CogVLM2 After-Use", choices=['full', 'cpu'], info=CAPTION_UNLOAD_STRATEGY_INFO
                                 )
-                                ui_components[('cogvlm', 'unload_after_use')] = cogvlm_unload_radio
                     else:
                         gr.Markdown(AUTO_CAPTIONING_DISABLED_NOTE)
                 with gr.Column(scale=1):
                     with gr.Group():
                         gr.Markdown(FACE_RESTORATION_HEADER)
-                        enable_face_restoration_check = gr.Checkbox(
-                            label="Enable Face Restoration",
-                            value=INITIAL_APP_CONFIG.face_restoration.enable,
-                            info=FACE_RESTORATION_ENABLE_INFO
+                        enable_face_restoration_check = create_checkbox(
+                            config_path=('face_restoration', 'enable'), ui_dict=ui_components,
+                            label="Enable Face Restoration", info=FACE_RESTORATION_ENABLE_INFO
                         )
-                        ui_components[('face_restoration', 'enable')] = enable_face_restoration_check
-                        face_restoration_fidelity_slider = gr.Slider(
-                            label="Fidelity Weight",
-                            minimum=0.0,
-                            maximum=1.0,
-                            value=INITIAL_APP_CONFIG.face_restoration.fidelity_weight,
-                            step=0.1,
-                            info=FACE_RESTORATION_FIDELITY_INFO,
-                            interactive=True
+                        face_restoration_fidelity_slider = create_slider(
+                            config_path=('face_restoration', 'fidelity_weight'), ui_dict=ui_components,
+                            label="Fidelity Weight", minimum=0.0, maximum=1.0, step=0.1,
+                            info=FACE_RESTORATION_FIDELITY_INFO, interactive=True
                         )
-                        ui_components[('face_restoration', 'fidelity_weight')] = face_restoration_fidelity_slider
                         with gr.Row():
-                            enable_face_colorization_check = gr.Checkbox(
-                                label="Enable Colorization",
-                                value=INITIAL_APP_CONFIG.face_restoration.enable_colorization,
-                                info=FACE_COLORIZATION_INFO,
-                                interactive=True
+                            enable_face_colorization_check = create_checkbox(
+                                config_path=('face_restoration', 'enable_colorization'), ui_dict=ui_components,
+                                label="Enable Colorization", info=FACE_COLORIZATION_INFO, interactive=True
                             )
-                            ui_components[('face_restoration', 'enable_colorization')] = enable_face_colorization_check
-                            face_restoration_when_radio = gr.Radio(
-                                label="Apply Timing",
-                                choices=['before', 'after'],
-                                value=INITIAL_APP_CONFIG.face_restoration.when,
-                                info=FACE_RESTORATION_TIMING_INFO,
-                                interactive=True
+                            face_restoration_when_radio = create_radio(
+                                config_path=('face_restoration', 'when'), ui_dict=ui_components,
+                                label="Apply Timing", choices=['before', 'after'], info=FACE_RESTORATION_TIMING_INFO, interactive=True
                             )
-                            ui_components[('face_restoration', 'when')] = face_restoration_when_radio
                         with gr.Row():
                             model_choices = ["Auto (Default)", "codeformer.pth (359.2MB)"]
-                            default_model_choice = "Auto (Default)"
-                            if INITIAL_APP_CONFIG.face_restoration.model and "codeformer.pth" in INITIAL_APP_CONFIG.face_restoration.model:
-                                default_model_choice = "codeformer.pth (359.2MB)"
-                            codeformer_model_dropdown = gr.Dropdown(
-                                label="CodeFormer Model",
-                                choices=model_choices,
-                                value=default_model_choice,
-                                info=CODEFORMER_MODEL_SELECTION_DETAILED_INFO,
-                                interactive=True
+                            default_model_choice = "codeformer.pth (359.2MB)" if INITIAL_APP_CONFIG.face_restoration.model and "codeformer.pth" in INITIAL_APP_CONFIG.face_restoration.model else "Auto (Default)"
+                            
+                            codeformer_model_dropdown = create_dropdown(
+                                config_path=('face_restoration', 'model'), ui_dict=ui_components,
+                                label="CodeFormer Model", choices=model_choices, value=default_model_choice,
+                                info=CODEFORMER_MODEL_SELECTION_DETAILED_INFO, interactive=True
                             )
-                            ui_components[('face_restoration', 'model')] = codeformer_model_dropdown
-                        face_restoration_batch_size_slider = gr.Slider(
-                            label="Face Restoration Batch Size",
-                            minimum=1,
-                            maximum=50,
-                            value=INITIAL_APP_CONFIG.face_restoration.batch_size,
-                            step=1,
-                            info=FACE_RESTORATION_BATCH_SIZE_INFO,
-                            interactive=True
+                        face_restoration_batch_size_slider = create_slider(
+                            config_path=('face_restoration', 'batch_size'), ui_dict=ui_components,
+                            label="Face Restoration Batch Size", minimum=1, maximum=50, step=1,
+                            info=FACE_RESTORATION_BATCH_SIZE_INFO, interactive=True
                         )
-                        ui_components[('face_restoration', 'batch_size')] = face_restoration_batch_size_slider
 
         with gr.Tab("Star Upscaler", id="star_tab"):
             with gr.Row():
                 with gr.Column(scale=1):
                     with gr.Group():
                         gr.Markdown(STAR_MODEL_SETTINGS_HEADER)
-                        model_selector = gr.Dropdown(
-                            label=STAR_MODEL_TEMPORAL_UPSCALING_LABEL,
-                            choices=["Light Degradation", "Heavy Degradation"],
-                            value=INITIAL_APP_CONFIG.star_model.model_choice,
+                        model_selector = create_dropdown(
+                            config_path=('star_model', 'model_choice'), ui_dict=ui_components,
+                            label=STAR_MODEL_TEMPORAL_UPSCALING_LABEL, choices=["Light Degradation", "Heavy Degradation"],
                             info=CODEFORMER_MODEL_SELECTION_INFO
                         )
-                        ui_components[('star_model', 'model_choice')] = model_selector
-                        upscale_factor_slider = gr.Slider(
-                            label=UPSCALE_FACTOR_TARGET_RES_DISABLED_LABEL,
-                            minimum=1.0, maximum=8.0, value=INITIAL_APP_CONFIG.resolution.upscale_factor, step=0.1,
+                        upscale_factor_slider = create_slider(
+                            config_path=('resolution', 'upscale_factor'), ui_dict=ui_components,
+                            label=UPSCALE_FACTOR_TARGET_RES_DISABLED_LABEL, minimum=1.0, maximum=8.0, step=0.1,
                             info=UPSCALE_FACTOR_INFO
                         )
-                        ui_components[('resolution', 'upscale_factor')] = upscale_factor_slider
-                        cfg_slider = gr.Slider(
-                            label="Guidance Scale (CFG)",
-                            minimum=1.0, maximum=15.0, value=INITIAL_APP_CONFIG.star_model.cfg_scale, step=0.5,
-                            info=GUIDANCE_SCALE_INFO
+                        cfg_slider = create_slider(
+                            config_path=('star_model', 'cfg_scale'), ui_dict=ui_components,
+                            label="Guidance Scale (CFG)", minimum=1.0, maximum=15.0, step=0.5, info=GUIDANCE_SCALE_INFO
                         )
-                        ui_components[('star_model', 'cfg_scale')] = cfg_slider
                         with gr.Row():
-                            solver_mode_radio = gr.Radio(
-                                label="Solver Mode",
-                                choices=['fast', 'normal'], value=INITIAL_APP_CONFIG.star_model.solver_mode,
-                                info=SOLVER_MODE_INFO
+                            solver_mode_radio = create_radio(
+                                config_path=('star_model', 'solver_mode'), ui_dict=ui_components,
+                                label="Solver Mode", choices=['fast', 'normal'], info=SOLVER_MODE_INFO
                             )
-                            ui_components[('star_model', 'solver_mode')] = solver_mode_radio
-                            steps_slider = gr.Slider(
-                                label="Diffusion Steps",
-                                minimum=5, maximum=100, value=INITIAL_APP_CONFIG.star_model.steps, step=1,
-                                info=DENOISING_STEPS_INFO,
-                                interactive=False
+                            steps_slider = create_slider(
+                                config_path=('star_model', 'steps'), ui_dict=ui_components,
+                                label="Diffusion Steps", minimum=5, maximum=100, step=1,
+                                info=DENOISING_STEPS_INFO, interactive=False
                             )
-                            ui_components[('star_model', 'steps')] = steps_slider
-                        color_fix_dropdown = gr.Dropdown(
-                            label="Color Correction",
-                            choices=['AdaIN', 'Wavelet', 'None'], value=INITIAL_APP_CONFIG.star_model.color_fix_method,
-                            info=COLOR_CORRECTION_INFO
+                        color_fix_dropdown = create_dropdown(
+                            config_path=('star_model', 'color_fix_method'), ui_dict=ui_components,
+                            label="Color Correction", choices=['AdaIN', 'Wavelet', 'None'], info=COLOR_CORRECTION_INFO
                         )
-                        ui_components[('star_model', 'color_fix_method')] = color_fix_dropdown
                     with gr.Accordion(info_strings.CONTEXT_WINDOW_PREVIOUS_FRAMES_EXPERIMENTAL_ACCORDION, open=True):
-                        enable_context_window_check = gr.Checkbox(
-                            label="Enable Context Window",
-                            value=INITIAL_APP_CONFIG.context_window.enable,
-                            info=CONTEXT_WINDOW_INFO
+                        enable_context_window_check = create_checkbox(
+                            config_path=('context_window', 'enable'), ui_dict=ui_components,
+                            label="Enable Context Window", info=CONTEXT_WINDOW_INFO
                         )
-                        ui_components[('context_window', 'enable')] = enable_context_window_check
-                        context_overlap_num = gr.Slider(
-                            label="Context Overlap (frames)",
-                            value=INITIAL_APP_CONFIG.context_window.overlap, minimum=0, maximum=31, step=1,
-                            info=CONTEXT_FRAMES_INFO
+                        context_overlap_num = create_slider(
+                            config_path=('context_window', 'overlap'), ui_dict=ui_components,
+                            label="Context Overlap (frames)", minimum=0, maximum=31, step=1, info=CONTEXT_FRAMES_INFO
                         )
-                        ui_components[('context_window', 'overlap')] = context_overlap_num
                 with gr.Column(scale=1):
                     with gr.Accordion(info_strings.PERFORMANCE_VRAM_32_FRAMES_BEST_QUALITY_ACCORDION, open=True):
-                        max_chunk_len_slider = gr.Slider(
-                            label="Max Frames per Chunk (VRAM)",
-                            minimum=1, maximum=1000, value=INITIAL_APP_CONFIG.performance.max_chunk_len, step=1,
-                            info=MAX_CHUNK_LEN_INFO
+                        max_chunk_len_slider = create_slider(
+                            config_path=('performance', 'max_chunk_len'), ui_dict=ui_components,
+                            label="Max Frames per Chunk (VRAM)", minimum=1, maximum=1000, step=1, info=MAX_CHUNK_LEN_INFO
                         )
-                        ui_components[('performance', 'max_chunk_len')] = max_chunk_len_slider
-                        enable_chunk_optimization_check = gr.Checkbox(
-                            label="Optimize Last Chunk Quality",
-                            value=INITIAL_APP_CONFIG.performance.enable_chunk_optimization,
-                            info=CONTEXT_OVERLAP_INFO
+                        enable_chunk_optimization_check = create_checkbox(
+                            config_path=('performance', 'enable_chunk_optimization'), ui_dict=ui_components,
+                            label="Optimize Last Chunk Quality", info=CONTEXT_OVERLAP_INFO
                         )
-                        ui_components[('performance', 'enable_chunk_optimization')] = enable_chunk_optimization_check
-                        vae_chunk_slider = gr.Slider(
-                            label="VAE Decode Chunk (VRAM)",
-                            minimum=1, maximum=16, value=INITIAL_APP_CONFIG.performance.vae_chunk, step=1,
-                            info=VAE_DECODE_BATCH_SIZE_INFO
+                        vae_chunk_slider = create_slider(
+                            config_path=('performance', 'vae_chunk'), ui_dict=ui_components,
+                            label="VAE Decode Chunk (VRAM)", minimum=1, maximum=16, step=1, info=VAE_DECODE_BATCH_SIZE_INFO
                         )
-                        ui_components[('performance', 'vae_chunk')] = vae_chunk_slider
-                        enable_vram_optimization_check = gr.Checkbox(
-                            label=ENABLE_ADVANCED_VRAM_OPTIMIZATION_LABEL,
-                            value=INITIAL_APP_CONFIG.performance.enable_vram_optimization,
-                            info=ADVANCED_MEMORY_MANAGEMENT_INFO
+                        enable_vram_optimization_check = create_checkbox(
+                            config_path=('performance', 'enable_vram_optimization'), ui_dict=ui_components,
+                            label=ENABLE_ADVANCED_VRAM_OPTIMIZATION_LABEL, info=ADVANCED_MEMORY_MANAGEMENT_INFO
                         )
-                        ui_components[('performance', 'enable_vram_optimization')] = enable_vram_optimization_check
                     with gr.Accordion(TILING_HIGH_RES_LOW_VRAM_ACCORDION, open=True, visible=False):
-                        enable_tiling_check = gr.Checkbox(
-                            label="Enable Tiled Upscaling",
-                            value=INITIAL_APP_CONFIG.tiling.enable,
-                            info=TILING_INFO
+                        enable_tiling_check = create_checkbox(
+                            config_path=('tiling', 'enable'), ui_dict=ui_components,
+                            label="Enable Tiled Upscaling", info=TILING_INFO
                         )
-                        ui_components[('tiling', 'enable')] = enable_tiling_check
                         with gr.Row():
-                            tile_size_num = gr.Number(
-                                label="Tile Size (px, input res)",
-                                value=INITIAL_APP_CONFIG.tiling.tile_size, minimum=64, step=32,
-                                info=TILE_SIZE_INFO
+                            tile_size_num = create_number(
+                                config_path=('tiling', 'tile_size'), ui_dict=ui_components,
+                                label="Tile Size (px, input res)", minimum=64, step=32, info=TILE_SIZE_INFO
                             )
-                            ui_components[('tiling', 'tile_size')] = tile_size_num
-                            tile_overlap_num = gr.Number(
-                                label="Tile Overlap (px, input res)",
-                                value=INITIAL_APP_CONFIG.tiling.tile_overlap, minimum=0, step=16,
-                                info=TILE_OVERLAP_INFO
+                            tile_overlap_num = create_number(
+                                config_path=('tiling', 'tile_overlap'), ui_dict=ui_components,
+                                label="Tile Overlap (px, input res)", minimum=0, step=16, info=TILE_OVERLAP_INFO
                             )
-                            ui_components[('tiling', 'tile_overlap')] = tile_overlap_num
 
         with gr.Tab("Image Based Upscalers", id="image_upscaler_tab"):
             with gr.Row():
@@ -913,40 +853,21 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                         gr.Markdown(IMAGE_BASED_UPSCALER_DESCRIPTION)
                         gr.Markdown(IMAGE_BASED_UPSCALER_NOTE)
                         try:
-                            available_model_files = util_scan_for_models(APP_CONFIG.paths.upscale_models_dir, logger)
-                            if available_model_files:
-                                model_choices = available_model_files
-                                if "2xLiveActionV1_SPAN_490000.pth" in model_choices:
-                                    default_model_choice = "2xLiveActionV1_SPAN_490000.pth"
-                                elif INITIAL_APP_CONFIG.image_upscaler.model in model_choices:
-                                    default_model_choice = INITIAL_APP_CONFIG.image_upscaler.model
-                                else:
-                                    default_model_choice = model_choices[0]
-                            else:
-                                model_choices = [info_strings.NO_MODELS_FOUND_PLACE_UPSCALE_MODELS_STATUS]
-                                default_model_choice = model_choices[0]
+                            model_choices = util_scan_for_models(APP_CONFIG.paths.upscale_models_dir, logger) or [info_strings.NO_MODELS_FOUND_PLACE_UPSCALE_MODELS_STATUS]
                         except Exception as e:
                             logger.warning(f"Failed to scan for upscaler models: {e}")
                             model_choices = [info_strings.ERROR_SCANNING_UPSCALE_MODELS_DIRECTORY_STATUS]
-                            default_model_choice = model_choices[0]
-                        image_upscaler_model_dropdown = gr.Dropdown(
-                            label=SELECT_UPSCALER_MODEL_SPATIAL_LABEL,
-                            choices=model_choices,
-                            value=default_model_choice,
-                            info=IMAGE_UPSCALER_MODEL_INFO,
-                            interactive=True
+                        
+                        image_upscaler_model_dropdown = create_dropdown(
+                            config_path=('image_upscaler', 'model'), ui_dict=ui_components,
+                            label=SELECT_UPSCALER_MODEL_SPATIAL_LABEL, choices=model_choices,
+                            info=IMAGE_UPSCALER_MODEL_INFO, interactive=True
                         )
-                        ui_components[('image_upscaler', 'model')] = image_upscaler_model_dropdown
-                        image_upscaler_batch_size_slider = gr.Slider(
-                            label="Batch Size",
-                            minimum=1,
-                            maximum=50,
-                            value=INITIAL_APP_CONFIG.image_upscaler.batch_size,
-                            step=1,
-                            info=IMAGE_UPSCALER_BATCH_SIZE_INFO,
-                            interactive=True
+                        image_upscaler_batch_size_slider = create_slider(
+                            config_path=('image_upscaler', 'batch_size'), ui_dict=ui_components,
+                            label="Batch Size", minimum=1, maximum=50, step=1,
+                            info=IMAGE_UPSCALER_BATCH_SIZE_INFO, interactive=True
                         )
-                        ui_components[('image_upscaler', 'batch_size')] = image_upscaler_batch_size_slider
                     with gr.Group():
                         gr.Markdown(QUICK_PREVIEW_HEADER)
                         gr.Markdown(QUICK_PREVIEW_DESCRIPTION)
@@ -954,32 +875,20 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                             preview_single_btn = gr.Button("🖼️ Preview Current Model", variant="secondary", size="sm")
                             preview_all_models_btn = gr.Button("🔬 Test All Models & Save", variant="secondary", size="sm")
                         preview_status = gr.Textbox(
-                            label="Preview Status",
-                            interactive=False,
-                            lines=2,
-                            visible=True,
-                            value=DEFAULT_PREVIEW_STATUS,
-                            show_label=True
+                            label="Preview Status", interactive=False, lines=2, visible=True,
+                            value=DEFAULT_PREVIEW_STATUS, show_label=True
                         )
                         preview_slider = gr.ImageSlider(
-                            label=BEFORE_AFTER_COMPARISON_SLIDER_LABEL,
-                            interactive=True,
-                            visible=False,
-                            height=400,
-                            show_label=True,
-                            show_download_button=True,
-                            show_fullscreen_button=True,
-                            slider_position=0.5
+                            label=BEFORE_AFTER_COMPARISON_SLIDER_LABEL, interactive=True, visible=False,
+                            height=400, show_label=True, show_download_button=True,
+                            show_fullscreen_button=True, slider_position=0.5
                         )
                 with gr.Column(scale=1):
                     with gr.Group():
                         gr.Markdown(MODEL_INFORMATION_HEADER)
                         model_info_display = gr.Textbox(
-                            label="Selected Model Info",
-                            value="Select a model to see its information",
-                            interactive=False,
-                            lines=10,
-                            info=MODEL_DETAILS_DISPLAY_INFO
+                            label="Selected Model Info", value="Select a model to see its information",
+                            interactive=False, lines=10, info=MODEL_DETAILS_DISPLAY_INFO
                         )
                         refresh_models_btn = gr.Button("🔄 Refresh Model List", variant="secondary")
                         gr.Markdown(IMAGE_UPSCALER_OPTIMIZATION_TIPS)
@@ -991,31 +900,22 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                         gr.Markdown(SEEDVR2_VIDEO_UPSCALER_HEADER)
                         gr.Markdown(SEEDVR2_DESCRIPTION)
                         seedvr2_dependency_status = gr.Textbox(
-                            label="SeedVR2 Status",
-                            value="Checking SeedVR2 dependencies...",
-                            interactive=False,
-                            lines=2,
-                            info=info_strings.SEEDVR2_INSTALLATION_DEPENDENCY_STATUS_INFO
+                            label="SeedVR2 Status", value="Checking SeedVR2 dependencies...", interactive=False,
+                            lines=2, info=info_strings.SEEDVR2_INSTALLATION_DEPENDENCY_STATUS_INFO
                         )
                     with gr.Accordion("Model Selection", open=True):
                         try:
                             available_models = util_scan_seedvr2_models(logger=logger)
-                            if available_models:
-                                model_choices = [util_format_model_display_name(model) for model in available_models]
-                                default_model = model_choices[0]
-                            else:
-                                default_model = "No SeedVR2 models found"
+                            model_choices = [util_format_model_display_name(m) for m in available_models] if available_models else ["No SeedVR2 models found"]
                         except Exception as e:
                             logger.warning(f"Failed to scan for SeedVR2 models: {e}")
                             model_choices = [info_strings.ERROR_SCANNING_SEEDVR2_MODELS_DIRECTORY_STATUS]
-                            default_model = model_choices[0]
-                        seedvr2_model_dropdown = gr.Dropdown(
-                            label="SeedVR2 Model",
-                            choices=model_choices if 'model_choices' in locals() else [default_model],
-                            value=default_model,
+
+                        seedvr2_model_dropdown = create_dropdown(
+                            config_path=('seedvr2', 'model'), ui_dict=ui_components,
+                            label="SeedVR2 Model", choices=model_choices, value=model_choices[0],
                             info=info_strings.SEEDVR2_MODEL_3B_7B_SPEED_QUALITY_INFO
                         )
-                        ui_components[('seedvr2', 'model')] = seedvr2_model_dropdown
                         with gr.Row():
                             refresh_seedvr2_models_btn = gr.Button("🔄 Refresh Models", variant="secondary", scale=1)
                             apply_recommended_settings_btn = gr.Button("⚡ Apply Optimal Settings", variant="primary", scale=1)
@@ -1023,386 +923,269 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                             get_block_swap_recommendations_btn = gr.Button("🧠 Smart Block Swap", variant="secondary", scale=1)
                             get_multi_gpu_recommendations_btn = gr.Button("🚀 Multi-GPU Analysis", variant="secondary", scale=1)
                         seedvr2_model_info_display = gr.Textbox(
-                            label="Model Information",
-                            value=info_strings.SELECT_MODEL_DETAILED_SPECIFICATIONS_INFO,
-                            interactive=False,
-                            lines=8,
-                            info=info_strings.DETAILED_MODEL_SPECIFICATIONS_REQUIREMENTS_INFO
+                            label="Model Information", value=info_strings.SELECT_MODEL_DETAILED_SPECIFICATIONS_INFO,
+                            interactive=False, lines=8, info=info_strings.DETAILED_MODEL_SPECIFICATIONS_REQUIREMENTS_INFO
                         )
                     with gr.Accordion("Processing Settings", open=True):
+                        seedvr2_batch_size_slider = create_slider(
+                            config_path=('seedvr2', 'batch_size'), ui_dict=ui_components,
+                            label=BATCH_SIZE_TEMPORAL_CONSISTENCY_LABEL, minimum=5, maximum=32, step=1,
+                            info=SEEDVR2_BATCH_SIZE_INFO
+                        )
+                        seedvr2_temporal_overlap_slider = create_slider(
+                            config_path=('seedvr2', 'temporal_overlap'), ui_dict=ui_components,
+                            label="Temporal Overlap", minimum=0, maximum=8, step=1, info=SEEDVR2_TEMPORAL_OVERLAP_INFO
+                        )
+                        seedvr2_quality_preset_radio = create_radio(
+                            config_path=('seedvr2', 'quality_preset'), ui_dict=ui_components,
+                            label="Quality Preset", choices=["fast", "balanced", "quality"],
+                            info=info_strings.PROCESSING_QUALITY_FAST_BALANCED_QUALITY_INFO
+                        )
                         with gr.Row():
-                            seedvr2_batch_size_slider = gr.Slider(
-                                label=BATCH_SIZE_TEMPORAL_CONSISTENCY_LABEL,
-                                minimum=5,
-                                maximum=32,
-                                value=max(5, INITIAL_APP_CONFIG.seedvr2.batch_size),
-                                step=1,
-                                info=SEEDVR2_BATCH_SIZE_INFO
+                            seedvr2_preserve_vram_check = create_checkbox(
+                                config_path=('seedvr2', 'preserve_vram'), ui_dict=ui_components,
+                                label="Preserve VRAM", info=info_strings.OPTIMIZE_VRAM_USAGE_RECOMMENDED_SYSTEMS_INFO
                             )
-                            ui_components[('seedvr2', 'batch_size')] = seedvr2_batch_size_slider
+                            seedvr2_color_correction_check = create_checkbox(
+                                config_path=('seedvr2', 'color_correction'), ui_dict=ui_components,
+                                label="Color Correction (Wavelet)", info=info_strings.COLOR_FIX_WAVELET_RECONSTRUCTION_RECOMMENDED_INFO
+                            )
                         with gr.Row():
-                            seedvr2_temporal_overlap_slider = gr.Slider(
-                                label="Temporal Overlap",
-                                minimum=0,
-                                maximum=8,
-                                value=INITIAL_APP_CONFIG.seedvr2.temporal_overlap,
-                                step=1,
-                                info=SEEDVR2_TEMPORAL_OVERLAP_INFO
+                            seedvr2_enable_frame_padding_check = create_checkbox(
+                                config_path=('seedvr2', 'enable_frame_padding'), ui_dict=ui_components,
+                                label="Automatic Frame Padding", info=info_strings.OPTIMIZE_LAST_CHUNK_STAR_MODEL_RECOMMENDED_INFO
                             )
-                            ui_components[('seedvr2', 'temporal_overlap')] = seedvr2_temporal_overlap_slider
-                        with gr.Row():
-                            seedvr2_quality_preset_radio = gr.Radio(
-                                label="Quality Preset",
-                                choices=["fast", "balanced", "quality"],
-                                value=INITIAL_APP_CONFIG.seedvr2.quality_preset,
-                                info=info_strings.PROCESSING_QUALITY_FAST_BALANCED_QUALITY_INFO
+                            seedvr2_flash_attention_check = create_checkbox(
+                                config_path=('seedvr2', 'flash_attention'), ui_dict=ui_components,
+                                label="Flash Attention", info=info_strings.MEMORY_EFFICIENT_ATTENTION_DEFAULT_ENABLED_INFO
                             )
-                            ui_components[('seedvr2', 'quality_preset')] = seedvr2_quality_preset_radio
-                        with gr.Row():
-                            seedvr2_preserve_vram_check = gr.Checkbox(
-                                label="Preserve VRAM",
-                                value=INITIAL_APP_CONFIG.seedvr2.preserve_vram,
-                                info=info_strings.OPTIMIZE_VRAM_USAGE_RECOMMENDED_SYSTEMS_INFO
-                            )
-                            ui_components[('seedvr2', 'preserve_vram')] = seedvr2_preserve_vram_check
-                            seedvr2_color_correction_check = gr.Checkbox(
-                                label="Color Correction (Wavelet)",
-                                value=INITIAL_APP_CONFIG.seedvr2.color_correction,
-                                info=info_strings.COLOR_FIX_WAVELET_RECONSTRUCTION_RECOMMENDED_INFO
-                            )
-                            ui_components[('seedvr2', 'color_correction')] = seedvr2_color_correction_check
-                        with gr.Row():
-                            seedvr2_enable_frame_padding_check = gr.Checkbox(
-                                label="Automatic Frame Padding",
-                                value=INITIAL_APP_CONFIG.seedvr2.enable_frame_padding,
-                                info=info_strings.OPTIMIZE_LAST_CHUNK_STAR_MODEL_RECOMMENDED_INFO
-                            )
-                            ui_components[('seedvr2', 'enable_frame_padding')] = seedvr2_enable_frame_padding_check
-                            seedvr2_flash_attention_check = gr.Checkbox(
-                                label="Flash Attention",
-                                value=INITIAL_APP_CONFIG.seedvr2.flash_attention,
-                                info=info_strings.MEMORY_EFFICIENT_ATTENTION_DEFAULT_ENABLED_INFO
-                            )
-                            ui_components[('seedvr2', 'flash_attention')] = seedvr2_flash_attention_check
                         with gr.Accordion("🎬 Temporal Consistency", open=False):
                             with gr.Row():
-                                seedvr2_scene_awareness_check = gr.Checkbox(
-                                    label="🎭 Scene Awareness",
-                                    value=INITIAL_APP_CONFIG.seedvr2.scene_awareness,
-                                    info=info_strings.SCENE_AWARE_TEMPORAL_PROCESSING_BOUNDARIES_INFO
+                                seedvr2_scene_awareness_check = create_checkbox(
+                                    config_path=('seedvr2', 'scene_awareness'), ui_dict=ui_components,
+                                    label="🎭 Scene Awareness", info=info_strings.SCENE_AWARE_TEMPORAL_PROCESSING_BOUNDARIES_INFO
                                 )
-                                ui_components[('seedvr2', 'scene_awareness')] = seedvr2_scene_awareness_check
-                                seedvr2_consistency_validation_check = gr.Checkbox(
-                                    label="🎯 Consistency Validation",
-                                    value=INITIAL_APP_CONFIG.seedvr2.consistency_validation,
-                                    info=info_strings.TEMPORAL_CONSISTENCY_VALIDATION_QUALITY_METRICS_INFO
+                                seedvr2_consistency_validation_check = create_checkbox(
+                                    config_path=('seedvr2', 'consistency_validation'), ui_dict=ui_components,
+                                    label="🎯 Consistency Validation", info=info_strings.TEMPORAL_CONSISTENCY_VALIDATION_QUALITY_METRICS_INFO
                                 )
-                                ui_components[('seedvr2', 'consistency_validation')] = seedvr2_consistency_validation_check
                             with gr.Row():
-                                seedvr2_chunk_optimization_check = gr.Checkbox(
-                                    label="🔧 Chunk Optimization",
-                                    value=INITIAL_APP_CONFIG.seedvr2.chunk_optimization,
-                                    info=info_strings.CHUNK_BOUNDARIES_TEMPORAL_COHERENCE_RECOMMENDED_INFO
+                                seedvr2_chunk_optimization_check = create_checkbox(
+                                    config_path=('seedvr2', 'chunk_optimization'), ui_dict=ui_components,
+                                    label="🔧 Chunk Optimization", info=info_strings.CHUNK_BOUNDARIES_TEMPORAL_COHERENCE_RECOMMENDED_INFO
                                 )
-                                ui_components[('seedvr2', 'chunk_optimization')] = seedvr2_chunk_optimization_check
-                                seedvr2_temporal_quality_radio = gr.Radio(
-                                    choices=["fast", "balanced", "quality"],
-                                    value=INITIAL_APP_CONFIG.seedvr2.temporal_quality,
-                                    label="🏆 Temporal Quality",
+                                seedvr2_temporal_quality_radio = create_radio(
+                                    config_path=('seedvr2', 'temporal_quality'), ui_dict=ui_components,
+                                    choices=["fast", "balanced", "quality"], label="🏆 Temporal Quality",
                                     info=info_strings.PROCESSING_SPEED_TEMPORAL_CONSISTENCY_BALANCE_INFO
                                 )
-                                ui_components[('seedvr2', 'temporal_quality')] = seedvr2_temporal_quality_radio
                 with gr.Column(scale=1):
                     with gr.Accordion("GPU Configuration", open=True):
                         with gr.Row():
-                            seedvr2_use_gpu_check = gr.Checkbox(
-                                label="Use GPU",
-                                value=INITIAL_APP_CONFIG.seedvr2.use_gpu,
-                                info=info_strings.GPU_ACCELERATION_SEEDVR2_PROCESSING_INFO
+                            seedvr2_use_gpu_check = create_checkbox(
+                                config_path=('seedvr2', 'use_gpu'), ui_dict=ui_components,
+                                label="Use GPU", info=info_strings.GPU_ACCELERATION_SEEDVR2_PROCESSING_INFO
                             )
-                            ui_components[('seedvr2', 'use_gpu')] = seedvr2_use_gpu_check
-                            seedvr2_enable_multi_gpu_check = gr.Checkbox(
-                                label="Enable Multi-GPU",
-                                value=INITIAL_APP_CONFIG.seedvr2.enable_multi_gpu,
-                                info=info_strings.MULTI_GPU_DISTRIBUTE_FASTER_PROCESSING_INFO
+                            seedvr2_enable_multi_gpu_check = create_checkbox(
+                                config_path=('seedvr2', 'enable_multi_gpu'), ui_dict=ui_components,
+                                label="Enable Multi-GPU", info=info_strings.MULTI_GPU_DISTRIBUTE_FASTER_PROCESSING_INFO
                             )
-                            ui_components[('seedvr2', 'enable_multi_gpu')] = seedvr2_enable_multi_gpu_check
-                        seedvr2_gpu_devices_textbox = gr.Textbox(
-                            label="GPU Device IDs",
-                            value=INITIAL_APP_CONFIG.seedvr2.gpu_devices,
-                            placeholder="0,1,2",
-                            info=info_strings.GPU_DEVICES_COMMA_SEPARATED_IDS_INFO
+                        seedvr2_gpu_devices_textbox = create_textbox(
+                            config_path=('seedvr2', 'gpu_devices'), ui_dict=ui_components,
+                            label="GPU Device IDs", placeholder="0,1,2", info=info_strings.GPU_DEVICES_COMMA_SEPARATED_IDS_INFO
                         )
-                        ui_components[('seedvr2', 'gpu_devices')] = seedvr2_gpu_devices_textbox
                         seedvr2_gpu_status_display = gr.Textbox(
-                            label="GPU Status",
-                            value="Detecting available GPUs...",
-                            interactive=False,
-                            lines=4,
-                            info=info_strings.AVAILABLE_GPUS_VRAM_STATUS_INFO
+                            label="GPU Status", value="Detecting available GPUs...", interactive=False,
+                            lines=4, info=info_strings.AVAILABLE_GPUS_VRAM_STATUS_INFO
                         )
                     with gr.Accordion("Block Swap - VRAM Optimization", open=False):
                         gr.Markdown(BLOCK_SWAP_DESCRIPTION)
-                        seedvr2_enable_block_swap_check = gr.Checkbox(
-                            label="Enable Block Swap",
-                            value=INITIAL_APP_CONFIG.seedvr2.enable_block_swap,
-                            info=info_strings.BLOCK_SWAP_LARGE_MODELS_LIMITED_VRAM_INFO
+                        seedvr2_enable_block_swap_check = create_checkbox(
+                            config_path=('seedvr2', 'enable_block_swap'), ui_dict=ui_components,
+                            label="Enable Block Swap", info=info_strings.BLOCK_SWAP_LARGE_MODELS_LIMITED_VRAM_INFO
                         )
-                        ui_components[('seedvr2', 'enable_block_swap')] = seedvr2_enable_block_swap_check
-                        seedvr2_block_swap_counter_slider = gr.Slider(
-                            label="Block Swap Counter",
-                            minimum=0,
-                            maximum=20,
-                            value=INITIAL_APP_CONFIG.seedvr2.block_swap_counter,
-                            step=1,
+                        seedvr2_block_swap_counter_slider = create_slider(
+                            config_path=('seedvr2', 'block_swap_counter'), ui_dict=ui_components,
+                            label="Block Swap Counter", minimum=0, maximum=20, step=1,
                             info=info_strings.BLOCK_SWAP_COUNTER_VRAM_SAVINGS_SLOWER_INFO
                         )
-                        ui_components[('seedvr2', 'block_swap_counter')] = seedvr2_block_swap_counter_slider
                         with gr.Row():
-                            seedvr2_block_swap_offload_io_check = gr.Checkbox(
-                                label="I/O Component Offloading",
-                                value=INITIAL_APP_CONFIG.seedvr2.block_swap_offload_io,
-                                info=info_strings.OFFLOAD_IO_LAYERS_MAXIMUM_VRAM_SAVINGS_INFO
+                            seedvr2_block_swap_offload_io_check = create_checkbox(
+                                config_path=('seedvr2', 'block_swap_offload_io'), ui_dict=ui_components,
+                                label="I/O Component Offloading", info=info_strings.OFFLOAD_IO_LAYERS_MAXIMUM_VRAM_SAVINGS_INFO
                             )
-                            ui_components[('seedvr2', 'block_swap_offload_io')] = seedvr2_block_swap_offload_io_check
-                            seedvr2_block_swap_model_caching_check = gr.Checkbox(
-                                label="Model Caching",
-                                value=INITIAL_APP_CONFIG.seedvr2.block_swap_model_caching,
-                                info=info_strings.MODEL_CACHE_RAM_FASTER_BATCH_PROCESSING_INFO
+                            seedvr2_block_swap_model_caching_check = create_checkbox(
+                                config_path=('seedvr2', 'block_swap_model_caching'), ui_dict=ui_components,
+                                label="Model Caching", info=info_strings.MODEL_CACHE_RAM_FASTER_BATCH_PROCESSING_INFO
                             )
-                            ui_components[('seedvr2', 'block_swap_model_caching')] = seedvr2_block_swap_model_caching_check
                         seedvr2_block_swap_info_display = gr.Textbox(
-                            label="Block Swap Status",
-                            value="Block swap disabled",
-                            interactive=False,
-                            lines=3,
-                            info=info_strings.BLOCK_SWAP_CONFIGURATION_ESTIMATED_SAVINGS_INFO
+                            label="Block Swap Status", value="Block swap disabled", interactive=False,
+                            lines=3, info=info_strings.BLOCK_SWAP_CONFIGURATION_ESTIMATED_SAVINGS_INFO
                         )
                     with gr.Accordion("Chunk Preview Settings", open=True):
                         gr.Markdown(CHUNK_PREVIEW_DESCRIPTION)
-                        seedvr2_enable_chunk_preview_check = gr.Checkbox(
-                            label="Enable Chunk Preview",
-                            value=INITIAL_APP_CONFIG.seedvr2.enable_chunk_preview,
-                            info=info_strings.CHUNK_PREVIEW_FUNCTIONALITY_MAIN_TAB_INFO
+                        seedvr2_enable_chunk_preview_check = create_checkbox(
+                            config_path=('seedvr2', 'enable_chunk_preview'), ui_dict=ui_components,
+                            label="Enable Chunk Preview", info=info_strings.CHUNK_PREVIEW_FUNCTIONALITY_MAIN_TAB_INFO
                         )
-                        ui_components[('seedvr2', 'enable_chunk_preview')] = seedvr2_enable_chunk_preview_check
                         with gr.Row():
-                            seedvr2_chunk_preview_frames_slider = gr.Slider(
-                                label="Preview Frame Count",
-                                minimum=5,
-                                maximum=500,
-                                value=INITIAL_APP_CONFIG.seedvr2.chunk_preview_frames,
-                                step=25,
+                            seedvr2_chunk_preview_frames_slider = create_slider(
+                                config_path=('seedvr2', 'chunk_preview_frames'), ui_dict=ui_components,
+                                label="Preview Frame Count", minimum=5, maximum=500, step=25,
                                 info=info_strings.PREVIEW_FRAMES_DEFAULT_125_FRAMES_INFO
                             )
-                            ui_components[('seedvr2', 'chunk_preview_frames')] = seedvr2_chunk_preview_frames_slider
-                            seedvr2_keep_last_chunks_slider = gr.Slider(
-                                label="Keep Last N Chunks",
-                                minimum=1,
-                                maximum=1000,
-                                value=INITIAL_APP_CONFIG.seedvr2.keep_last_chunks,
-                                step=1,
+                            seedvr2_keep_last_chunks_slider = create_slider(
+                                config_path=('seedvr2', 'keep_last_chunks'), ui_dict=ui_components,
+                                label="Keep Last N Chunks", minimum=1, maximum=1000, step=1,
                                 info=info_strings.CHUNK_RETENTION_DEFAULT_5_VIDEOS_INFO
                             )
-                            ui_components[('seedvr2', 'keep_last_chunks')] = seedvr2_keep_last_chunks_slider
                     with gr.Accordion("Advanced Settings", open=False):
-                        with gr.Row():
-                            seedvr2_cfg_scale_slider = gr.Slider(
-                                label="CFG Scale",
-                                minimum=0.5,
-                                maximum=2.0,
-                                value=INITIAL_APP_CONFIG.seedvr2.cfg_scale,
-                                step=0.1,
-                                info=info_strings.GUIDANCE_SCALE_GENERATION_USUALLY_1_0_INFO
-                            )
-                            ui_components[('seedvr2', 'cfg_scale')] = seedvr2_cfg_scale_slider
+                        seedvr2_cfg_scale_slider = create_slider(
+                            config_path=('seedvr2', 'cfg_scale'), ui_dict=ui_components,
+                            label="CFG Scale", minimum=0.5, maximum=2.0, step=0.1,
+                            info=info_strings.GUIDANCE_SCALE_GENERATION_USUALLY_1_0_INFO
+                        )
 
         with gr.Tab("Output & Comparison", id="output_tab"):
             with gr.Row():
                 with gr.Column(scale=1):
                     with gr.Accordion("FFmpeg Encoding Settings", open=True):
-                        ffmpeg_use_gpu_check = gr.Checkbox(
-                            label=USE_NVIDIA_GPU_FFMPEG_LABEL,
-                            value=INITIAL_APP_CONFIG.ffmpeg.use_gpu,
-                            info=FFMPEG_GPU_ENCODING_INFO
+                        ffmpeg_use_gpu_check = create_checkbox(
+                            config_path=('ffmpeg', 'use_gpu'), ui_dict=ui_components,
+                            label=USE_NVIDIA_GPU_FFMPEG_LABEL, info=FFMPEG_GPU_ENCODING_INFO
                         )
-                        ui_components[('ffmpeg', 'use_gpu')] = ffmpeg_use_gpu_check
                         with gr.Row():
-                            ffmpeg_preset_dropdown = gr.Dropdown(
-                                label="FFmpeg Preset",
-                                choices=['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow'],
-                                value=INITIAL_APP_CONFIG.ffmpeg.preset,
+                            ffmpeg_preset_dropdown = create_dropdown(
+                                config_path=('ffmpeg', 'preset'), ui_dict=ui_components,
+                                label="FFmpeg Preset", choices=['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow'],
                                 info=info_strings.FFMPEG_PRESET_ENCODING_SPEED_COMPRESSION_INFO
                             )
-                            ui_components[('ffmpeg', 'preset')] = ffmpeg_preset_dropdown
-                            ffmpeg_quality_slider = gr.Slider(
-                                label=info_strings.FFMPEG_QUALITY_CRF_LIBX264_CQ_NVENC_INFO,
-                                minimum=0, maximum=51, value=INITIAL_APP_CONFIG.ffmpeg.quality, step=1,
+                            ffmpeg_quality_slider = create_slider(
+                                config_path=('ffmpeg', 'quality'), ui_dict=ui_components,
+                                label=info_strings.FFMPEG_QUALITY_CRF_LIBX264_CQ_NVENC_INFO, minimum=0, maximum=51, step=1,
                                 info=info_strings.FFMPEG_QUALITY_DETAILED_CRF_CQ_RANGES_INFO
                             )
-                            ui_components[('ffmpeg', 'quality')] = ffmpeg_quality_slider
-                        frame_folder_fps_slider = gr.Slider(
-                            label="Frame Folder FPS",
-                            minimum=1.0, maximum=120.0, value=INITIAL_APP_CONFIG.frame_folder.fps, step=0.001,
+                        frame_folder_fps_slider = create_slider(
+                            config_path=('frame_folder', 'fps'), ui_dict=ui_components,
+                            label="Frame Folder FPS", minimum=1.0, maximum=120.0, step=0.001,
                             info=info_strings.FRAME_FOLDER_FPS_CONVERSION_COMMON_VALUES_INFO
                         )
-                        ui_components[('frame_folder', 'fps')] = frame_folder_fps_slider
                 with gr.Column(scale=1):
                     with gr.Accordion("Output Options", open=True):
-                        create_comparison_video_check = gr.Checkbox(
-                            label="Generate Comparison Video",
-                            value=INITIAL_APP_CONFIG.outputs.create_comparison_video,
-                            info=COMPARISON_VIDEO_INFO
+                        create_comparison_video_check = create_checkbox(
+                            config_path=('outputs', 'create_comparison_video'), ui_dict=ui_components,
+                            label="Generate Comparison Video", info=COMPARISON_VIDEO_INFO
                         )
-                        ui_components[('outputs', 'create_comparison_video')] = create_comparison_video_check
-                        save_frames_checkbox = gr.Checkbox(label=SAVE_INPUT_PROCESSED_FRAMES_LABEL, value=INITIAL_APP_CONFIG.outputs.save_frames, info=SAVE_FRAMES_INFO)
-                        ui_components[('outputs', 'save_frames')] = save_frames_checkbox
-                        save_metadata_checkbox = gr.Checkbox(label="Save Processing Metadata", value=INITIAL_APP_CONFIG.outputs.save_metadata, info=info_strings.SAVE_METADATA_TXT_PROCESSING_PARAMETERS_INFO)
-                        ui_components[('outputs', 'save_metadata')] = save_metadata_checkbox
-                        save_chunks_checkbox = gr.Checkbox(label="Save Processed Chunks", value=INITIAL_APP_CONFIG.outputs.save_chunks, info=info_strings.SAVE_CHUNKS_SUBFOLDER_FFMPEG_SETTINGS_INFO)
-                        ui_components[('outputs', 'save_chunks')] = save_chunks_checkbox
-                        save_chunk_frames_checkbox = gr.Checkbox(label=SAVE_CHUNK_INPUT_FRAMES_DEBUG_LABEL, value=INITIAL_APP_CONFIG.outputs.save_chunk_frames, info=SAVE_CHUNK_FRAMES_INFO)
-                        ui_components[('outputs', 'save_chunk_frames')] = save_chunk_frames_checkbox
+                        save_frames_checkbox = create_checkbox(
+                            config_path=('outputs', 'save_frames'), ui_dict=ui_components,
+                            label=SAVE_INPUT_PROCESSED_FRAMES_LABEL, info=SAVE_FRAMES_INFO
+                        )
+                        save_metadata_checkbox = create_checkbox(
+                            config_path=('outputs', 'save_metadata'), ui_dict=ui_components,
+                            label="Save Processing Metadata", info=info_strings.SAVE_METADATA_TXT_PROCESSING_PARAMETERS_INFO
+                        )
+                        save_chunks_checkbox = create_checkbox(
+                            config_path=('outputs', 'save_chunks'), ui_dict=ui_components,
+                            label="Save Processed Chunks", info=info_strings.SAVE_CHUNKS_SUBFOLDER_FFMPEG_SETTINGS_INFO
+                        )
+                        save_chunk_frames_checkbox = create_checkbox(
+                            config_path=('outputs', 'save_chunk_frames'), ui_dict=ui_components,
+                            label=SAVE_CHUNK_INPUT_FRAMES_DEBUG_LABEL, info=SAVE_CHUNK_FRAMES_INFO
+                        )
                     with gr.Accordion("Advanced: Seeding (Reproducibility)", open=True):
                         with gr.Row():
-                            seed_num = gr.Number(
-                                label="Seed",
-                                value=INITIAL_APP_CONFIG.seed.seed,
-                                minimum=-1,
-                                maximum=2**32 - 1,
-                                step=1,
+                            seed_num = create_number(
+                                config_path=('seed', 'seed'), ui_dict=ui_components,
+                                label="Seed", minimum=-1, maximum=2**32 - 1, step=1,
                                 info=info_strings.SEED_REPRODUCIBILITY_RANDOM_IGNORED_INFO,
                                 interactive=not INITIAL_APP_CONFIG.seed.use_random
                             )
-                            ui_components[('seed', 'seed')] = seed_num
-                            random_seed_check = gr.Checkbox(
-                                label="Random Seed",
-                                value=INITIAL_APP_CONFIG.seed.use_random,
-                                info=info_strings.RANDOM_SEED_GENERATED_IGNORING_VALUE_INFO
+                            random_seed_check = create_checkbox(
+                                config_path=('seed', 'use_random'), ui_dict=ui_components,
+                                label="Random Seed", info=info_strings.RANDOM_SEED_GENERATED_IGNORING_VALUE_INFO
                             )
-                            ui_components[('seed', 'use_random')] = random_seed_check
                 with gr.Column(scale=1):
                     with gr.Accordion("Manual Comparison Video Generator", open=True):
                         gr.Markdown(GENERATE_CUSTOM_COMPARISON_VIDEOS)
                         gr.Markdown(CUSTOM_COMPARISON_DESCRIPTION)
                         gr.Markdown(CUSTOM_COMPARISON_STEP1)
-                        manual_video_count = gr.Radio(
-                            label="Number of Videos",
-                            choices=[2, 3, 4],
-                            value=INITIAL_APP_CONFIG.manual_comparison.video_count,
+                        manual_video_count = create_radio(
+                            config_path=('manual_comparison', 'video_count'), ui_dict=ui_components,
+                            label="Number of Videos", choices=[2, 3, 4],
                             info=info_strings.VIDEO_COUNT_ADDITIONAL_INPUTS_SELECTION_INFO
                         )
-                        ui_components[('manual_comparison', 'video_count')] = manual_video_count
                         gr.Markdown(CUSTOM_COMPARISON_STEP2)
-                        manual_original_video = gr.Video(
-                            label="Video 1 (Original/Reference)",
-                            sources=["upload"],
-                            interactive=True,
-                            height=200
+                        manual_original_video = create_video_component(
+                            config_path=('manual_comparison', 'original_video'), ui_dict=ui_components,
+                            label="Video 1 (Original/Reference)", sources=["upload"], interactive=True, height=200
                         )
-                        ui_components[('manual_comparison', 'original_video')] = manual_original_video
-                        manual_upscaled_video = gr.Video(
-                            label="Video 2 (Upscaled/Enhanced)",
-                            sources=["upload"],
-                            interactive=True,
-                            height=200
+                        manual_upscaled_video = create_video_component(
+                            config_path=('manual_comparison', 'upscaled_video'), ui_dict=ui_components,
+                            label="Video 2 (Upscaled/Enhanced)", sources=["upload"], interactive=True, height=200
                         )
-                        ui_components[('manual_comparison', 'upscaled_video')] = manual_upscaled_video
-                        manual_third_video = gr.Video(
-                            label="Video 3 (Optional)",
-                            sources=["upload"],
-                            interactive=True,
-                            height=200,
-                            visible=False
+                        manual_third_video = create_video_component(
+                            config_path=('manual_comparison', 'third_video'), ui_dict=ui_components,
+                            label="Video 3 (Optional)", sources=["upload"], interactive=True, height=200, visible=False
                         )
-                        ui_components[('manual_comparison', 'third_video')] = manual_third_video
-                        manual_fourth_video = gr.Video(
-                            label="Video 4 (Optional)",
-                            sources=["upload"],
-                            interactive=True,
-                            height=200,
-                            visible=False
+                        manual_fourth_video = create_video_component(
+                            config_path=('manual_comparison', 'fourth_video'), ui_dict=ui_components,
+                            label="Video 4 (Optional)", sources=["upload"], interactive=True, height=200, visible=False
                         )
-                        ui_components[('manual_comparison', 'fourth_video')] = manual_fourth_video
                         gr.Markdown(CUSTOM_COMPARISON_STEP3)
-                        manual_comparison_layout = gr.Radio(
-                            label="Comparison Layout",
-                            choices=["auto", "side_by_side", "top_bottom"],
-                            value="auto",
-                            info=info_strings.LAYOUT_OPTIONS_VIDEO_SELECTION_INFO,
-                            interactive=True
+                        manual_comparison_layout = create_radio(
+                            config_path=('manual_comparison', 'layout'), ui_dict=ui_components,
+                            label="Comparison Layout", choices=["auto", "side_by_side", "top_bottom"], value="auto",
+                            info=info_strings.LAYOUT_OPTIONS_VIDEO_SELECTION_INFO, interactive=True
                         )
-                        ui_components[('manual_comparison', 'layout')] = manual_comparison_layout
                         gr.Markdown(CUSTOM_COMPARISON_STEP4)
-                        manual_comparison_button = gr.Button(
-                            "Generate Multi-Video Comparison",
-                            variant="primary",
-                            size="lg"
-                        )
-                        manual_comparison_status = gr.Textbox(
-                            label="Manual Comparison Status",
-                            lines=2,
-                            interactive=True,
-                            visible=False
-                        )
+                        manual_comparison_button = gr.Button("Generate Multi-Video Comparison", variant="primary", size="lg")
+                        manual_comparison_status = gr.Textbox(label="Manual Comparison Status", lines=2, interactive=True, visible=False)
             with gr.Accordion("Comparison Video To See Difference", open=True):
                 comparison_video = gr.Video(label="Comparison Video", interactive=False, height=512)
 
         with gr.Tab("Batch Upscaling", id="batch_tab"):
             with gr.Accordion("Batch Processing Options", open=True):
                 with gr.Row():
-                    batch_input_folder = gr.Textbox(
-                        label="Input Folder",
-                        placeholder=info_strings.BATCH_INPUT_FOLDER_VIDEOS_PROCESS_PLACEHOLDER,
+                    batch_input_folder = create_textbox(
+                        config_path=('batch', 'input_folder'), ui_dict=ui_components,
+                        label="Input Folder", placeholder=info_strings.BATCH_INPUT_FOLDER_VIDEOS_PROCESS_PLACEHOLDER,
                         info=info_strings.BATCH_INPUT_FOLDER_VIDEO_FILES_MODE_INFO
                     )
-                    ui_components[('batch', 'input_folder')] = batch_input_folder
-                    batch_output_folder = gr.Textbox(
-                        label="Output Folder",
-                        placeholder=info_strings.BATCH_OUTPUT_FOLDER_PROCESSED_VIDEOS_PLACEHOLDER,
+                    batch_output_folder = create_textbox(
+                        config_path=('batch', 'output_folder'), ui_dict=ui_components,
+                        label="Output Folder", placeholder=info_strings.BATCH_OUTPUT_FOLDER_PROCESSED_VIDEOS_PLACEHOLDER,
                         info=info_strings.BATCH_OUTPUT_FOLDER_ORGANIZED_STRUCTURE_INFO
                     )
-                    ui_components[('batch', 'output_folder')] = batch_output_folder
                 with gr.Row():
-                    enable_batch_frame_folders = gr.Checkbox(
-                        label=PROCESS_FRAME_FOLDERS_BATCH_LABEL,
-                        value=False,
+                    enable_batch_frame_folders = create_checkbox(
+                        config_path=('batch', 'enable_frame_folders'), ui_dict=ui_components,
+                        label=PROCESS_FRAME_FOLDERS_BATCH_LABEL, value=False,
                         info=info_strings.BATCH_FRAME_FOLDERS_SUBFOLDERS_SEQUENCES_INFO
                     )
-                    ui_components[('batch', 'enable_frame_folders')] = enable_batch_frame_folders
-                    enable_direct_image_upscaling = gr.Checkbox(
-                        label="Direct Image Upscaling",
-                        value=False,
+                    enable_direct_image_upscaling = create_checkbox(
+                        config_path=('batch', 'enable_direct_image_upscaling'), ui_dict=ui_components,
+                        label="Direct Image Upscaling", value=False,
                         info=info_strings.BATCH_DIRECT_IMAGE_JPG_PNG_UPSCALER_INFO
                     )
-                    ui_components[('batch', 'enable_direct_image_upscaling')] = enable_direct_image_upscaling
                 with gr.Row():
-                    batch_skip_existing = gr.Checkbox(
-                        label="Skip Existing Outputs",
-                        value=INITIAL_APP_CONFIG.batch.skip_existing,
-                        info=info_strings.BATCH_SKIP_EXISTING_INTERRUPTED_JOBS_INFO
+                    batch_skip_existing = create_checkbox(
+                        config_path=('batch', 'skip_existing'), ui_dict=ui_components,
+                        label="Skip Existing Outputs", info=info_strings.BATCH_SKIP_EXISTING_INTERRUPTED_JOBS_INFO
                     )
-                    ui_components[('batch', 'skip_existing')] = batch_skip_existing
-                    batch_use_prompt_files = gr.Checkbox(
-                        label=USE_PROMPT_FILES_FILENAME_LABEL,
-                        value=INITIAL_APP_CONFIG.batch.use_prompt_files,
-                        info=BATCH_USE_PROMPT_FILES_INFO
+                    batch_use_prompt_files = create_checkbox(
+                        config_path=('batch', 'use_prompt_files'), ui_dict=ui_components,
+                        label=USE_PROMPT_FILES_FILENAME_LABEL, info=BATCH_USE_PROMPT_FILES_INFO
                     )
-                    ui_components[('batch', 'use_prompt_files')] = batch_use_prompt_files
-                    batch_save_captions = gr.Checkbox(
-                        label="Save Auto-Generated Captions",
-                        value=INITIAL_APP_CONFIG.batch.save_captions,
-                        info=BATCH_SAVE_CAPTIONS_INFO
+                    batch_save_captions = create_checkbox(
+                        config_path=('batch', 'save_captions'), ui_dict=ui_components,
+                        label="Save Auto-Generated Captions", info=BATCH_SAVE_CAPTIONS_INFO
                     )
-                    ui_components[('batch', 'save_captions')] = batch_save_captions
                 if UTIL_COG_VLM_AVAILABLE:
                     with gr.Row():
-                        batch_enable_auto_caption = gr.Checkbox(
-                            label="Enable Auto-Caption for Batch",
-                            value=INITIAL_APP_CONFIG.batch.enable_auto_caption,
-                            info=BATCH_ENABLE_AUTO_CAPTION_INFO
+                        batch_enable_auto_caption = create_checkbox(
+                            config_path=('batch', 'enable_auto_caption'), ui_dict=ui_components,
+                            label="Enable Auto-Caption for Batch", info=BATCH_ENABLE_AUTO_CAPTION_INFO
                         )
-                        ui_components[('batch', 'enable_auto_caption')] = batch_enable_auto_caption
                 else:
                     batch_enable_auto_caption = gr.Checkbox(visible=False, value=False)
             with gr.Row():
@@ -1415,146 +1198,99 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                     with gr.Accordion("RIFE Interpolation Settings", open=True):
                         gr.Markdown(FRAME_INTERPOLATION_HEADER)
                         gr.Markdown(RIFE_DESCRIPTION)
-                        enable_rife_interpolation = gr.Checkbox(
-                            label="Enable RIFE Interpolation",
-                            value=INITIAL_APP_CONFIG.rife.enable,
-                            info=RIFE_INTERPOLATION_INFO
+                        enable_rife_interpolation = create_checkbox(
+                            config_path=('rife', 'enable'), ui_dict=ui_components,
+                            label="Enable RIFE Interpolation", info=RIFE_INTERPOLATION_INFO
                         )
-                        ui_components[('rife', 'enable')] = enable_rife_interpolation
+                        rife_multiplier = create_radio(
+                            config_path=('rife', 'multiplier'), ui_dict=ui_components,
+                            label="FPS Multiplier", choices=[2, 4], info=RIFE_MULTIPLIER_INFO
+                        )
                         with gr.Row():
-                            rife_multiplier = gr.Radio(
-                                label="FPS Multiplier",
-                                choices=[2, 4],
-                                value=INITIAL_APP_CONFIG.rife.multiplier,
-                                info=RIFE_MULTIPLIER_INFO
+                            rife_fp16 = create_checkbox(
+                                config_path=('rife', 'fp16'), ui_dict=ui_components,
+                                label="Use FP16 Precision", info=RIFE_FP16_INFO
                             )
-                            ui_components[('rife', 'multiplier')] = rife_multiplier
-                        with gr.Row():
-                            rife_fp16 = gr.Checkbox(
-                                label="Use FP16 Precision",
-                                value=INITIAL_APP_CONFIG.rife.fp16,
-                                info=RIFE_FP16_INFO
+                            rife_uhd = create_checkbox(
+                                config_path=('rife', 'uhd'), ui_dict=ui_components,
+                                label="UHD Mode", info=RIFE_UHD_INFO
                             )
-                            ui_components[('rife', 'fp16')] = rife_fp16
-                            rife_uhd = gr.Checkbox(
-                                label="UHD Mode",
-                                value=INITIAL_APP_CONFIG.rife.uhd,
-                                info=RIFE_UHD_INFO
-                            )
-                            ui_components[('rife', 'uhd')] = rife_uhd
-                        rife_scale = gr.Slider(
-                            label="Scale Factor",
-                            minimum=0.25, maximum=2.0, value=INITIAL_APP_CONFIG.rife.scale, step=0.25,
-                            info=RIFE_SCALE_INFO
+                        rife_scale = create_slider(
+                            config_path=('rife', 'scale'), ui_dict=ui_components,
+                            label="Scale Factor", minimum=0.25, maximum=2.0, step=0.25, info=RIFE_SCALE_INFO
                         )
-                        ui_components[('rife', 'scale')] = rife_scale
-                        rife_skip_static = gr.Checkbox(
-                            label="Skip Static Frames",
-                            value=INITIAL_APP_CONFIG.rife.skip_static,
-                            info=RIFE_SKIP_STATIC_INFO
+                        rife_skip_static = create_checkbox(
+                            config_path=('rife', 'skip_static'), ui_dict=ui_components,
+                            label="Skip Static Frames", info=RIFE_SKIP_STATIC_INFO
                         )
-                        ui_components[('rife', 'skip_static')] = rife_skip_static
                     with gr.Accordion("Intermediate Processing", open=True):
                         gr.Markdown(APPLY_RIFE_TO_INTERMEDIATE)
-                        rife_apply_to_chunks = gr.Checkbox(
-                            label="Apply to Chunks",
-                            value=INITIAL_APP_CONFIG.rife.apply_to_chunks,
-                            info=RIFE_APPLY_TO_CHUNKS_INFO
+                        rife_apply_to_chunks = create_checkbox(
+                            config_path=('rife', 'apply_to_chunks'), ui_dict=ui_components,
+                            label="Apply to Chunks", info=RIFE_APPLY_TO_CHUNKS_INFO
                         )
-                        ui_components[('rife', 'apply_to_chunks')] = rife_apply_to_chunks
-                        rife_apply_to_scenes = gr.Checkbox(
-                            label="Apply to Scenes",
-                            value=INITIAL_APP_CONFIG.rife.apply_to_scenes,
-                            info=RIFE_APPLY_TO_SCENES_INFO
+                        rife_apply_to_scenes = create_checkbox(
+                            config_path=('rife', 'apply_to_scenes'), ui_dict=ui_components,
+                            label="Apply to Scenes", info=RIFE_APPLY_TO_SCENES_INFO
                         )
-                        ui_components[('rife', 'apply_to_scenes')] = rife_apply_to_scenes
                         gr.Markdown(RIFE_NOTE)
                 with gr.Column(scale=1):
                     with gr.Accordion("FPS Decrease", open=True):
                         gr.Markdown(PRE_PROCESSING_FPS_REDUCTION_HEADER)
                         gr.Markdown(PRE_PROCESSING_FPS_REDUCTION_DESCRIPTION)
-                        enable_fps_decrease = gr.Checkbox(
-                            label="Enable FPS Decrease",
-                            value=INITIAL_APP_CONFIG.fps_decrease.enable,
-                            info=info_strings.FPS_REDUCE_BEFORE_UPSCALING_SPEED_VRAM_INFO
+                        enable_fps_decrease = create_checkbox(
+                            config_path=('fps_decrease', 'enable'), ui_dict=ui_components,
+                            label="Enable FPS Decrease", info=info_strings.FPS_REDUCE_BEFORE_UPSCALING_SPEED_VRAM_INFO
                         )
-                        ui_components[('fps_decrease', 'enable')] = enable_fps_decrease
-                        fps_decrease_mode = gr.Radio(
-                            label="FPS Reduction Mode",
-                            choices=["multiplier", "fixed"],
-                            value=INITIAL_APP_CONFIG.fps_decrease.mode,
+                        fps_decrease_mode = create_radio(
+                            config_path=('fps_decrease', 'mode'), ui_dict=ui_components,
+                            label="FPS Reduction Mode", choices=["multiplier", "fixed"],
                             info=info_strings.FPS_MODE_MULTIPLIER_FIXED_AUTOMATIC_ADAPTATION_INFO
                         )
-                        ui_components[('fps_decrease', 'mode')] = fps_decrease_mode
                         with gr.Group() as multiplier_controls:
                             with gr.Row():
-                                fps_multiplier_preset = gr.Dropdown(
-                                    label="FPS Multiplier",
-                                    choices=list(util_get_common_fps_multipliers().values()) + ["Custom"],
-                                    value=INITIAL_APP_CONFIG.fps_decrease.multiplier_preset,
+                                fps_multiplier_preset = create_dropdown(
+                                    config_path=('fps_decrease', 'multiplier_preset'), ui_dict=ui_components,
+                                    label="FPS Multiplier", choices=list(util_get_common_fps_multipliers().values()) + ["Custom"],
                                     info=info_strings.FPS_MULTIPLIER_PRESET_SPEED_QUALITY_BALANCE_INFO
                                 )
-                                ui_components[('fps_decrease', 'multiplier_preset')] = fps_multiplier_preset
-                                fps_multiplier_custom = gr.Number(
-                                    label="Custom Multiplier",
-                                    value=INITIAL_APP_CONFIG.fps_decrease.multiplier_custom,
-                                    minimum=0.1,
-                                    maximum=1.0,
-                                    step=0.05,
-                                    precision=2,
-                                    visible=False,
-                                    info=info_strings.FPS_MULTIPLIER_CUSTOM_LOWER_FRAMES_INFO
+                                fps_multiplier_custom = create_number(
+                                    config_path=('fps_decrease', 'multiplier_custom'), ui_dict=ui_components,
+                                    label="Custom Multiplier", minimum=0.1, maximum=1.0, step=0.05,
+                                    precision=2, visible=False, info=info_strings.FPS_MULTIPLIER_CUSTOM_LOWER_FRAMES_INFO
                                 )
-                                ui_components[('fps_decrease', 'multiplier_custom')] = fps_multiplier_custom
                         with gr.Group(visible=False) as fixed_controls:
-                            target_fps = gr.Slider(
-                                label="Target FPS",
-                                minimum=1.0,
-                                maximum=60.0,
-                                value=INITIAL_APP_CONFIG.fps_decrease.target_fps,
-                                step=0.001,
+                            target_fps = create_slider(
+                                config_path=('fps_decrease', 'target_fps'), ui_dict=ui_components,
+                                label="Target FPS", minimum=1.0, maximum=60.0, step=0.001,
                                 info=info_strings.FPS_TARGET_FAST_CINEMA_STANDARD_INFO
                             )
-                            ui_components[('fps_decrease', 'target_fps')] = target_fps
-                        fps_interpolation_method = gr.Radio(
-                            label="Frame Reduction Method",
-                            choices=["drop", "blend"],
-                            value=INITIAL_APP_CONFIG.fps_decrease.interpolation_method,
+                        fps_interpolation_method = create_radio(
+                            config_path=('fps_decrease', 'interpolation_method'), ui_dict=ui_components,
+                            label="Frame Reduction Method", choices=["drop", "blend"],
                             info=info_strings.FPS_REDUCTION_DROP_BLEND_MOTION_PRESERVATION_INFO
                         )
-                        ui_components[('fps_decrease', 'interpolation_method')] = fps_interpolation_method
-                        fps_calculation_info = gr.Markdown(
-                            "**📊 Calculation:** Upload a video to see FPS reduction preview",
-                            visible=True
-                        )
+                        fps_calculation_info = gr.Markdown("**📊 Calculation:** Upload a video to see FPS reduction preview", visible=True)
                         gr.Markdown(WORKFLOW_TIP)
                     with gr.Accordion("FPS Limiting & Output Control", open=True):
-                        rife_enable_fps_limit = gr.Checkbox(
-                            label="Enable FPS Limiting",
-                            value=INITIAL_APP_CONFIG.rife.enable_fps_limit,
-                            info=info_strings.RIFE_FPS_LIMIT_COMMON_VALUES_COMPATIBILITY_INFO
+                        rife_enable_fps_limit = create_checkbox(
+                            config_path=('rife', 'enable_fps_limit'), ui_dict=ui_components,
+                            label="Enable FPS Limiting", info=info_strings.RIFE_FPS_LIMIT_COMMON_VALUES_COMPATIBILITY_INFO
                         )
-                        ui_components[('rife', 'enable_fps_limit')] = rife_enable_fps_limit
-                        rife_max_fps_limit = gr.Radio(
-                            label="Max FPS Limit",
-                            choices=[23.976, 24, 25, 29.970, 30, 47.952, 48, 50, 59.940, 60, 75, 90, 100, 119.880, 120, 144, 165, 180, 240, 360],
-                            value=INITIAL_APP_CONFIG.rife.max_fps_limit,
+                        rife_max_fps_limit = create_radio(
+                            config_path=('rife', 'max_fps_limit'), ui_dict=ui_components,
+                            label="Max FPS Limit", choices=[23.976, 24, 25, 29.970, 30, 47.952, 48, 50, 59.940, 60, 75, 90, 100, 119.880, 120, 144, 165, 180, 240, 360],
                             info=info_strings.RIFE_MAX_FPS_NTSC_STANDARD_GAMING_INFO
                         )
-                        ui_components[('rife', 'max_fps_limit')] = rife_max_fps_limit
                         with gr.Row():
-                            rife_keep_original = gr.Checkbox(
-                                label="Keep Original Files",
-                                value=INITIAL_APP_CONFIG.rife.keep_original,
-                                info=info_strings.RIFE_KEEP_ORIGINAL_COMPARE_RESULTS_INFO
+                            rife_keep_original = create_checkbox(
+                                config_path=('rife', 'keep_original'), ui_dict=ui_components,
+                                label="Keep Original Files", info=info_strings.RIFE_KEEP_ORIGINAL_COMPARE_RESULTS_INFO
                             )
-                            ui_components[('rife', 'keep_original')] = rife_keep_original
-                            rife_overwrite_original = gr.Checkbox(
-                                label="Overwrite Original",
-                                value=INITIAL_APP_CONFIG.rife.overwrite_original,
-                                info=info_strings.RIFE_REPLACE_OUTPUT_PRIMARY_VERSION_INFO
+                            rife_overwrite_original = create_checkbox(
+                                config_path=('rife', 'overwrite_original'), ui_dict=ui_components,
+                                label="Overwrite Original", info=info_strings.RIFE_REPLACE_OUTPUT_PRIMARY_VERSION_INFO
                             )
-                            ui_components[('rife', 'overwrite_original')] = rife_overwrite_original
 
         with gr.Tab("Edit Videos", id="edit_tab"):
             gr.Markdown(VIDEO_EDITOR_HEADER)
@@ -1562,90 +1298,43 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             with gr.Row():
                 with gr.Column(scale=1):
                     with gr.Group():
-                        input_video_edit = gr.Video(
-                            label="Input Video for Editing",
-                            sources=["upload"],
-                            interactive=True,
-                            height=300
-                        )
+                        input_video_edit = gr.Video(label="Input Video for Editing", sources=["upload"], interactive=True, height=300)
                         video_info_display = gr.Textbox(
-                            label="Video Information",
-                            interactive=False,
-                            lines=6,
-                            info=info_strings.VIDEO_INFO_DURATION_FPS_FRAMES_RESOLUTION_INFO,
-                            value=info_strings.VIDEO_INFO_UPLOAD_DETAILED_INFORMATION
+                            label="Video Information", interactive=False, lines=6,
+                            info=info_strings.VIDEO_INFO_DURATION_FPS_FRAMES_RESOLUTION_INFO, value=info_strings.VIDEO_INFO_UPLOAD_DETAILED_INFORMATION
                         )
                     with gr.Row():
                         cut_and_save_btn = gr.Button("Cut and Save", variant="primary", icon="icons/cut_paste.png")
                         cut_and_upscale_btn = gr.Button("Cut and Move to Upscale", variant="primary", icon="icons/move_icon.png")
                     with gr.Accordion("Cutting Settings", open=True):
-                        cutting_mode = gr.Radio(
-                            label="Cutting Mode",
-                            choices=['time_ranges', 'frame_ranges'],
-                            value='time_ranges',
-                            info=info_strings.CUTTING_MODE_TIME_FRAME_BASED_INFO
-                        )
+                        cutting_mode = gr.Radio(label="Cutting Mode", choices=['time_ranges', 'frame_ranges'], value='time_ranges', info=info_strings.CUTTING_MODE_TIME_FRAME_BASED_INFO)
                         with gr.Group() as time_range_controls:
                             time_ranges_input = gr.Textbox(
-                                label="Time Ranges (seconds)",
-                                placeholder="1-3,5-8,10-15 or 1:30-2:45,3:00-4:30",
-                                info=info_strings.TIME_RANGES_FORMAT_DECIMAL_MM_SS_INFO,
-                                lines=2
+                                label="Time Ranges (seconds)", placeholder="1-3,5-8,10-15 or 1:30-2:45,3:00-4:30",
+                                info=info_strings.TIME_RANGES_FORMAT_DECIMAL_MM_SS_INFO, lines=2
                             )
                         with gr.Group(visible=False) as frame_range_controls:
                             frame_ranges_input = gr.Textbox(
-                                label="Frame Ranges",
-                                placeholder="30-90,150-210,300-450",
-                                info=info_strings.FRAME_RANGES_FORMAT_ZERO_INDEXED_INFO,
-                                lines=2
+                                label="Frame Ranges", placeholder="30-90,150-210,300-450",
+                                info=info_strings.FRAME_RANGES_FORMAT_ZERO_INDEXED_INFO, lines=2
                             )
-                        cut_info_display = gr.Textbox(
-                            label="Cut Analysis",
-                            interactive=False,
-                            lines=3,
-                            info=CUT_ANALYSIS_INFO,
-                            value=DEFAULT_STATUS_MESSAGES['cut_analysis']
-                        )
+                        cut_info_display = gr.Textbox(label="Cut Analysis", interactive=False, lines=3, info=CUT_ANALYSIS_INFO, value=DEFAULT_STATUS_MESSAGES['cut_analysis'])
                     with gr.Accordion("Options", open=True):
-                        precise_cutting_mode = gr.Radio(
-                            label="Cutting Precision",
-                            choices=['precise', 'fast'],
-                            value='precise',
-                            info=info_strings.PRECISE_CUTTING_FRAME_ACCURATE_FAST_COPY_INFO
+                        precise_cutting_mode = create_radio(
+                            config_path=('video_editing', 'precise_cutting_mode'), ui_dict=ui_components,
+                            label="Cutting Precision", choices=['precise', 'fast'], value='precise', info=info_strings.PRECISE_CUTTING_FRAME_ACCURATE_FAST_COPY_INFO
                         )
-                        ui_components[('video_editing', 'precise_cutting_mode')] = precise_cutting_mode
-                        preview_first_segment = gr.Checkbox(
-                            label=GENERATE_PREVIEW_FIRST_SEGMENT_LABEL,
-                            value=INITIAL_APP_CONFIG.video_editing.preview_first_segment,
-                            info=info_strings.PREVIEW_FIRST_SEGMENT_VERIFICATION_INFO
+                        preview_first_segment = create_checkbox(
+                            config_path=('video_editing', 'preview_first_segment'), ui_dict=ui_components,
+                            label=GENERATE_PREVIEW_FIRST_SEGMENT_LABEL, info=info_strings.PREVIEW_FIRST_SEGMENT_VERIFICATION_INFO
                         )
-                        ui_components[('video_editing', 'preview_first_segment')] = preview_first_segment
-                        processing_estimate = gr.Textbox(
-                            label="Processing Time Estimate",
-                            interactive=False,
-                            lines=1,
-                            value=DEFAULT_TIME_ESTIMATE_STATUS
-                        )
+                        processing_estimate = gr.Textbox(label="Processing Time Estimate", interactive=False, lines=1, value=DEFAULT_TIME_ESTIMATE_STATUS)
                 with gr.Column(scale=1):
                     with gr.Group():
-                        output_video_edit = gr.Video(
-                            label="Cut Video Output",
-                            interactive=False,
-                            height=400
-                        )
-                        preview_video_edit = gr.Video(
-                            label="Preview (First Segment)",
-                            interactive=False,
-                            height=300
-                        )
+                        output_video_edit = gr.Video(label="Cut Video Output", interactive=False, height=400)
+                        preview_video_edit = gr.Video(label="Preview (First Segment)", interactive=False, height=300)
                     with gr.Group():
-                        edit_status_textbox = gr.Textbox(
-                            label="Edit Status & Log",
-                            interactive=False,
-                            lines=8,
-                            max_lines=15,
-                            value=DEFAULT_STATUS_MESSAGES['ready_video']
-                        )
+                        edit_status_textbox = gr.Textbox(label="Edit Status & Log", interactive=False, lines=8, max_lines=15, value=DEFAULT_STATUS_MESSAGES['ready_video'])
                     with gr.Accordion("Quick Help & Examples", open=True):
                         gr.Markdown(VIDEO_EDITING_HELP)
 
@@ -1655,116 +1344,73 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             with gr.Row():
                 with gr.Column(scale=1):
                     with gr.Group():
-                        input_video_face_restoration = gr.Video(
-                            label=INPUT_VIDEO_FACE_RESTORATION_LABEL,
-                            sources=["upload"],
-                            interactive=True,
-                            height=400
+                        input_video_face_restoration = create_video_component(
+                            config_path=('standalone_face_restoration', 'input_video'), ui_dict=ui_components,
+                            label=INPUT_VIDEO_FACE_RESTORATION_LABEL, sources=["upload"], interactive=True, height=400
                         )
-                        ui_components[('standalone_face_restoration', 'input_video')] = input_video_face_restoration
-                        face_restoration_mode = gr.Radio(
-                            label="Processing Mode",
-                            choices=["Single Video", "Batch Folder"],
-                            value="Single Video",
-                            info=info_strings.PROCESSING_MODE_SINGLE_BATCH_FOLDER_INFO
+                        face_restoration_mode = create_radio(
+                            config_path=('standalone_face_restoration', 'mode'), ui_dict=ui_components,
+                            label="Processing Mode", choices=["Single Video", "Batch Folder"], value="Single Video", info=info_strings.PROCESSING_MODE_SINGLE_BATCH_FOLDER_INFO
                         )
-                        ui_components[('standalone_face_restoration', 'mode')] = face_restoration_mode
                         with gr.Group(visible=False) as batch_folder_controls:
-                            batch_input_folder_face = gr.Textbox(
-                                label="Input Folder Path",
-                                placeholder="C:/path/to/input/videos/",
-                                info=info_strings.FACE_RESTORATION_INPUT_FOLDER_VIDEOS_INFO
+                            batch_input_folder_face = create_textbox(
+                                config_path=('standalone_face_restoration', 'batch_input_folder'), ui_dict=ui_components,
+                                label="Input Folder Path", placeholder="C:/path/to/input/videos/", info=info_strings.FACE_RESTORATION_INPUT_FOLDER_VIDEOS_INFO
                             )
-                            ui_components[('standalone_face_restoration', 'batch_input_folder')] = batch_input_folder_face
-                            batch_output_folder_face = gr.Textbox(
-                                label="Output Folder Path",
-                                placeholder="C:/path/to/output/videos/",
-                                info=info_strings.FACE_RESTORATION_OUTPUT_FOLDER_VIDEOS_INFO
+                            batch_output_folder_face = create_textbox(
+                                config_path=('standalone_face_restoration', 'batch_output_folder'), ui_dict=ui_components,
+                                label="Output Folder Path", placeholder="C:/path/to/output/videos/", info=info_strings.FACE_RESTORATION_OUTPUT_FOLDER_VIDEOS_INFO
                             )
-                            ui_components[('standalone_face_restoration', 'batch_output_folder')] = batch_output_folder_face
                     with gr.Row():
                         face_restoration_process_btn = gr.Button("Process Face Restoration", variant="primary", icon="icons/face_restoration.png")
                         face_restoration_stop_btn = gr.Button("Stop Processing", variant="stop")
                     with gr.Accordion("Face Restoration Settings", open=True):
-                        standalone_enable_face_restoration = gr.Checkbox(
-                            label="Enable Face Restoration",
-                            value=INITIAL_APP_CONFIG.face_restoration.enable,
-                            info=info_strings.FACE_RESTORATION_ENABLE_PROCESSING_OCCUR_INFO
+                        standalone_enable_face_restoration = gr.Checkbox(label="Enable Face Restoration", value=True, info=info_strings.FACE_RESTORATION_ENABLE_PROCESSING_OCCUR_INFO)
+                        standalone_face_restoration_fidelity = create_slider(
+                            config_path=('standalone_face_restoration', 'fidelity_weight'), ui_dict=ui_components,
+                            label=FACE_RESTORATION_FIDELITY_WEIGHT_LABEL, minimum=0.0, maximum=1.0, step=0.05, info=info_strings.FACE_RESTORATION_FIDELITY_BALANCE_RECOMMENDED_INFO
                         )
-                        standalone_face_restoration_fidelity = gr.Slider(
-                            label=FACE_RESTORATION_FIDELITY_WEIGHT_LABEL,
-                            minimum=0.0, maximum=1.0, value=INITIAL_APP_CONFIG.standalone_face_restoration.fidelity_weight, step=0.05,
-                            info=info_strings.FACE_RESTORATION_FIDELITY_BALANCE_RECOMMENDED_INFO
+                        standalone_enable_face_colorization = create_checkbox(
+                            config_path=('standalone_face_restoration', 'enable_colorization'), ui_dict=ui_components,
+                            label="Enable Face Colorization", info=info_strings.FACE_COLORIZATION_GRAYSCALE_OLD_VIDEOS_INFO
                         )
-                        ui_components[('standalone_face_restoration', 'fidelity_weight')] = standalone_face_restoration_fidelity
-                        standalone_enable_face_colorization = gr.Checkbox(
-                            label="Enable Face Colorization",
-                            value=INITIAL_APP_CONFIG.standalone_face_restoration.enable_colorization,
-                            info=info_strings.FACE_COLORIZATION_GRAYSCALE_OLD_VIDEOS_INFO
-                        )
-                        ui_components[('standalone_face_restoration', 'enable_colorization')] = standalone_enable_face_colorization
                         with gr.Row():
                             standalone_model_choices = ["Auto (Default)", "codeformer.pth (359.2MB)"]
                             standalone_default_model_choice = "Auto (Default)"
-                            standalone_codeformer_model_dropdown = gr.Dropdown(
-                                label="CodeFormer Model",
-                                choices=standalone_model_choices,
-                                value=standalone_default_model_choice,
+                            standalone_codeformer_model_dropdown = create_dropdown(
+                                config_path=('standalone_face_restoration', 'codeformer_model'), ui_dict=ui_components,
+                                label="CodeFormer Model", choices=standalone_model_choices, value=standalone_default_model_choice,
                                 info=info_strings.CODEFORMER_MODEL_AUTO_PRETRAINED_WEIGHT_INFO
                             )
-                            ui_components[('standalone_face_restoration', 'codeformer_model')] = standalone_codeformer_model_dropdown
-                        standalone_face_restoration_batch_size = gr.Slider(
-                            label="Processing Batch Size",
-                            minimum=1, maximum=50, value=INITIAL_APP_CONFIG.standalone_face_restoration.batch_size, step=1,
-                            info=info_strings.FACE_RESTORATION_BATCH_SIZE_SIMULTANEOUS_VRAM_INFO
+                        standalone_face_restoration_batch_size = create_slider(
+                            config_path=('standalone_face_restoration', 'batch_size'), ui_dict=ui_components,
+                            label="Processing Batch Size", minimum=1, maximum=50, step=1, info=info_strings.FACE_RESTORATION_BATCH_SIZE_SIMULTANEOUS_VRAM_INFO
                         )
-                        ui_components[('standalone_face_restoration', 'batch_size')] = standalone_face_restoration_batch_size
                     with gr.Accordion("Advanced Options", open=True):
-                        standalone_save_frames = gr.Checkbox(
-                            label="Save Individual Frames",
-                            value=INITIAL_APP_CONFIG.standalone_face_restoration.save_frames,
-                            info=info_strings.SAVE_PROCESSED_FRAMES_INDIVIDUAL_FILES_INFO
+                        standalone_save_frames = create_checkbox(
+                            config_path=('standalone_face_restoration', 'save_frames'), ui_dict=ui_components,
+                            label="Save Individual Frames", info=info_strings.SAVE_PROCESSED_FRAMES_INDIVIDUAL_FILES_INFO
                         )
-                        ui_components[('standalone_face_restoration', 'save_frames')] = standalone_save_frames
-                        standalone_create_comparison = gr.Checkbox(
-                            label=CREATE_BEFORE_AFTER_COMPARISON_VIDEO_LABEL,
-                            value=INITIAL_APP_CONFIG.standalone_face_restoration.create_comparison,
-                            info=info_strings.COMPARISON_VIDEO_SIDE_BY_SIDE_ORIGINAL_RESTORED_INFO
+                        standalone_create_comparison = create_checkbox(
+                            config_path=('standalone_face_restoration', 'create_comparison'), ui_dict=ui_components,
+                            label=CREATE_BEFORE_AFTER_COMPARISON_VIDEO_LABEL, info=info_strings.COMPARISON_VIDEO_SIDE_BY_SIDE_ORIGINAL_RESTORED_INFO
                         )
-                        ui_components[('standalone_face_restoration', 'create_comparison')] = standalone_create_comparison
-                        standalone_preserve_audio = gr.Checkbox(
-                            label="Preserve Original Audio",
-                            value=INITIAL_APP_CONFIG.standalone_face_restoration.preserve_audio,
-                            info=info_strings.PRESERVE_AUDIO_TRACK_PROCESSED_VIDEO_INFO
+                        standalone_preserve_audio = create_checkbox(
+                            config_path=('standalone_face_restoration', 'preserve_audio'), ui_dict=ui_components,
+                            label="Preserve Original Audio", info=info_strings.PRESERVE_AUDIO_TRACK_PROCESSED_VIDEO_INFO
                         )
-                        ui_components[('standalone_face_restoration', 'preserve_audio')] = standalone_preserve_audio
                 with gr.Column(scale=1):
                     with gr.Group():
-                        output_video_face_restoration = gr.Video(
-                            label="Face Restored Video",
-                            interactive=False,
-                            height=400
-                        )
-                        comparison_video_face_restoration = gr.Video(
-                            label="Before/After Comparison",
-                            interactive=False,
-                            height=300,
-                            visible=True
-                        )
+                        output_video_face_restoration = gr.Video(label="Face Restored Video", interactive=False, height=400)
+                        comparison_video_face_restoration = gr.Video(label="Before/After Comparison", interactive=False, height=300, visible=True)
                     with gr.Group():
                         face_restoration_status = gr.Textbox(
-                            label="Face Restoration Status & Log",
-                            interactive=False,
-                            lines=10,
-                            max_lines=20,
+                            label="Face Restoration Status & Log", interactive=False, lines=10, max_lines=20,
                             value=DEFAULT_STATUS_MESSAGES['ready_face_restoration']
                         )
                     with gr.Accordion("Processing Statistics", open=True):
                         face_restoration_stats = gr.Textbox(
-                            label="Processing Stats",
-                            interactive=False,
-                            lines=4,
-                            value=DEFAULT_STATUS_MESSAGES['ready_processing_stats']
+                            label="Processing Stats", interactive=False, lines=4, value=DEFAULT_STATUS_MESSAGES['ready_processing_stats']
                         )
                     with gr.Accordion("Face Restoration Help", open=True):
                         gr.Markdown(FACE_RESTORATION_HELP)
@@ -4473,7 +4119,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             block_swap_model_caching = enable_block_swap and total_vram >= 4
             logger.info(f"Applied settings: batch_size={batch_size}, block_swap={enable_block_swap}, multi_gpu={enable_multi_gpu}")
             return [
-                gr.update(value=batch_size),
+                                gr.update(value=batch_size),
                 gr.update(value=temporal_overlap),
                 gr.update(value=preserve_vram),
                 gr.update(value=color_correction),
