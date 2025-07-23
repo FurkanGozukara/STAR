@@ -4205,7 +4205,10 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 updates.append(gr.update())
 
         # Conditional updates for interactivity
-                upscaler_type_val = config_dict.get('upscaler_type', {}).get('upscaler_type', default_config.upscaler_type.upscaler_type)
+        try:
+            upscaler_type_val = config_dict.get('upscaler_type', {}).get('upscaler_type', default_config.upscaler_type.upscaler_type)
+        except AttributeError:
+            upscaler_type_val = "image_upscaler"  # fallback default
         enable_image_upscaler_val = (upscaler_type_val == "image_upscaler")
         enable_face_restoration_val = config_dict.get('face_restoration', {}).get('enable', default_config.face_restoration.enable)
         enable_target_res_val = config_dict.get('resolution', {}).get('enable_target_res', default_config.resolution.enable_target_res)
