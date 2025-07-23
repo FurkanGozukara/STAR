@@ -911,9 +911,26 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                             logger.warning(f"Failed to scan for SeedVR2 models: {e}")
                             model_choices = [info_strings.ERROR_SCANNING_SEEDVR2_MODELS_DIRECTORY_STATUS]
 
+                        # Convert stored filename to display name for initial value
+                        def convert_seedvr2_filename_to_display_name(filename, available_models_list, model_choices_list):
+                            if not filename or not available_models_list:
+                                return model_choices_list[0] if model_choices_list else "No SeedVR2 models found"
+                            
+                            # Find the model info that matches the filename
+                            for model_info in available_models_list:
+                                if model_info.get('filename') == filename:
+                                    return util_format_model_display_name(model_info)
+                            
+                            # If not found, return the first available choice
+                            return model_choices_list[0] if model_choices_list else "No SeedVR2 models found"
+
+                        initial_seedvr2_display = convert_seedvr2_filename_to_display_name(
+                            INITIAL_APP_CONFIG.seedvr2.model, available_models, model_choices
+                        )
+
                         seedvr2_model_dropdown = create_dropdown(
                             config_path=('seedvr2', 'model'), ui_dict=ui_components,
-                            label="SeedVR2 Model", choices=model_choices, value=model_choices[0],
+                            label="SeedVR2 Model", choices=model_choices, value=initial_seedvr2_display,
                             info=info_strings.SEEDVR2_MODEL_3B_7B_SPEED_QUALITY_INFO
                         )
                         with gr.Row():
@@ -3829,6 +3846,25 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             reverse_map = {"star": "Use STAR Model Upscaler", "image_upscaler": "Use Image Based Upscalers", "seedvr2": "Use SeedVR2 Video Upscaler"}
             return reverse_map.get(internal_value, "Use Image Based Upscalers")
 
+        def reverse_seedvr2_model_filename_to_display_name(filename):
+            """Convert SeedVR2 model filename to display name for dropdown"""
+            if not filename:
+                return "No SeedVR2 models found"
+            try:
+                available_models = util_scan_seedvr2_models(logger=logger)
+                if available_models:
+                    # Find the model info that matches the filename
+                    for model_info in available_models:
+                        if model_info.get('filename') == filename:
+                            return util_format_model_display_name(model_info)
+                    # If filename not found, return first available model
+                    return util_format_model_display_name(available_models[0])
+                else:
+                    return "No SeedVR2 models found"
+            except Exception as e:
+                logger.warning(f"Failed to convert SeedVR2 filename to display name: {e}")
+                return "No SeedVR2 models found"
+
         for component in preset_components:
             if isinstance(component, gr.State) or component is None:
                 updates.append(gr.update())
@@ -3845,6 +3881,8 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 elif component is gpu_selector:
                     available_gpus = util_get_available_gpus()
                     value = convert_gpu_index_to_dropdown(value, available_gpus)
+                elif component is seedvr2_model_dropdown:
+                    value = reverse_seedvr2_model_filename_to_display_name(value)
                 
                 updates.append(gr.update(value=value))
             else:
@@ -4240,6 +4278,11 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                             logger=logger
                         )
                         current_info = basic_info.get('value', '')
+                        
+                        # Pre-calculate status values for template
+                        block_swap_status = 'Enabled' if recommendations.get('enable_block_swap', False) else 'Disabled'
+                        multi_gpu_status = 'Enabled' if (len(gpus) > 1 and total_vram >= 8) else 'Disabled'
+                        
                         enhanced_info = MODEL_VALIDATION_ENHANCED_TEMPLATE.format(
                             current_info=current_info,
                             architecture="Unknown",
@@ -4247,10 +4290,8 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                             parameters="Unknown",
                             vram_usage="Unknown",
                             total_vram=total_vram,
-                            recommendations={
-                                'enable_block_swap': recommendations.get('enable_block_swap', False),
-                                'enable_multi_gpu': len(gpus) > 1 and total_vram >= 8
-                            }
+                            block_swap_status=block_swap_status,
+                            multi_gpu_status=multi_gpu_status
                         )
                         return gr.update(value=enhanced_info)
                     else:

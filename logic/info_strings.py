@@ -340,8 +340,8 @@ MODEL_VALIDATION_ENHANCED_TEMPLATE = """{current_info}
 • Scale Factor: {scale_factor}x
 • Parameters: {parameters}
 • VRAM Usage: {vram_usage}
-• Block Swap: {'Enabled' if recommendations.get('enable_block_swap', False) else 'Disabled'}
-• Multi-GPU: {'Enabled' if recommendations.get('enable_multi_gpu', False) else 'Disabled'}
+• Block Swap: {block_swap_status}
+• Multi-GPU: {multi_gpu_status}
 
 📊 Available VRAM: {total_vram:.1f}GB"""
 
