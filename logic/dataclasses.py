@@ -195,10 +195,13 @@ DEFAULT_SEEDVR2_MAX_RESOLUTION = 4096  # Maximum allowed resolution
 # Single Image Upscaling (SeedVR2)
 DEFAULT_ENABLE_SINGLE_IMAGE_UPSCALE = False
 DEFAULT_SINGLE_IMAGE_INPUT_PATH = None
-DEFAULT_SINGLE_IMAGE_OUTPUT_FORMAT = "png"  # Options: "png", "jpg", "webp"
+DEFAULT_SINGLE_IMAGE_OUTPUT_FORMAT = "PNG"  # Options: "PNG", "JPEG", "WEBP"
 DEFAULT_SINGLE_IMAGE_PRESERVE_METADATA = True
 DEFAULT_SINGLE_IMAGE_CREATE_COMPARISON = True
-DEFAULT_SINGLE_IMAGE_UPSCALER_TYPE = "seedvr2"  # Options: "seedvr2", "image_upscaler"
+DEFAULT_SINGLE_IMAGE_UPSCALER_TYPE = "Use SeedVR2 for Images"  # Options: "Use SeedVR2 for Images", "Use Image Based Upscalers"
+DEFAULT_SINGLE_IMAGE_PRESERVE_ASPECT_RATIO = True
+DEFAULT_SINGLE_IMAGE_QUALITY_LEVEL = 95  # Quality for JPEG/WEBP (70-100)
+DEFAULT_SINGLE_IMAGE_CUSTOM_SUFFIX = "_upscaled"
 
 # Face Restoration
 DEFAULT_ENABLE_FACE_RESTORATION = False
@@ -231,6 +234,7 @@ DEFAULT_PRESET_LOAD_DELAY = 0.1
 DEFAULT_CONDITIONAL_UPDATES_COUNT = 20  # Matches the number of conditional updates in load_preset_wrapper
 
 # Standalone Face Restoration Settings
+DEFAULT_STANDALONE_ENABLE_FACE_RESTORATION = True
 DEFAULT_STANDALONE_FACE_RESTORATION_FIDELITY = 0.7
 DEFAULT_STANDALONE_ENABLE_FACE_COLORIZATION = False
 DEFAULT_STANDALONE_FACE_RESTORATION_BATCH_SIZE = 4
@@ -477,10 +481,14 @@ class SingleImageUpscaleConfig:
     preserve_metadata: bool = DEFAULT_SINGLE_IMAGE_PRESERVE_METADATA
     create_comparison: bool = DEFAULT_SINGLE_IMAGE_CREATE_COMPARISON
     upscaler_type: str = DEFAULT_SINGLE_IMAGE_UPSCALER_TYPE
+    preserve_aspect_ratio: bool = DEFAULT_SINGLE_IMAGE_PRESERVE_ASPECT_RATIO
+    quality_level: int = DEFAULT_SINGLE_IMAGE_QUALITY_LEVEL
+    custom_suffix: str = DEFAULT_SINGLE_IMAGE_CUSTOM_SUFFIX
 
 @dataclass
 class StandaloneFaceRestorationConfig:
     """Configuration for standalone face restoration settings."""
+    enable: bool = DEFAULT_STANDALONE_ENABLE_FACE_RESTORATION
     fidelity_weight: float = DEFAULT_STANDALONE_FACE_RESTORATION_FIDELITY
     enable_colorization: bool = DEFAULT_STANDALONE_ENABLE_FACE_COLORIZATION
     batch_size: int = DEFAULT_STANDALONE_FACE_RESTORATION_BATCH_SIZE

@@ -516,38 +516,44 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                         )
                     with gr.Accordion("Image Upscaler Selection", open=True):
                         gr.Markdown(CHOOSE_IMAGE_UPSCALING_METHOD)
-                        image_upscaler_type_radio = gr.Radio(
+                        image_upscaler_type_radio = create_radio(
+                            config_path=('single_image_upscale', 'upscaler_type'), ui_dict=ui_components,
                             label="Select Image Upscaler Type", choices=["Use SeedVR2 for Images", "Use Image Based Upscalers"],
-                            value="Use SeedVR2 for Images", info=UPSCALER_TYPE_INFO
+                            info=UPSCALER_TYPE_INFO
                         )
                     with gr.Accordion("Image Processing Settings", open=True):
                         with gr.Row():
-                            image_preserve_aspect_ratio = gr.Checkbox(
-                                label="Preserve Aspect Ratio", value=True,
-                                info=IMAGE_PRESERVE_ASPECT_RATIO_INFO
+                            image_preserve_aspect_ratio = create_checkbox(
+                                config_path=('single_image_upscale', 'preserve_aspect_ratio'), ui_dict=ui_components,
+                                label="Preserve Aspect Ratio", info=IMAGE_PRESERVE_ASPECT_RATIO_INFO
                             )
-                            image_output_format = gr.Dropdown(
-                                label="Output Format", choices=["PNG", "JPEG", "WEBP"], value="PNG",
+                            image_output_format = create_dropdown(
+                                config_path=('single_image_upscale', 'output_format'), ui_dict=ui_components,
+                                label="Output Format", choices=["PNG", "JPEG", "WEBP"],
                                 info=IMAGE_OUTPUT_FORMAT_INFO
                             )
                         with gr.Row():
-                            image_quality_level = gr.Slider(
+                            image_quality_level = create_slider(
+                                config_path=('single_image_upscale', 'quality_level'), ui_dict=ui_components,
                                 label="Output Quality (JPEG/WEBP only)", minimum=70, maximum=100,
-                                value=95, step=1, info=IMAGE_QUALITY_INFO
+                                step=1, info=IMAGE_QUALITY_INFO
                             )
                     with gr.Accordion("Advanced Image Settings", open=False):
                         with gr.Row():
-                            image_enable_comparison = gr.Checkbox(
-                                label=CREATE_BEFORE_AFTER_COMPARISON_LABEL, value=True,
+                            image_enable_comparison = create_checkbox(
+                                config_path=('single_image_upscale', 'create_comparison'), ui_dict=ui_components,
+                                label=CREATE_BEFORE_AFTER_COMPARISON_LABEL,
                                 info=info_strings.COMPARISON_IMAGE_SIDE_BY_SIDE_INFO
                             )
-                            image_preserve_metadata = gr.Checkbox(
-                                label="Preserve Image Metadata", value=True,
+                            image_preserve_metadata = create_checkbox(
+                                config_path=('single_image_upscale', 'preserve_metadata'), ui_dict=ui_components,
+                                label="Preserve Image Metadata",
                                 info=IMAGE_PRESERVE_METADATA_INFO
                             )
                         with gr.Row():
-                            image_custom_suffix = gr.Textbox(
-                                label="Custom Output Suffix", value="_upscaled", placeholder="_upscaled",
+                            image_custom_suffix = create_textbox(
+                                config_path=('single_image_upscale', 'custom_suffix'), ui_dict=ui_components,
+                                label="Custom Output Suffix", placeholder="_upscaled",
                                 info=IMAGE_CUSTOM_SUFFIX_INFO
                             )
                     with gr.Group():
@@ -1392,7 +1398,10 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                         face_restoration_process_btn = gr.Button("Process Face Restoration", variant="primary", icon="icons/face_restoration.png")
                         face_restoration_stop_btn = gr.Button("Stop Processing", variant="stop")
                     with gr.Accordion("Face Restoration Settings", open=True):
-                        standalone_enable_face_restoration = gr.Checkbox(label="Enable Face Restoration", value=True, info=info_strings.FACE_RESTORATION_ENABLE_PROCESSING_OCCUR_INFO)
+                        standalone_enable_face_restoration = create_checkbox(
+                            config_path=('standalone_face_restoration', 'enable'), ui_dict=ui_components,
+                            label="Enable Face Restoration", info=info_strings.FACE_RESTORATION_ENABLE_PROCESSING_OCCUR_INFO
+                        )
                         standalone_face_restoration_fidelity = create_slider(
                             config_path=('standalone_face_restoration', 'fidelity_weight'), ui_dict=ui_components,
                             label=FACE_RESTORATION_FIDELITY_WEIGHT_LABEL, minimum=0.0, maximum=1.0, step=0.05, info=info_strings.FACE_RESTORATION_FIDELITY_BALANCE_RECOMMENDED_INFO
@@ -1503,13 +1512,16 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
         precise_cutting_mode, preview_first_segment,
         # Face Restoration Tab
         input_video_face_restoration, face_restoration_mode, batch_input_folder_face, batch_output_folder_face,
-        standalone_face_restoration_fidelity, standalone_enable_face_colorization,
+        standalone_enable_face_restoration, standalone_face_restoration_fidelity, standalone_enable_face_colorization,
         standalone_codeformer_model_dropdown, standalone_face_restoration_batch_size,
         standalone_save_frames, standalone_create_comparison, standalone_preserve_audio,
         # Batch Tab
         batch_input_folder, batch_output_folder, enable_batch_frame_folders, enable_direct_image_upscaling,
         batch_skip_existing, batch_use_prompt_files, batch_save_captions,
-        batch_enable_auto_caption if UTIL_COG_VLM_AVAILABLE else gr.State(False)
+        batch_enable_auto_caption if UTIL_COG_VLM_AVAILABLE else gr.State(False),
+        # Single Image Upscale Tab
+        image_upscaler_type_radio, image_preserve_aspect_ratio, image_output_format,
+        image_quality_level, image_enable_comparison, image_preserve_metadata, image_custom_suffix
     ]
 
     # Create a reverse map for faster lookups in build_app_config
