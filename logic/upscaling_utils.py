@@ -142,13 +142,26 @@ def calculate_upscale_params(orig_h, orig_w, target_h, target_w, target_res_mode
     elif target_res_mode == 'Ratio Upscale':
         if orig_h == 0 or orig_w == 0:
             raise ValueError("Original dimensions cannot be zero.")
+        
+        # Calculate max possible upscale based on target resolution
         ratio_h = final_h / orig_h
         ratio_w = final_w / orig_w
-        final_upscale_factor = min(ratio_h, ratio_w)
+        max_possible_upscale = min(ratio_h, ratio_w)
+        
+        # If custom_upscale_factor is provided (e.g., for SeedVR2), use it but limit to target
+        if custom_upscale_factor is not None:
+            # Use the custom factor (e.g., 4x for SeedVR2) but don't exceed target resolution
+            final_upscale_factor = min(custom_upscale_factor, max_possible_upscale)
+            if logger:
+                logger.info(f"Ratio Upscale mode: Using custom upscale factor {custom_upscale_factor:.2f}x, limited to {final_upscale_factor:.2f}x by target resolution")
+        else:
+            # Original behavior: scale to fit target resolution exactly
+            final_upscale_factor = max_possible_upscale
+            if logger:
+                logger.info(f"Ratio Upscale mode: Using upscale factor {final_upscale_factor:.2f}x to fit target resolution")
+        
         final_h = int(round(orig_h * final_upscale_factor / 2) * 2)
         final_w = int(round(orig_w * final_upscale_factor / 2) * 2)
-        if logger:
-            logger.info(f"Ratio Upscale mode: Using upscale factor {final_upscale_factor:.2f}")
     else:
         raise ValueError(f"Invalid target_res_mode: {target_res_mode}")
 
