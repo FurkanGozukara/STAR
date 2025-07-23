@@ -3929,6 +3929,38 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
         outputs=[preset_status, preset_dropdown]
     )
 
+    # Add a function to update resolution preview after preset loading
+    def update_after_preset_load(
+        video_path,
+        upscaler_type,
+        enable_target_res,
+        target_h,
+        target_w,
+        target_res_mode,
+        upscale_factor,
+        image_upscaler_model,
+        enable_auto_aspect_resolution,
+        current_status_text
+    ):
+        """Update resolution preview after preset is loaded"""
+        if video_path is None:
+            return current_status_text, gr.update()
+        
+        # Update both displays
+        updated_status, detailed_preview = update_both_resolution_displays(
+            video_path=video_path,
+            upscaler_type=upscaler_type,
+            enable_target_res=enable_target_res,
+            target_h=target_h,
+            target_w=target_w,
+            target_res_mode=target_res_mode,
+            upscale_factor=upscale_factor,
+            image_upscaler_model=image_upscaler_model,
+            enable_auto_aspect_resolution=enable_auto_aspect_resolution,
+            current_status_text=current_status_text
+        )
+        return updated_status, detailed_preview
+
     preset_dropdown.change(
         fn=load_preset_wrapper,
         inputs=[preset_dropdown],
@@ -3944,6 +3976,21 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             scene_drop_short_check, scene_merge_last_check,
             seed_num
         ]
+    ).then(
+        fn=update_after_preset_load,
+        inputs=[
+            input_video,
+            upscaler_type_radio,
+            enable_target_res_check,
+            target_h_num,
+            target_w_num,
+            target_res_mode_radio,
+            upscale_factor_slider,
+            image_upscaler_model_dropdown,
+            enable_auto_aspect_resolution_check,
+            status_textbox
+        ],
+        outputs=[status_textbox, output_resolution_preview]
     )
 
     refresh_presets_btn.click(
