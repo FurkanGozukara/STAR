@@ -126,6 +126,17 @@ class SeedVR2SessionManager:
         self.current_model = None
         self.is_initialized = False
         self.processing_args = None
+    
+    def get_vram_usage(self) -> Dict[str, float]:
+        """Get current VRAM usage in GB."""
+        if not torch.cuda.is_available():
+            return {"allocated": 0.0, "reserved": 0.0, "max_allocated": 0.0}
+        
+        return {
+            "allocated": torch.cuda.memory_allocated() / (1024**3),
+            "reserved": torch.cuda.memory_reserved() / (1024**3), 
+            "max_allocated": torch.cuda.max_memory_allocated() / (1024**3)
+        }
         
     def initialize_session(self, processing_args: Dict[str, Any], seedvr2_config) -> bool:
         """
@@ -157,16 +168,44 @@ class SeedVR2SessionManager:
             # Create runner ONCE for the entire session
             self.logger.info(f"🔧 Creating SeedVR2 session with model: {processing_args['model']}")
             
+            # Build block swap configuration if enabled
+            block_swap_config = None
+            if seedvr2_config and getattr(seedvr2_config, 'enable_block_swap', False):
+                blocks_to_swap = getattr(seedvr2_config, 'block_swap_counter', 0)
+                if blocks_to_swap > 0:
+                    block_swap_config = {
+                        "blocks_to_swap": blocks_to_swap,
+                        "offload_io_components": getattr(seedvr2_config, 'block_swap_offload_io', False),
+                        "use_non_blocking": True,  # Always use non-blocking transfers
+                        "enable_debug": processing_args["debug"],
+                        "cache_model": getattr(seedvr2_config, 'block_swap_model_caching', False)
+                    }
+                    self.logger.info(f"🔄 Block swap configuration:")
+                    self.logger.info(f"   - Blocks to swap: {blocks_to_swap}")
+                    self.logger.info(f"   - I/O offloading: {block_swap_config['offload_io_components']}")
+                    self.logger.info(f"   - Model caching: {block_swap_config['cache_model']}")
+                    self.logger.info(f"   - Non-blocking transfers: {block_swap_config['use_non_blocking']}")
+                    
+                    # Log VRAM status before model loading
+                    vram_status = self.get_vram_usage()
+                    self.logger.info(f"📊 VRAM before model load: {vram_status['allocated']:.2f}GB allocated, {vram_status['reserved']:.2f}GB reserved")
+            
             self.runner = configure_runner(
                 model=processing_args["model"],
                 base_cache_dir=processing_args["model_dir"],
                 preserve_vram=processing_args["preserve_vram"],
                 debug=processing_args["debug"],
-                block_swap_config=None  # Disabled for stability
+                block_swap_config=block_swap_config
             )
             
             self.current_model = processing_args["model"]
             self.is_initialized = True
+            
+            # Log VRAM status after model loading
+            if block_swap_config:
+                vram_status = self.get_vram_usage()
+                self.logger.info(f"📊 VRAM after model load: {vram_status['allocated']:.2f}GB allocated, {vram_status['reserved']:.2f}GB reserved")
+                self.logger.info(f"   - Max allocated: {vram_status['max_allocated']:.2f}GB")
             
             self.logger.info("✅ SeedVR2 session initialized successfully")
             return True
@@ -288,16 +327,32 @@ class SeedVR2SessionManager:
             self.logger.info("🧹 Cleaning up SeedVR2 session...")
             
             if self.runner:
-                # Proper cleanup of runner components
-                if hasattr(self.runner, 'dit') and self.runner.dit is not None:
-                    if hasattr(self.runner.dit, 'cpu'):
-                        self.runner.dit.cpu()
-                    del self.runner.dit
-                    self.runner.dit = None
+                # Check if block swap is active and should cache model
+                keep_model_cached = False
+                if hasattr(self.runner, '_blockswap_active') and self.runner._blockswap_active:
+                    # Check if model caching is enabled
+                    block_config = getattr(self.runner, '_block_swap_config', {})
+                    keep_model_cached = block_config.get('cache_model', False)
+                    
+                    # Import and run block swap cleanup
+                    try:
+                        from src.optimization.blockswap import cleanup_blockswap
+                        cleanup_blockswap(self.runner, keep_state_for_cache=keep_model_cached)
+                        self.logger.info(f"✅ Block swap cleanup completed (cache_model={keep_model_cached})")
+                    except Exception as e:
+                        self.logger.warning(f"Block swap cleanup failed: {e}")
                 
-                if hasattr(self.runner, 'vae') and self.runner.vae is not None:
-                    if hasattr(self.runner.vae, 'cpu'):
-                        self.runner.vae.cpu()
+                # Proper cleanup of runner components if not caching
+                if not keep_model_cached:
+                    if hasattr(self.runner, 'dit') and self.runner.dit is not None:
+                        if hasattr(self.runner.dit, 'cpu'):
+                            self.runner.dit.cpu()
+                        del self.runner.dit
+                        self.runner.dit = None
+                    
+                    if hasattr(self.runner, 'vae') and self.runner.vae is not None:
+                        if hasattr(self.runner.vae, 'cpu'):
+                            self.runner.vae.cpu()
                     del self.runner.vae
                     self.runner.vae = None
                 
@@ -1965,33 +2020,12 @@ def validate_and_fix_seedvr2_config(seedvr2_config, debug: bool = False):
             if debug:
                 print(f"🔄 Adjusted batch size from {old_batch} to {seedvr2_config.batch_size} for optimal processing")
     
-    # FORCE DISABLE block swap for stability (ComfyUI dependencies removed)
-    if hasattr(seedvr2_config, 'enable_block_swap'):
-        if seedvr2_config.enable_block_swap:
-            seedvr2_config.enable_block_swap = False
-            if debug:
-                print("🔄 DISABLED block swap for stability (ComfyUI dependencies removed)")
-    
-    # Ensure block swap counter is 0
-    if hasattr(seedvr2_config, 'block_swap_counter'):
-        if seedvr2_config.block_swap_counter > 0:
-            old_counter = seedvr2_config.block_swap_counter
-            seedvr2_config.block_swap_counter = 0
-            if debug:
-                print(f"🔄 Reset block swap counter from {old_counter} to 0 for stability")
-    
-    # Disable all block swap related features
-    if hasattr(seedvr2_config, 'block_swap_offload_io'):
-        if seedvr2_config.block_swap_offload_io:
-            seedvr2_config.block_swap_offload_io = False
-            if debug:
-                print("🔄 Disabled block swap I/O offloading for stability")
-    
-    if hasattr(seedvr2_config, 'block_swap_model_caching'):
-        if seedvr2_config.block_swap_model_caching:
-            seedvr2_config.block_swap_model_caching = False
-            if debug:
-                print("🔄 Disabled block swap model caching for stability")
+    # Log block swap configuration if enabled
+    if hasattr(seedvr2_config, 'enable_block_swap') and seedvr2_config.enable_block_swap:
+        if debug:
+            print(f"🔄 Block swap enabled with {seedvr2_config.block_swap_counter} blocks")
+            print(f"   - I/O offloading: {getattr(seedvr2_config, 'block_swap_offload_io', False)}")
+            print(f"   - Model caching: {getattr(seedvr2_config, 'block_swap_model_caching', False)}")
     
     # Disable temporal overlap for stability if block swap was attempted
     if hasattr(seedvr2_config, 'temporal_overlap'):
