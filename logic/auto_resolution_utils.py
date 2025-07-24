@@ -11,7 +11,7 @@ from typing import Tuple, Optional
 import logging
 
 from .ffmpeg_utils import get_video_info, get_video_info_fast
-from .dataclasses import ResolutionConfig
+from .star_dataclasses import ResolutionConfig
 
 
 def calculate_optimal_resolution(

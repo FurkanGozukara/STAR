@@ -5,7 +5,7 @@ import logging
 import dataclasses
 from typing import Dict, Any, List, Optional
 
-from .dataclasses import AppConfig # Import AppConfig for type hinting and default values
+from .star_dataclasses import AppConfig # Import AppConfig for type hinting and default values
 
 logger = logging.getLogger(__name__)
 

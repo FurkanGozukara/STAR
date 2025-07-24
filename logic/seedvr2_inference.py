@@ -29,7 +29,7 @@ if seedvr2_path not in sys.path:
 # Import STAR utilities
 from .seedvr2_model_manager import get_seedvr2_model_manager, SEEDVR2_AVAILABLE
 from .ffmpeg_utils import get_video_info
-from .dataclasses import AppConfig, DEFAULT_SEEDVR2_DEFAULT_RESOLUTION
+from .star_dataclasses import AppConfig, DEFAULT_SEEDVR2_DEFAULT_RESOLUTION
 
 # Import SeedVR2 components (now with fixed ComfyUI dependencies)
 if SEEDVR2_AVAILABLE:

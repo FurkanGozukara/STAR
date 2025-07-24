@@ -13,7 +13,7 @@ from easydict import EasyDict
 
 # Local logic imports
 from logic import metadata_handler, config as app_config_module, preset_handler, info_strings
-from logic.dataclasses import (
+from logic.star_dataclasses import (
     AppConfig, create_app_config, UTIL_COG_VLM_AVAILABLE, UTIL_BITSANDBYTES_AVAILABLE,
     get_cogvlm_quant_choices_map, get_default_cogvlm_quant_display,
     PathConfig, PromptConfig, StarModelConfig, PerformanceConfig, ResolutionConfig,
@@ -1531,7 +1531,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
         if mode == 'fast':
             return gr.update(value=INITIAL_APP_CONFIG.star_model.steps, interactive=False)
         else:
-            from logic.dataclasses import DEFAULT_DIFFUSION_STEPS_NORMAL
+            from logic.star_dataclasses import DEFAULT_DIFFUSION_STEPS_NORMAL
             return gr.update(value=DEFAULT_DIFFUSION_STEPS_NORMAL, interactive=True)
     solver_mode_radio.change(update_steps_display, solver_mode_radio, steps_slider)
 
@@ -1868,7 +1868,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
     )
 
     def update_ffmpeg_quality_settings(use_gpu_ffmpeg):
-        from logic.dataclasses import DEFAULT_FFMPEG_QUALITY_GPU, DEFAULT_FFMPEG_QUALITY_CPU
+        from logic.star_dataclasses import DEFAULT_FFMPEG_QUALITY_GPU, DEFAULT_FFMPEG_QUALITY_CPU
         if use_gpu_ffmpeg:
             return gr.Slider(label=FFMPEG_QUALITY_CRF_LIBX264_CQ_NVENC_LABEL, value=DEFAULT_FFMPEG_QUALITY_GPU, info=info_strings.FFMPEG_H264_NVENC_CQ_QUALITY_RANGE_INFO)
         else:
@@ -3179,7 +3179,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 effective_upscale_factor = app_config.resolution.upscale_factor
                 model_name = "STAR Model (4x)"
             elif internal_upscaler_type == "seedvr2":
-                from logic.dataclasses import DEFAULT_SEEDVR2_UPSCALE_FACTOR
+                from logic.star_dataclasses import DEFAULT_SEEDVR2_UPSCALE_FACTOR
                 effective_upscale_factor = DEFAULT_SEEDVR2_UPSCALE_FACTOR
                 model_name = "SeedVR2 (4x)"
             else:
@@ -3302,7 +3302,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 effective_upscale_factor = upscale_factor
                 model_name = "STAR Model (4x)"
             elif internal_upscaler_type == "seedvr2":
-                from logic.dataclasses import DEFAULT_SEEDVR2_UPSCALE_FACTOR
+                from logic.star_dataclasses import DEFAULT_SEEDVR2_UPSCALE_FACTOR
                 effective_upscale_factor = DEFAULT_SEEDVR2_UPSCALE_FACTOR
                 model_name = "SeedVR2 (4x)"
             else:
@@ -4513,7 +4513,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
         try:
             if upscaler_type == "Use SeedVR2 for Images":
                 actual_upscaler_type = "seedvr2"
-                from logic.dataclasses import SeedVR2Config
+                from logic.star_dataclasses import SeedVR2Config
                 seedvr2_config = SeedVR2Config()
                 image_upscaler_model = None
             else:

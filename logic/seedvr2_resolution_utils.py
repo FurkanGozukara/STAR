@@ -64,7 +64,7 @@ from typing import Optional, Tuple, Union, Dict, Any, List
 from PIL import Image
 
 # Import constants
-from .dataclasses import (
+from .star_dataclasses import (
     DEFAULT_SEEDVR2_UPSCALE_FACTOR,
     DEFAULT_SEEDVR2_DEFAULT_RESOLUTION,
     DEFAULT_SEEDVR2_MIN_RESOLUTION,

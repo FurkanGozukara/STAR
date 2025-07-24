@@ -1,0 +1,1 @@
+# ComfyUI compatibility module - renamed to avoid conflicts

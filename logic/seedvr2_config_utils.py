@@ -23,7 +23,7 @@ from typing import Optional, Dict, Any, Union, TypeVar, Type
 from dataclasses import dataclass
 
 # Import constants from dataclasses
-from .dataclasses import (
+from .star_dataclasses import (
     DEFAULT_SEEDVR2_UPSCALE_FACTOR,
     DEFAULT_SEEDVR2_DEFAULT_RESOLUTION,
     DEFAULT_SEEDVR2_MIN_RESOLUTION,

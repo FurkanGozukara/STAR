@@ -439,7 +439,7 @@ def run_upscale (
             # Pass SeedVR2 upscale factor if using SeedVR2
             custom_upscale_factor = None
             if enable_seedvr2 and seedvr2_config:
-                from .dataclasses import DEFAULT_SEEDVR2_UPSCALE_FACTOR
+                from .star_dataclasses import DEFAULT_SEEDVR2_UPSCALE_FACTOR
                 custom_upscale_factor = DEFAULT_SEEDVR2_UPSCALE_FACTOR
                 
                 # Add SeedVR2 configuration to metadata
