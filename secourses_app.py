@@ -4093,12 +4093,20 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             return gr.update(value=f"Error loading model information: {e}")
 
     def update_block_swap_controls(enable_block_swap, block_swap_counter):
-        if not enable_block_swap or block_swap_counter == 0:
+        if not enable_block_swap:
             return (
-                gr.update(interactive=False),
+                gr.update(interactive=False, value=0),
                 gr.update(interactive=False),
                 gr.update(interactive=False),
                 gr.update(value="Block swap disabled")
+            )
+        elif block_swap_counter == 0:
+            # Block swap is enabled but counter is 0
+            return (
+                gr.update(interactive=True),
+                gr.update(interactive=True),
+                gr.update(interactive=True),
+                gr.update(value="⚠️ Block swap enabled but counter is 0. Increase the counter to activate block swapping.")
             )
         else:
             try:
