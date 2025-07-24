@@ -1428,7 +1428,7 @@ def _process_single_gpu_cli_generator(
                     empty_tensor = torch.zeros(0, frames_tensor.shape[1], frames_tensor.shape[2], frames_tensor.shape[3], dtype=torch.float16)
                 else:
                     empty_tensor = torch.zeros(0, 256, 256, 3, dtype=torch.float16)
-                return empty_tensor, [], None
+                yield empty_tensor, [], None, "Failed to initialize session"
             else:
                 if logger:
                     logger.info("✅ SeedVR2 session initialized successfully for processing")
@@ -1451,312 +1451,103 @@ def _process_single_gpu_cli_generator(
         logger.info(f"Processing {total_frames} frames in batches of {batch_size} with overlap {temporal_overlap}")
         logger.info(f"Total batches to process: {total_batches}")
         
-        # ✅ BATCH PROCESSING: Main processing loop
-        logger.info(f"🚀 Starting batch processing: {total_batches} batches to process")
+        # ✅ BATCH PROCESSING: Process ALL frames at once like ComfyUI
+        logger.info(f"🚀 Processing all {total_frames} frames in a single generation_loop call")
         
-        # ✅ FIX: Initialize variables for "Optimize Last Chunk Quality" logic
-        step_size = batch_size - temporal_overlap if temporal_overlap > 0 else batch_size
-        last_batch_frames = None  # Store frames for last batch optimization
+        # Check for cancellation before processing
+        cancellation_manager.check_cancel()
         
-        for i in range(0, total_frames, step_size):
-            # Check for cancellation
-            cancellation_manager.check_cancel()
+        try:
+            # Get the current resolution from frames
+            current_height, current_width = frames_tensor.shape[1], frames_tensor.shape[2]
             
-            end_idx = min(i + batch_size, total_frames)
-            batch_frames = frames_tensor[i:end_idx]
+            # Calculate target resolution
+            if processing_args.get("resolution"):
+                res_w = processing_args["resolution"]
+            else:
+                # Use larger dimension as base, cap at reasonable size
+                base_res = max(current_height, current_width)
+                res_w = max(512, min(1920, base_res * 4))
             
-            batch_num = i // step_size + 1
-            is_last_batch = (batch_num == total_batches)
+            # Import generation function
+            from src.core.generation import generation_loop
             
-            # ✅ FIX: Implement "Optimize Last Chunk Quality" logic for last batch
-            if is_last_batch and batch_frames.shape[0] < batch_size and last_batch_frames is not None:
-                # Last batch is too small - enhance it with frames from previous batch
-                frames_needed = batch_size - batch_frames.shape[0]
-                if last_batch_frames.shape[0] >= frames_needed:
-                    # Take the last N frames from previous batch
-                    enhancement_frames = last_batch_frames[-frames_needed:]
-                    # Combine: enhancement_frames + current_batch_frames
-                    enhanced_batch = torch.cat([enhancement_frames, batch_frames], dim=0)
-                    logger.info(f"🔧 Optimizing last batch quality: enhanced {batch_frames.shape[0]} frames with {frames_needed} frames from previous batch")
-                    logger.info(f"🎯 Last batch size: {batch_frames.shape[0]} -> {enhanced_batch.shape[0]} frames")
-                    batch_frames = enhanced_batch
-                else:
-                    logger.warning(f"Cannot optimize last batch - previous batch too small ({last_batch_frames.shape[0]} frames)")
+            # ✅ Process ALL frames at once - generation_loop will handle batching internally
+            logger.info(f"🔍 Processing all frames - Input tensor shape: {frames_tensor.shape}, dtype: {frames_tensor.dtype}")
+            logger.info(f"🔍 Frame count constraint check: {frames_tensor.shape[0]} % 4 = {frames_tensor.shape[0] % 4} (should be 1)")
+            logger.info(f"🎯 Target resolution: {res_w}")
             
-            if logger:
-                logger.info(f"📦 Preparing batch {batch_num}/{total_batches}: frames {i}-{end_idx-1} (size: {batch_frames.shape[0]})")
+            # Progress callback wrapper
+            def generation_progress_callback(batch_idx, total_batches, current_batch_frames, message=""):
+                logger.info(f"📦 Processing batch {batch_idx}/{total_batches}: {current_batch_frames} frames - {message}")
+                # Call the outer progress_callback if provided
+                if progress_callback:
+                    progress_pct = (batch_idx / total_batches) * 0.8 + 0.2  # Scale to 20-100%
+                    progress_callback(progress_pct, f"Processing batch {batch_idx}/{total_batches} ({int(progress_pct * 100)}%)")
             
-            # ✅ BATCH PROCESSING: Process each batch
-            if logger:
-                logger.info(f"Processing batch {batch_num}: frames {i}-{end_idx-1} (batch size: {batch_size})")
-            
-            # ✅ FIX: Reduce verbose batch processing messages
-            # Only show essential progress information
-            try:
-                # ✅ FIX: Check if session manager is properly initialized
-                if session_manager is None or not session_manager.is_initialized:
-                    logger.error(f"No active SeedVR2 session available for batch {batch_num}")
-                    continue
-                
-                if logger:
-                    logger.info(f"🔄 Processing batch {batch_num} with session manager...")
-                
-                # ✅ FIX: Use session manager's process_batch method directly
-                processed_batch = session_manager.process_batch(batch_frames)
-                
-                # ✅ FIX: Ensure proper tensor format to prevent black video
-                if not isinstance(processed_batch, torch.Tensor):
-                    processed_batch = torch.from_numpy(processed_batch)
-                
-                # Convert to CPU and ensure proper data type and value range
-                if processed_batch.device != torch.device('cpu'):
-                    processed_batch = processed_batch.cpu()
-                
-                # Use float32 for better precision instead of float16
-                if processed_batch.dtype != torch.float32:
-                    processed_batch = processed_batch.float()
-                
-                # ✅ FIX: Ensure values are in correct range [0, 1] to prevent black/white videos
-                processed_batch = torch.clamp(processed_batch, 0.0, 1.0)
-                
-                # ✅ FIX: Only log completion, not every step
-                if logger:
-                    logger.info(f"📊 Batch {batch_num} processed: {processed_batch.shape[0]} frames")
-                
-                # Save processed frames immediately if requested
+            # Frame save callback wrapper
+            def frame_save_callback(batch_tensor, batch_num, start_idx, end_idx):
                 if save_frames and processed_frames_permanent_save_path:
-                    # ✅ FIX: Reduced logging for frame saving
                     saved_count = _save_batch_frames_immediately(
-                        processed_batch, 
-                        batch_num, 
-                        i,  # Use loop variable i as frames_start_idx
+                        batch_tensor,
+                        batch_num,
+                        start_idx,
                         processed_frames_permanent_save_path,
                         logger
                     )
-                    if logger and saved_count > 0:
-                        logger.info(f"Saved {saved_count} frames from batch {batch_num}")
-                
-            except Exception as batch_error:
-                logger.error(f"Error processing batch {batch_num}: {batch_error}")
-                continue
+                    logger.info(f"💾 Saved {saved_count} frames from batch {batch_num}")
             
-            # Handle overlap - remove overlapping frames from output (but not from the first batch)
-            if batch_num > 0 and temporal_overlap > 0 and processed_batch.shape[0] > temporal_overlap:
-                processed_batch = processed_batch[temporal_overlap:]
-                if logger:
-                    logger.info(f"📊 After overlap removal: {processed_batch.shape[0]} frames kept from batch {batch_num}")
+            # Call generation_loop ONCE with ALL frames
+            result_tensor = generation_loop(
+                runner=session_manager.runner,
+                images=frames_tensor,
+                cfg_scale=processing_args.get("cfg_scale", 1.0),
+                seed=processing_args.get("seed", -1),
+                res_w=res_w,
+                batch_size=batch_size,
+                preserve_vram=processing_args["preserve_vram"],
+                temporal_overlap=temporal_overlap,
+                debug=processing_args.get("debug", False),
+                block_swap_config=session_manager.block_swap_config,
+                progress_callback=generation_progress_callback,
+                frame_save_callback=frame_save_callback
+            )
             
-            # ✅ FIX: Handle last batch optimization - remove enhancement frames from output
-            if is_last_batch and last_batch_frames is not None and batch_frames.shape[0] > (end_idx - i):
-                # This batch was enhanced, only keep the frames that correspond to original input
-                original_frames_in_batch = end_idx - i
-                enhanced_frames_count = batch_frames.shape[0] - original_frames_in_batch
-                if enhanced_frames_count > 0:
-                    # Remove the enhancement frames (they're at the beginning)
-                    processed_batch = processed_batch[enhanced_frames_count:]
-                    logger.info(f"🔧 Removed {enhanced_frames_count} enhancement frames from last batch output")
-                    logger.info(f"📊 Final batch output: {processed_batch.shape[0]} frames")
+            logger.info(f"✅ Generation completed successfully: output shape {result_tensor.shape}")
             
-            # ✅ FIX: Store current batch frames for potential use in last batch optimization
-            if not is_last_batch:
-                last_batch_frames = batch_frames.clone()  # Store for next iteration
-            
-            processed_frames.append(processed_batch)
-            total_processed_frames += processed_batch.shape[0]
-            
-            # ✅ FIX: Accumulate frames for Preview Frame Count logic
-            if chunks_permanent_save_path and seedvr2_config.enable_chunk_preview:
-                accumulated_frames.append(processed_batch)
-                
-                # Calculate total accumulated frames
-                total_accumulated_frames = sum(chunk.shape[0] for chunk in accumulated_frames)
-                
-                # ✅ FIX: Generate chunk preview when reaching user's chunk frame count threshold
-                # Instead of waiting for 125 frames, use the user's setting (e.g., 25 frames)
-                if total_accumulated_frames >= chunk_frame_count:
-                    # Concatenate all accumulated frames
-                    combined_tensor = torch.cat(accumulated_frames, dim=0)
-                    
-                    # ✅ FIX: Create multiple chunks of user's specified size
-                    chunk_start_frame = (len(chunk_results)) * chunk_frame_count + 1  # 1-based for display
-                    chunk_end_frame = min(chunk_start_frame + chunk_frame_count - 1, total_accumulated_frames)
-                    
-                    # Take exactly chunk_frame_count frames (or remaining frames for last chunk)
-                    frames_for_chunk = min(chunk_frame_count, total_accumulated_frames)
-                    chunk_tensor = combined_tensor[:frames_for_chunk]
-                    
-                    if logger:
-                        logger.info(f"Saving 1 chunk previews to {chunks_permanent_save_path}")
-                        logger.info(f"Processing chunk {len(chunk_results) + 1}: {frames_for_chunk} frames, shape: {chunk_tensor.shape}")
-                    
-                    # Create chunk result with proper frame numbering
-                    chunk_result = {
-                        'frames_tensor': chunk_tensor,
-                        'chunk_id': len(chunk_results) + 1,
-                        'frame_count': frames_for_chunk,
-                        'processing_time': time.time(),
-                        'device_id': device_id,
-                        'accumulated_frame_count': total_accumulated_frames,
-                        'chunk_start_frame': chunk_start_frame,
-                        'chunk_end_frame': chunk_end_frame
-                    }
-                    chunk_results.append(chunk_result)
-                    
-                    # Generate chunk preview immediately
-                    last_chunk_path = _save_seedvr2_chunk_previews(
-                        [chunk_result],  # Only pass the current chunk
-                        chunks_permanent_save_path,
-                        original_fps or 30.0,
-                        seedvr2_config,
-                        ffmpeg_preset,
-                        ffmpeg_quality,
-                        ffmpeg_use_gpu,
-                        logger
-                    )
-                    
-                    if last_chunk_path and logger:
-                        logger.info(f"Successfully created chunk preview: chunk_{len(chunk_results):04d}.mp4")
-                        logger.info(f"Chunk preview generation complete. Last chunk: chunk_{len(chunk_results):04d}.mp4")
-                        logger.info(f"Updated chunk preview: {last_chunk_path}")
-                    
-                    # Store for return to Gradio
-                    last_chunk_video_path = last_chunk_path
-                    
-                    # ✅ FIX: Yield chunk update immediately to Gradio for real-time preview
-                    if last_chunk_path:
-                        chunk_status = f"Chunk {len(chunk_results)} created: {frames_for_chunk} frames"
-                        yield (None, chunk_results, last_chunk_path, chunk_status)
-                    
-                    # ✅ FIX: Keep remaining frames for next chunk instead of clearing all
-                    remaining_frames = combined_tensor[frames_for_chunk:]
-                    if remaining_frames.shape[0] > 0:
-                        accumulated_frames = [remaining_frames]
-                    else:
-                        accumulated_frames = []
-                    
-                    # Keep only the last N chunks as configured
-                    if len(chunk_results) > seedvr2_config.keep_last_chunks:
-                        chunk_results = chunk_results[-seedvr2_config.keep_last_chunks:]
-            else:
-                # Legacy behavior for when chunk preview is disabled
-                chunk_result = {
-                    'frames_tensor': processed_batch,
-                    'chunk_id': batch_num,
-                    'frame_count': processed_batch.shape[0],
-                    'processing_time': time.time(),
-                    'device_id': device_id,
-                    'batch_start_frame': i,
-                    'batch_end_frame': end_idx
-                }
-                chunk_results.append(chunk_result)
-                
-                # Keep only the last N chunks
-                if len(chunk_results) >= seedvr2_config.keep_last_chunks:
-                    chunk_results = chunk_results[-seedvr2_config.keep_last_chunks:]
-                
-                # Save chunk preview
-                last_chunk_path = _save_seedvr2_chunk_previews(
-                    chunk_results,
-                    chunks_permanent_save_path,
-                    original_fps or 30.0,  # Use original_fps parameter or default to 30.0
-                    seedvr2_config,
-                    ffmpeg_preset,
-                    ffmpeg_quality,
-                    ffmpeg_use_gpu,
-                    logger
-                )
-                
-                if last_chunk_path and logger:
-                    logger.info(f"Updated chunk preview: {last_chunk_path}")
-            
-            # Update progress
-            if progress_callback:
-                progress = 0.2 + 0.6 * (batch_num / total_batches)
-                progress_callback(progress, f"Batch {batch_num + 1}/{total_batches} completed")
-        
-        # ✅ FIX: Process any remaining accumulated frames as final chunk
-        if accumulated_frames and chunks_permanent_save_path and seedvr2_config.enable_chunk_preview:
-            remaining_tensor = torch.cat(accumulated_frames, dim=0)
-            if remaining_tensor.shape[0] > 0:
-                if logger:
-                    logger.info(f"Processing final chunk: {remaining_tensor.shape[0]} frames")
-                
-                # Create final chunk result
-                final_chunk_result = {
-                    'frames_tensor': remaining_tensor,
-                    'chunk_id': len(chunk_results) + 1,
-                    'frame_count': remaining_tensor.shape[0],
-                    'processing_time': time.time(),
-                    'device_id': device_id,
-                    'accumulated_frame_count': remaining_tensor.shape[0],
-                    'chunk_start_frame': len(chunk_results) * chunk_frame_count + 1,
-                    'chunk_end_frame': len(chunk_results) * chunk_frame_count + remaining_tensor.shape[0]
-                }
-                chunk_results.append(final_chunk_result)
-                
-                # Generate final chunk preview
-                final_chunk_path = _save_seedvr2_chunk_previews(
-                    [final_chunk_result],
-                    chunks_permanent_save_path,
-                    original_fps or 30.0,
-                    seedvr2_config,
-                    ffmpeg_preset,
-                    ffmpeg_quality,
-                    ffmpeg_use_gpu,
-                    logger
-                )
-                
-                if final_chunk_path:
-                    last_chunk_video_path = final_chunk_path
-                    if logger:
-                        logger.info(f"Successfully created final chunk preview: chunk_{len(chunk_results):04d}.mp4")
-                    
-                    # ✅ FIX: Yield final chunk update to Gradio
-                    final_chunk_status = f"Final chunk {len(chunk_results)} created: {remaining_tensor.shape[0]} frames"
-                    yield (None, chunk_results, final_chunk_path, final_chunk_status)
-
-        # ✅ FRAME COUNT VALIDATION: Check if we processed the right number of frames
-        logger.info(f"🔢 Frame count summary:")
-        logger.info(f"   Original frames: {frames_to_output}")  # Use original count, not padded
-        logger.info(f"   Total processed: {total_processed_frames}")
-        
-        # Concatenate all processed frames
-        if processed_frames:
-            result_tensor = torch.cat(processed_frames, dim=0)
-            final_frame_count = result_tensor.shape[0]
-            
-            # ✅ FIX: Trim to original frame count to remove padding frames
-            if final_frame_count > frames_to_output:
-                if logger:
-                    logger.info(f"🔧 Optimizing output quality: trimming from {final_frame_count} to {frames_to_output} frames (removing {final_frame_count - frames_to_output} padding frames)")
+            # Trim output to original frame count (remove padding)
+            if result_tensor.shape[0] > frames_to_output:
+                logger.info(f"🔧 Trimming output from {result_tensor.shape[0]} to {frames_to_output} frames (removing padding)")
                 result_tensor = result_tensor[:frames_to_output]
-                final_frame_count = result_tensor.shape[0]
-            elif final_frame_count < frames_to_output:
-                logger.warning(f"Output has fewer frames ({final_frame_count}) than expected ({frames_to_output})")
             
-            logger.info(f"📊 Final output: {final_frame_count} frames")
-        else:
-            logger.error("No processed frames available!")
-            # Return empty tensor with correct shape [0, H, W, C] instead of just [0]
-            if frames_tensor.shape[0] > 0:
+            # Frames are now saved progressively during processing via frame_save_callback
+            
+            # Convert result to list of tensors for compatibility with rest of pipeline
+            processed_frames = [result_tensor]
+            total_processed_frames = result_tensor.shape[0]
+            
+            logger.info(f"Single-GPU processing complete: {result_tensor.shape[0]} frames processed")
+            
+            # Yield final results (not return, since this is a generator)
+            yield result_tensor, [], None, "Single-GPU processing complete"
+            
+        except Exception as e:
+            logger.error(f"Error in single GPU processing: {e}")
+            # ✅ FIX: Return empty tensor with correct shape instead of just [0]
+            if frames_tensor is not None and frames_tensor.shape[0] > 0:
                 empty_tensor = torch.zeros(0, frames_tensor.shape[1], frames_tensor.shape[2], frames_tensor.shape[3], dtype=torch.float16)
             else:
                 empty_tensor = torch.zeros(0, 256, 256, 3, dtype=torch.float16)  # Default fallback shape
-            return empty_tensor, [], None
-        
-        logger.info(f"Single-GPU processing complete: {result_tensor.shape[0]} frames processed")
-        
-        # ✅ FIX: Include last_chunk_video_path in return for Gradio
-        return result_tensor, chunk_results, last_chunk_video_path, "Single-GPU processing complete"
+            yield empty_tensor, [], None, f"Error: {e}"
     
-    except Exception as e:
-        logger.error(f"Error in single GPU processing: {e}")
-        # ✅ FIX: Return empty tensor with correct shape instead of just [0]
+    except Exception as outer_e:
+        # Handle any exceptions from the outer try block
+        logger.error(f"Error in SeedVR2 processing setup: {outer_e}")
         if frames_tensor is not None and frames_tensor.shape[0] > 0:
             empty_tensor = torch.zeros(0, frames_tensor.shape[1], frames_tensor.shape[2], frames_tensor.shape[3], dtype=torch.float16)
         else:
-            empty_tensor = torch.zeros(0, 256, 256, 3, dtype=torch.float16)  # Default fallback shape
-        return empty_tensor, [], None, f"Error: {e}"
+            empty_tensor = torch.zeros(0, 256, 256, 3, dtype=torch.float16)
+        yield empty_tensor, [], None, f"Setup error: {outer_e}"
 
 
 def _process_multi_gpu_cli(
