@@ -1512,9 +1512,10 @@ def _process_single_gpu_cli_generator(
             def frame_save_callback(batch_tensor, batch_num, start_idx, end_idx):
                 nonlocal frames_processed_count, last_chunk_frame_end, chunk_results, last_chunk_video_path, accumulated_tensors
                 
-                # Always track frames processed
-                batch_frame_count = batch_tensor.shape[0]
-                frames_processed_count += batch_frame_count
+                # The actual frames saved is determined by the indices
+                # start_idx and end_idx represent the actual frame indices being saved
+                actual_frames_saved = end_idx - start_idx
+                frames_processed_count = end_idx  # Use end_idx as the total frames processed so far
                 
                 # Save frames if either save_frames is enabled OR chunk preview needs frames
                 if processed_frames_permanent_save_path and (save_frames or seedvr2_config.enable_chunk_preview):
@@ -1530,7 +1531,7 @@ def _process_single_gpu_cli_generator(
                     else:
                         logger.debug(f"💾 Saved {saved_count} frames for chunk preview")
                 
-                logger.info(f"📊 Total frames processed: {frames_processed_count}, last chunk ended at: {last_chunk_frame_end}")
+                logger.info(f"📊 Total frames saved: {frames_processed_count}, last chunk ended at: {last_chunk_frame_end}, current batch saves: {actual_frames_saved} frames")
                 
                 # Check if we have enough frames for a new chunk preview
                 if chunks_permanent_save_path and seedvr2_config.enable_chunk_preview:
