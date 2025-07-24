@@ -988,8 +988,8 @@ def run_upscale (
                     session_output_dir=frames_output_subfolder if save_frames else os.path.join(main_output_dir, base_output_filename_no_ext),
                     base_output_filename_no_ext=base_output_filename_no_ext,
                     
-                    # ✅ FIX: Pass user's chunk frame count setting (25 frames)
-                    max_chunk_len=max_chunk_len,
+                    # ✅ FIX: Pass user's chunk frame count setting from SeedVR2 config
+                    max_chunk_len=seedvr2_config.chunk_preview_frames,
                     
                     # Global settings
                     ffmpeg_preset=ffmpeg_preset,
@@ -1009,6 +1009,8 @@ def run_upscale (
                 last_chunk_video_path = None
                 output_video_path = None
                 for result_output_video_path, status_msg, chunk_video_path, chunk_status, comparison_video_path in seedvr2_generator:
+                    logger.info(f"🔄 SeedVR2 yield received - chunk_video_path: {chunk_video_path}, chunk_status: {chunk_status}")
+                    
                     # Update status log
                     if status_msg:
                         status_log.append(status_msg)
@@ -1016,12 +1018,14 @@ def run_upscale (
                     # Update chunk preview path
                     if chunk_video_path:
                         last_chunk_video_path = chunk_video_path
+                        logger.info(f"📹 Updating chunk preview path to: {chunk_video_path}")
                     
                     # Update output video path
                     if result_output_video_path:
                         output_video_path = result_output_video_path
                     
                     # Yield progress update
+                    logger.info(f"🔼 Yielding to UI - chunk_video: {last_chunk_video_path}, status: {chunk_status or 'SeedVR2 processing'}")
                     yield None, "\n".join(status_log), last_chunk_video_path, chunk_status or "SeedVR2 processing", comparison_video_path
                 
                 # SeedVR2 processing completed successfully

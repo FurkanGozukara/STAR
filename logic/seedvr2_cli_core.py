@@ -789,6 +789,13 @@ def process_video_with_seedvr2_cli(
         chunks_permanent_save_path = session_output_path / "chunks"
         chunks_permanent_save_path.mkdir(parents=True, exist_ok=True)
         
+        # If chunk preview is enabled but frames aren't being saved, we still need processed frames path
+        if seedvr2_config.enable_chunk_preview and not save_frames:
+            processed_frames_permanent_save_path = session_output_path / "temp_processed_frames"
+            processed_frames_permanent_save_path.mkdir(parents=True, exist_ok=True)
+            if logger:
+                logger.info(f"Temp frame path for chunk preview: {processed_frames_permanent_save_path}")
+        
         if logger:
             logger.info(f"Chunk preview enabled - Chunks: {chunks_permanent_save_path}")
     
@@ -965,9 +972,13 @@ def process_video_with_seedvr2_cli(
             original_fps=original_fps,
             max_chunk_len=max_chunk_len  # ✅ FIX: Pass user's chunk frame count setting
         ):
+            logger.info(f"🔍 Received processing result type: {type(processing_result)}, length: {len(processing_result) if isinstance(processing_result, tuple) else 'N/A'}")
+            
             if isinstance(processing_result, tuple) and len(processing_result) == 4:
                 # This is an intermediate chunk update
                 partial_tensor, chunk_results, chunk_video_path, chunk_status = processing_result
+                
+                logger.info(f"📊 Chunk update - partial_tensor is None: {partial_tensor is None}, chunk_video_path: {chunk_video_path}")
                 
                 if chunk_video_path:
                     if logger:
@@ -1492,9 +1503,21 @@ def _process_single_gpu_cli_generator(
                     progress_pct = (batch_idx / total_batches) * 0.8 + 0.2  # Scale to 20-100%
                     progress_callback(progress_pct, f"Processing batch {batch_idx}/{total_batches} ({int(progress_pct * 100)}%)")
             
+            # Track frames processed for chunk preview generation
+            frames_processed_count = 0
+            last_chunk_frame_end = 0
+            accumulated_tensors = []  # Store tensors for chunk creation when not saving frames
+            
             # Frame save callback wrapper
             def frame_save_callback(batch_tensor, batch_num, start_idx, end_idx):
-                if save_frames and processed_frames_permanent_save_path:
+                nonlocal frames_processed_count, last_chunk_frame_end, chunk_results, last_chunk_video_path, accumulated_tensors
+                
+                # Always track frames processed
+                batch_frame_count = batch_tensor.shape[0]
+                frames_processed_count += batch_frame_count
+                
+                # Save frames if either save_frames is enabled OR chunk preview needs frames
+                if processed_frames_permanent_save_path and (save_frames or seedvr2_config.enable_chunk_preview):
                     saved_count = _save_batch_frames_immediately(
                         batch_tensor,
                         batch_num,
@@ -1502,24 +1525,153 @@ def _process_single_gpu_cli_generator(
                         processed_frames_permanent_save_path,
                         logger
                     )
-                    logger.info(f"💾 Saved {saved_count} frames from batch {batch_num}")
+                    if save_frames:
+                        logger.info(f"💾 Saved {saved_count} frames from batch {batch_num}")
+                    else:
+                        logger.debug(f"💾 Saved {saved_count} frames for chunk preview")
+                
+                logger.info(f"📊 Total frames processed: {frames_processed_count}, last chunk ended at: {last_chunk_frame_end}")
+                
+                # Check if we have enough frames for a new chunk preview
+                if chunks_permanent_save_path and seedvr2_config.enable_chunk_preview:
+                    # Accumulate tensors if not saving frames
+                    if not save_frames:
+                        accumulated_tensors.append(batch_tensor.cpu())
+                    
+                    while frames_processed_count >= last_chunk_frame_end + max_chunk_len:
+                            # Generate chunk preview from saved frames
+                            chunk_start = last_chunk_frame_end
+                            chunk_end = chunk_start + max_chunk_len
+                            chunk_id = len(chunk_results) + 1
+                            
+                            logger.info(f"🎬 Creating chunk {chunk_id} preview from frames {chunk_start+1} to {chunk_end}")
+                            
+                            # Get chunk frames either from disk or memory
+                            chunk_frames = None
+                            
+                            if save_frames and processed_frames_permanent_save_path:
+                                # Read frames from disk for this chunk
+                                chunk_frames_list = []
+                                for frame_idx in range(chunk_start, chunk_end):
+                                    # Match the actual filename format used in _save_batch_frames_immediately
+                                    frame_path = processed_frames_permanent_save_path / f"frame{frame_idx+1:06d}.png"
+                                    if frame_path.exists():
+                                        frame_bgr = cv2.imread(str(frame_path))
+                                        if frame_bgr is not None:
+                                            frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                                            frame_tensor = torch.from_numpy(frame_rgb).float() / 255.0
+                                            chunk_frames_list.append(frame_tensor)
+                                
+                                if chunk_frames_list:
+                                    chunk_frames = torch.stack(chunk_frames_list, dim=0)
+                            else:
+                                # Use accumulated tensors from memory
+                                if accumulated_tensors:
+                                    all_frames = torch.cat(accumulated_tensors, dim=0)
+                                    if all_frames.shape[0] >= chunk_end:
+                                        chunk_frames = all_frames[chunk_start:chunk_end]
+                            
+                            if chunk_frames is not None and chunk_frames.shape[0] > 0:
+                                
+                                chunk_result = {
+                                    'frames_tensor': chunk_frames,
+                                    'chunk_id': chunk_id,
+                                    'frame_count': len(chunk_frames_list),
+                                    'processing_time': time.time(),
+                                    'device_id': device_id,
+                                    'chunk_start_frame': chunk_start + 1,
+                                    'chunk_end_frame': chunk_end
+                                }
+                                chunk_results.append(chunk_result)
+                                
+                                # Save chunk preview immediately
+                                current_chunk_path = _save_seedvr2_chunk_previews(
+                                    [chunk_result],
+                                    chunks_permanent_save_path,
+                                    original_fps or 30.0,
+                                    seedvr2_config,
+                                    ffmpeg_preset,
+                                    ffmpeg_quality,
+                                    ffmpeg_use_gpu,
+                                    logger
+                                )
+                                
+                                if current_chunk_path:
+                                    last_chunk_video_path = current_chunk_path
+                                    logger.info(f"✅ Chunk {chunk_id} preview generated during processing: {current_chunk_path}")
+                                    # Put the chunk update in the queue for UI update
+                                    chunk_update_queue.put((chunk_id, current_chunk_path))
+                                else:
+                                    logger.warning(f"⚠️ Failed to generate chunk {chunk_id} preview")
+                            else:
+                                logger.warning(f"⚠️ No frames available for chunk {chunk_id} (start: {chunk_start}, end: {chunk_end})")
+                            
+                            last_chunk_frame_end = chunk_end
             
-            # Call generation_loop ONCE with ALL frames
-            result_tensor = generation_loop(
-                runner=session_manager.runner,
-                images=frames_tensor,
-                cfg_scale=processing_args.get("cfg_scale", 1.0),
-                seed=processing_args.get("seed", -1),
-                res_w=res_w,
-                batch_size=batch_size,
-                preserve_vram=processing_args["preserve_vram"],
-                temporal_overlap=temporal_overlap,
-                debug=processing_args.get("debug", False),
-                block_swap_config=session_manager.block_swap_config,
-                progress_callback=generation_progress_callback,
-                frame_save_callback=frame_save_callback
-            )
+            # Use threading to run generation while monitoring chunk updates
+            import threading
+            import queue as thread_queue
             
+            # Queue to store the result
+            result_queue = thread_queue.Queue()
+            chunk_update_queue = thread_queue.Queue()
+            
+            # Store chunk updates in queue from callback
+            original_frame_save_callback = frame_save_callback
+            def enhanced_frame_save_callback(batch_tensor, batch_num, start_idx, end_idx):
+                # Call original callback
+                original_frame_save_callback(batch_tensor, batch_num, start_idx, end_idx)
+                
+                # Check if new chunk was created
+                if chunk_results and last_chunk_video_path:
+                    last_chunk = chunk_results[-1]
+                    chunk_update_queue.put((last_chunk['chunk_id'], last_chunk_video_path))
+            
+            # Function to run generation in thread
+            def run_generation():
+                try:
+                    result = generation_loop(
+                        runner=session_manager.runner,
+                        images=frames_tensor,
+                        cfg_scale=processing_args.get("cfg_scale", 1.0),
+                        seed=processing_args.get("seed", -1),
+                        res_w=res_w,
+                        batch_size=batch_size,
+                        preserve_vram=processing_args["preserve_vram"],
+                        temporal_overlap=temporal_overlap,
+                        debug=processing_args.get("debug", False),
+                        block_swap_config=session_manager.block_swap_config,
+                        progress_callback=generation_progress_callback,
+                        frame_save_callback=enhanced_frame_save_callback
+                    )
+                    result_queue.put(('success', result))
+                except Exception as e:
+                    result_queue.put(('error', e))
+            
+            # Start generation in thread
+            generation_thread = threading.Thread(target=run_generation)
+            generation_thread.start()
+            
+            # Monitor for chunk updates while generation runs
+            while generation_thread.is_alive():
+                try:
+                    # Check for chunk updates (non-blocking)
+                    chunk_id, chunk_path = chunk_update_queue.get(timeout=0.5)
+                    logger.info(f"📹 Yielding chunk {chunk_id} preview update to UI")
+                    yield (None, chunk_results, chunk_path, f"Chunk {chunk_id} preview ready")
+                except thread_queue.Empty:
+                    # No update yet, continue waiting
+                    pass
+            
+            # Wait for generation to complete
+            generation_thread.join()
+            
+            # Get the result
+            status, result = result_queue.get()
+            if status == 'error':
+                raise result
+            
+            result_tensor = result
             logger.info(f"✅ Generation completed successfully: output shape {result_tensor.shape}")
             
             # Trim output to original frame count (remove padding)
@@ -1529,49 +1681,57 @@ def _process_single_gpu_cli_generator(
             
             # Frames are now saved progressively during processing via frame_save_callback
             
-            # Generate chunk previews if enabled
-            chunk_results = []
-            last_chunk_video_path = None
-            
-            logger.info(f"🔍 Chunk preview check - chunks_permanent_save_path: {chunks_permanent_save_path}, enable_chunk_preview: {seedvr2_config.enable_chunk_preview}")
-            
-            if chunks_permanent_save_path and seedvr2_config.enable_chunk_preview:
-                logger.info(f"🎬 Generating chunk previews with {max_chunk_len} frames per chunk...")
+            # Check if we have any remaining frames to create a final chunk
+            if chunks_permanent_save_path and seedvr2_config.enable_chunk_preview and frames_processed_count > last_chunk_frame_end:
+                # Create final chunk from remaining frames
+                chunk_start = last_chunk_frame_end
+                chunk_end = frames_processed_count
+                chunk_id = len(chunk_results) + 1
                 
-                # Process frames in chunks for preview generation
-                for chunk_idx in range(0, result_tensor.shape[0], max_chunk_len):
-                    chunk_end = min(chunk_idx + max_chunk_len, result_tensor.shape[0])
-                    chunk_frames = result_tensor[chunk_idx:chunk_end]
+                logger.info(f"🎬 Creating final chunk {chunk_id} preview from frames {chunk_start+1} to {chunk_end}")
+                
+                # Read remaining frames from disk
+                chunk_frames_list = []
+                for frame_idx in range(chunk_start, chunk_end):
+                    # Match the actual filename format used in _save_batch_frames_immediately
+                    frame_path = processed_frames_permanent_save_path / f"frame{frame_idx+1:06d}.png"
+                    if frame_path.exists():
+                        frame_bgr = cv2.imread(str(frame_path))
+                        if frame_bgr is not None:
+                            frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                            frame_tensor = torch.from_numpy(frame_rgb).float() / 255.0
+                            chunk_frames_list.append(frame_tensor)
+                
+                if chunk_frames_list:
+                    chunk_frames = torch.stack(chunk_frames_list, dim=0)
                     
                     chunk_result = {
                         'frames_tensor': chunk_frames,
-                        'chunk_id': chunk_idx // max_chunk_len + 1,
-                        'frame_count': chunk_frames.shape[0],
+                        'chunk_id': chunk_id,
+                        'frame_count': len(chunk_frames_list),
                         'processing_time': time.time(),
                         'device_id': device_id,
-                        'chunk_start_frame': chunk_idx + 1,
+                        'chunk_start_frame': chunk_start + 1,
                         'chunk_end_frame': chunk_end
                     }
                     chunk_results.append(chunk_result)
                     
-                    # Yield intermediate chunk update
-                    yield (None, chunk_results, None, f"Generated chunk {chunk_result['chunk_id']}")
-                
-                # Save chunk preview videos
-                last_chunk_path = _save_seedvr2_chunk_previews(
-                    chunk_results,
-                    chunks_permanent_save_path,
-                    original_fps or 30.0,
-                    seedvr2_config,
-                    ffmpeg_preset,
-                    ffmpeg_quality,
-                    ffmpeg_use_gpu,
-                    logger
-                )
-                
-                if last_chunk_path:
-                    last_chunk_video_path = last_chunk_path
-                    logger.info(f"✅ Chunk previews generated: {last_chunk_path}")
+                    # Save final chunk preview
+                    current_chunk_path = _save_seedvr2_chunk_previews(
+                        [chunk_result],
+                        chunks_permanent_save_path,
+                        original_fps or 30.0,
+                        seedvr2_config,
+                        ffmpeg_preset,
+                        ffmpeg_quality,
+                        ffmpeg_use_gpu,
+                        logger
+                    )
+                    
+                    if current_chunk_path:
+                        last_chunk_video_path = current_chunk_path
+                        logger.info(f"✅ Final chunk {chunk_id} preview generated: {current_chunk_path}")
+                        yield (None, chunk_results, last_chunk_video_path, f"Final chunk {chunk_id} preview ready")
             
             # Convert result to list of tensors for compatibility with rest of pipeline
             processed_frames = [result_tensor]
