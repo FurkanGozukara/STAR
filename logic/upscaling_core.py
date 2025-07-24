@@ -441,6 +441,52 @@ def run_upscale (
             if enable_seedvr2 and seedvr2_config:
                 from .dataclasses import DEFAULT_SEEDVR2_UPSCALE_FACTOR
                 custom_upscale_factor = DEFAULT_SEEDVR2_UPSCALE_FACTOR
+                
+                # Add SeedVR2 configuration to metadata
+                params_for_metadata.update({
+                    # Basic settings
+                    "seedvr2_model": seedvr2_config.model,
+                    "seedvr2_batch_size": seedvr2_config.batch_size,
+                    "seedvr2_quality_preset": seedvr2_config.quality_preset,
+                    "seedvr2_use_gpu": seedvr2_config.use_gpu,
+                    
+                    # Advanced settings
+                    "seedvr2_preserve_vram": seedvr2_config.preserve_vram,
+                    "seedvr2_flash_attention": seedvr2_config.flash_attention,
+                    "seedvr2_color_correction": seedvr2_config.color_correction,
+                    "seedvr2_enable_multi_gpu": seedvr2_config.enable_multi_gpu,
+                    "seedvr2_gpu_devices": seedvr2_config.gpu_devices,
+                    
+                    # Block swap configuration
+                    "seedvr2_enable_block_swap": seedvr2_config.enable_block_swap,
+                    "seedvr2_block_swap_counter": seedvr2_config.block_swap_counter,
+                    "seedvr2_block_swap_offload_io": seedvr2_config.block_swap_offload_io,
+                    "seedvr2_block_swap_model_caching": seedvr2_config.block_swap_model_caching,
+                    
+                    # Temporal consistency settings
+                    "seedvr2_temporal_overlap": seedvr2_config.temporal_overlap,
+                    "seedvr2_scene_awareness": seedvr2_config.scene_awareness,
+                    "seedvr2_temporal_quality": seedvr2_config.temporal_quality,
+                    "seedvr2_consistency_validation": seedvr2_config.consistency_validation,
+                    "seedvr2_chunk_optimization": seedvr2_config.chunk_optimization,
+                    "seedvr2_enable_temporal_consistency": seedvr2_config.enable_temporal_consistency,
+                    
+                    # Frame processing
+                    "seedvr2_enable_frame_padding": seedvr2_config.enable_frame_padding,
+                    "seedvr2_pad_last_chunk": seedvr2_config.pad_last_chunk,
+                    "seedvr2_skip_first_frames": seedvr2_config.skip_first_frames,
+                    
+                    # Chunk preview configuration
+                    "seedvr2_enable_chunk_preview": seedvr2_config.enable_chunk_preview,
+                    "seedvr2_chunk_preview_frames": seedvr2_config.chunk_preview_frames,
+                    "seedvr2_keep_last_chunks": seedvr2_config.keep_last_chunks,
+                    
+                    # Model configuration
+                    "seedvr2_model_precision": seedvr2_config.model_precision,
+                    "seedvr2_cfg_scale": seedvr2_config.cfg_scale,
+                    "seedvr2_seed": seedvr2_config.seed,
+                    "seedvr2_upscale_factor": custom_upscale_factor,
+                })
             
             needs_downscale ,ds_h ,ds_w ,upscale_factor_calc ,final_h_calc ,final_w_calc =util_calculate_upscale_params (
             orig_h_val ,orig_w_val ,target_h ,target_w ,target_res_mode ,logger =logger ,image_upscaler_model =image_upscaler_model if enable_image_upscaler else None,

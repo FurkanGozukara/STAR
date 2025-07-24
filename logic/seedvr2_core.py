@@ -766,10 +766,14 @@ def process_video_with_seedvr2(
     if save_metadata and metadata_handler_module and params_for_metadata:
         try:
             # Add comprehensive SeedVR2 metadata
+            # Get device used
+            device = f"cuda:{seedvr2_config.gpu_devices.split(',')[0].strip()}" if seedvr2_config.gpu_devices else "cuda:0"
+            
             seedvr2_metadata = {
                 "upscaler_type": "seedvr2",
                 "seedvr2_model": seedvr2_config.model,
                 "seedvr2_batch_size": seedvr2_config.batch_size,
+                "seedvr2_device": device,
                 "seedvr2_temporal_overlap": seedvr2_config.temporal_overlap,
                 "seedvr2_preserve_vram": seedvr2_config.preserve_vram,
                 "seedvr2_color_correction": seedvr2_config.color_correction,
@@ -785,6 +789,8 @@ def process_video_with_seedvr2(
                 "seedvr2_processing_time": processing_time,
                 "seedvr2_avg_fps": len(frames_tensor) / processing_time if processing_time > 0 else 0,
                 "seedvr2_total_frames": len(frames_tensor),
+                "seedvr2_frames_processed": len(frames_tensor),
+                "seedvr2_frames_failed": 0,  # SeedVR2 processes all frames or fails entirely
                 "current_seed": current_seed
             }
             
