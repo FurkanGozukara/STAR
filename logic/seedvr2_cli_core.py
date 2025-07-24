@@ -126,6 +126,7 @@ class SeedVR2SessionManager:
         self.current_model = None
         self.is_initialized = False
         self.processing_args = None
+        self.block_swap_config = None  # Store block swap config for generation_loop
     
     def get_vram_usage(self) -> Dict[str, float]:
         """Get current VRAM usage in GB."""
@@ -199,6 +200,7 @@ class SeedVR2SessionManager:
             )
             
             self.current_model = processing_args["model"]
+            self.block_swap_config = block_swap_config  # Store for use in generation_loop
             self.is_initialized = True
             
             # Log VRAM status after model loading
@@ -261,6 +263,7 @@ class SeedVR2SessionManager:
                     preserve_vram=effective_args["preserve_vram"],
                     temporal_overlap=effective_args.get("temporal_overlap", 0),
                     debug=effective_args.get("debug", False),
+                    block_swap_config=self.block_swap_config,  # ✅ Pass block_swap_config for proper device management
                 )
                 
             except AssertionError as ae:
@@ -298,6 +301,7 @@ class SeedVR2SessionManager:
                                 preserve_vram=effective_args["preserve_vram"],
                                 temporal_overlap=effective_args.get("temporal_overlap", 0),
                                 debug=effective_args.get("debug", False),
+                                block_swap_config=self.block_swap_config,  # ✅ Pass block_swap_config for proper device management
                             )
                             self.logger.info("✅ Fallback processing succeeded")
                         except Exception as fallback_error:
