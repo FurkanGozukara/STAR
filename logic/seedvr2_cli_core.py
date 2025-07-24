@@ -980,9 +980,16 @@ def process_video_with_seedvr2_cli(
         
         # Extract final results
         if final_result:
-            result_tensor, chunk_results, last_chunk_video_path = final_result
+            if len(final_result) == 4:
+                # New format with status message
+                result_tensor, chunk_results, last_chunk_video_path, _ = final_result
+            else:
+                # Old format without status message
+                result_tensor, chunk_results, last_chunk_video_path = final_result
         else:
             result_tensor, chunk_results, last_chunk_video_path = torch.empty(0), [], None
+        
+        logger.info(f"🔍 Final results - chunk_results: {len(chunk_results)} chunks, last_chunk_video_path: {last_chunk_video_path}")
         
         # ✅ FIX: Validate result_tensor and fallback to reading saved frames if empty
         if result_tensor is None or result_tensor.numel() == 0:
@@ -1302,7 +1309,7 @@ def _process_frames_with_seedvr2_cli(
                 yield result
             elif isinstance(result, tuple) and len(result) >= 3:
                 # This is the final result (has result_tensor, chunk_results, last_chunk_video_path, ...)
-                final_result = result[:3]  # Take only the first 3 elements for consistency
+                final_result = result  # Keep all elements including chunk results
             else:
                 # Fallback for unexpected result format
                 logger.warning(f"Unexpected result format from generator: {type(result)}")
@@ -1522,6 +1529,50 @@ def _process_single_gpu_cli_generator(
             
             # Frames are now saved progressively during processing via frame_save_callback
             
+            # Generate chunk previews if enabled
+            chunk_results = []
+            last_chunk_video_path = None
+            
+            logger.info(f"🔍 Chunk preview check - chunks_permanent_save_path: {chunks_permanent_save_path}, enable_chunk_preview: {seedvr2_config.enable_chunk_preview}")
+            
+            if chunks_permanent_save_path and seedvr2_config.enable_chunk_preview:
+                logger.info(f"🎬 Generating chunk previews with {max_chunk_len} frames per chunk...")
+                
+                # Process frames in chunks for preview generation
+                for chunk_idx in range(0, result_tensor.shape[0], max_chunk_len):
+                    chunk_end = min(chunk_idx + max_chunk_len, result_tensor.shape[0])
+                    chunk_frames = result_tensor[chunk_idx:chunk_end]
+                    
+                    chunk_result = {
+                        'frames_tensor': chunk_frames,
+                        'chunk_id': chunk_idx // max_chunk_len + 1,
+                        'frame_count': chunk_frames.shape[0],
+                        'processing_time': time.time(),
+                        'device_id': device_id,
+                        'chunk_start_frame': chunk_idx + 1,
+                        'chunk_end_frame': chunk_end
+                    }
+                    chunk_results.append(chunk_result)
+                    
+                    # Yield intermediate chunk update
+                    yield (None, chunk_results, None, f"Generated chunk {chunk_result['chunk_id']}")
+                
+                # Save chunk preview videos
+                last_chunk_path = _save_seedvr2_chunk_previews(
+                    chunk_results,
+                    chunks_permanent_save_path,
+                    original_fps or 30.0,
+                    seedvr2_config,
+                    ffmpeg_preset,
+                    ffmpeg_quality,
+                    ffmpeg_use_gpu,
+                    logger
+                )
+                
+                if last_chunk_path:
+                    last_chunk_video_path = last_chunk_path
+                    logger.info(f"✅ Chunk previews generated: {last_chunk_path}")
+            
             # Convert result to list of tensors for compatibility with rest of pipeline
             processed_frames = [result_tensor]
             total_processed_frames = result_tensor.shape[0]
@@ -1529,7 +1580,7 @@ def _process_single_gpu_cli_generator(
             logger.info(f"Single-GPU processing complete: {result_tensor.shape[0]} frames processed")
             
             # Yield final results (not return, since this is a generator)
-            yield result_tensor, [], None, "Single-GPU processing complete"
+            yield result_tensor, chunk_results, last_chunk_video_path, "Single-GPU processing complete"
             
         except Exception as e:
             logger.error(f"Error in single GPU processing: {e}")
