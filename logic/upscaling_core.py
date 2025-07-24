@@ -1106,6 +1106,10 @@ def run_upscale (
                         caption_update_msg =f"First scene caption generated [FIRST_SCENE_CAPTION:{first_scene_caption}]"
                         status_log .append (caption_update_msg )
                         logger .info (f"Yielding first scene caption for immediate prompt update")
+                        # Update metadata to reflect the auto-generated caption
+                        params_for_metadata["user_prompt"] = first_scene_caption
+                        params_for_metadata["auto_caption_used"] = True
+                        params_for_metadata["original_user_prompt"] = user_prompt
                         yield None ,"\n".join (status_log ),last_chunk_video_path ,last_chunk_status,None
                     else :
                         if first_scene_caption_result.startswith("Caption generation cancelled"):

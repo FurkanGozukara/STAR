@@ -128,6 +128,11 @@ def _prepare_metadata_dict(params_dict: dict, status_info: dict = None) -> dict:
             metadata["enable_auto_caption_per_scene"] = True
             metadata["cogvlm_quant"] = params_dict.get("cogvlm_quant", "N/A")
             metadata["cogvlm_unload"] = params_dict.get("cogvlm_unload", "N/A")
+        
+        # If auto-caption was actually used, show the original prompt
+        if params_dict.get("auto_caption_used"):
+            metadata["auto_caption_used"] = True
+            metadata["original_user_prompt"] = params_dict.get("original_user_prompt", "N/A")
             
     elif upscaler_type.lower() == "seedvr2":
         # SeedVR2-specific fields only
