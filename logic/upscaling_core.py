@@ -1035,7 +1035,11 @@ def run_upscale (
                     
                     # Yield progress update with the rich, effective status
                     logger.info(f"🔼 Yielding to UI - chunk_video: {last_chunk_video_path}, status: {effective_chunk_status}")
-                    yield None, "\n".join(status_log), last_chunk_video_path, effective_chunk_status, comparison_video_path
+                    # For SeedVR2 batch progress updates, only yield the current status message
+                    if any(marker in effective_chunk_status for marker in ["🎬 Batch", "⏳ Processing..."]):
+                        yield None, effective_chunk_status, last_chunk_video_path, effective_chunk_status, comparison_video_path
+                    else:
+                        yield None, "\n".join(status_log), last_chunk_video_path, effective_chunk_status, comparison_video_path
                 
                 # SeedVR2 processing completed successfully
                 if output_video_path and os.path.exists(output_video_path):

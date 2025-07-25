@@ -973,14 +973,16 @@ def process_video_with_seedvr2_cli(
             max_chunk_len=max_chunk_len,  # ✅ FIX: Pass user's chunk frame count setting
             status_callback=status_callback
         ):
-            logger.info(f"🔍 Received processing result type: {type(processing_result)}, length: {len(processing_result) if isinstance(processing_result, tuple) else 'N/A'}")
+            # Debug logging removed to reduce console clutter
+            # logger.info(f"🔍 Received processing result type: {type(processing_result)}, length: {len(processing_result) if isinstance(processing_result, tuple) else 'N/A'}")
             
             if isinstance(processing_result, tuple):
                 # ✅ FIX: Handle both 4 and 5 element tuples
                 if len(processing_result) == 5:
                     # This is a status update with comparison video path
                     result_path, status_msg, chunk_video_path, chunk_status, comparison_path = processing_result
-                    logger.info(f"📊 Status update - result_path is None: {result_path is None}, chunk_video_path: {chunk_video_path}")
+                    # Debug logging removed to reduce console clutter
+                    # logger.info(f"📊 Status update - result_path is None: {result_path is None}, chunk_video_path: {chunk_video_path}")
                     if result_path is None:  # This is a status/progress update, not final result
                         yield (None, status_msg, chunk_video_path, chunk_status, comparison_path)
                     else:
@@ -1524,8 +1526,9 @@ def _process_single_gpu_cli_generator(
             
             # Progress callback wrapper
             def generation_progress_callback(batch_idx, total_batches, current_batch_frames, message=""):
-                logger.info(f"📦 Processing batch {batch_idx}/{total_batches}: {current_batch_frames} frames - {message}")
-                logger.info(f"🔍 Debug: batch_progress_queue id={id(shared_queues.batch_progress)}, qsize={shared_queues.batch_progress.qsize()}")
+                # Debug logging removed to reduce console clutter
+                # logger.info(f"📦 Processing batch {batch_idx}/{total_batches}: {current_batch_frames} frames - {message}")
+                # logger.info(f"🔍 Debug: batch_progress_queue id={id(shared_queues.batch_progress)}, qsize={shared_queues.batch_progress.qsize()}")
                 
                 # Track batch time
                 current_time = time.time()
@@ -1742,8 +1745,9 @@ def _process_single_gpu_cli_generator(
             monitor_count = 0
             while generation_thread.is_alive():
                 monitor_count += 1
-                if monitor_count % 100 == 0:  # Log every 100 iterations
-                    logger.info(f"🔍 Monitor loop active - iteration {monitor_count}, batch_progress_queue id={id(shared_queues.batch_progress)}, queue size: {shared_queues.batch_progress.qsize()}")
+                # Debug logging removed to reduce console clutter
+                # if monitor_count % 100 == 0:  # Log every 100 iterations
+                #     logger.info(f"🔍 Monitor loop active - iteration {monitor_count}, batch_progress_queue id={id(shared_queues.batch_progress)}, queue size: {shared_queues.batch_progress.qsize()}")
                 
                 updates_found = False
                 
@@ -1755,12 +1759,14 @@ def _process_single_gpu_cli_generator(
                     
                     # Add detailed logging around the get operation
                     queue_size_before = shared_queues.batch_progress.qsize()
-                    if queue_size_before > 0:
-                        logger.info(f"🔍 Queue has {queue_size_before} items, attempting to get...")
+                    # Debug logging removed to reduce console clutter
+                    # if queue_size_before > 0:
+                    #     logger.info(f"🔍 Queue has {queue_size_before} items, attempting to get...")
                     
                     update_type, status_msg = shared_queues.batch_progress.get(timeout=0.1)
                     
-                    logger.info(f"🔍 Successfully got from queue: type={update_type}, queue size after={shared_queues.batch_progress.qsize()}")
+                    # Debug logging removed to reduce console clutter
+                    # logger.info(f"🔍 Successfully got from queue: type={update_type}, queue size after={shared_queues.batch_progress.qsize()}")
                     if update_type == 'batch_progress':
                         shared_queues.counter['get'] += 1
                         logger.info(f"📊 Yielding batch progress update: {status_msg}, total gets: {shared_queues.counter['get']}")

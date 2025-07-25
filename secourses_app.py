@@ -172,7 +172,40 @@ class ProgressMessageFilter(logging.Filter):
             "❌ Batch processing error",
             "📊 Batch progress queue",
             "⏱️ Batch",
-            "📊 Total ETA:"
+            "📊 Total ETA:",
+            "🔍 Queue has",
+            "🔍 Successfully got from queue",
+            "🔍 Received processing result type",
+            "📊 Status update - result_path",
+            "UI received batch progress",
+            "🎯 decode_dtype:",
+            "🎄 Monitoring for chunk updates",
+            "🔍 Monitor loop active",
+            "🔄 video Compute dtype:",
+            "📹 Sequence of",
+            "🔄 VAE to GPU time:",
+            "🔄 VAE dtype:",
+            "🔄 VAE encode time:",
+            "🔄 Transformed video to",
+            "🔄 Cond latents shape:",
+            "🎯 model_dtype:",
+            "🎯 target_dtype:",
+            "🔄 VAE to CPU time:",
+            "🔄 Dit to GPU time:",
+            "🔄 INFERENCE time:",
+            "🧹 Clearing VRAM cache",
+            "🔄 Dit to CPU time:",
+            "🔄 shape of latents:",
+            "🔄 DECODE time:",
+            "🔄 Samples shape:",
+            "🔧 Converting",
+            "🔄 Time batch:",
+            "⏱️  Batch time:",
+            "💾 Saved",
+            "📊 Total frames saved:",
+            "🔄 VAE",
+            "🔄 Dit",
+            "EulerSampler:"
         ]
         return not any(pattern in record.getMessage() for pattern in suppress_patterns)
 
@@ -2399,7 +2432,9 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             for yielded_output_video, yielded_status_log, yielded_chunk_video, yielded_chunk_status, yielded_comparison_video in upscale_generator:
                 # Debug log what we're receiving
                 if yielded_status_log and "🎬 Batch" in yielded_status_log:
-                    logger.info(f"UI received batch progress: {yielded_status_log[:100]}...")
+                    # Remove or comment out this duplicate logging
+                    # logger.info(f"UI received batch progress: {yielded_status_log[:100]}...")
+                    pass  # Do nothing, just continue
                 elif yielded_chunk_video:
                     logger.info(f"UI received chunk video update: {yielded_chunk_video}")
                 is_partial_video = yielded_output_video and "partial_cancelled" in yielded_output_video
