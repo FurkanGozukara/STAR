@@ -486,7 +486,7 @@ def process_video_with_seedvr2(
                 # Handle multi-GPU processing for this chunk
                 if seedvr2_config.enable_multi_gpu and len(gpu_devices) > 1:
                     chunk_result = _process_multi_gpu(
-                        chunk_tensor, gpu_devices, seedvr2_config, runner, calculated_resolution, logger
+                        chunk_tensor, gpu_devices, seedvr2_config, runner, calculated_resolution, current_seed, logger
                     )
                 else:
                     # Single GPU processing for this chunk
@@ -1234,7 +1234,7 @@ def _process_single_gpu(frames_tensor: torch.Tensor, seedvr2_config, runner, cal
     # Setup generation parameters
     generation_params = {
         "cfg_scale": seedvr2_config.cfg_scale,
-        "seed": seedvr2_config.seed if seedvr2_config.seed >= 0 else None,
+        "seed": seedvr2_config.seed if seedvr2_config.seed >= 0 else current_seed,
         "res_w": _calculate_seedvr2_resolution(input_video_path, enable_target_res, target_h, target_w, target_res_mode, upscale_factor=2.0, logger=logger),
         "batch_size": seedvr2_config.batch_size,
         "preserve_vram": seedvr2_config.preserve_vram,
@@ -1271,7 +1271,7 @@ def _process_single_gpu(frames_tensor: torch.Tensor, seedvr2_config, runner, cal
         raise
 
 
-def _process_multi_gpu(frames_tensor: torch.Tensor, gpu_devices: List[str], seedvr2_config, runner, calculated_resolution: int, logger=None) -> torch.Tensor:
+def _process_multi_gpu(frames_tensor: torch.Tensor, gpu_devices: List[str], seedvr2_config, runner, calculated_resolution: int, current_seed: int, logger=None) -> torch.Tensor:
     """Process frames using multiple GPUs with professional optimization."""
     
     import multiprocessing as mp
@@ -1301,7 +1301,7 @@ def _process_multi_gpu(frames_tensor: torch.Tensor, gpu_devices: List[str], seed
         "preserve_vram": seedvr2_config.preserve_vram,
         "debug": logger.level <= logging.DEBUG if logger else False,
         "cfg_scale": seedvr2_config.cfg_scale,
-        "seed": seedvr2_config.seed if seedvr2_config.seed >= 0 else None,
+        "seed": seedvr2_config.seed if seedvr2_config.seed >= 0 else current_seed,
         "res_w": calculated_resolution,
         "batch_size": seedvr2_config.batch_size,
         "temporal_overlap": seedvr2_config.temporal_overlap,

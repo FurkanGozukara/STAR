@@ -661,7 +661,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                         comparison_download_button = gr.Button("📥 Download Comparison", variant="secondary", visible=False)
                     with gr.Accordion("Image Information", open=True):
                         image_info_display = gr.Textbox(
-                            label="Image Details", interactive=False, lines=8, value=DEFAULT_STATUS_MESSAGES['ready_image_details']
+                            label="Image Details", interactive=False, lines=16, value=DEFAULT_STATUS_MESSAGES['ready_image_details']
                         )
                     with gr.Accordion("Processing Log", open=False):
                         image_log_display = gr.Textbox(
@@ -4607,7 +4607,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
     def image_upscale_wrapper(
         input_image_path, upscaler_type, image_upscaler_model_val, output_format, output_quality,
         preserve_aspect_ratio, preserve_metadata, custom_suffix,
-        enable_comparison, progress=gr.Progress(track_tqdm=True)
+        enable_comparison, seed_value, use_random_seed, progress=gr.Progress(track_tqdm=True)
     ):
         if not input_image_path:
             return (
@@ -4631,7 +4631,18 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 image_upscaler_model = image_upscaler_model_val
             
             from logic.seedvr2_image_core import process_single_image as util_process_single_image, format_image_info_display as util_format_image_info_display
-            current_seed = -1 # Placeholder, adjust if needed
+            
+            # Handle seed generation similar to video processing
+            actual_seed = seed_value
+            if use_random_seed:
+                actual_seed = np.random.randint(0, 2**31)
+                logger.info(f"Random seed checkbox is checked. Using generated seed: {actual_seed}")
+            elif seed_value == -1:
+                actual_seed = np.random.randint(0, 2**31)
+                logger.info(f"Seed input is -1. Using generated seed: {actual_seed}")
+            else:
+                logger.info(f"Using provided seed: {actual_seed}")
+            current_seed = actual_seed
             
             results = list(util_process_single_image(
                 input_image_path=input_image_path,
@@ -4729,7 +4740,9 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             image_preserve_aspect_ratio,
             image_preserve_metadata,
             image_custom_suffix,
-            image_enable_comparison
+            image_enable_comparison,
+            seed_num,
+            random_seed_check
         ],
         outputs=[
             output_image,
