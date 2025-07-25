@@ -395,11 +395,11 @@ def _process_with_seedvr2(
     if progress:
         progress(0.4, "🔧 Configuring SeedVR2 model...")
     
-    # Setup CLI-based SeedVR2 processing parameters
+    # Setup CLI-based SeedVR2 processing parameters (matching video pipeline)
     processing_args = {
         "model": seedvr2_config.model,
         "model_dir": models_dir,
-        "preserve_vram": seedvr2_config.preserve_vram,
+        "preserve_vram": getattr(seedvr2_config, 'preserve_vram', True),
         "debug": logger.level <= logging.DEBUG if logger else False,
         "cfg_scale": getattr(seedvr2_config, 'cfg_scale', 7.5),
         "seed": getattr(seedvr2_config, 'seed', current_seed) if getattr(seedvr2_config, 'seed', -1) >= 0 else current_seed,
@@ -415,12 +415,27 @@ def _process_with_seedvr2(
         ),
         "batch_size": getattr(seedvr2_config, 'batch_size', 1),
         "temporal_overlap": 0,  # No temporal processing for single image
+        # Add missing features from video pipeline
+        "flash_attention": getattr(seedvr2_config, 'flash_attention', False),
+        "color_correction": getattr(seedvr2_config, 'color_correction', True),
+        "quality_preset": getattr(seedvr2_config, 'quality_preset', 'high'),
+        "model_precision": getattr(seedvr2_config, 'model_precision', 'auto'),
+        # Multi-GPU support
+        "enable_multi_gpu": getattr(seedvr2_config, 'enable_multi_gpu', False),
+        "gpu_devices": getattr(seedvr2_config, 'gpu_devices', '0'),
     }
     
-    # Setup block swap if enabled
+    # Setup block swap if enabled (matching video pipeline)
     block_swap = None
-    if seedvr2_config.enable_block_swap and seedvr2_config.block_swap_counter > 0:
+    if getattr(seedvr2_config, 'enable_block_swap', False) and getattr(seedvr2_config, 'block_swap_counter', 0) > 0:
         block_swap = SeedVR2BlockSwap(enable_debug=processing_args.get("debug", False))
+        # Add block swap config to processing args
+        processing_args["block_swap_config"] = {
+            "blocks_to_swap": seedvr2_config.block_swap_counter,
+            "offload_io_components": getattr(seedvr2_config, 'block_swap_offload_io', False),
+            "use_non_blocking": True,
+            "enable_debug": processing_args.get("debug", False)
+        }
         if logger:
             logger.info(f"Block swap enabled for image processing: {seedvr2_config.block_swap_counter} blocks")
     
@@ -432,7 +447,7 @@ def _process_with_seedvr2(
         if image_tensor.ndim == 3:
             image_tensor = image_tensor.unsqueeze(0)
         
-        # Process with SeedVR2 CLI
+        # Process with SeedVR2 CLI (pass processing_args which now includes block_swap_config)
         result_tensor = _process_batch_with_seedvr2_model(
             image_tensor,
             processing_args,
