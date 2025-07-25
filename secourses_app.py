@@ -156,20 +156,70 @@ except ImportError as e:
     print(DEPENDENCIES_INSTALL_ERROR)
     sys.exit(1)
 
+# Custom logging filter to suppress progress messages from console
+class ProgressMessageFilter(logging.Filter):
+    def filter(self, record):
+        # Suppress messages that are already shown in Gradio UI
+        suppress_patterns = [
+            "⏳ Processing...",
+            "🎬 Batch",
+            "frames left",
+            "💓 Yielding heartbeat",
+            "📦 Processing batch",
+            "📤 Queued batch progress",
+            "🔍 Debug: batch_progress_queue",
+            "✅ Batch processed successfully",
+            "❌ Batch processing error",
+            "📊 Batch progress queue"
+        ]
+        return not any(pattern in record.getMessage() for pattern in suppress_patterns)
+
+# Apply filter to all existing loggers
+def apply_progress_filter_globally():
+    # Get all existing loggers
+    for logger_name in logging.Logger.manager.loggerDict:
+        logger_instance = logging.getLogger(logger_name)
+        for handler in logger_instance.handlers:
+            if isinstance(handler, logging.StreamHandler):
+                # Check if filter already exists to avoid duplicates
+                if not any(isinstance(f, ProgressMessageFilter) for f in handler.filters):
+                    handler.addFilter(ProgressMessageFilter())
+
+# Override getLogger to automatically apply filter to new loggers
+original_getLogger = logging.getLogger
+def getLogger_with_filter(name=None):
+    logger_instance = original_getLogger(name)
+    # Apply filter to all stream handlers
+    for handler in logger_instance.handlers:
+        if isinstance(handler, logging.StreamHandler):
+            if not any(isinstance(f, ProgressMessageFilter) for f in handler.filters):
+                handler.addFilter(ProgressMessageFilter())
+    return logger_instance
+
+# Replace the original getLogger
+logging.getLogger = getLogger_with_filter
+
 logger = get_logger()
 logger.setLevel(logging.INFO)
 found_stream_handler = False
 for handler in logger.handlers:
     if isinstance(handler, logging.StreamHandler):
         handler.setLevel(logging.INFO)
+        # Add the filter to suppress progress messages
+        handler.addFilter(ProgressMessageFilter())
         found_stream_handler = True
         logger.info(info_strings.STREAM_HANDLER_LEVEL_SET_INFO)
 if not found_stream_handler:
     ch = logging.StreamHandler()
     ch.setLevel(logging.INFO)
+    # Add the filter to suppress progress messages
+    ch.addFilter(ProgressMessageFilter())
     logger.addHandler(ch)
     logger.info(info_strings.STREAM_HANDLER_ADDED_INFO)
 logger.info(info_strings.LOGGER_CONFIGURED_LEVEL_HANDLERS_INFO.format(logger_name=logger.name, level=logging.getLevelName(logger.level), handlers=logger.handlers))
+
+# Apply the progress filter to all existing loggers
+apply_progress_filter_globally()
 
 APP_CONFIG = create_app_config(base_path, args.outputs_folder, star_cfg)
 app_config_module.initialize_paths_and_prompts(base_path, args.outputs_folder, star_cfg)
