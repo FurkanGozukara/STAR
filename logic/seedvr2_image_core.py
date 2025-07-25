@@ -124,7 +124,7 @@ def process_single_image(
     
     # Setup output directory
     if output_dir is None:
-        output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'gradio_output')
+        output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'outputs_images')
     
     os.makedirs(output_dir, exist_ok=True)
     
@@ -142,14 +142,28 @@ def process_single_image(
     else:
         output_ext = ".png"  # Default fallback
     
+    # Generate output filename with auto-increment if file exists
+    counter = 0
     output_filename = f"{base_name}{custom_suffix}{output_ext}"
     output_image_path = os.path.join(output_dir, output_filename)
+    
+    while os.path.exists(output_image_path):
+        counter += 1
+        output_filename = f"{base_name}{custom_suffix}_{counter:04d}{output_ext}"
+        output_image_path = os.path.join(output_dir, output_filename)
     
     # Generate comparison filename if needed
     comparison_image_path = None
     if create_comparison:
         comparison_filename = f"{base_name}_comparison{output_ext}"
         comparison_image_path = os.path.join(output_dir, comparison_filename)
+        
+        # Also apply auto-increment to comparison file
+        comparison_counter = 0
+        while os.path.exists(comparison_image_path):
+            comparison_counter += 1
+            comparison_filename = f"{base_name}_comparison_{comparison_counter:04d}{output_ext}"
+            comparison_image_path = os.path.join(output_dir, comparison_filename)
     
     if progress:
         progress(0.1, "🔍 Analyzing input image...")

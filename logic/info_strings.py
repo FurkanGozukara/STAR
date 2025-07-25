@@ -15,6 +15,20 @@ label, .gr-form > label { font-size: 16px !important; }
 }
 input[type='range'] { accent-color: black; }
 .dark input[type='range'] { accent-color: #dfdfdf; }
+
+/* Force tab buttons to wrap into multiple rows */
+.tabs-button-group {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    max-width: 100% !important;
+}
+
+/* Ensure each tab button has a minimum width */
+.tabs-button-group button {
+    flex: 1 1 auto !important;
+    min-width: 120px !important;
+    max-width: 200px !important;
+}
 """
 
 # UI Component Info Strings

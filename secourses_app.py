@@ -591,6 +591,15 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             with gr.Row():
                 with gr.Column(scale=1):
                     with gr.Group():
+                        gr.Markdown("🚀 Processing Controls")
+                        with gr.Row():
+                            image_upscale_button = gr.Button("Upscale Image", variant="primary", icon="icons/upscale.png")
+                            image_cancel_button = gr.Button(CANCEL_PROCESSING_BUTTON, variant="stop", visible=True, interactive=False, icon="icons/cancel.png")
+                        image_processing_status = gr.Textbox(
+                            label="Processing Status", interactive=False, lines=3,
+                            value=DEFAULT_STATUS_MESSAGES['ready_image_processing']
+                        )
+                    with gr.Group():
                         input_image = gr.Image(
                             label="Input Image", sources=["upload"], interactive=True,
                             height=512, type="filepath"
@@ -623,13 +632,8 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                                 label="Output Quality (JPEG/WEBP only)", minimum=70, maximum=100,
                                 step=1, info=IMAGE_QUALITY_INFO
                             )
-                    with gr.Accordion("Advanced Image Settings", open=False):
+                    with gr.Accordion("Advanced Image Settings", open=True):
                         with gr.Row():
-                            image_enable_comparison = create_checkbox(
-                                config_path=('single_image_upscale', 'create_comparison'), ui_dict=ui_components,
-                                label=CREATE_BEFORE_AFTER_COMPARISON_LABEL,
-                                info=info_strings.COMPARISON_IMAGE_SIDE_BY_SIDE_INFO
-                            )
                             image_preserve_metadata = create_checkbox(
                                 config_path=('single_image_upscale', 'preserve_metadata'), ui_dict=ui_components,
                                 label="Preserve Image Metadata",
@@ -641,32 +645,25 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                                 label="Custom Output Suffix", placeholder="_upscaled",
                                 info=IMAGE_CUSTOM_SUFFIX_INFO
                             )
-                    with gr.Group():
-                        gr.Markdown(PROCESSING_CONTROLS_HEADER)
-                        with gr.Row():
-                            image_upscale_button = gr.Button("Upscale Image", variant="primary", icon="icons/upscale.png")
-                            image_cancel_button = gr.Button(CANCEL_PROCESSING_BUTTON, variant="stop", visible=True, interactive=False, icon="icons/cancel.png")
-                        image_processing_status = gr.Textbox(
-                            label="Processing Status", interactive=False, lines=3,
-                            value=DEFAULT_STATUS_MESSAGES['ready_image_processing']
+                    with gr.Accordion("Processing Log", open=True):
+                        image_log_display = gr.Textbox(
+                            label="Detailed Processing Log", interactive=False, lines=20, value=DEFAULT_STATUS_MESSAGES['ready_processing_log']
                         )
                 with gr.Column(scale=1):
+                    open_image_output_folder_button = gr.Button("Open Image Outputs Folder", icon="icons/folder.png", variant="primary")
                     with gr.Accordion("Upscaled Image Results", open=True):
                         output_image = gr.Image(label="Upscaled Image", interactive=False, height=512, type="filepath")
-                        image_download_button = gr.Button("📥 Download Upscaled Image", variant="primary", visible=False)
-                    with gr.Accordion("Before/After Comparison", open=True):
-                        comparison_image = gr.Image(
-                            label="Before/After Comparison", interactive=False, height=512, type="filepath", visible=False
+                    with gr.Accordion("Image Comparison", open=True):
+                        image_comparison_slider = gr.ImageSlider(
+                            label="Before/After Comparison", interactive=True, visible=False,
+                            height=512, show_label=True, show_download_button=True,
+                            show_fullscreen_button=True, slider_position=0.5
                         )
-                        comparison_download_button = gr.Button("📥 Download Comparison", variant="secondary", visible=False)
                     with gr.Accordion("Image Information", open=True):
                         image_info_display = gr.Textbox(
-                            label="Image Details", interactive=False, lines=16, value=DEFAULT_STATUS_MESSAGES['ready_image_details']
+                            label="Image Details", interactive=False, lines=20, value=DEFAULT_STATUS_MESSAGES['ready_image_details']
                         )
-                    with gr.Accordion("Processing Log", open=False):
-                        image_log_display = gr.Textbox(
-                            label="Detailed Processing Log", interactive=False, lines=6, value=DEFAULT_STATUS_MESSAGES['ready_processing_log']
-                        )
+
 
         with gr.Tab("Resolution & Scene Split", id="resolution_tab"):
             with gr.Row():
@@ -1606,7 +1603,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
         batch_enable_auto_caption if UTIL_COG_VLM_AVAILABLE else gr.State(False),
         # Single Image Upscale Tab
         image_upscaler_type_radio, image_preserve_aspect_ratio, image_output_format,
-        image_quality_level, image_enable_comparison, image_preserve_metadata, image_custom_suffix
+        image_quality_level, image_preserve_metadata, image_custom_suffix
     ]
 
     # Create a reverse map for faster lookups in build_app_config
@@ -4576,8 +4573,6 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 gr.update(value="Upload an image to see details..."),
                 gr.update(value="Ready to process images..."),
                 gr.update(visible=False),
-                gr.update(visible=False),
-                gr.update(visible=False),
                 gr.update(visible=False)
             )
         try:
@@ -4588,8 +4583,6 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 gr.update(value=formatted_info),
                 gr.update(value=f"✅ Image loaded: {image_info.get('width', 0)}×{image_info.get('height', 0)} pixels"),
                 gr.update(visible=False),
-                gr.update(visible=False),
-                gr.update(visible=False),
                 gr.update(visible=False)
             )
         except Exception as e:
@@ -4599,21 +4592,17 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 gr.update(value=error_msg),
                 gr.update(value=error_msg),
                 gr.update(visible=False),
-                gr.update(visible=False),
-                gr.update(visible=False),
                 gr.update(visible=False)
             )
 
     def image_upscale_wrapper(
         input_image_path, upscaler_type, image_upscaler_model_val, output_format, output_quality,
         preserve_aspect_ratio, preserve_metadata, custom_suffix,
-        enable_comparison, seed_value, use_random_seed, progress=gr.Progress(track_tqdm=True)
+        seed_value, use_random_seed, progress=gr.Progress(track_tqdm=True)
     ):
         if not input_image_path:
             return (
                 gr.update(),
-                gr.update(visible=False),
-                gr.update(visible=False),
                 gr.update(visible=False),
                 "❌ Please upload an image first",
                 gr.update(),
@@ -4644,6 +4633,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 logger.info(f"Using provided seed: {actual_seed}")
             current_seed = actual_seed
             
+            # Always create comparison for the slider
             results = list(util_process_single_image(
                 input_image_path=input_image_path,
                 upscaler_type=actual_upscaler_type,
@@ -4654,22 +4644,35 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 preserve_aspect_ratio=preserve_aspect_ratio,
                 preserve_metadata=preserve_metadata,
                 custom_suffix=custom_suffix,
-                create_comparison=enable_comparison,
+                create_comparison=True,  # Always create for slider
+                output_dir=None,  # Will use default STAR/outputs_images
                 logger=logger,
                 progress=progress,
+                util_get_gpu_device=util_get_gpu_device,
+                format_time=format_time,
                 current_seed=current_seed
             ))
             if results:
                 output_image_path, comparison_image_path, status_message, image_info = results[0]
+                logger.info(f"Image upscale wrapper - output path: {output_image_path}")
+                logger.info(f"Image upscale wrapper - file exists: {os.path.exists(output_image_path) if output_image_path else 'None'}")
+                
                 formatted_info = util_format_image_info_display(image_info)
-                output_image_update = gr.update(value=output_image_path)
-                download_button_update = gr.update(visible=True)
-                if comparison_image_path and enable_comparison:
-                    comparison_update = gr.update(value=comparison_image_path, visible=True)
-                    comparison_download_update = gr.update(visible=True)
+                
+                # Ensure we have an absolute path
+                if output_image_path and not os.path.isabs(output_image_path):
+                    output_image_path = os.path.abspath(output_image_path)
+                    logger.info(f"Converted to absolute path: {output_image_path}")
+                
+                # Force reload the image by creating a new path reference
+                output_image_update = gr.update(value=str(output_image_path), visible=True)
+                
+                # Update image slider with before/after images
+                if output_image_path:
+                    slider_update = gr.update(value=(input_image_path, output_image_path), visible=True)
                 else:
-                    comparison_update = gr.update(visible=False)
-                    comparison_download_update = gr.update(visible=False)
+                    slider_update = gr.update(visible=False)
+                
                 processing_log = PROCESSING_SUCCESS_TEMPLATES['image_processing_complete'].format(
                     output_filename=os.path.basename(output_image_path),
                     width=image_info.get('output_width', 0),
@@ -4677,11 +4680,13 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                     processing_time=image_info.get('processing_time', 0),
                     upscale_factor=image_info.get('upscale_factor_x', 1)
                 )
+                
+                logger.info(f"Returning output_image_update value: {output_image_update}")
+                logger.info(f"Returning status_message: {status_message}")
+                
                 return (
                     output_image_update,
-                    download_button_update,
-                    comparison_update,
-                    comparison_download_update,
+                    slider_update,
                     status_message,
                     gr.update(value=formatted_info),
                     processing_log
@@ -4690,8 +4695,6 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 error_msg = GENERAL_ERROR_TEMPLATES['no_results_error']
                 return (
                     gr.update(),
-                    gr.update(visible=False),
-                    gr.update(visible=False),
                     gr.update(visible=False),
                     error_msg,
                     gr.update(),
@@ -4702,8 +4705,6 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             logger.error(error_msg, exc_info=True)
             return (
                 gr.update(),
-                gr.update(visible=False),
-                gr.update(visible=False),
                 gr.update(visible=False),
                 error_msg,
                 gr.update(),
@@ -4723,9 +4724,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             image_info_display,
             image_processing_status,
             output_image,
-            image_download_button,
-            comparison_image,
-            comparison_download_button
+            image_comparison_slider
         ]
     )
 
@@ -4740,19 +4739,22 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             image_preserve_aspect_ratio,
             image_preserve_metadata,
             image_custom_suffix,
-            image_enable_comparison,
             seed_num,
             random_seed_check
         ],
         outputs=[
             output_image,
-            image_download_button,
-            comparison_image,
-            comparison_download_button,
+            image_comparison_slider,
             image_processing_status,
             image_info_display,
             image_log_display
         ]
+    )
+    
+    open_image_output_folder_button.click(
+        fn=lambda: util_open_folder(os.path.join(os.path.dirname(__file__), 'outputs_images'), logger=logger),
+        inputs=[],
+        outputs=[]
     )
 
     image_upscaler_type_radio.change(
