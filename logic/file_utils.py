@@ -57,7 +57,9 @@ def open_folder(folder_path, logger=None):
         gr.Error(f"Failed to open folder: {e}")
 
 def get_next_filename(output_dir, logger=None):
-    """Get next available filename in output directory."""
+    """Get next available filename in output directory.
+    Returns: (base_filename_no_ext, full_output_path, tmp_lock_file_path)
+    """
     os.makedirs(output_dir, exist_ok=True)
     max_num = 0
     existing_mp4_files = [f for f in os.listdir(output_dir) if f.endswith('.mp4')]
@@ -78,7 +80,7 @@ def get_next_filename(output_dir, logger=None):
         try:
             fd = os.open(tmp_lock_file_path, os.O_CREAT | os.O_EXCL | os.O_RDWR)
             os.close(fd)
-            return base_filename_no_ext, full_output_path
+            return base_filename_no_ext, full_output_path, tmp_lock_file_path
         except FileExistsError:
             current_num_to_try += 1
         except Exception as e:
@@ -403,8 +405,9 @@ def safe_file_replace(source_path, target_path, create_backup=True, logger=None)
 def cleanup_rife_temp_files(directory, logger=None):
     """Clean up temporary RIFE processing files."""
     try:
+        import glob
+        
         temp_patterns = [
-            "*.tmp",
             "*.temp", 
             "*_temp.mp4",
             "*_processing.mp4",
@@ -414,7 +417,6 @@ def cleanup_rife_temp_files(directory, logger=None):
         cleaned_files = []
         
         for pattern in temp_patterns:
-            import glob
             temp_files = glob.glob(os.path.join(directory, pattern))
             for temp_file in temp_files:
                 try:

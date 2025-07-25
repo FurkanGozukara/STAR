@@ -66,11 +66,24 @@ def format_temp_folder_size(logger: Optional[object] = None) -> str:
 
 
 def clear_temp_folder(logger: Optional[object] = None) -> bool:
-    """Remove contents of all recognised temp directories. Returns True if no fatal errors."""
+    """Remove contents of all recognised temp directories, skipping active STAR processing directories.
+    Returns True if no fatal errors."""
     success = True
+    skipped_count = 0
+    
     for temp_dir in _collect_temp_paths():
         for entry in os.listdir(temp_dir):
             entry_path = os.path.join(temp_dir, entry)
+            
+            # Skip STAR processing directories that have an active lock file
+            if entry.startswith("star_run_") and os.path.isdir(entry_path):
+                lock_file = os.path.join(entry_path, ".processing_lock")
+                if os.path.exists(lock_file):
+                    if logger:
+                        logger.info(f"Skipping active processing directory: {entry_path}")
+                    skipped_count += 1
+                    continue
+            
             try:
                 if os.path.isfile(entry_path) or os.path.islink(entry_path):
                     os.remove(entry_path)
@@ -80,4 +93,8 @@ def clear_temp_folder(logger: Optional[object] = None) -> bool:
                 success = False
                 if logger:
                     logger.error(f"Failed to delete '{entry_path}': {e}")
+    
+    if logger and skipped_count > 0:
+        logger.info(f"Skipped {skipped_count} active processing directories")
+    
     return success 

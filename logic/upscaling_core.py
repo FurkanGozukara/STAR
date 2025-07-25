@@ -214,11 +214,12 @@ def run_upscale (
     # Check for cancellation after metadata setup
     cancellation_manager.check_cancel()
 
+    tmp_lock_file_path = None
     if is_batch_mode and batch_output_dir and original_filename :
         base_output_filename_no_ext ,output_video_path ,batch_main_dir =util_get_batch_filename (batch_output_dir ,original_filename )
         main_output_dir =batch_main_dir
     else :
-        base_output_filename_no_ext ,output_video_path =util_get_next_filename (app_config_module .DEFAULT_OUTPUT_DIR, logger=logger )
+        base_output_filename_no_ext ,output_video_path, tmp_lock_file_path =util_get_next_filename (app_config_module .DEFAULT_OUTPUT_DIR, logger=logger )
         main_output_dir =app_config_module .DEFAULT_OUTPUT_DIR
 
     params_for_metadata ["final_output_path"]=output_video_path
@@ -254,6 +255,15 @@ def run_upscale (
     os .makedirs (temp_dir ,exist_ok =True )
     os .makedirs (input_frames_dir ,exist_ok =True )
     os .makedirs (output_frames_dir ,exist_ok =True )
+    
+    # Create lock file to indicate this directory is in use
+    lock_file_path = os.path.join(temp_dir, ".processing_lock")
+    try:
+        with open(lock_file_path, 'w') as lock_file:
+            lock_file.write(f"Processing started at {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            lock_file.write(f"Input: {input_video_path}\n")
+    except Exception as e:
+        logger.warning(f"Could not create lock file: {e}")
 
     # star_model =None # Model is no longer loaded here globally
     current_input_video_for_frames =input_video_path
@@ -2692,11 +2702,27 @@ def run_upscale (
     finally :
         # Global cleanup for temp_dir
         if temp_dir and os.path.exists(temp_dir):
+            # Remove lock file first to indicate processing is complete
+            lock_file_path = os.path.join(temp_dir, ".processing_lock")
+            if os.path.exists(lock_file_path):
+                try:
+                    os.remove(lock_file_path)
+                except Exception as e:
+                    logger.warning(f"Could not remove lock file: {e}")
+            
             logger.info(f"Cleaning up temporary directory: {temp_dir}")
             try:
                 util_cleanup_temp_dir(temp_dir, logger=logger)
             except Exception as e_clean:
                 logger.error(f"Error cleaning up temp_dir {temp_dir}: {e_clean}", exc_info=True)
+        
+        # Clean up the output lock file
+        if tmp_lock_file_path and os.path.exists(tmp_lock_file_path):
+            try:
+                os.remove(tmp_lock_file_path)
+                logger.info(f"Cleaned up output lock file: {tmp_lock_file_path}")
+            except Exception as e:
+                logger.warning(f"Could not remove output lock file {tmp_lock_file_path}: {e}")
         
         # Cleanup old backup files and temp RIFE files
         try:
