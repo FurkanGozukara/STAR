@@ -1719,7 +1719,7 @@ def _process_single_gpu_cli_generator(
             generation_thread.start()
             
             # Immediately yield that processing has started
-            yield (None, "🚀 SeedVR2 processing started in background...", last_chunk_video_path, "Processing", None)
+            yield (None, "🚀 SeedVR2 processing started in background...", last_chunk_video_path, "Starting SeedVR2 processing...", None)
             
             # Track which chunks have been yielded to prevent duplicates
             yielded_chunks = set()
@@ -1792,7 +1792,8 @@ def _process_single_gpu_cli_generator(
                     elapsed = int(time.time() - processing_start_time)
                     heartbeat_msg = f"⏳ Processing... ({elapsed}s elapsed)"
                     logger.info(f"💓 Yielding heartbeat: {heartbeat_msg}")
-                    yield (None, heartbeat_msg, last_chunk_video_path, "SeedVR2 processing", None)
+                    # Don't update chunk status during heartbeat - keep the last batch progress visible
+                    yield (None, heartbeat_msg, last_chunk_video_path, None, None)
                     last_status_time = time.time()
                     
                 # Small sleep to prevent CPU spinning
