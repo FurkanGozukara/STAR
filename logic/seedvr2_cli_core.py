@@ -643,8 +643,8 @@ def _save_batch_frames_immediately(
             frame_np = frame_tensor.numpy()
             frame_bgr = cv2.cvtColor(frame_np, cv2.COLOR_RGB2BGR)
             
-            # Generate frame filename
-            frame_filename = f"frame{global_frame_idx + 1:06d}.png"
+            # Generate frame filename with underscore to match FFmpeg expectations
+            frame_filename = f"frame_{global_frame_idx + 1:06d}.png"
             dst_path = processed_frames_permanent_save_path / frame_filename
             if not dst_path.exists():  # Don't overwrite existing frames
                 success = cv2.imwrite(str(dst_path), frame_bgr)
@@ -893,8 +893,8 @@ def process_video_with_seedvr2_cli(
                     frame_np = frame_tensor.numpy()
                     frame_bgr = cv2.cvtColor(frame_np, cv2.COLOR_RGB2BGR)
                     
-                    # Generate frame filename
-                    frame_filename = f"frame{frame_idx + 1:06d}.png"
+                    # Generate frame filename with underscore to match FFmpeg expectations
+                    frame_filename = f"frame_{frame_idx + 1:06d}.png"
                     frame_path = input_frames_permanent_save_path / frame_filename
                     
                     success = cv2.imwrite(str(frame_path), frame_bgr)
@@ -1145,43 +1145,60 @@ def process_video_with_seedvr2_cli(
         # This integrates with duration preservation, RIFE, and all global settings
         logger.info(f"Creating final video using STAR shared pipeline: {output_path}")
         
-        # Create temporary directory for frames
-        temp_frames_dir = tempfile.mkdtemp(prefix="seedvr2_video_creation_")
+        # Determine which frames directory to use for video creation
+        # Priority: permanent saved frames > temp frames creation
+        frames_source_dir = None
+        temp_frames_dir = None
+        
+        if save_frames and processed_frames_permanent_save_path and processed_frames_permanent_save_path.exists():
+            # Check if permanent frames exist and are complete
+            permanent_frame_files = sorted([f for f in processed_frames_permanent_save_path.iterdir() 
+                                          if f.suffix.lower() in ['.png', '.jpg', '.jpeg']])
+            if permanent_frame_files:
+                frames_source_dir = str(processed_frames_permanent_save_path)
+                if logger:
+                    logger.info(f"Using saved frames from permanent storage for video creation: {frames_source_dir} ({len(permanent_frame_files)} frames)")
         
         try:
-            # Save frames to temporary directory in the format expected by STAR pipeline
-            if result_tensor is not None and result_tensor.numel() > 0:
-                frames_np = result_tensor.cpu().numpy()
+            # If no permanent frames, create temporary directory
+            if not frames_source_dir:
+                # Create temporary directory for frames
+                temp_frames_dir = tempfile.mkdtemp(prefix="seedvr2_video_creation_")
+                frames_source_dir = temp_frames_dir
                 
-                # Ensure frames are in correct format [0, 255] uint8
-                if frames_np.dtype != np.uint8:
-                    frames_np = (frames_np * 255.0).clip(0, 255).astype(np.uint8)
-                
-                # Save frames with proper naming convention
-                for i, frame in enumerate(frames_np):
-                    # Convert RGB to BGR for OpenCV
-                    frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                    frame_filename = f"frame_{i+1:06d}.png"
-                    frame_path = os.path.join(temp_frames_dir, frame_filename)
-                    cv2.imwrite(frame_path, frame_bgr)
-                
-                if logger:
-                    logger.info(f"Saved {len(frames_np)} frames to temporary directory for video creation")
-            else:
-                if logger:
-                    logger.error("No frames available for video creation")
-                # Create a single black frame as fallback
-                black_frame = np.zeros((256, 256, 3), dtype=np.uint8)
-                frame_path = os.path.join(temp_frames_dir, "frame_000001.png")
-                cv2.imwrite(frame_path, black_frame)
-                if logger:
-                    logger.warning("Created placeholder black frame for video generation")
+                # Save frames to temporary directory in the format expected by STAR pipeline
+                if result_tensor is not None and result_tensor.numel() > 0:
+                    frames_np = result_tensor.cpu().numpy()
+                    
+                    # Ensure frames are in correct format [0, 255] uint8
+                    if frames_np.dtype != np.uint8:
+                        frames_np = (frames_np * 255.0).clip(0, 255).astype(np.uint8)
+                    
+                    # Save frames with proper naming convention
+                    for i, frame in enumerate(frames_np):
+                        # Convert RGB to BGR for OpenCV
+                        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                        frame_filename = f"frame_{i+1:06d}.png"
+                        frame_path = os.path.join(temp_frames_dir, frame_filename)
+                        cv2.imwrite(frame_path, frame_bgr)
+                    
+                    if logger:
+                        logger.info(f"Saved {len(frames_np)} frames to temporary directory for video creation")
+                else:
+                    if logger:
+                        logger.error("No frames available for video creation")
+                    # Create a single black frame as fallback
+                    black_frame = np.zeros((256, 256, 3), dtype=np.uint8)
+                    frame_path = os.path.join(temp_frames_dir, "frame_000001.png")
+                    cv2.imwrite(frame_path, black_frame)
+                    if logger:
+                        logger.warning("Created placeholder black frame for video generation")
             
             # Use STAR's shared pipeline for video creation with duration preservation
             from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
             
             video_creation_success = create_video_from_frames_with_duration_preservation(
-                temp_frames_dir,
+                frames_source_dir,
                 str(output_path),
                 str(input_video_path),  # Use the parameter passed to this function
                 ffmpeg_preset=processing_args.get('ffmpeg_preset', 'medium'),
@@ -1220,14 +1237,15 @@ def process_video_with_seedvr2_cli(
                     logger.info("✅ Video creation successful using STAR shared pipeline")
         
         finally:
-            # Clean up temporary frames directory
-            try:
-                shutil.rmtree(temp_frames_dir)
-                if logger:
-                    logger.debug("Cleaned up temporary frames directory")
-            except Exception as cleanup_error:
-                if logger:
-                    logger.warning(f"Failed to clean up temp frames directory: {cleanup_error}")
+            # Clean up temporary frames directory only if it was created
+            if temp_frames_dir:
+                try:
+                    shutil.rmtree(temp_frames_dir)
+                    if logger:
+                        logger.debug("Cleaned up temporary frames directory")
+                except Exception as cleanup_error:
+                    if logger:
+                        logger.warning(f"Failed to clean up temp frames directory: {cleanup_error}")
         
         # ✅ TODO: Add RIFE integration support here
         # This would check if RIFE is enabled in global settings and apply it to the final video
@@ -1640,7 +1658,7 @@ def _process_single_gpu_cli_generator(
                                 chunk_frames_list = []
                                 for frame_idx in range(chunk_start, chunk_end):
                                     # Match the actual filename format used in _save_batch_frames_immediately
-                                    frame_path = processed_frames_permanent_save_path / f"frame{frame_idx+1:06d}.png"
+                                    frame_path = processed_frames_permanent_save_path / f"frame_{frame_idx+1:06d}.png"
                                     if frame_path.exists():
                                         frame_bgr = cv2.imread(str(frame_path))
                                         if frame_bgr is not None:
@@ -1887,7 +1905,7 @@ def _process_single_gpu_cli_generator(
                 chunk_frames_list = []
                 for frame_idx in range(chunk_start, chunk_end):
                     # Match the actual filename format used in _save_batch_frames_immediately
-                    frame_path = processed_frames_permanent_save_path / f"frame{frame_idx+1:06d}.png"
+                    frame_path = processed_frames_permanent_save_path / f"frame_{frame_idx+1:06d}.png"
                     if frame_path.exists():
                         frame_bgr = cv2.imread(str(frame_path))
                         if frame_bgr is not None:

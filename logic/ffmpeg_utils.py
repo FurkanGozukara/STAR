@@ -1676,8 +1676,8 @@ def validate_and_fix_frame_sequence(frame_dir, logger=None):
             result['warnings'].append(f"Frame directory does not exist: {frame_dir}")
             return result
             
-        # Get all frame files
-        frame_files = [f for f in os.listdir(frame_dir) if f.startswith('frame_') and f.endswith('.png')]
+        # Get all frame files - support both frame_ and frame formats (with and without underscore)
+        frame_files = [f for f in os.listdir(frame_dir) if (f.startswith('frame_') or f.startswith('frame')) and f.endswith('.png')]
         if not frame_files:
             result['warnings'].append(f"No frame files found in {frame_dir}")
             return result
@@ -1697,8 +1697,8 @@ def validate_and_fix_frame_sequence(frame_dir, logger=None):
         frame_numbers = []
         for frame_file in frame_files:
             try:
-                # Extract frame number from filename like frame_000123.png
-                number_part = frame_file.replace('frame_', '').replace('.png', '')
+                # Extract frame number from filename like frame_000123.png or frame000123.png
+                number_part = frame_file.replace('frame_', '').replace('frame', '').replace('.png', '')
                 frame_number = int(number_part)
                 frame_numbers.append(frame_number)
             except ValueError:

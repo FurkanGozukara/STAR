@@ -581,9 +581,20 @@ def process_single_video_image_upscaler(
                 partial_output_video_path = os.path.join(output_dir, f"{base_output_filename_no_ext}_partial_cancelled.mp4")
                 
                 try:
+                    # Determine which frames directory to use for partial video creation
+                    # Priority: permanent saved frames > temp output frames
+                    partial_frames_source_dir = output_frames_dir
+                    
+                    if save_frames and permanent_processed_frames_dir and os.path.exists(permanent_processed_frames_dir):
+                        permanent_frame_files = sorted([f for f in os.listdir(permanent_processed_frames_dir) if f.endswith(('.png', '.jpg', '.jpeg'))])
+                        if len(permanent_frame_files) > 0:
+                            partial_frames_source_dir = permanent_processed_frames_dir
+                            if logger:
+                                logger.info(f"Using saved frames from permanent storage for partial video: {permanent_processed_frames_dir}")
+                    
                     # Create partial video from the frames that were processed
                     video_success = util_create_video_from_frames(
-                        output_frames_dir,
+                        partial_frames_source_dir,
                         partial_output_video_path,
                         input_fps,
                         ffmpeg_preset,
@@ -643,9 +654,20 @@ def process_single_video_image_upscaler(
                 partial_output_video_path = os.path.join(output_dir, f"{base_output_filename_no_ext}_partial_cancelled.mp4")
                 
                 try:
+                    # Determine which frames directory to use for partial video creation
+                    # Priority: permanent saved frames > temp output frames
+                    partial_frames_source_dir = output_frames_dir
+                    
+                    if save_frames and permanent_processed_frames_dir and os.path.exists(permanent_processed_frames_dir):
+                        permanent_frame_files = sorted([f for f in os.listdir(permanent_processed_frames_dir) if f.endswith(('.png', '.jpg', '.jpeg'))])
+                        if len(permanent_frame_files) > 0:
+                            partial_frames_source_dir = permanent_processed_frames_dir
+                            if logger:
+                                logger.info(f"Using saved frames from permanent storage for partial video: {permanent_processed_frames_dir}")
+                    
                     # Create partial video from the frames that were processed
                     video_success = util_create_video_from_frames(
-                        output_frames_dir,
+                        partial_frames_source_dir,
                         partial_output_video_path,
                         input_fps,
                         ffmpeg_preset,
@@ -687,10 +709,25 @@ def process_single_video_image_upscaler(
         
         # Create video from frames with proper error handling
         try:
+            # Determine which frames directory to use for video creation
+            # Priority: permanent saved frames > temp output frames
+            frames_source_dir = output_frames_dir
+            
+            if save_frames and permanent_processed_frames_dir and os.path.exists(permanent_processed_frames_dir):
+                # Verify permanent frames exist and are complete
+                permanent_frame_files = sorted([f for f in os.listdir(permanent_processed_frames_dir) if f.endswith(('.png', '.jpg', '.jpeg'))])
+                if len(permanent_frame_files) > 0:
+                    frames_source_dir = permanent_processed_frames_dir
+                    if logger:
+                        logger.info(f"Using saved frames from permanent storage for video creation: {permanent_processed_frames_dir} ({len(permanent_frame_files)} frames)")
+                else:
+                    if logger:
+                        logger.warning(f"Permanent frames directory exists but contains no frames, using temp directory")
+            
             # Use duration-preserved video creation to ensure exact timing match with input
             from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
             video_success = create_video_from_frames_with_duration_preservation(
-                output_frames_dir,
+                frames_source_dir,
                 output_video_path,
                 input_video_path,
                 ffmpeg_preset,
@@ -853,10 +890,21 @@ def process_single_scene_image_upscaler(
         # Create scene output video
         scene_output_path = os.path.join(temp_dir, f"{scene_name}_upscaled.mp4")
         
+        # Determine which frames directory to use for video creation
+        # Priority: permanent saved frames > temp output frames
+        scene_frames_source_dir = scene_output_frames_dir
+        
+        if save_frames and permanent_scene_processed_dir and os.path.exists(permanent_scene_processed_dir):
+            permanent_scene_frame_files = sorted([f for f in os.listdir(permanent_scene_processed_dir) if f.endswith(('.png', '.jpg', '.jpeg'))])
+            if len(permanent_scene_frame_files) > 0:
+                scene_frames_source_dir = permanent_scene_processed_dir
+                if logger:
+                    logger.info(f"Using saved frames from permanent storage for scene video: {permanent_scene_processed_dir}")
+        
         # Use duration-preserved video creation for scene
         from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
         create_video_from_frames_with_duration_preservation(
-            scene_output_frames_dir,
+            scene_frames_source_dir,
             scene_output_path,
             scene_video_path,
             ffmpeg_preset,

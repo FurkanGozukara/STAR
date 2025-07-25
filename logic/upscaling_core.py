@@ -1901,8 +1901,16 @@ def run_upscale (
                         chunk_temp_assembly_dir_direct = os.path.join(temp_dir, f"temp_direct_chunk_{chunk_idx_direct+1}")
                         os.makedirs(chunk_temp_assembly_dir_direct, exist_ok=True)
                         frames_for_this_video_chunk_direct = []
+                        
+                        # Determine source directory for chunk frames
+                        # Priority: permanent saved frames > temp output frames
+                        chunk_frames_source_dir = output_frames_dir
+                        if save_frames and processed_frames_permanent_save_path and os.path.exists(processed_frames_permanent_save_path):
+                            chunk_frames_source_dir = processed_frames_permanent_save_path
+                            logger.info(f"Using saved frames from permanent storage for chunk {chunk_idx_direct+1}")
+                        
                         for k_chunk_frame_direct, frame_name_in_chunk_direct in enumerate(output_frame_names):
-                            src_direct = os.path.join(output_frames_dir, frame_name_in_chunk_direct)
+                            src_direct = os.path.join(chunk_frames_source_dir, frame_name_in_chunk_direct)
                             dst_direct = os.path.join(chunk_temp_assembly_dir_direct, f"frame_{k_chunk_frame_direct+1:06d}.png")
                             if os.path.exists(src_direct):
                                 shutil.copy2(src_direct, dst_direct)
@@ -2101,12 +2109,25 @@ def run_upscale (
             progress (current_overall_progress ,desc ="Creating silent video...")
             silent_upscaled_video_path =os .path .join (temp_dir ,"silent_upscaled_video.mp4")
             
+            # Determine which frames directory to use for video creation
+            # Priority: permanent saved frames > temp output frames
+            frames_source_dir = output_frames_dir
+            
+            if save_frames and processed_frames_permanent_save_path and os.path.exists(processed_frames_permanent_save_path):
+                # Verify permanent frames exist and are complete
+                permanent_frame_files = sorted([f for f in os.listdir(processed_frames_permanent_save_path) if f.endswith(('.png', '.jpg', '.jpeg'))])
+                if len(permanent_frame_files) > 0:
+                    frames_source_dir = processed_frames_permanent_save_path
+                    logger.info(f"Using saved frames from permanent storage for video creation: {processed_frames_permanent_save_path} ({len(permanent_frame_files)} frames)")
+                else:
+                    logger.warning(f"Permanent frames directory exists but contains no frames, using temp directory")
+            
             # Create video with proper error handling for NVENC limitations
             try:
                 # Use duration-preserved video creation to ensure exact timing match with input
                 from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
                 video_creation_success = create_video_from_frames_with_duration_preservation(
-                    output_frames_dir, silent_upscaled_video_path, current_input_video_for_frames,
+                    frames_source_dir, silent_upscaled_video_path, current_input_video_for_frames,
                     ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger
                 )
                 
@@ -2118,7 +2139,7 @@ def run_upscale (
                     # Try to create a basic video without GPU acceleration as fallback
                     logger.info("Attempting fallback video creation without GPU acceleration...")
                     fallback_success = create_video_from_frames_with_duration_preservation(
-                        output_frames_dir, silent_upscaled_video_path, current_input_video_for_frames,
+                        frames_source_dir, silent_upscaled_video_path, current_input_video_for_frames,
                         ffmpeg_preset, ffmpeg_quality_value, False, logger=logger
                     )
                     
@@ -2523,10 +2544,24 @@ def run_upscale (
                     silent_partial_path = os.path.join(temp_dir, "silent_partial_video.mp4")
                     
                     logger.info(f"Creating silent partial video from {num_processed_frames} frames...")
+                    
+                    # Determine which frames directory to use for partial video creation
+                    # Priority: permanent saved frames > temp output frames
+                    partial_frames_source_dir = output_frames_dir
+                    
+                    if save_frames and processed_frames_permanent_save_path and os.path.exists(processed_frames_permanent_save_path):
+                        # Verify permanent frames exist for partial output
+                        permanent_frame_files = sorted([f for f in os.listdir(processed_frames_permanent_save_path) if f.endswith(('.png', '.jpg', '.jpeg'))])
+                        if len(permanent_frame_files) > 0:
+                            partial_frames_source_dir = processed_frames_permanent_save_path
+                            logger.info(f"Using saved frames from permanent storage for partial video: {processed_frames_permanent_save_path} ({len(permanent_frame_files)} frames)")
+                        else:
+                            logger.warning(f"Permanent frames directory exists but contains no frames, using temp directory for partial video")
+                    
                     # Use duration-preserved video creation for partial video
                     from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
                     video_creation_success = create_video_from_frames_with_duration_preservation(
-                        output_frames_dir, silent_partial_path, current_input_video_for_frames,
+                        partial_frames_source_dir, silent_partial_path, current_input_video_for_frames,
                         ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger
                     )
                     

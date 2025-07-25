@@ -742,9 +742,24 @@ def process_video_with_seedvr2(
         )
     
     try:
+        # Determine which frames directory to use for video creation
+        # Priority: permanent saved frames > temp output frames
+        frames_source_dir = output_frames_dir
+        
+        if save_frames and processed_frames_permanent_save_path and os.path.exists(processed_frames_permanent_save_path):
+            # Verify permanent frames exist and are complete
+            permanent_frame_files = sorted([f for f in os.listdir(processed_frames_permanent_save_path) if f.endswith(('.png', '.jpg', '.jpeg'))])
+            if len(permanent_frame_files) > 0:
+                frames_source_dir = processed_frames_permanent_save_path
+                if logger:
+                    logger.info(f"Using saved frames from permanent storage: {processed_frames_permanent_save_path} ({len(permanent_frame_files)} frames)")
+            else:
+                if logger:
+                    logger.warning(f"Permanent frames directory exists but contains no frames, using temp directory")
+        
         # Create video using global FFmpeg settings
         util_create_video_from_frames(
-            input_frames_dir=output_frames_dir,
+            input_frames_dir=frames_source_dir,
             output_video_path=output_video_path,
             fps=input_fps,
             preset=ffmpeg_preset,
@@ -754,7 +769,7 @@ def process_video_with_seedvr2(
         )
         
         if logger:
-            logger.info(f"Output video created: {output_video_path}")
+            logger.info(f"Output video created from {frames_source_dir}: {output_video_path}")
     
     except Exception as e:
         error_msg = f"Failed to create output video: {e}"
