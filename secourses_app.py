@@ -4685,7 +4685,13 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
         seedvr2_model_val, seedvr2_batch_size_val, seedvr2_cfg_scale_val,
         seedvr2_enable_block_swap_val, seedvr2_block_swap_counter_val,
         enable_target_res_val, target_h_val, target_w_val, target_res_mode_val,
-        seed_value, use_random_seed, progress=gr.Progress(track_tqdm=True)
+        seed_value, use_random_seed,
+        # Additional SeedVR2 settings
+        seedvr2_preserve_vram_val, seedvr2_flash_attention_val, seedvr2_color_correction_val,
+        seedvr2_enable_multi_gpu_val, seedvr2_gpu_devices_val,
+        seedvr2_block_swap_offload_io_val, seedvr2_block_swap_model_caching_val,
+        seedvr2_quality_preset_val, seedvr2_use_gpu_val,
+        progress=gr.Progress(track_tqdm=True)
     ):
         if not input_image_path:
             return (
@@ -4715,11 +4721,21 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 # Set block swap settings
                 seedvr2_config.enable_block_swap = seedvr2_enable_block_swap_val
                 seedvr2_config.block_swap_counter = seedvr2_block_swap_counter_val
+                seedvr2_config.block_swap_offload_io = seedvr2_block_swap_offload_io_val
+                seedvr2_config.block_swap_model_caching = seedvr2_block_swap_model_caching_val
                 # Set resolution settings for SeedVR2
                 seedvr2_config.enable_target_res = enable_target_res_val
                 seedvr2_config.target_h = target_h_val
                 seedvr2_config.target_w = target_w_val
                 seedvr2_config.target_res_mode = target_res_mode_val
+                # Set additional SeedVR2 settings
+                seedvr2_config.preserve_vram = seedvr2_preserve_vram_val
+                seedvr2_config.flash_attention = seedvr2_flash_attention_val
+                seedvr2_config.color_correction = seedvr2_color_correction_val
+                seedvr2_config.enable_multi_gpu = seedvr2_enable_multi_gpu_val
+                seedvr2_config.gpu_devices = seedvr2_gpu_devices_val
+                seedvr2_config.quality_preset = seedvr2_quality_preset_val
+                seedvr2_config.use_gpu = seedvr2_use_gpu_val
                 # Set seed
                 seedvr2_config.seed = seed_value
                 image_upscaler_model = None
@@ -4834,7 +4850,9 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
         target_w,
         target_res_mode,
         image_upscaler_model,
-        seedvr2_model
+        seedvr2_model,
+        seedvr2_enable_multi_gpu,
+        seedvr2_gpu_devices
     ):
         # Get basic image info
         basic_info, status, output_update, slider_update = handle_image_upload(image_path)
@@ -4868,7 +4886,9 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             target_w_num,
             target_res_mode_radio,
             image_upscaler_model_dropdown,
-            seedvr2_model_dropdown
+            seedvr2_model_dropdown,
+            seedvr2_enable_multi_gpu_check,
+            seedvr2_gpu_devices_textbox
         ],
         outputs=[
             image_info_display,
@@ -4899,7 +4919,17 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             target_w_num,
             target_res_mode_radio,
             seed_num,
-            random_seed_check
+            random_seed_check,
+            # Additional SeedVR2 settings
+            seedvr2_preserve_vram_check,
+            seedvr2_flash_attention_check,
+            seedvr2_color_correction_check,
+            seedvr2_enable_multi_gpu_check,
+            seedvr2_gpu_devices_textbox,
+            seedvr2_block_swap_offload_io_check,
+            seedvr2_block_swap_model_caching_check,
+            seedvr2_quality_preset_radio,
+            seedvr2_use_gpu_check
         ],
         outputs=[
             output_image,
@@ -4924,7 +4954,9 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
         target_w,
         target_res_mode,
         image_upscaler_model,
-        seedvr2_model
+        seedvr2_model,
+        seedvr2_enable_multi_gpu,
+        seedvr2_gpu_devices
     ):
         if not image_path:
             return gr.update()  # Don't update if no image
@@ -4964,7 +4996,9 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
         target_w_num,
         target_res_mode_radio,
         image_upscaler_model_dropdown,
-        seedvr2_model_dropdown
+        seedvr2_model_dropdown,
+        seedvr2_enable_multi_gpu_check,
+        seedvr2_gpu_devices_textbox
     ]
     
     # Add change handlers for all components that affect resolution
@@ -4979,7 +5013,9 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 target_w_num,
                 target_res_mode_radio,
                 image_upscaler_model_dropdown,
-                seedvr2_model_dropdown
+                seedvr2_model_dropdown,
+                seedvr2_enable_multi_gpu_check,
+                seedvr2_gpu_devices_textbox
             ],
             outputs=image_info_display
         )
