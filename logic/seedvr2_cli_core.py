@@ -394,6 +394,9 @@ def get_session_manager(logger: Optional[logging.Logger] = None) -> SeedVR2Sessi
     """Get or create the global session manager."""
     global _global_session_manager
     if _global_session_manager is None:
+        # If no logger provided, try to get the default logger
+        if logger is None:
+            logger = logging.getLogger('video_to_video')
         _global_session_manager = SeedVR2SessionManager(logger)
     return _global_session_manager
 
@@ -2136,10 +2139,25 @@ def _process_batch_with_seedvr2_model(
         # Get session manager
         session_manager = get_session_manager()
         
-        # Initialize session if needed
-        if not session_manager.is_initialized:
+        # Check if model has changed and needs reinitialization
+        needs_reinit = False
+        requested_model = processing_args.get('model', '')
+        
+        if session_manager.is_initialized and hasattr(session_manager, 'current_model'):
+            if session_manager.current_model != requested_model:
+                # Log model change even when not in debug mode
+                if session_manager.logger:
+                    session_manager.logger.info(f"🔄 SeedVR2 model change detected: {session_manager.current_model} -> {requested_model}")
+                if debug:
+                    print(f"🔄 Model changed from {session_manager.current_model} to {requested_model}")
+                    print("🧹 Cleaning up previous session...")
+                session_manager.cleanup_session()
+                needs_reinit = True
+        
+        # Initialize session if needed or model changed
+        if not session_manager.is_initialized or needs_reinit:
             if debug:
-                print("🔧 Initializing SeedVR2 session...")
+                print(f"🔧 Initializing SeedVR2 session with model: {requested_model}")
             
             success = session_manager.initialize_session(processing_args, seedvr2_config)
             if not success:
