@@ -170,7 +170,9 @@ class ProgressMessageFilter(logging.Filter):
             "🔍 Debug: batch_progress_queue",
             "✅ Batch processed successfully",
             "❌ Batch processing error",
-            "📊 Batch progress queue"
+            "📊 Batch progress queue",
+            "⏱️ Batch",
+            "📊 Total ETA:"
         ]
         return not any(pattern in record.getMessage() for pattern in suppress_patterns)
 

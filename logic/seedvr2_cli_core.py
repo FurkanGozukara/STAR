@@ -1517,11 +1517,23 @@ def _process_single_gpu_cli_generator(
             
             # Track batch times for ETA
             processing_start_time = time.time()
+            current_batch_idx = 0  # Track current batch for ETA calculation
+            
+            # Track last batch time
+            last_batch_time = [processing_start_time]  # Use list to allow modification in nested function
             
             # Progress callback wrapper
             def generation_progress_callback(batch_idx, total_batches, current_batch_frames, message=""):
                 logger.info(f"📦 Processing batch {batch_idx}/{total_batches}: {current_batch_frames} frames - {message}")
                 logger.info(f"🔍 Debug: batch_progress_queue id={id(shared_queues.batch_progress)}, qsize={shared_queues.batch_progress.qsize()}")
+                
+                # Track batch time
+                current_time = time.time()
+                if batch_idx > 0:  # Don't track time for the first batch
+                    batch_time = current_time - last_batch_time[0]
+                    shared_queues.batch_times.append(batch_time)
+                    logger.info(f"⏱️ Batch {batch_idx} took {batch_time:.1f}s")
+                last_batch_time[0] = current_time
                 
                 # Calculate ETA
                 if shared_queues.batch_times:
@@ -1759,6 +1771,13 @@ def _process_single_gpu_cli_generator(
                         # Also update the last_chunk_status for persistence
                         last_chunk_status = status_msg
                         
+                        # Update current batch index when we get a batch progress update
+                        # Extract batch number from the message if possible
+                        import re
+                        batch_match = re.search(r'Batch (\d+)/', status_msg)
+                        if batch_match:
+                            current_batch_idx = int(batch_match.group(1))
+                        
                         # Track batch time for ETA updates
                         if shared_queues.batch_times and len(shared_queues.batch_times) > 0:
                             # Update with total progress
@@ -1800,7 +1819,25 @@ def _process_single_gpu_cli_generator(
                 # Yield a heartbeat status every 2 seconds if no other updates
                 if not updates_found and time.time() - last_status_time > 2:
                     elapsed = int(time.time() - processing_start_time)
-                    heartbeat_msg = f"⏳ Processing... ({elapsed}s elapsed)"
+                    
+                    # Calculate ETA based on batch progress
+                    eta_str = ""
+                    if shared_queues.batch_times and len(shared_queues.batch_times) > 0:
+                        # Use average batch time to estimate remaining time
+                        avg_batch_time = sum(shared_queues.batch_times) / len(shared_queues.batch_times)
+                        completed_batches = len(shared_queues.batch_times)
+                        batches_remaining = total_batches - completed_batches
+                        eta_seconds = avg_batch_time * batches_remaining
+                        
+                        # Format ETA
+                        if eta_seconds > 60:
+                            eta_minutes = int(eta_seconds / 60)
+                            eta_secs = int(eta_seconds % 60)
+                            eta_str = f" | ETA: {eta_minutes}m {eta_secs}s"
+                        else:
+                            eta_str = f" | ETA: {int(eta_seconds)}s"
+                    
+                    heartbeat_msg = f"⏳ Processing... ({elapsed}s elapsed{eta_str})"
                     logger.info(f"💓 Yielding heartbeat: {heartbeat_msg}")
                     # Preserve the last chunk status during heartbeat
                     yield (None, heartbeat_msg, last_chunk_video_path, last_chunk_status, None)
