@@ -35,7 +35,7 @@ from .cancellation_manager import cancellation_manager, CancelledError
 from .common_utils import format_time
 
 # Import the unified resolution calculation function
-from .seedvr2_resolution_utils import calculate_seedvr2_image_resolution
+from .seedvr2_resolution_utils import calculate_seedvr2_resolution
 
 def process_single_image(
     input_image_path: str,
@@ -401,10 +401,19 @@ def _process_with_seedvr2(
         "model_dir": models_dir,
         "preserve_vram": seedvr2_config.preserve_vram,
         "debug": logger.level <= logging.DEBUG if logger else False,
-        "cfg_scale": seedvr2_config.cfg_scale,
-        "seed": seedvr2_config.seed if seedvr2_config.seed >= 0 else current_seed,
-        "res_w": calculate_seedvr2_image_resolution(input_image_path, logger=logger),
-        "batch_size": 1,  # Single image processing
+        "cfg_scale": getattr(seedvr2_config, 'cfg_scale', 7.5),
+        "seed": getattr(seedvr2_config, 'seed', current_seed) if getattr(seedvr2_config, 'seed', -1) >= 0 else current_seed,
+        # Calculate resolution using the main function
+        "res_w": calculate_seedvr2_resolution(
+            input_path=input_image_path,
+            enable_target_res=getattr(seedvr2_config, 'enable_target_res', False),
+            target_h=getattr(seedvr2_config, 'target_h', 2048),
+            target_w=getattr(seedvr2_config, 'target_w', 2048),
+            target_res_mode=getattr(seedvr2_config, 'target_res_mode', 'Ratio Upscale'),
+            upscale_factor=4.0,  # SeedVR2 default
+            logger=logger
+        ),
+        "batch_size": getattr(seedvr2_config, 'batch_size', 1),
         "temporal_overlap": 0,  # No temporal processing for single image
     }
     

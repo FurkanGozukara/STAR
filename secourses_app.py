@@ -4598,6 +4598,9 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
     def image_upscale_wrapper(
         input_image_path, upscaler_type, image_upscaler_model_val, output_format, output_quality,
         preserve_aspect_ratio, preserve_metadata, custom_suffix,
+        seedvr2_model_val, seedvr2_batch_size_val, seedvr2_cfg_scale_val,
+        seedvr2_enable_block_swap_val, seedvr2_block_swap_counter_val,
+        enable_target_res_val, target_h_val, target_w_val, target_res_mode_val,
         seed_value, use_random_seed, progress=gr.Progress(track_tqdm=True)
     ):
         if not input_image_path:
@@ -4613,6 +4616,28 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 actual_upscaler_type = "seedvr2"
                 from logic.star_dataclasses import SeedVR2Config
                 seedvr2_config = SeedVR2Config()
+                # Extract the actual model filename from dropdown selection
+                if seedvr2_model_val:
+                    model_filename = util_extract_model_filename_from_dropdown(seedvr2_model_val)
+                    if model_filename:
+                        seedvr2_config.model = model_filename  # Use 'model' field, not 'model_filename'
+                        logger.info(f"Single image upscale using SeedVR2 model: {model_filename}")
+                # Set batch size from UI
+                if seedvr2_batch_size_val:
+                    seedvr2_config.batch_size = seedvr2_batch_size_val
+                # Set CFG scale
+                if seedvr2_cfg_scale_val is not None:
+                    seedvr2_config.cfg_scale = seedvr2_cfg_scale_val
+                # Set block swap settings
+                seedvr2_config.enable_block_swap = seedvr2_enable_block_swap_val
+                seedvr2_config.block_swap_counter = seedvr2_block_swap_counter_val
+                # Set resolution settings for SeedVR2
+                seedvr2_config.enable_target_res = enable_target_res_val
+                seedvr2_config.target_h = target_h_val
+                seedvr2_config.target_w = target_w_val
+                seedvr2_config.target_res_mode = target_res_mode_val
+                # Set seed
+                seedvr2_config.seed = seed_value
                 image_upscaler_model = None
             else:
                 actual_upscaler_type = "image_upscaler"
@@ -4739,6 +4764,15 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             image_preserve_aspect_ratio,
             image_preserve_metadata,
             image_custom_suffix,
+            seedvr2_model_dropdown,
+            seedvr2_batch_size_slider,
+            seedvr2_cfg_scale_slider,
+            seedvr2_enable_block_swap_check,
+            seedvr2_block_swap_counter_slider,
+            enable_target_res_check,
+            target_h_num,
+            target_w_num,
+            target_res_mode_radio,
             seed_num,
             random_seed_check
         ],
