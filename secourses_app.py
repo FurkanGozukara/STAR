@@ -4567,6 +4567,86 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
         else:
             return gr.update()
 
+    def calculate_image_resolution_preview(
+        image_path,
+        upscaler_type,
+        enable_target_res,
+        target_h,
+        target_w,
+        target_res_mode,
+        image_upscaler_model,
+        seedvr2_model=None
+    ):
+        if not image_path:
+            return "Upload an image to see resolution preview..."
+        
+        try:
+            from logic.seedvr2_image_core import _extract_image_info
+            image_info = _extract_image_info(image_path, logger)
+            orig_w = image_info.get('width', 0)
+            orig_h = image_info.get('height', 0)
+            
+            if orig_w <= 0 or orig_h <= 0:
+                return "Invalid image dimensions"
+            
+            # Determine internal upscaler type and effective upscale factor
+            if upscaler_type == "Use SeedVR2 for Images":
+                internal_upscaler_type = "seedvr2"
+                effective_upscale_factor = 4.0  # SeedVR2 is always 4x
+                model_name = "SeedVR2 (4x)"
+                # Add specific SeedVR2 model if available
+                if seedvr2_model:
+                    selected_model_display = f"\n🎯 **Selected Model:** {seedvr2_model}"
+                else:
+                    selected_model_display = "\n🎯 **Selected Model:** SeedVR2 (Default)"
+            else:
+                internal_upscaler_type = "image_upscaler"
+                # Get model-specific upscale factor
+                if image_upscaler_model:
+                    model_scale = util_get_model_scale_from_name(image_upscaler_model)
+                    effective_upscale_factor = model_scale if model_scale else 4.0
+                    model_name = f"{image_upscaler_model} ({effective_upscale_factor}x)"
+                    selected_model_display = f"\n🎯 **Selected Model:** {image_upscaler_model}"
+                else:
+                    effective_upscale_factor = 4.0
+                    model_name = "Image Upscaler (4x)"
+                    selected_model_display = "\n🎯 **Selected Model:** No model selected"
+            
+            if enable_target_res:
+                try:
+                    custom_upscale_factor = effective_upscale_factor if internal_upscaler_type == "seedvr2" else None
+                    needs_downscale, ds_h, ds_w, upscale_factor_calc, final_h_calc, final_w_calc = util_calculate_upscale_params(
+                        orig_h, orig_w, target_h, target_w, target_res_mode,
+                        logger=logger,
+                        image_upscaler_model=image_upscaler_model if internal_upscaler_type == "image_upscaler" else None,
+                        custom_upscale_factor=custom_upscale_factor
+                    )
+                    
+                    downscale_info = f"\n• Downscale first: {ds_w}×{ds_h}" if needs_downscale else ""
+                    
+                    return f"""{selected_model_display}
+
+🎯 **Expected Output Resolution**
+• Input: {orig_w}×{orig_h}
+• Model: {model_name}
+• Output: {final_w_calc}×{final_h_calc} ({upscale_factor_calc:.2f}x)
+• Mode: {target_res_mode}{downscale_info}"""
+                except Exception as e:
+                    return f"❌ Error calculating resolution: {str(e)}"
+            else:
+                # Simple upscale without target resolution
+                final_h = int(round(orig_h * effective_upscale_factor / 2) * 2)
+                final_w = int(round(orig_w * effective_upscale_factor / 2) * 2)
+                return f"""{selected_model_display}
+
+🎯 **Expected Output Resolution**
+• Input: {orig_w}×{orig_h}
+• Model: {model_name}
+• Output: {final_w}×{final_h} ({effective_upscale_factor}x scale)"""
+                
+        except Exception as e:
+            return f"❌ Error: {str(e)}"
+    
     def handle_image_upload(image_path):
         if not image_path:
             return (
@@ -4578,9 +4658,13 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
         try:
             from logic.seedvr2_image_core import _extract_image_info, format_image_info_display as util_format_image_info_display
             image_info = _extract_image_info(image_path, logger)
-            formatted_info = util_format_image_info_display(image_info)
+            
+            # Get basic info first
+            basic_info = util_format_image_info_display(image_info)
+            
+            # Return basic info - resolution preview will be updated separately
             return (
-                gr.update(value=formatted_info),
+                gr.update(value=basic_info),
                 gr.update(value=f"✅ Image loaded: {image_info.get('width', 0)}×{image_info.get('height', 0)} pixels"),
                 gr.update(visible=False),
                 gr.update(visible=False)
@@ -4742,9 +4826,50 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
         else:
             return gr.update(visible=True)
 
+    def enhanced_image_upload_handler(
+        image_path,
+        upscaler_type,
+        enable_target_res,
+        target_h,
+        target_w,
+        target_res_mode,
+        image_upscaler_model,
+        seedvr2_model
+    ):
+        # Get basic image info
+        basic_info, status, output_update, slider_update = handle_image_upload(image_path)
+        
+        if image_path and not status['value'].startswith("❌"):
+            # Calculate resolution preview
+            resolution_preview = calculate_image_resolution_preview(
+                image_path=image_path,
+                upscaler_type=upscaler_type,
+                enable_target_res=enable_target_res,
+                target_h=target_h,
+                target_w=target_w,
+                target_res_mode=target_res_mode,
+                image_upscaler_model=image_upscaler_model,
+                seedvr2_model=seedvr2_model
+            )
+            
+            # Combine basic info with resolution preview
+            combined_info = basic_info['value'] + "\n\n" + resolution_preview
+            basic_info['value'] = combined_info
+        
+        return basic_info, status, output_update, slider_update
+    
     input_image.change(
-        fn=handle_image_upload,
-        inputs=input_image,
+        fn=enhanced_image_upload_handler,
+        inputs=[
+            input_image,
+            image_upscaler_type_radio,
+            enable_target_res_check,
+            target_h_num,
+            target_w_num,
+            target_res_mode_radio,
+            image_upscaler_model_dropdown,
+            seedvr2_model_dropdown
+        ],
         outputs=[
             image_info_display,
             image_processing_status,
@@ -4791,6 +4916,74 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
         outputs=[]
     )
 
+    def update_image_resolution_preview(
+        image_path,
+        upscaler_type,
+        enable_target_res,
+        target_h,
+        target_w,
+        target_res_mode,
+        image_upscaler_model,
+        seedvr2_model
+    ):
+        if not image_path:
+            return gr.update()  # Don't update if no image
+        
+        try:
+            from logic.seedvr2_image_core import _extract_image_info, format_image_info_display as util_format_image_info_display
+            image_info = _extract_image_info(image_path, logger)
+            
+            # Get basic info
+            basic_info = util_format_image_info_display(image_info)
+            
+            # Calculate resolution preview
+            resolution_preview = calculate_image_resolution_preview(
+                image_path=image_path,
+                upscaler_type=upscaler_type,
+                enable_target_res=enable_target_res,
+                target_h=target_h,
+                target_w=target_w,
+                target_res_mode=target_res_mode,
+                image_upscaler_model=image_upscaler_model,
+                seedvr2_model=seedvr2_model
+            )
+            
+            # Combine info
+            combined_info = basic_info + "\n\n" + resolution_preview
+            return gr.update(value=combined_info)
+            
+        except Exception as e:
+            logger.error(f"Error updating image resolution preview: {e}")
+            return gr.update()
+    
+    # Components that affect resolution calculation
+    resolution_affecting_components = [
+        image_upscaler_type_radio,
+        enable_target_res_check,
+        target_h_num,
+        target_w_num,
+        target_res_mode_radio,
+        image_upscaler_model_dropdown,
+        seedvr2_model_dropdown
+    ]
+    
+    # Add change handlers for all components that affect resolution
+    for component in resolution_affecting_components:
+        component.change(
+            fn=update_image_resolution_preview,
+            inputs=[
+                input_image,
+                image_upscaler_type_radio,
+                enable_target_res_check,
+                target_h_num,
+                target_w_num,
+                target_res_mode_radio,
+                image_upscaler_model_dropdown,
+                seedvr2_model_dropdown
+            ],
+            outputs=image_info_display
+        )
+    
     image_upscaler_type_radio.change(
         fn=update_image_upscaler_visibility,
         inputs=image_upscaler_type_radio,

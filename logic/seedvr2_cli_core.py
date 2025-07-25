@@ -234,13 +234,19 @@ class SeedVR2SessionManager:
             # Add resolution calculation - ensure we have valid target resolution
             current_height, current_width = batch_frames.shape[1], batch_frames.shape[2]
             
-            # Calculate target resolution width (maintaining aspect ratio if possible)
-            if current_height == current_width:  # Square video
-                res_w = max(512, min(1920, current_width * 4))  # Conservative 4x upscale
+            # Check if res_w is already provided in effective_args
+            if 'res_w' in effective_args and effective_args['res_w']:
+                res_w = effective_args['res_w']
+                self.logger.info(f"Using provided resolution: {res_w}")
             else:
-                # Use larger dimension as base, cap at reasonable size
-                base_res = max(current_height, current_width)
-                res_w = max(512, min(1920, base_res * 4))
+                # Calculate target resolution width (maintaining aspect ratio if possible)
+                if current_height == current_width:  # Square video
+                    res_w = max(512, min(1920, current_width * 4))  # Conservative 4x upscale
+                else:
+                    # Use larger dimension as base, cap at reasonable size
+                    base_res = max(current_height, current_width)
+                    res_w = max(512, min(1920, base_res * 4))
+                self.logger.info(f"Calculated fallback resolution: {res_w}")
             
             # ✅ ADD DEBUGGING: Log tensor format before processing
             self.logger.info(f"🔍 Processing batch - Input tensor shape: {batch_frames.shape}, dtype: {batch_frames.dtype}")
@@ -1504,12 +1510,17 @@ def _process_single_gpu_cli_generator(
             current_height, current_width = frames_tensor.shape[1], frames_tensor.shape[2]
             
             # Calculate target resolution
-            if processing_args.get("resolution"):
+            if processing_args.get("res_w"):
+                res_w = processing_args["res_w"]
+                logger.info(f"Using provided res_w: {res_w}")
+            elif processing_args.get("resolution"):
                 res_w = processing_args["resolution"]
+                logger.info(f"Using provided resolution: {res_w}")
             else:
                 # Use larger dimension as base, cap at reasonable size
                 base_res = max(current_height, current_width)
                 res_w = max(512, min(1920, base_res * 4))
+                logger.info(f"Calculated fallback resolution: {res_w}")
             
             # Import generation function
             from src.core.generation import generation_loop
