@@ -379,7 +379,14 @@ def _process_with_seedvr2(
         if logger:
             logger.info(f"Downloading SeedVR2 model: {seedvr2_config.model}")
         try:
+            # Import download_weight from SeedVR2
+            from src.utils.downloads import download_weight
             download_weight(seedvr2_config.model, models_dir)
+        except ImportError as e:
+            error_msg = f"Failed to import SeedVR2 download_weight: {e}"
+            if logger:
+                logger.error(error_msg)
+            raise RuntimeError(error_msg)
         except Exception as e:
             error_msg = f"Failed to download model {seedvr2_config.model}: {e}"
             if logger:
@@ -423,6 +430,16 @@ def _process_with_seedvr2(
         # Multi-GPU support
         "enable_multi_gpu": getattr(seedvr2_config, 'enable_multi_gpu', False),
         "gpu_devices": getattr(seedvr2_config, 'gpu_devices', '0'),
+        # Additional temporal consistency settings (for compatibility)
+        "scene_awareness": getattr(seedvr2_config, 'scene_awareness', False),  # False for single image
+        "temporal_quality": getattr(seedvr2_config, 'temporal_quality', 'balanced'),
+        "consistency_validation": getattr(seedvr2_config, 'consistency_validation', False),  # False for single image
+        "chunk_optimization": getattr(seedvr2_config, 'chunk_optimization', False),  # False for single image
+        "enable_temporal_consistency": getattr(seedvr2_config, 'enable_temporal_consistency', False),  # False for single image
+        "enable_frame_padding": getattr(seedvr2_config, 'enable_frame_padding', False),  # False for single image
+        "pad_last_chunk": getattr(seedvr2_config, 'pad_last_chunk', False),  # False for single image
+        # GPU/processing settings
+        "use_gpu": getattr(seedvr2_config, 'use_gpu', True),
     }
     
     # Setup block swap if enabled (matching video pipeline)
