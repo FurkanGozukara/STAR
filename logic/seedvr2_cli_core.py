@@ -975,17 +975,27 @@ def process_video_with_seedvr2_cli(
         ):
             logger.info(f"🔍 Received processing result type: {type(processing_result)}, length: {len(processing_result) if isinstance(processing_result, tuple) else 'N/A'}")
             
-            if isinstance(processing_result, tuple) and len(processing_result) == 4:
-                # This is an intermediate chunk update
-                partial_tensor, chunk_results, chunk_video_path, chunk_status = processing_result
-                
-                logger.info(f"📊 Chunk update - partial_tensor is None: {partial_tensor is None}, chunk_video_path: {chunk_video_path}")
-                
-                # Always yield intermediate updates for real-time progress
-                if partial_tensor is None:  # This is a status/progress update, not final result
-                    yield (None, chunk_status, chunk_video_path, chunk_status, None)
+            if isinstance(processing_result, tuple):
+                # ✅ FIX: Handle both 4 and 5 element tuples
+                if len(processing_result) == 5:
+                    # This is a status update with comparison video path
+                    result_path, status_msg, chunk_video_path, chunk_status, comparison_path = processing_result
+                    logger.info(f"📊 Status update - result_path is None: {result_path is None}, chunk_video_path: {chunk_video_path}")
+                    if result_path is None:  # This is a status/progress update, not final result
+                        yield (None, status_msg, chunk_video_path, chunk_status, comparison_path)
+                    else:
+                        final_result = processing_result
+                elif len(processing_result) == 4:
+                    # This might be an intermediate chunk update or final result
+                    partial_tensor, chunk_results, chunk_video_path, chunk_status = processing_result
+                    logger.info(f"📊 Chunk update - partial_tensor is None: {partial_tensor is None}, chunk_video_path: {chunk_video_path}")
+                    if partial_tensor is None:  # This is a status/progress update, not final result
+                        yield (None, chunk_status, chunk_video_path, chunk_status, None)
+                    else:
+                        # This might be a partial result with tensor
+                        final_result = processing_result
                 else:
-                    # This might be a partial result with tensor
+                    # This is the final result with different format
                     final_result = processing_result
             else:
                 # This is the final result
@@ -1299,9 +1309,9 @@ def _process_frames_with_seedvr2_cli(
         device_id = device_list[0]
         logger.info(f"Processing on single GPU: {device_id}")
         
-        # ✅ FIX: Use generator version for single GPU processing
-        final_result = None
-        for result in _process_single_gpu_cli_generator(
+        # ✅ FIX: Use 'yield from' to pass updates immediately up the generator chain.
+        # This is the primary fix that restores real-time UI updates.
+        yield from _process_single_gpu_cli_generator(
             frames_tensor,
             device_id,
             processing_args,
@@ -1317,20 +1327,8 @@ def _process_frames_with_seedvr2_cli(
             ffmpeg_use_gpu=processing_args.get("ffmpeg_use_gpu", False),
             max_chunk_len=max_chunk_len,  # ✅ FIX: Pass user's chunk frame count setting
             status_callback=status_callback
-        ):
-            # ✅ FIX: Check for intermediate chunk updates (exactly 4 elements with None as first element)
-            if isinstance(result, tuple) and len(result) == 4 and result[0] is None:
-                # This is an intermediate result with chunk update
-                yield result
-            elif isinstance(result, tuple) and len(result) >= 3:
-                # This is the final result (has result_tensor, chunk_results, last_chunk_video_path, ...)
-                final_result = result  # Keep all elements including chunk results
-            else:
-                # Fallback for unexpected result format
-                logger.warning(f"Unexpected result format from generator: {type(result)}")
-                final_result = result
-        
-        return final_result if final_result else (torch.empty(0), [], None)
+        )
+        # We don't need a return statement here because 'yield from' handles everything.
         
     else:
         # Multi-GPU processing (no yielding for now)
@@ -1354,7 +1352,8 @@ def _process_frames_with_seedvr2_cli(
         )
         
         # Multi-GPU doesn't generate chunk previews during processing
-        return result_tensor, chunk_results, None
+        # ✅ FIX: Use yield instead of return to make this a proper generator
+        yield (result_tensor, chunk_results, None)
 
 
 def _process_single_gpu_cli_generator(
@@ -1882,7 +1881,7 @@ def _process_single_gpu_cli_generator(
                     if current_chunk_path:
                         last_chunk_video_path = current_chunk_path
                         logger.info(f"✅ Final chunk {chunk_id} preview generated: {current_chunk_path}")
-                        yield (None, chunk_results, last_chunk_video_path, f"Final chunk {chunk_id} preview ready")
+                        yield (None, chunk_results, last_chunk_video_path, f"Final chunk {chunk_id} preview ready", None)
             
             # Convert result to list of tensors for compatibility with rest of pipeline
             processed_frames = [result_tensor]

@@ -1011,10 +1011,15 @@ def run_upscale (
                 for result_output_video_path, status_msg, chunk_video_path, chunk_status, comparison_video_path in seedvr2_generator:
                     logger.info(f"🔄 SeedVR2 yield received - chunk_video_path: {chunk_video_path}, chunk_status: {chunk_status}")
                     
-                    # Update status log
-                    if status_msg:
-                        status_log.append(status_msg)
-                    
+                    # ✅ FIX: Use the detailed status_msg for the main UI display and log it correctly.
+                    effective_chunk_status = chunk_status or "SeedVR2 processing..."
+                    if status_msg and "SeedVR2 processing" not in status_msg:
+                        # This is a rich progress message (e.g., "Batch 2/25... ETA: ...")
+                        # Use it as the primary status and append it to the log if it's new.
+                        effective_chunk_status = status_msg
+                        if not status_log or status_log[-1] != status_msg:
+                            status_log.append(status_msg)
+
                     # Update chunk preview path
                     if chunk_video_path:
                         last_chunk_video_path = chunk_video_path
@@ -1024,15 +1029,9 @@ def run_upscale (
                     if result_output_video_path:
                         output_video_path = result_output_video_path
                     
-                    # Yield progress update
-                    logger.info(f"🔼 Yielding to UI - chunk_video: {last_chunk_video_path}, status: {chunk_status or 'SeedVR2 processing'}")
-                    # For batch progress messages, append to log instead of replacing
-                    if status_msg and "🎬 Batch" in status_msg:
-                        # This is a batch progress update - keep it visible
-                        yield None, status_msg, last_chunk_video_path, chunk_status or "SeedVR2 processing", comparison_video_path
-                    else:
-                        # For other messages, send accumulated log
-                        yield None, "\n".join(status_log), last_chunk_video_path, chunk_status or "SeedVR2 processing", comparison_video_path
+                    # Yield progress update with the rich, effective status
+                    logger.info(f"🔼 Yielding to UI - chunk_video: {last_chunk_video_path}, status: {effective_chunk_status}")
+                    yield None, "\n".join(status_log), last_chunk_video_path, effective_chunk_status, comparison_video_path
                 
                 # SeedVR2 processing completed successfully
                 if output_video_path and os.path.exists(output_video_path):
