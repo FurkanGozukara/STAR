@@ -1008,6 +1008,12 @@ def run_upscale (
                 # Process SeedVR2 generator and yield updates
                 last_chunk_video_path = None
                 output_video_path = None
+                
+                # Keep track of key status messages for SeedVR2
+                seedvr2_base_status = "\n".join(status_log)  # Store the initial status messages
+                progress_history = []  # Store last N progress messages
+                max_progress_history = 10  # Show last 10 status updates
+                
                 for result_output_video_path, status_msg, chunk_video_path, chunk_status, comparison_video_path in seedvr2_generator:
                     logger.info(f"🔄 SeedVR2 yield received - chunk_video_path: {chunk_video_path}, chunk_status: {chunk_status}")
                     
@@ -1035,9 +1041,18 @@ def run_upscale (
                     
                     # Yield progress update with the rich, effective status
                     logger.info(f"🔼 Yielding to UI - chunk_video: {last_chunk_video_path}, status: {effective_chunk_status}")
-                    # For SeedVR2 batch progress updates, only yield the current status message
-                    if any(marker in effective_chunk_status for marker in ["🎬 Batch", "⏳ Processing..."]):
-                        yield None, effective_chunk_status, last_chunk_video_path, effective_chunk_status, comparison_video_path
+                    
+                    # For SeedVR2 batch progress updates, maintain rolling window of last N messages
+                    if any(marker in effective_chunk_status for marker in ["🎬 Batch", "⏳ Processing...", "Chunk"]):
+                        # Add to progress history
+                        progress_history.append(effective_chunk_status)
+                        # Keep only last N messages
+                        if len(progress_history) > max_progress_history:
+                            progress_history = progress_history[-max_progress_history:]
+                        
+                        # Combine base status with progress history
+                        combined_status = seedvr2_base_status + "\n\n" + "\n".join(progress_history)
+                        yield None, combined_status, last_chunk_video_path, effective_chunk_status, comparison_video_path
                     else:
                         yield None, "\n".join(status_log), last_chunk_video_path, effective_chunk_status, comparison_video_path
                 
