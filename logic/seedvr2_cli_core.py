@@ -875,6 +875,10 @@ def process_video_with_seedvr2_cli(
                 load_cap=None  # Process all frames
             )
             
+            # Update status with frame count
+            if status_callback:
+                status_callback(f"📊 Loaded {frames_tensor.shape[0]} frames, preparing for processing...")
+            
             # Save input frames immediately if requested (STAR standard behavior)
             if save_frames and input_frames_permanent_save_path:
                 total_frames = frames_tensor.shape[0]
@@ -970,7 +974,8 @@ def process_video_with_seedvr2_cli(
             processed_frames_permanent_save_path=processed_frames_permanent_save_path,
             chunks_permanent_save_path=chunks_permanent_save_path,
             original_fps=original_fps,
-            max_chunk_len=max_chunk_len  # ✅ FIX: Pass user's chunk frame count setting
+            max_chunk_len=max_chunk_len,  # ✅ FIX: Pass user's chunk frame count setting
+            status_callback=status_callback
         ):
             logger.info(f"🔍 Received processing result type: {type(processing_result)}, length: {len(processing_result) if isinstance(processing_result, tuple) else 'N/A'}")
             
@@ -1260,7 +1265,8 @@ def _process_frames_with_seedvr2_cli(
     processed_frames_permanent_save_path: Optional[Path] = None,
     chunks_permanent_save_path: Optional[Path] = None,
     original_fps: Optional[float] = None,
-    max_chunk_len: int = 25  # ✅ FIX: Pass user's chunk frame count setting
+    max_chunk_len: int = 25,  # ✅ FIX: Pass user's chunk frame count setting
+    status_callback: Optional[callable] = None
 ) -> Generator[Tuple[torch.Tensor, List[Dict[str, Any]], Optional[str], str], None, Tuple[torch.Tensor, List[Dict[str, Any]], Optional[str]]]:
     """
     Process frames using SeedVR2 CLI approach with multi-GPU support.
@@ -1312,7 +1318,8 @@ def _process_frames_with_seedvr2_cli(
             ffmpeg_preset=processing_args.get("ffmpeg_preset", "medium"),
             ffmpeg_quality=processing_args.get("ffmpeg_quality", 23),
             ffmpeg_use_gpu=processing_args.get("ffmpeg_use_gpu", False),
-            max_chunk_len=max_chunk_len  # ✅ FIX: Pass user's chunk frame count setting
+            max_chunk_len=max_chunk_len,  # ✅ FIX: Pass user's chunk frame count setting
+            status_callback=status_callback
         ):
             # ✅ FIX: Check for intermediate chunk updates (exactly 4 elements with None as first element)
             if isinstance(result, tuple) and len(result) == 4 and result[0] is None:
@@ -1367,7 +1374,8 @@ def _process_single_gpu_cli_generator(
     ffmpeg_preset: str = "medium",
     ffmpeg_quality: int = 23,
     ffmpeg_use_gpu: bool = False,
-    max_chunk_len: int = 25  # ✅ FIX: Pass user's chunk frame count setting
+    max_chunk_len: int = 25,  # ✅ FIX: Pass user's chunk frame count setting
+    status_callback: Optional[callable] = None
 ) -> Generator[Union[Tuple[torch.Tensor, List[Dict[str, Any]], Optional[str], str], Tuple[torch.Tensor, List[Dict[str, Any]], Optional[str]]], None, None]:
     """
     ✅ FIX: Generator version of single GPU processing that yields chunk updates during processing.
@@ -1498,6 +1506,16 @@ def _process_single_gpu_cli_generator(
             # Progress callback wrapper
             def generation_progress_callback(batch_idx, total_batches, current_batch_frames, message=""):
                 logger.info(f"📦 Processing batch {batch_idx}/{total_batches}: {current_batch_frames} frames - {message}")
+                # Update status with detailed batch information
+                if status_callback:
+                    percent = int((batch_idx / total_batches) * 100)
+                    status_msg = f"🎬 Processing Batch {batch_idx}/{total_batches} ({percent}%): {message}"
+                    status_callback(status_msg)
+                    
+                    # Queue the status update for yielding
+                    if batch_progress_queue:
+                        batch_progress_queue.put(('batch_progress', status_msg))
+                        
                 # Call the outer progress_callback if provided
                 if progress_callback:
                     progress_pct = (batch_idx / total_batches) * 0.8 + 0.2  # Scale to 20-100%
@@ -1616,6 +1634,7 @@ def _process_single_gpu_cli_generator(
             # Queue to store the result
             result_queue = thread_queue.Queue()
             chunk_update_queue = thread_queue.Queue()
+            batch_progress_queue = thread_queue.Queue()
             
             # Store chunk updates in queue from callback
             original_frame_save_callback = frame_save_callback
@@ -1656,8 +1675,17 @@ def _process_single_gpu_cli_generator(
             # Monitor for chunk updates while generation runs
             while generation_thread.is_alive():
                 try:
+                    # Check for batch progress updates first (non-blocking)
+                    try:
+                        update_type, status_msg = batch_progress_queue.get(timeout=0.1)
+                        if update_type == 'batch_progress':
+                            logger.info(f"📊 Yielding batch progress update: {status_msg}")
+                            yield (None, status_msg, last_chunk_video_path, status_msg, None)
+                    except thread_queue.Empty:
+                        pass
+                        
                     # Check for chunk updates (non-blocking)
-                    chunk_id, chunk_path = chunk_update_queue.get(timeout=0.5)
+                    chunk_id, chunk_path = chunk_update_queue.get(timeout=0.1)
                     logger.info(f"📹 Yielding chunk {chunk_id} preview update to UI")
                     yield (None, chunk_results, chunk_path, f"Chunk {chunk_id} preview ready")
                 except thread_queue.Empty:
