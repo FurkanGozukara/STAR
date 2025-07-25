@@ -1881,7 +1881,7 @@ def _process_single_gpu_cli_generator(
                     if current_chunk_path:
                         last_chunk_video_path = current_chunk_path
                         logger.info(f"✅ Final chunk {chunk_id} preview generated: {current_chunk_path}")
-                        yield (None, chunk_results, last_chunk_video_path, f"Final chunk {chunk_id} preview ready", None)
+                        yield (None, f"Final chunk {chunk_id} preview ready", last_chunk_video_path, f"Final chunk {chunk_id} preview ready", None)
             
             # Convert result to list of tensors for compatibility with rest of pipeline
             processed_frames = [result_tensor]

@@ -1013,12 +1013,16 @@ def run_upscale (
                     
                     # ✅ FIX: Use the detailed status_msg for the main UI display and log it correctly.
                     effective_chunk_status = chunk_status or "SeedVR2 processing..."
-                    if status_msg and "SeedVR2 processing" not in status_msg:
+                    if status_msg and isinstance(status_msg, str) and "SeedVR2 processing" not in status_msg:
                         # This is a rich progress message (e.g., "Batch 2/25... ETA: ...")
                         # Use it as the primary status and append it to the log if it's new.
                         effective_chunk_status = status_msg
                         if not status_log or status_log[-1] != status_msg:
                             status_log.append(status_msg)
+                    elif status_msg and not isinstance(status_msg, str):
+                        # Handle non-string status messages
+                        logger.warning(f"Received non-string status_msg: {type(status_msg)}")
+                        effective_chunk_status = chunk_status or "SeedVR2 processing..."
 
                     # Update chunk preview path
                     if chunk_video_path:
