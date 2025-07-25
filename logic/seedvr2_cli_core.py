@@ -803,8 +803,7 @@ def process_video_with_seedvr2_cli(
         # Check for cancellation
         cancellation_manager.check_cancel()
         
-        if status_callback:
-            status_callback("🎬 Extracting frames from video...")
+        yield (None, "🎬 Extracting frames from video...", None, "Extracting frames...", None)
         
         # ✅ FIX FOR FRAME DUPLICATION: Check if frames already exist in session directory
         frames_tensor = None
@@ -876,8 +875,7 @@ def process_video_with_seedvr2_cli(
             )
             
             # Update status with frame count
-            if status_callback:
-                status_callback(f"📊 Loaded {frames_tensor.shape[0]} frames, preparing for processing...")
+            yield (None, f"📊 Loaded {frames_tensor.shape[0]} frames, preparing for processing...", None, "Frames loaded", None)
             
             # Save input frames immediately if requested (STAR standard behavior)
             if save_frames and input_frames_permanent_save_path:
@@ -918,8 +916,7 @@ def process_video_with_seedvr2_cli(
         # Check for cancellation
         cancellation_manager.check_cancel()
         
-        if status_callback:
-            status_callback("🧠 Configuring SeedVR2 model...")
+        yield (None, "🧠 Configuring SeedVR2 model...", None, "Configuring model...", None)
         
         # Setup SeedVR2 processing
         logger.info("Setting up SeedVR2 processing")
@@ -955,8 +952,7 @@ def process_video_with_seedvr2_cli(
         # Check for cancellation
         cancellation_manager.check_cancel()
         
-        if status_callback:
-            status_callback("⚡ Processing video with SeedVR2...")
+        yield (None, "⚡ Processing video with SeedVR2...", None, "Processing...", None)
         
         # Process video using CLI approach
         logger.info("Starting SeedVR2 processing")
@@ -1502,24 +1498,80 @@ def _process_single_gpu_cli_generator(
             logger.info(f"🔍 Processing all frames - Input tensor shape: {frames_tensor.shape}, dtype: {frames_tensor.dtype}")
             logger.info(f"🔍 Frame count constraint check: {frames_tensor.shape[0]} % 4 = {frames_tensor.shape[0] % 4} (should be 1)")
             logger.info(f"🎯 Target resolution: {res_w}")
+            logger.info(f"📊 Total batches calculated: {total_batches}")
+            
+            # Setup queue for batch progress updates early
+            import queue as thread_queue
+            
+            # Use a class to ensure proper sharing between threads
+            class SharedQueues:
+                def __init__(self):
+                    self.batch_progress = thread_queue.Queue()
+                    self.chunk_update = thread_queue.Queue()
+                    self.result = thread_queue.Queue()
+                    self.batch_times = []
+                    self.counter = {'put': 0, 'get': 0}
+                    
+            shared_queues = SharedQueues()
+            logger.info(f"🔧 Created shared queues with batch_progress id={id(shared_queues.batch_progress)}")
+            
+            # Track batch times for ETA
+            processing_start_time = time.time()
             
             # Progress callback wrapper
             def generation_progress_callback(batch_idx, total_batches, current_batch_frames, message=""):
                 logger.info(f"📦 Processing batch {batch_idx}/{total_batches}: {current_batch_frames} frames - {message}")
-                # Update status with detailed batch information
-                if status_callback:
-                    percent = int((batch_idx / total_batches) * 100)
-                    status_msg = f"🎬 Processing Batch {batch_idx}/{total_batches} ({percent}%): {message}"
-                    status_callback(status_msg)
+                logger.info(f"🔍 Debug: batch_progress_queue id={id(shared_queues.batch_progress)}, qsize={shared_queues.batch_progress.qsize()}")
+                
+                # Calculate ETA
+                if shared_queues.batch_times:
+                    avg_batch_time = sum(shared_queues.batch_times) / len(shared_queues.batch_times)
+                    batches_remaining = total_batches - batch_idx
+                    eta_seconds = avg_batch_time * batches_remaining
                     
-                    # Queue the status update for yielding
-                    if batch_progress_queue:
-                        batch_progress_queue.put(('batch_progress', status_msg))
+                    # Format ETA
+                    if eta_seconds > 60:
+                        eta_minutes = int(eta_seconds / 60)
+                        eta_secs = int(eta_seconds % 60)
+                        eta_str = f" | ETA: {eta_minutes}m {eta_secs}s"
+                    else:
+                        eta_str = f" | ETA: {int(eta_seconds)}s"
+                else:
+                    eta_str = ""
+                
+                # Extract frame info from message (e.g., "frames 12-16")
+                frames_info = ""
+                if "frames" in message:
+                    frames_info = message
+                    # Calculate frames left
+                    try:
+                        end_frame = int(message.split("-")[-1])
+                        total_frames_count = frames_tensor.shape[0]
+                        frames_left = total_frames_count - end_frame - 1
+                        frames_info += f" | {frames_left} frames left"
+                    except:
+                        pass
+                
+                # Update status with detailed batch information
+                percent = int((batch_idx / total_batches) * 100)
+                status_msg = f"🎬 Batch {batch_idx}/{total_batches} ({percent}%): {frames_info}{eta_str}"
+                
+                # Queue the status update for yielding
+                try:
+                    shared_queues.batch_progress.put(('batch_progress', status_msg))
+                    shared_queues.counter['put'] += 1
+                    logger.info(f"📤 Queued batch progress: {status_msg}, queue size after put: {shared_queues.batch_progress.qsize()}, total puts: {shared_queues.counter['put']}")
+                except Exception as e:
+                    logger.warning(f"❌ Failed to queue batch progress: {e}")
                         
                 # Call the outer progress_callback if provided
                 if progress_callback:
                     progress_pct = (batch_idx / total_batches) * 0.8 + 0.2  # Scale to 20-100%
                     progress_callback(progress_pct, f"Processing batch {batch_idx}/{total_batches} ({int(progress_pct * 100)}%)")
+                    
+            # Batch time tracking callback
+            def track_batch_time(batch_time):
+                shared_queues.batch_times.append(batch_time)
             
             # Track frames processed for chunk preview generation
             frames_processed_count = 0
@@ -1619,7 +1671,7 @@ def _process_single_gpu_cli_generator(
                                     last_chunk_video_path = current_chunk_path
                                     logger.info(f"✅ Chunk {chunk_id} preview generated during processing: {current_chunk_path}")
                                     # Put the chunk update in the queue for UI update
-                                    chunk_update_queue.put((chunk_id, current_chunk_path))
+                                    shared_queues.chunk_update.put((chunk_id, current_chunk_path))
                                 else:
                                     logger.warning(f"⚠️ Failed to generate chunk {chunk_id} preview")
                             else:
@@ -1629,12 +1681,6 @@ def _process_single_gpu_cli_generator(
             
             # Use threading to run generation while monitoring chunk updates
             import threading
-            import queue as thread_queue
-            
-            # Queue to store the result
-            result_queue = thread_queue.Queue()
-            chunk_update_queue = thread_queue.Queue()
-            batch_progress_queue = thread_queue.Queue()
             
             # Store chunk updates in queue from callback
             original_frame_save_callback = frame_save_callback
@@ -1645,7 +1691,7 @@ def _process_single_gpu_cli_generator(
                 # Check if new chunk was created
                 if chunk_results and last_chunk_video_path:
                     last_chunk = chunk_results[-1]
-                    chunk_update_queue.put((last_chunk['chunk_id'], last_chunk_video_path))
+                    shared_queues.chunk_update.put((last_chunk['chunk_id'], last_chunk_video_path))
             
             # Function to run generation in thread
             def run_generation():
@@ -1664,39 +1710,103 @@ def _process_single_gpu_cli_generator(
                         progress_callback=generation_progress_callback,
                         frame_save_callback=enhanced_frame_save_callback
                     )
-                    result_queue.put(('success', result))
+                    shared_queues.result.put(('success', result))
                 except Exception as e:
-                    result_queue.put(('error', e))
+                    shared_queues.result.put(('error', e))
             
             # Start generation in thread
             generation_thread = threading.Thread(target=run_generation)
             generation_thread.start()
             
-            # Monitor for chunk updates while generation runs
+            # Immediately yield that processing has started
+            yield (None, "🚀 SeedVR2 processing started in background...", last_chunk_video_path, "Processing", None)
+            
+            # Track which chunks have been yielded to prevent duplicates
+            yielded_chunks = set()
+            
+            # Monitor for updates while generation runs
+            last_status_time = time.time()
+            monitor_count = 0
             while generation_thread.is_alive():
+                monitor_count += 1
+                if monitor_count % 100 == 0:  # Log every 100 iterations
+                    logger.info(f"🔍 Monitor loop active - iteration {monitor_count}, batch_progress_queue id={id(shared_queues.batch_progress)}, queue size: {shared_queues.batch_progress.qsize()}")
+                
+                updates_found = False
+                
+                # Check for batch progress updates (non-blocking)
                 try:
-                    # Check for batch progress updates first (non-blocking)
-                    try:
-                        update_type, status_msg = batch_progress_queue.get(timeout=0.1)
-                        if update_type == 'batch_progress':
-                            logger.info(f"📊 Yielding batch progress update: {status_msg}")
-                            yield (None, status_msg, last_chunk_video_path, status_msg, None)
-                    except thread_queue.Empty:
-                        pass
+                    # Log before attempting to get from queue
+                    if monitor_count % 20 == 0:  # Every second (20 * 0.05s)
+                        logger.debug(f"🔍 Checking batch_progress_queue, current size: {shared_queues.batch_progress.qsize()}")
+                    
+                    # Add detailed logging around the get operation
+                    queue_size_before = shared_queues.batch_progress.qsize()
+                    if queue_size_before > 0:
+                        logger.info(f"🔍 Queue has {queue_size_before} items, attempting to get...")
+                    
+                    update_type, status_msg = shared_queues.batch_progress.get(timeout=0.1)
+                    
+                    logger.info(f"🔍 Successfully got from queue: type={update_type}, queue size after={shared_queues.batch_progress.qsize()}")
+                    if update_type == 'batch_progress':
+                        shared_queues.counter['get'] += 1
+                        logger.info(f"📊 Yielding batch progress update: {status_msg}, total gets: {shared_queues.counter['get']}")
+                        yield (None, status_msg, last_chunk_video_path, status_msg, None)
+                        updates_found = True
+                        last_status_time = time.time()
                         
-                    # Check for chunk updates (non-blocking)
-                    chunk_id, chunk_path = chunk_update_queue.get(timeout=0.1)
-                    logger.info(f"📹 Yielding chunk {chunk_id} preview update to UI")
-                    yield (None, chunk_results, chunk_path, f"Chunk {chunk_id} preview ready")
+                        # Track batch time for ETA updates
+                        if shared_queues.batch_times and len(shared_queues.batch_times) > 0:
+                            # Update with total progress
+                            elapsed_time = time.time() - processing_start_time
+                            total_eta = (elapsed_time / len(shared_queues.batch_times)) * (total_batches - len(shared_queues.batch_times))
+                            if total_eta > 60:
+                                total_minutes = int(total_eta / 60)
+                                total_secs = int(total_eta % 60)
+                                total_eta_str = f"{total_minutes}m {total_secs}s"
+                            else:
+                                total_eta_str = f"{int(total_eta)}s"
+                            logger.info(f"📊 Total ETA: {total_eta_str} remaining")
+                            
                 except thread_queue.Empty:
-                    # No update yet, continue waiting
+                    # Queue was empty, this is normal
                     pass
+                except Exception as e:
+                    logger.error(f"❌ Error getting from batch_progress_queue: {e}")
+                    
+                # Check for chunk updates (non-blocking)
+                try:
+                    chunk_id, chunk_path = shared_queues.chunk_update.get(timeout=0.05)
+                    # Only yield if we haven't yielded this chunk yet
+                    if chunk_id not in yielded_chunks:
+                        yielded_chunks.add(chunk_id)
+                        logger.info(f"📹 Yielding chunk {chunk_id} preview update to UI")
+                        yield (None, f"Chunk {chunk_id} preview generated", chunk_path, f"Chunk {chunk_id} preview ready", None)
+                        updates_found = True
+                        last_status_time = time.time()
+                except thread_queue.Empty:
+                    pass
+                
+                # Yield a heartbeat status every 2 seconds if no other updates
+                if not updates_found and time.time() - last_status_time > 2:
+                    elapsed = int(time.time() - processing_start_time)
+                    heartbeat_msg = f"⏳ Processing... ({elapsed}s elapsed)"
+                    logger.info(f"💓 Yielding heartbeat: {heartbeat_msg}")
+                    yield (None, heartbeat_msg, last_chunk_video_path, "SeedVR2 processing", None)
+                    last_status_time = time.time()
+                    
+                # Small sleep to prevent CPU spinning
+                if not updates_found:
+                    time.sleep(0.1)
             
             # Wait for generation to complete
             generation_thread.join()
             
+            # Log queue statistics
+            logger.info(f"📊 Batch progress queue final stats: puts={shared_queues.counter['put']}, gets={shared_queues.counter['get']}, remaining in queue={shared_queues.batch_progress.qsize()}")
+            
             # Get the result
-            status, result = result_queue.get()
+            status, result = shared_queues.result.get()
             if status == 'error':
                 raise result
             
