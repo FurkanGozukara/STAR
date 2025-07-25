@@ -981,11 +981,12 @@ def process_video_with_seedvr2_cli(
                 
                 logger.info(f"📊 Chunk update - partial_tensor is None: {partial_tensor is None}, chunk_video_path: {chunk_video_path}")
                 
-                if chunk_video_path:
-                    if logger:
-                        logger.info(f"Chunk preview available for Gradio: {chunk_video_path}")
-                    # ✅ FIX: Yield chunk update immediately to Gradio
-                    yield (None, chunk_status, chunk_video_path, f"SeedVR2 {chunk_status}", None)
+                # Always yield intermediate updates for real-time progress
+                if partial_tensor is None:  # This is a status/progress update, not final result
+                    yield (None, chunk_status, chunk_video_path, chunk_status, None)
+                else:
+                    # This might be a partial result with tensor
+                    final_result = processing_result
             else:
                 # This is the final result
                 final_result = processing_result
@@ -1723,6 +1724,7 @@ def _process_single_gpu_cli_generator(
             
             # Track which chunks have been yielded to prevent duplicates
             yielded_chunks = set()
+            last_chunk_status = "Starting SeedVR2 processing..."
             
             # Monitor for updates while generation runs
             last_status_time = time.time()
@@ -1751,9 +1753,12 @@ def _process_single_gpu_cli_generator(
                     if update_type == 'batch_progress':
                         shared_queues.counter['get'] += 1
                         logger.info(f"📊 Yielding batch progress update: {status_msg}, total gets: {shared_queues.counter['get']}")
+                        # Yield with status message in both status and chunk_status fields for better visibility
                         yield (None, status_msg, last_chunk_video_path, status_msg, None)
                         updates_found = True
                         last_status_time = time.time()
+                        # Also update the last_chunk_status for persistence
+                        last_chunk_status = status_msg
                         
                         # Track batch time for ETA updates
                         if shared_queues.batch_times and len(shared_queues.batch_times) > 0:
@@ -1780,7 +1785,13 @@ def _process_single_gpu_cli_generator(
                     # Only yield if we haven't yielded this chunk yet
                     if chunk_id not in yielded_chunks:
                         yielded_chunks.add(chunk_id)
-                        logger.info(f"📹 Yielding chunk {chunk_id} preview update to UI")
+                        logger.info(f"📹 Yielding chunk {chunk_id} preview update to UI with path: {chunk_path}")
+                        # Ensure chunk_path is absolute and exists
+                        if chunk_path and os.path.exists(chunk_path):
+                            chunk_path = os.path.abspath(chunk_path)
+                            logger.info(f"✅ Chunk file verified to exist at: {chunk_path}")
+                        else:
+                            logger.warning(f"⚠️ Chunk path does not exist: {chunk_path}")
                         yield (None, f"Chunk {chunk_id} preview generated", chunk_path, f"Chunk {chunk_id} preview ready", None)
                         updates_found = True
                         last_status_time = time.time()
@@ -1792,8 +1803,8 @@ def _process_single_gpu_cli_generator(
                     elapsed = int(time.time() - processing_start_time)
                     heartbeat_msg = f"⏳ Processing... ({elapsed}s elapsed)"
                     logger.info(f"💓 Yielding heartbeat: {heartbeat_msg}")
-                    # Don't update chunk status during heartbeat - keep the last batch progress visible
-                    yield (None, heartbeat_msg, last_chunk_video_path, None, None)
+                    # Preserve the last chunk status during heartbeat
+                    yield (None, heartbeat_msg, last_chunk_video_path, last_chunk_status, None)
                     last_status_time = time.time()
                     
                 # Small sleep to prevent CPU spinning

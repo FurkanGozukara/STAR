@@ -2345,6 +2345,11 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             )
             cancellation_detected = False
             for yielded_output_video, yielded_status_log, yielded_chunk_video, yielded_chunk_status, yielded_comparison_video in upscale_generator:
+                # Debug log what we're receiving
+                if yielded_status_log and "🎬 Batch" in yielded_status_log:
+                    logger.info(f"UI received batch progress: {yielded_status_log[:100]}...")
+                elif yielded_chunk_video:
+                    logger.info(f"UI received chunk video update: {yielded_chunk_video}")
                 is_partial_video = yielded_output_video and "partial_cancelled" in yielded_output_video
                 if cancellation_detected and current_output_video_val and "partial_cancelled" in current_output_video_val:
                     if not is_partial_video:
@@ -2367,13 +2372,27 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                         output_video_update = gr.update(value=None)
                     else:
                         output_video_update = gr.update(value=current_output_video_val)
-                combined_log_director = ""
-                if log_accumulator_director:
-                    combined_log_director = "\n".join(log_accumulator_director) + "\n"
-                    log_accumulator_director = []
+                # Handle status log updates
                 if yielded_status_log:
-                    combined_log_director += yielded_status_log
-                current_status_text_val = combined_log_director.strip()
+                    # Check if this is a SeedVR2 batch progress or important update
+                    if any(marker in yielded_status_log for marker in ["🎬 Batch", "⏳ Processing...", "Chunk", "ETA:"]):
+                        # This is an important progress update - show it directly
+                        current_status_text_val = yielded_status_log
+                        # Also log it for debugging
+                        if "🎬 Batch" in yielded_status_log:
+                            logger.info(f"Displaying batch progress in UI: {yielded_status_log}")
+                    else:
+                        # For other messages, append to existing status
+                        if current_status_text_val and not current_status_text_val.endswith('\n'):
+                            current_status_text_val += '\n'
+                        current_status_text_val += yielded_status_log
+                        # Keep only last 15 lines
+                        status_lines = current_status_text_val.split('\n')
+                        if len(status_lines) > 15:
+                            current_status_text_val = '\n'.join(status_lines[-15:])
+                else:
+                    # No new status, keep current
+                    pass
                 status_text_update = gr.update(value=current_status_text_val)
                 if yielded_status_log and "[FIRST_SCENE_CAPTION:" in yielded_status_log and not auto_caption_completed_successfully:
                     try:
@@ -2408,12 +2427,15 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 if yielded_chunk_video is not None:
                     current_last_chunk_video_val = yielded_chunk_video
                     chunk_video_update = gr.update(value=current_last_chunk_video_val)
+                    logger.info(f"Updating chunk video in UI to: {current_last_chunk_video_val}")
                 elif current_last_chunk_video_val is None:
                     chunk_video_update = gr.update(value=None)
                 else:
                     chunk_video_update = gr.update(value=current_last_chunk_video_val)
                 if yielded_chunk_status is not None:
                     current_chunk_status_text_val = yielded_chunk_status
+                    if "Batch" in yielded_chunk_status:
+                        logger.info(f"Updating chunk status text to: {yielded_chunk_status}")
                 chunk_status_text_update = gr.update(value=current_chunk_status_text_val)
                 comparison_video_update = gr.update()
                 if yielded_comparison_video is not None:

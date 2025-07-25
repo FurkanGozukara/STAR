@@ -1026,7 +1026,13 @@ def run_upscale (
                     
                     # Yield progress update
                     logger.info(f"🔼 Yielding to UI - chunk_video: {last_chunk_video_path}, status: {chunk_status or 'SeedVR2 processing'}")
-                    yield None, "\n".join(status_log), last_chunk_video_path, chunk_status or "SeedVR2 processing", comparison_video_path
+                    # For batch progress messages, append to log instead of replacing
+                    if status_msg and "🎬 Batch" in status_msg:
+                        # This is a batch progress update - keep it visible
+                        yield None, status_msg, last_chunk_video_path, chunk_status or "SeedVR2 processing", comparison_video_path
+                    else:
+                        # For other messages, send accumulated log
+                        yield None, "\n".join(status_log), last_chunk_video_path, chunk_status or "SeedVR2 processing", comparison_video_path
                 
                 # SeedVR2 processing completed successfully
                 if output_video_path and os.path.exists(output_video_path):
