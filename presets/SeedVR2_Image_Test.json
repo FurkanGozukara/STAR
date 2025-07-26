@@ -130,7 +130,7 @@
     },
     "seedvr2": {
         "enable": true,
-        "model": "seedvr2_ema_7b_fp16.safetensors",
+        "model": "seedvr2_ema_3b_fp16.safetensors",
         "batch_size": 5,
         "quality_preset": "quality",
         "use_gpu": true,

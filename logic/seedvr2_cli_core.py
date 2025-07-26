@@ -336,6 +336,17 @@ class SeedVR2SessionManager:
         try:
             self.logger.info("🧹 Cleaning up SeedVR2 session...")
             
+            # Detect if we're cleaning up an FP8 model (needs more aggressive cleanup)
+            is_fp8_model = False
+            if self.current_model and ('fp8' in self.current_model.lower() or 'e4m3fn' in self.current_model.lower()):
+                is_fp8_model = True
+                self.logger.info("🔥 Detected FP8 model - applying aggressive cleanup")
+            
+            # Log VRAM usage before cleanup
+            if torch.cuda.is_available():
+                vram_before = self.get_vram_usage()
+                self.logger.info(f"📊 VRAM before cleanup: {vram_before['allocated']:.2f}GB allocated, {vram_before['reserved']:.2f}GB reserved")
+            
             if self.runner:
                 # Check if block swap is active and should cache model
                 keep_model_cached = False
@@ -354,37 +365,143 @@ class SeedVR2SessionManager:
                 
                 # Proper cleanup of runner components if not caching
                 if not keep_model_cached:
-                    if hasattr(self.runner, 'dit') and self.runner.dit is not None:
-                        if hasattr(self.runner.dit, 'cpu'):
-                            self.runner.dit.cpu()
-                        del self.runner.dit
-                        self.runner.dit = None
+                    # Clean up all model components thoroughly
+                    components_to_cleanup = ['dit', 'vae', 'text_encoder', 'tokenizer', 'scheduler', 
+                                           'unet', 'controlnet', 'safety_checker', 'feature_extractor',
+                                           'model', 'pipe', 'pipeline']  # Added more possible component names
                     
-                    if hasattr(self.runner, 'vae') and self.runner.vae is not None:
-                        if hasattr(self.runner.vae, 'cpu'):
-                            self.runner.vae.cpu()
-                    del self.runner.vae
-                    self.runner.vae = None
+                    for component_name in components_to_cleanup:
+                        if hasattr(self.runner, component_name):
+                            component = getattr(self.runner, component_name)
+                            if component is not None:
+                                try:
+                                    # Move to CPU first to free VRAM
+                                    if hasattr(component, 'cpu'):
+                                        component.cpu()
+                                    # Delete all references
+                                    if hasattr(component, 'to'):
+                                        component.to('cpu')
+                                    # Clear any internal caches in the component
+                                    if hasattr(component, 'clear_cache'):
+                                        component.clear_cache()
+                                    setattr(self.runner, component_name, None)
+                                    del component
+                                except Exception as e:
+                                    self.logger.warning(f"Failed to cleanup {component_name}: {e}")
+                    
+                    # Clean up any cached tensors or buffers
+                    if hasattr(self.runner, '_cached_tensors'):
+                        for tensor_name, tensor in list(getattr(self.runner, '_cached_tensors', {}).items()):
+                            if tensor is not None and hasattr(tensor, 'cpu'):
+                                tensor.cpu()
+                            del tensor
+                        self.runner._cached_tensors = {}
+                    
+                    # Clean up any modules that might be holding references
+                    if hasattr(self.runner, 'modules'):
+                        try:
+                            for module in self.runner.modules():
+                                if hasattr(module, '_buffers'):
+                                    for buffer_name in list(module._buffers.keys()):
+                                        buffer = getattr(module, buffer_name, None)
+                                        if buffer is not None and hasattr(buffer, 'cpu'):
+                                            buffer.cpu()
+                                        delattr(module, buffer_name)
+                                if hasattr(module, '_parameters'):
+                                    for param_name in list(module._parameters.keys()):
+                                        param = getattr(module, param_name, None)
+                                        if param is not None and hasattr(param, 'cpu'):
+                                            param.cpu()
+                        except:
+                            pass  # Module iteration might fail, continue cleanup
                 
+                # Delete the runner itself
                 del self.runner
                 self.runner = None
             
-            # Clear GPU cache
+            # Clear all GPU caches multiple times to ensure complete cleanup
             if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+                # Synchronize to ensure all operations complete
                 torch.cuda.synchronize()
+                
+                # Clear cache multiple times with more aggressive approach
+                for _ in range(5):  # Increased from 3 to 5
+                    torch.cuda.empty_cache()
+                    torch.cuda.ipc_collect()
+                    gc.collect()  # Add gc.collect() between cache clears
+                
+                # Reset memory allocator stats
+                torch.cuda.reset_peak_memory_stats()
+                torch.cuda.reset_accumulated_memory_stats()
+                
+                # Final synchronize
+                torch.cuda.synchronize()
+                
+                # Log VRAM usage after cleanup
+                vram_after = self.get_vram_usage()
+                self.logger.info(f"📊 VRAM after cleanup: {vram_after['allocated']:.2f}GB allocated, {vram_after['reserved']:.2f}GB reserved")
+                freed_memory = vram_before['allocated'] - vram_after['allocated']
+                self.logger.info(f"💾 Freed {freed_memory:.2f}GB of VRAM")
             
-            # Force garbage collection
-            gc.collect()
+            # Force garbage collection multiple times
+            for _ in range(5):  # Increased from 3 to 5
+                gc.collect()
             
+            # Additional aggressive cleanup for FP8 models
+            if is_fp8_model and torch.cuda.is_available():
+                self.logger.info("🔥 Applying extra FP8 model cleanup...")
+                
+                # FP8 models create BFloat16 copies that need extra cleanup
+                import time
+                time.sleep(0.5)  # Allow async operations to complete
+                
+                # Force Python to release all references
+                import ctypes
+                libc = ctypes.CDLL("libc.so.6" if sys.platform != "win32" else "msvcrt")
+                if sys.platform == "win32":
+                    # Windows doesn't have malloc_trim, but we can try other approaches
+                    for _ in range(3):
+                        gc.collect(2)  # Full collection including oldest generation
+                        torch.cuda.empty_cache()
+                        torch.cuda.synchronize()
+                
+                # Try to reset the CUDA context (more aggressive)
+                try:
+                    # This forces CUDA to release more memory
+                    torch.cuda.reset_peak_memory_stats()
+                    torch.cuda.reset_accumulated_memory_stats()
+                    
+                    # Multiple rounds of aggressive cleanup
+                    for i in range(10):  # More iterations for FP8
+                        torch.cuda.empty_cache()
+                        torch.cuda.ipc_collect()
+                        if i % 3 == 0:
+                            gc.collect()
+                            time.sleep(0.1)  # Brief pause every 3 iterations
+                    
+                    # Final VRAM check
+                    vram_final = self.get_vram_usage()
+                    self.logger.info(f"📊 VRAM after FP8 cleanup: {vram_final['allocated']:.2f}GB allocated, {vram_final['reserved']:.2f}GB reserved")
+                    
+                except Exception as e:
+                    self.logger.warning(f"FP8 aggressive cleanup error: {e}")
+            
+            # Clear all stored references
             self.current_model = None
             self.is_initialized = False
             self.processing_args = None
+            self.block_swap_config = None
             
             self.logger.info("✅ SeedVR2 session cleaned up successfully")
             
         except Exception as e:
             self.logger.warning(f"Error during session cleanup: {e}")
+            # Even if cleanup fails, reset the state
+            self.runner = None
+            self.current_model = None
+            self.is_initialized = False
+            self.processing_args = None
+            self.block_swap_config = None
 
 
 # Global session manager instance
@@ -406,6 +523,146 @@ def cleanup_global_session():
     if _global_session_manager:
         _global_session_manager.cleanup_session()
         _global_session_manager = None
+
+
+def destroy_global_session_completely():
+    """Completely destroy the global session manager and force module cleanup."""
+    global _global_session_manager
+    
+    logger = logging.getLogger('video_to_video')
+    logger.info("🔥 Destroying global session manager completely...")
+    
+    # First do normal cleanup
+    if _global_session_manager:
+        try:
+            _global_session_manager.cleanup_session()
+        except:
+            pass
+        
+        # Force delete all attributes
+        try:
+            for attr in list(vars(_global_session_manager).keys()):
+                delattr(_global_session_manager, attr)
+        except:
+            pass
+        
+        _global_session_manager = None
+    
+    # Force unload SeedVR2 modules from sys.modules
+    modules_to_remove = []
+    for module_name in list(sys.modules.keys()):
+        if 'seedvr2' in module_name.lower() or 'src.' in module_name:
+            modules_to_remove.append(module_name)
+    
+    for module_name in modules_to_remove:
+        try:
+            if module_name in sys.modules:
+                del sys.modules[module_name]
+        except:
+            pass
+    
+    # Remove SeedVR2 from sys.path
+    seedvr2_paths = []
+    for path in sys.path[:]:  # Copy to avoid modifying during iteration
+        if 'SeedVR2' in path:
+            seedvr2_paths.append(path)
+    
+    for path in seedvr2_paths:
+        try:
+            sys.path.remove(path)
+        except:
+            pass
+    
+    # Force aggressive garbage collection
+    for _ in range(10):
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+    
+    # Try to reset CUDA allocator
+    reset_cuda_allocator()
+    
+    logger.info("✅ Global session destroyed completely")
+
+
+def reset_cuda_allocator():
+    """Try to reset CUDA memory allocator to release fragmented memory."""
+    if not torch.cuda.is_available():
+        return
+    
+    logger = logging.getLogger('video_to_video')
+    
+    try:
+        # Set environment variable for expandable segments (helps with fragmentation)
+        os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+        
+        # Try to reset allocator stats
+        torch.cuda.reset_peak_memory_stats()
+        torch.cuda.reset_accumulated_memory_stats()
+        
+        # Clear all caches
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+        
+        # Try to trigger allocator reset by allocating and freeing a small tensor
+        try:
+            dummy = torch.zeros(1, device='cuda')
+            del dummy
+        except:
+            pass
+        
+        torch.cuda.empty_cache()
+        logger.info("✅ CUDA allocator reset attempted")
+        
+    except Exception as e:
+        logger.warning(f"CUDA allocator reset failed: {e}")
+
+
+def force_cleanup_gpu_memory():
+    """Force aggressive GPU memory cleanup for model switching."""
+    try:
+        # Clear any cached models in torch hub (use public API)
+        try:
+            # Clear the hub cache using public methods
+            if hasattr(torch.hub, 'list'):
+                # This is a safe way to check if hub is available
+                torch.hub.list('pytorch/vision', force_reload=True)
+        except:
+            pass  # Hub clearing is optional, continue with memory cleanup
+        
+        # Clear CUDA cache aggressively
+        if torch.cuda.is_available():
+            # Get current memory stats
+            allocated_before = torch.cuda.memory_allocated() / 1024**3
+            reserved_before = torch.cuda.memory_reserved() / 1024**3
+            
+            # Synchronize all streams
+            for device_id in range(torch.cuda.device_count()):
+                with torch.cuda.device(device_id):
+                    torch.cuda.synchronize()
+                    torch.cuda.empty_cache()
+                    torch.cuda.ipc_collect()
+            
+            # Force garbage collection
+            for _ in range(5):
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            
+            # Final memory stats
+            allocated_after = torch.cuda.memory_allocated() / 1024**3
+            reserved_after = torch.cuda.memory_reserved() / 1024**3
+            
+            logger = logging.getLogger('video_to_video')
+            if logger:
+                logger.info(f"🧹 Force GPU cleanup: Allocated {allocated_before:.2f}GB -> {allocated_after:.2f}GB")
+                logger.info(f"🧹 Force GPU cleanup: Reserved {reserved_before:.2f}GB -> {reserved_after:.2f}GB")
+        
+    except Exception as e:
+        logger = logging.getLogger('video_to_video')
+        if logger:
+            logger.warning(f"Force GPU cleanup error: {e}")
 
 
 def extract_frames_from_video_cli(video_path: str, debug: bool = False, skip_first_frames: int = 0, load_cap: Optional[int] = None) -> Tuple[torch.Tensor, float]:
@@ -2151,8 +2408,79 @@ def _process_batch_with_seedvr2_model(
                 if debug:
                     print(f"🔄 Model changed from {session_manager.current_model} to {requested_model}")
                     print("🧹 Cleaning up previous session...")
-                session_manager.cleanup_session()
+                
+                # Check if switching from FP8 to FP16 (most problematic transition)
+                is_fp8_to_fp16_switch = False
+                if session_manager.current_model and requested_model:
+                    old_is_fp8 = 'fp8' in session_manager.current_model.lower() or 'e4m3fn' in session_manager.current_model.lower()
+                    new_is_fp16 = 'fp16' in requested_model.lower()
+                    is_fp8_to_fp16_switch = old_is_fp8 and new_is_fp16
+                    if is_fp8_to_fp16_switch and session_manager.logger:
+                        session_manager.logger.warning("⚠️ FP8 to FP16 transition detected - applying COMPLETE session destruction")
+                
+                # For FP8 to FP16, use complete destruction instead of normal cleanup
+                if is_fp8_to_fp16_switch:
+                    destroy_global_session_completely()
+                    # Force re-creation of session manager on next access
+                    session_manager = None
+                else:
+                    # Normal cleanup for other transitions
+                    session_manager.cleanup_session()
+                
+                # Force aggressive GPU memory cleanup
+                force_cleanup_gpu_memory()
+                
+                # Additional cleanup for model switching
+                # Clear any remaining CUDA context
+                if torch.cuda.is_available():
+                    try:
+                        # Wait a bit for cleanup to complete
+                        import time
+                        time.sleep(0.5 if not is_fp8_to_fp16_switch else 1.0)  # Longer wait for FP8->FP16
+                        
+                        # Additional cache clearing
+                        iterations = 5 if is_fp8_to_fp16_switch else 3
+                        for i in range(iterations):
+                            torch.cuda.empty_cache()
+                            torch.cuda.ipc_collect()
+                            gc.collect()
+                            if is_fp8_to_fp16_switch and i < iterations - 1:
+                                time.sleep(0.2)  # Brief pauses for FP8->FP16
+                        
+                        # For FP8 to FP16 transitions, try even more aggressive cleanup
+                        if is_fp8_to_fp16_switch:
+                            # Reset all CUDA memory stats
+                            torch.cuda.reset_peak_memory_stats()
+                            torch.cuda.reset_accumulated_memory_stats()
+                            
+                            # Force full garbage collection
+                            gc.collect(2)  # Collect all generations
+                            
+                            # Final aggressive cache clear
+                            for _ in range(3):
+                                torch.cuda.synchronize()
+                                torch.cuda.empty_cache()
+                        
+                        # Log final VRAM state (only if session_manager still exists)
+                        if session_manager and session_manager.logger:
+                            vram_status = session_manager.get_vram_usage()
+                            session_manager.logger.info(f"📊 VRAM after model switch cleanup: {vram_status['allocated']:.2f}GB allocated, {vram_status['reserved']:.2f}GB reserved")
+                        else:
+                            # Log directly if session manager was destroyed
+                            logger = logging.getLogger('video_to_video')
+                            if torch.cuda.is_available():
+                                allocated = torch.cuda.memory_allocated() / 1024**3
+                                reserved = torch.cuda.memory_reserved() / 1024**3
+                                logger.info(f"📊 VRAM after complete destruction: {allocated:.2f}GB allocated, {reserved:.2f}GB reserved")
+                    except Exception as e:
+                        logger = logging.getLogger('video_to_video')
+                        logger.warning(f"Additional cleanup error: {e}")
+                
                 needs_reinit = True
+        
+        # Re-get session manager if it was destroyed
+        if session_manager is None:
+            session_manager = get_session_manager()
         
         # Initialize session if needed or model changed
         if not session_manager.is_initialized or needs_reinit:

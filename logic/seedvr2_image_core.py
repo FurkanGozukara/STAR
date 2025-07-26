@@ -354,7 +354,7 @@ def _process_with_seedvr2(
     
     try:
         # Import SeedVR2 CLI processing to avoid ComfyUI dependencies
-        from .seedvr2_cli_core import _process_batch_with_seedvr2_model, SeedVR2BlockSwap
+        from .seedvr2_cli_core import _process_batch_with_seedvr2_model, SeedVR2BlockSwap, cleanup_global_session, force_cleanup_gpu_memory, destroy_global_session_completely
         
         if logger:
             logger.info("SeedVR2 CLI modules imported successfully")
@@ -486,11 +486,34 @@ def _process_with_seedvr2(
         if logger:
             logger.info(f"SeedVR2 image processing completed: {result_array.shape}")
         
+        # Cleanup based on preserve_vram setting
+        # When preserve_vram is True, we want to save VRAM by cleaning up after processing
+        if getattr(seedvr2_config, 'preserve_vram', True):
+            try:
+                if logger:
+                    logger.info("🧹 Cleaning up SeedVR2 session after image processing (preserve_vram=True)...")
+                cleanup_global_session()
+                force_cleanup_gpu_memory()
+                if logger:
+                    logger.info("✅ SeedVR2 session cleaned up after image processing")
+            except Exception as cleanup_error:
+                if logger:
+                    logger.warning(f"Failed to cleanup SeedVR2 session: {cleanup_error}")
+        else:
+            if logger:
+                logger.info("💾 Keeping SeedVR2 session loaded (preserve_vram=False)")
+        
         return result_array
         
     except Exception as e:
         if logger:
             logger.error(f"SeedVR2 image processing failed: {e}")
+        # Try to cleanup on error
+        try:
+            cleanup_global_session()
+            force_cleanup_gpu_memory()
+        except:
+            pass
         raise
 
 
