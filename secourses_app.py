@@ -565,13 +565,20 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                     with gr.Accordion("Save/Load Presets", open=True):
                         with gr.Row():
                             preset_dropdown = gr.Dropdown(
-                                label="Select or Create Preset",
+                                label="Load Preset",
                                 choices=get_filtered_preset_list(),
                                 value=INITIAL_PRESET_NAME or "Default",
-                                allow_custom_value=True, scale=3,
-                                info=info_strings.PRESET_AUTO_LOAD_OR_NEW_NAME_INFO
+                                allow_custom_value=False, scale=3,
+                                info="Select a preset to load"
                             )
                             refresh_presets_btn = gr.Button("🔄", scale=1, variant="secondary")
+                        with gr.Row():
+                            preset_save_textbox = gr.Textbox(
+                                label="Save Preset As",
+                                placeholder="Enter preset name...",
+                                scale=3,
+                                info="Enter a name for the new preset"
+                            )
                             save_preset_btn = gr.Button("Save", variant="primary", scale=1)
                         preset_status = gr.Textbox(
                             label="Preset Status", show_label=False, interactive=False, lines=1,
@@ -3924,20 +3931,36 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
     # This list is now used for loading presets
     preset_components = component_order[1:] # Exclude input_video
 
-    def save_preset_wrapper(preset_name, *all_ui_values):
+    def save_preset_wrapper(save_textbox_name, selected_preset, *all_ui_values):
         import time
+        
+        # If no name entered in save textbox, use the currently selected preset
+        if not save_textbox_name or not save_textbox_name.strip():
+            if selected_preset and selected_preset.strip():
+                preset_name = selected_preset.strip()
+                overwrite_msg = f" (overwriting existing preset '{preset_name}')"
+            else:
+                return "Please enter a preset name or select a preset to overwrite", gr.update(), gr.update()
+        else:
+            preset_name = save_textbox_name.strip()
+            overwrite_msg = ""
+        
         app_config = build_app_config_from_ui(*all_ui_values)
         success, message = preset_handler.save_preset(app_config, preset_name)
         if success:
             safe_preset_name = "".join(c for c in preset_name if c.isalnum() or c in (' ', '_', '-')).rstrip()
-        time.sleep(APP_CONFIG.preset_system.save_delay)
-        presets_dir = preset_handler.get_presets_dir()
-        filepath = os.path.join(presets_dir, f"{safe_preset_name}.json")
-        if not os.path.exists(filepath):
-            logger.warning(f"Preset file not immediately available after save: {filepath}")
-            time.sleep(APP_CONFIG.preset_system.retry_delay)
-        new_choices = get_filtered_preset_list()
-        return message, gr.update(choices=new_choices, value=safe_preset_name)
+            time.sleep(APP_CONFIG.preset_system.save_delay)
+            presets_dir = preset_handler.get_presets_dir()
+            filepath = os.path.join(presets_dir, f"{safe_preset_name}.json")
+            if not os.path.exists(filepath):
+                logger.warning(f"Preset file not immediately available after save: {filepath}")
+                time.sleep(APP_CONFIG.preset_system.retry_delay)
+            new_choices = get_filtered_preset_list()
+            # Return: status message with overwrite info, updated dropdown with saved preset selected, clear the save textbox
+            return message + overwrite_msg, gr.update(choices=new_choices, value=safe_preset_name), gr.update(value="")
+        else:
+            # On failure, don't clear the textbox so user can fix the name
+            return message, gr.update(), gr.update()
 
     def load_preset_wrapper(preset_name):
         import time
@@ -4061,8 +4084,8 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
 
     save_preset_btn.click(
         fn=save_preset_wrapper,
-        inputs=[preset_dropdown] + click_inputs,
-        outputs=[preset_status, preset_dropdown]
+        inputs=[preset_save_textbox, preset_dropdown] + click_inputs,
+        outputs=[preset_status, preset_dropdown, preset_save_textbox]
     )
 
     # Add a function to update resolution preview after preset loading
