@@ -59,10 +59,13 @@ class SeedVR2ModelManager:
         
         return models_dir
     
-    def scan_available_models(self) -> List[Dict[str, Any]]:
+    def scan_available_models(self, include_missing: bool = False) -> List[Dict[str, Any]]:
         """
         Scan for available SeedVR2 models in the models directory
         
+        Args:
+            include_missing: If True, include models that don't exist on disk (default: False)
+            
         Returns:
             List of model dictionaries with metadata
         """
@@ -83,14 +86,19 @@ class SeedVR2ModelManager:
         
         for model_file in expected_models:
             model_path = os.path.join(self.models_dir, model_file)
+            model_exists = os.path.exists(model_path)
+            
+            # Skip missing models unless explicitly requested
+            if not model_exists and not include_missing:
+                continue
             
             # Parse model info from filename
             model_info = self._parse_model_info(model_file)
             model_info.update({
                 'filename': model_file,
                 'path': model_path,
-                'available': os.path.exists(model_path),
-                'size_mb': self._get_file_size_mb(model_path) if os.path.exists(model_path) else 0
+                'available': model_exists,
+                'size_mb': self._get_file_size_mb(model_path) if model_exists else 0
             })
             
             models.append(model_info)

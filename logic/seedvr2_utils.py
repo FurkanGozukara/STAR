@@ -31,12 +31,13 @@ def util_check_seedvr2_dependencies(logger: Optional[logging.Logger] = None) -> 
     """
     return check_seedvr2_dependencies(logger)
 
-def util_scan_seedvr2_models(logger: Optional[logging.Logger] = None) -> List[Dict[str, Any]]:
+def util_scan_seedvr2_models(logger: Optional[logging.Logger] = None, include_missing: bool = False) -> List[Dict[str, Any]]:
     """
     Scan for available SeedVR2 models
     
     Args:
         logger: Optional logger instance
+        include_missing: If True, include models that don't exist on disk (default: False)
         
     Returns:
         List of model dictionaries
@@ -45,7 +46,7 @@ def util_scan_seedvr2_models(logger: Optional[logging.Logger] = None) -> List[Di
         return []
     
     model_manager = get_seedvr2_model_manager(logger)
-    return model_manager.scan_available_models()
+    return model_manager.scan_available_models(include_missing=include_missing)
 
 def util_format_model_info_display(model_filename: str, logger: Optional[logging.Logger] = None) -> str:
     """
