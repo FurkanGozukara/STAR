@@ -594,7 +594,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                             value="No chunks processed yet"
                         )
 
-        with gr.Tab("Single Image Upscale", id="image_upscale_tab"):
+        with gr.Tab("Single Image", id="image_upscale_tab"):
             with gr.Row():
                 with gr.Column(scale=1):
                     with gr.Group():
@@ -865,7 +865,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                             info=FACE_RESTORATION_BATCH_SIZE_INFO, interactive=True
                         )
 
-        with gr.Tab("Star Upscaler", id="star_tab"):
+        with gr.Tab("STAR", id="star_tab"):
             with gr.Row():
                 with gr.Column(scale=1):
                     with gr.Group():
@@ -940,7 +940,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                                 label="Tile Overlap (px, input res)", minimum=0, step=16, info=TILE_OVERLAP_INFO
                             )
 
-        with gr.Tab("Image Based Upscalers", id="image_upscaler_tab"):
+        with gr.Tab("Image Based (GAN)", id="image_upscaler_tab"):
             with gr.Row():
                 with gr.Column(scale=1):
                     with gr.Group():
@@ -988,7 +988,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                         refresh_models_btn = gr.Button("🔄 Refresh Model List", variant="secondary")
                         gr.Markdown(IMAGE_UPSCALER_OPTIMIZATION_TIPS)
 
-        with gr.Tab("SeedVR2 Upscaler", id="seedvr2_tab"):
+        with gr.Tab("SeedVR2", id="seedvr2_tab"):
             with gr.Row():
                 with gr.Column(scale=1):
                     with gr.Group():
