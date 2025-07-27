@@ -1,7 +1,7 @@
 import os
 import sys
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 # --- Availability Checks (from original config.py) ---
 try:
@@ -155,6 +155,11 @@ DEFAULT_SEEDVR2_FLASH_ATTENTION = True
 DEFAULT_SEEDVR2_COLOR_CORRECTION = True  # Wavelet reconstruction
 DEFAULT_SEEDVR2_ENABLE_MULTI_GPU = False
 DEFAULT_SEEDVR2_GPU_DEVICES = "0"  # Comma-separated list of GPU indices
+
+# SeedVR2 Tiled VAE Settings
+DEFAULT_SEEDVR2_TILED_VAE = False
+DEFAULT_SEEDVR2_TILE_SIZE = (64, 64)  # In latent space (multiply by 8 for pixel space)
+DEFAULT_SEEDVR2_TILE_STRIDE = (32, 32)  # In latent space
 
 # SeedVR2 Block Swap Configuration
 DEFAULT_SEEDVR2_ENABLE_BLOCK_SWAP = False
@@ -442,6 +447,11 @@ class SeedVR2Config:
     color_correction: bool = DEFAULT_SEEDVR2_COLOR_CORRECTION
     enable_multi_gpu: bool = DEFAULT_SEEDVR2_ENABLE_MULTI_GPU
     gpu_devices: str = DEFAULT_SEEDVR2_GPU_DEVICES
+    
+    # Tiled VAE settings
+    tiled_vae: bool = DEFAULT_SEEDVR2_TILED_VAE
+    tile_size: Tuple[int, int] = DEFAULT_SEEDVR2_TILE_SIZE
+    tile_stride: Tuple[int, int] = DEFAULT_SEEDVR2_TILE_STRIDE
     
     # Block swap configuration
     enable_block_swap: bool = DEFAULT_SEEDVR2_ENABLE_BLOCK_SWAP

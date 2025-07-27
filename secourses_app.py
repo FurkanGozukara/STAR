@@ -1176,6 +1176,47 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                                 info=info_strings.CHUNK_RETENTION_DEFAULT_5_VIDEOS_INFO
                             )
                     with gr.Accordion("Advanced Settings", open=False):
+                        gr.Markdown("### 🎨 Tiled VAE Settings")
+                        gr.Markdown("Tiled VAE reduces VRAM usage during decoding by processing in tiles. May introduce seams at tile boundaries.")
+                        
+                        seedvr2_tiled_vae_check = create_checkbox(
+                            config_path=('seedvr2', 'tiled_vae'), ui_dict=ui_components,
+                            label="Enable Tiled VAE", info="Process VAE decode in tiles to reduce VRAM usage"
+                        )
+                        
+                        with gr.Row():
+                            # Create tile size components manually to handle tuple values
+                            seedvr2_tile_size_h = gr.Slider(
+                                label="Tile Height (latent)", minimum=16, maximum=128, step=8, 
+                                value=INITIAL_APP_CONFIG.seedvr2.tile_size[0] if hasattr(INITIAL_APP_CONFIG.seedvr2, 'tile_size') else 64,
+                                info="Height of tiles in latent space (multiply by 8 for pixel space)"
+                            )
+                            seedvr2_tile_size_w = gr.Slider(
+                                label="Tile Width (latent)", minimum=16, maximum=128, step=8, 
+                                value=INITIAL_APP_CONFIG.seedvr2.tile_size[1] if hasattr(INITIAL_APP_CONFIG.seedvr2, 'tile_size') else 64,
+                                info="Width of tiles in latent space (multiply by 8 for pixel space)"
+                            )
+                        
+                        with gr.Row():
+                            seedvr2_tile_stride_h = gr.Slider(
+                                label="Stride Height (latent)", minimum=8, maximum=64, step=8, 
+                                value=INITIAL_APP_CONFIG.seedvr2.tile_stride[0] if hasattr(INITIAL_APP_CONFIG.seedvr2, 'tile_stride') else 32,
+                                info="Vertical stride between tiles - smaller = less VRAM but more seams"
+                            )
+                            seedvr2_tile_stride_w = gr.Slider(
+                                label="Stride Width (latent)", minimum=8, maximum=64, step=8, 
+                                value=INITIAL_APP_CONFIG.seedvr2.tile_stride[1] if hasattr(INITIAL_APP_CONFIG.seedvr2, 'tile_stride') else 32,
+                                info="Horizontal stride between tiles - smaller = less VRAM but more seams"
+                            )
+                        
+                        # Register the components manually
+                        ui_components[('seedvr2', 'tile_size_h')] = seedvr2_tile_size_h
+                        ui_components[('seedvr2', 'tile_size_w')] = seedvr2_tile_size_w
+                        ui_components[('seedvr2', 'tile_stride_h')] = seedvr2_tile_stride_h
+                        ui_components[('seedvr2', 'tile_stride_w')] = seedvr2_tile_stride_w
+                        
+                        gr.Markdown("**Tip:** Seams become less visible when tile size is 1.5-2x the stride size")
+                        
                         seedvr2_cfg_scale_slider = create_slider(
                             config_path=('seedvr2', 'cfg_scale'), ui_dict=ui_components,
                             label="CFG Scale", minimum=0.5, maximum=2.0, step=0.1,
@@ -1596,7 +1637,8 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
         seedvr2_consistency_validation_check, seedvr2_chunk_optimization_check, seedvr2_temporal_quality_radio,
         seedvr2_use_gpu_check, seedvr2_enable_multi_gpu_check, seedvr2_gpu_devices_textbox,
         seedvr2_enable_block_swap_check, seedvr2_block_swap_counter_slider, seedvr2_block_swap_offload_io_check,
-        seedvr2_block_swap_model_caching_check, seedvr2_cfg_scale_slider, seedvr2_enable_chunk_preview_check,
+        seedvr2_block_swap_model_caching_check, seedvr2_tiled_vae_check, seedvr2_tile_size_h, seedvr2_tile_size_w,
+        seedvr2_tile_stride_h, seedvr2_tile_stride_w, seedvr2_cfg_scale_slider, seedvr2_enable_chunk_preview_check,
         seedvr2_chunk_preview_frames_slider, seedvr2_keep_last_chunks_slider,
         # Output & Comparison Tab
         ffmpeg_use_gpu_check, ffmpeg_preset_dropdown, ffmpeg_quality_slider, frame_folder_fps_slider,
@@ -2123,6 +2165,21 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 if hasattr(config, section) and hasattr(getattr(config, section), key):
                     setattr(getattr(config, section), key, value)
 
+        # Handle special cases for tile_size and tile_stride components
+        if hasattr(config, 'seedvr2'):
+            # Get tile size values and combine into tuple
+            tile_size_h = ui_values.get(seedvr2_tile_size_h, 64)
+            tile_size_w = ui_values.get(seedvr2_tile_size_w, 64)
+            config.seedvr2.tile_size = (tile_size_h, tile_size_w)
+            
+            # Get tile stride values and combine into tuple
+            tile_stride_h = ui_values.get(seedvr2_tile_stride_h, 32)
+            tile_stride_w = ui_values.get(seedvr2_tile_stride_w, 32)
+            config.seedvr2.tile_stride = (tile_stride_h, tile_stride_w)
+            
+            # Get tiled_vae value
+            config.seedvr2.tiled_vae = ui_values.get(seedvr2_tiled_vae_check, False)
+        
         # Handle values that are not in ui_components or need special logic
         config.input_video_path = ui_values.get(input_video)
 
@@ -4754,6 +4811,9 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
         seedvr2_enable_multi_gpu_val, seedvr2_gpu_devices_val,
         seedvr2_block_swap_offload_io_val, seedvr2_block_swap_model_caching_val,
         seedvr2_quality_preset_val, seedvr2_use_gpu_val,
+        # Tiled VAE settings
+        seedvr2_tiled_vae_val, seedvr2_tile_size_h_val, seedvr2_tile_size_w_val,
+        seedvr2_tile_stride_h_val, seedvr2_tile_stride_w_val,
         progress=gr.Progress(track_tqdm=True)
     ):
         if not input_image_path:
@@ -4799,6 +4859,10 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 seedvr2_config.gpu_devices = seedvr2_gpu_devices_val
                 seedvr2_config.quality_preset = seedvr2_quality_preset_val
                 seedvr2_config.use_gpu = seedvr2_use_gpu_val
+                # Set tiled VAE settings
+                seedvr2_config.tiled_vae = seedvr2_tiled_vae_val
+                seedvr2_config.tile_size = (seedvr2_tile_size_h_val, seedvr2_tile_size_w_val)
+                seedvr2_config.tile_stride = (seedvr2_tile_stride_h_val, seedvr2_tile_stride_w_val)
                 # Set seed
                 seedvr2_config.seed = seed_value
                 image_upscaler_model = None
@@ -4992,7 +5056,13 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             seedvr2_block_swap_offload_io_check,
             seedvr2_block_swap_model_caching_check,
             seedvr2_quality_preset_radio,
-            seedvr2_use_gpu_check
+            seedvr2_use_gpu_check,
+            # Tiled VAE settings
+            seedvr2_tiled_vae_check,
+            seedvr2_tile_size_h,
+            seedvr2_tile_size_w,
+            seedvr2_tile_stride_h,
+            seedvr2_tile_stride_w
         ],
         outputs=[
             output_image,

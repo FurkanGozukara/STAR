@@ -228,6 +228,11 @@ class SeedVR2InferenceEngine:
             if progress_callback:
                 progress_callback(0.1, "Starting upscaling...")
             
+            # Extract tiled VAE settings
+            tiled_vae = getattr(config, 'seedvr2_tiled_vae', False)
+            tile_size = getattr(config, 'seedvr2_tile_size', (64, 64))
+            tile_stride = getattr(config, 'seedvr2_tile_stride', (32, 32))
+            
             upscaled_frames = generation_loop(
                 self.model_manager.runner,
                 video_frames,
@@ -239,7 +244,10 @@ class SeedVR2InferenceEngine:
                 temporal_overlap=temporal_overlap,
                 debug=getattr(config, 'debug_mode', False),
                 block_swap_config=block_swap_config,
-                progress_callback=generation_progress_callback
+                progress_callback=generation_progress_callback,
+                tiled_vae=tiled_vae,
+                tile_size=tile_size,
+                tile_stride=tile_stride
             )
             
             # Apply color correction if enabled
@@ -329,6 +337,11 @@ class SeedVR2InferenceEngine:
             if progress_callback:
                 progress_callback(0.2, "Starting upscaling...")
             
+            # Extract tiled VAE settings
+            tiled_vae = getattr(config, 'seedvr2_tiled_vae', False)
+            tile_size = getattr(config, 'seedvr2_tile_size', (64, 64))
+            tile_stride = getattr(config, 'seedvr2_tile_stride', (32, 32))
+            
             upscaled_frame = generation_loop(
                 self.model_manager.runner,
                 image_frame,
@@ -340,7 +353,10 @@ class SeedVR2InferenceEngine:
                 temporal_overlap=temporal_overlap,
                 debug=getattr(config, 'debug_mode', False),
                 block_swap_config=block_swap_config,
-                progress_callback=lambda *args: None  # No detailed progress for single image
+                progress_callback=lambda *args: None,  # No detailed progress for single image
+                tiled_vae=tiled_vae,
+                tile_size=tile_size,
+                tile_stride=tile_stride
             )
             
             # Apply color correction if enabled
