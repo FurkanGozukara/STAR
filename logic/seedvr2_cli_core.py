@@ -41,13 +41,14 @@ class SeedVR2BlockSwap:
     Independent block swapping implementation for SeedVR2 models.
     
     This class handles dynamic block swapping between GPU and CPU memory
-    without ComfyUI dependencies. Currently disabled for stability.
+    without ComfyUI dependencies. Enabled based on user configuration.
     """
     
-    def __init__(self, enable_debug: bool = False):
+    def __init__(self, enable_debug: bool = False, force_enable: bool = False):
         self.enable_debug = enable_debug
         self.swap_history = []
-        self._is_available = False  # Disabled by default for stability
+        # Enable if explicitly requested by user via force_enable
+        self._is_available = force_enable
         
     def log(self, message: str, level: str = "INFO"):
         """Log debug messages if enabled."""
@@ -81,26 +82,28 @@ class SeedVR2BlockSwap:
         """
         Apply block swapping to a model.
         
-        IMPORTANT: Block swap is currently disabled for stability.
-        This method will do nothing and return immediately.
+        BlockSwap is enabled when user explicitly requests it via UI.
         
         Args:
             model: The model to apply block swapping to
             blocks_to_swap: Number of blocks to swap (0=disabled)
-            offload_io: Whether to offload I/O components (disabled)
-            model_caching: Whether to enable model caching (disabled)
+            offload_io: Whether to offload I/O components
+            model_caching: Whether to enable model caching
         """
         if not self._is_available:
-            self.log("Block swap is disabled for stability", "INFO")
+            self.log("Block swap is disabled", "INFO")
             return
             
         if blocks_to_swap <= 0:
             self.log("Block swap disabled (blocks_to_swap=0)")
             return
             
-        # NOTE: Block swap functionality is disabled for now
-        # This prevents ComfyUI compatibility issues and ensures stability
-        self.log("Block swap temporarily disabled for compatibility", "WARN")
+        self.log(f"BlockSwap enabled by user: {blocks_to_swap} blocks", "INFO")
+        self.log(f"BlockSwap configuration: blocks={blocks_to_swap}, offload_io={offload_io}, caching={model_caching}", "INFO")
+        
+        # BlockSwap is handled by configure_runner in the session manager
+        # The actual implementation is in src/optimization/blockswap.py
+        self.log("BlockSwap will be applied during model initialization", "INFO")
         return
     
     def _offload_io_components(self, model):
@@ -178,7 +181,7 @@ class SeedVR2SessionManager:
                         "blocks_to_swap": blocks_to_swap,
                         "offload_io_components": getattr(seedvr2_config, 'block_swap_offload_io', False),
                         "use_non_blocking": True,  # Always use non-blocking transfers
-                        "enable_debug": processing_args["debug"],
+                        "enable_debug": True,  # Always show BlockSwap messages when enabled
                         "cache_model": getattr(seedvr2_config, 'block_swap_model_caching', False)
                     }
                     self.logger.info(f"🔄 Block swap configuration:")

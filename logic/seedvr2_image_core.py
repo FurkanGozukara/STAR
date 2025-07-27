@@ -445,13 +445,19 @@ def _process_with_seedvr2(
     # Setup block swap if enabled (matching video pipeline)
     block_swap = None
     if getattr(seedvr2_config, 'enable_block_swap', False) and getattr(seedvr2_config, 'block_swap_counter', 0) > 0:
-        block_swap = SeedVR2BlockSwap(enable_debug=processing_args.get("debug", False))
+        # Pass force_enable=True to respect user's choice
+        # Always enable debug for BlockSwap when it's active to show swap messages
+        block_swap_debug = True  # Show BlockSwap messages when enabled
+        block_swap = SeedVR2BlockSwap(
+            enable_debug=block_swap_debug,
+            force_enable=True  # Enable because user explicitly requested it
+        )
         # Add block swap config to processing args
         processing_args["block_swap_config"] = {
             "blocks_to_swap": seedvr2_config.block_swap_counter,
             "offload_io_components": getattr(seedvr2_config, 'block_swap_offload_io', False),
             "use_non_blocking": True,
-            "enable_debug": processing_args.get("debug", False)
+            "enable_debug": block_swap_debug  # Use same debug setting
         }
         if logger:
             logger.info(f"Block swap enabled for image processing: {seedvr2_config.block_swap_counter} blocks")
