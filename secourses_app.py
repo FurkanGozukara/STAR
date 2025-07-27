@@ -95,7 +95,8 @@ from logic.seedvr2_utils import (
     util_format_model_display_name, util_validate_seedvr2_model, util_extract_model_filename_from_dropdown,
     util_format_vram_status, util_format_block_swap_status, util_validate_seedvr2_config,
     util_get_recommended_settings_for_vram, util_get_suggested_settings, util_estimate_processing_time,
-    util_cleanup_seedvr2_resources, util_detect_available_gpus, util_validate_gpu_selection
+    util_cleanup_seedvr2_resources, util_detect_available_gpus, util_validate_gpu_selection,
+    util_get_model_block_count
 )
 from logic.temp_folder_utils import (
     get_temp_folder_path as util_get_temp_folder_path,
@@ -1033,6 +1034,19 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                         
                         logger.info(f"SeedVR2 Model Dropdown - Config model: {INITIAL_APP_CONFIG.seedvr2.model}, Choices: {model_choices}, Selected: {initial_seedvr2_display}")
 
+                        # Calculate initial block swap maximum based on selected model
+                        initial_model_filename = INITIAL_APP_CONFIG.seedvr2.model
+                        if not initial_model_filename and len(available_models) > 0:
+                            # If no model in config, use the first available model
+                            first_model = available_models[0]
+                            # Handle case where available_models contains dictionaries
+                            if isinstance(first_model, dict):
+                                initial_model_filename = first_model.get('filename', '')
+                            else:
+                                initial_model_filename = first_model
+                        initial_block_count = util_get_model_block_count(initial_model_filename)
+                        initial_max_swappable = initial_block_count - 1
+
                         seedvr2_model_dropdown = create_dropdown(
                             config_path=('seedvr2', 'model'), ui_dict=ui_components,
                             label="SeedVR2 Model", choices=model_choices, value=initial_seedvr2_display,
@@ -1128,7 +1142,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                         )
                         seedvr2_block_swap_counter_slider = create_slider(
                             config_path=('seedvr2', 'block_swap_counter'), ui_dict=ui_components,
-                            label="Block Swap Counter", minimum=0, maximum=20, step=1,
+                            label="Block Swap Counter", minimum=0, maximum=initial_max_swappable, step=1,
                             info=info_strings.BLOCK_SWAP_COUNTER_VRAM_SAVINGS_SLOWER_INFO
                         )
                         with gr.Row():
@@ -4221,7 +4235,18 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             logger.error(f"Failed to get model info for '{model_choice}': {e}")
             return gr.update(value=f"Error loading model information: {e}")
 
-    def update_block_swap_controls(enable_block_swap, block_swap_counter):
+    def update_block_swap_controls(enable_block_swap, block_swap_counter, model_choice):
+        # Get model info
+        model_filename = None
+        total_blocks = 20  # Default
+        if model_choice and "Error:" not in model_choice and "No SeedVR2" not in model_choice:
+            try:
+                model_filename = util_extract_model_filename_from_dropdown(model_choice)
+                if model_filename:
+                    total_blocks = util_get_model_block_count(model_filename)
+            except:
+                pass
+        
         if not enable_block_swap:
             return (
                 gr.update(interactive=False, value=0),
@@ -4235,7 +4260,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 gr.update(interactive=True),
                 gr.update(interactive=True),
                 gr.update(interactive=True),
-                gr.update(value="⚠️ Block swap enabled but counter is 0. Increase the counter to activate block swapping.")
+                gr.update(value=f"⚠️ Block swap enabled but counter is 0. Model has {total_blocks} blocks total. Increase the counter to activate block swapping.")
             )
         else:
             try:
@@ -4253,22 +4278,15 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 else:
                     status_icon = "🟢"
                     status_msg = "VRAM usage normal"
-                info_text = BLOCK_SWAP_ADVANCED_ENABLED_TEMPLATE.format(
-                    status_icon=status_icon,
-                    status_msg=status_msg,
-                    memory_info=memory_info,
-                    block_swap_counter=block_swap_counter,
-                    estimated_savings_gb=estimated_savings_gb,
-                    estimated_performance_impact=estimated_performance_impact
-                )
+                info_text = f"{status_icon} {status_msg}\n{memory_info}\n\n"
+                info_text += f"🔄 Block Swap: {block_swap_counter}/{total_blocks} blocks\n"
+                info_text += f"💾 Estimated VRAM savings: ~{estimated_savings_gb:.1f} GB\n"
+                info_text += f"⏱️ Performance impact: ~{estimated_performance_impact:.0f}% slower"
             except Exception as e:
                 logger.warning(f"Block swap monitoring error: {e}")
                 estimated_savings = min(block_swap_counter * 5, 50)
-                info_text = BLOCK_SWAP_ENABLED_FALLBACK_TEMPLATE.format(
-                    block_swap_counter=block_swap_counter,
-                    estimated_savings=estimated_savings,
-                    performance_impact=block_swap_counter * 2
-                )
+                info_text = f"✅ Block swap enabled: {block_swap_counter}/{total_blocks} blocks\n"
+                info_text += f"Estimated VRAM savings: ~{estimated_savings}%"
             return (
                 gr.update(interactive=True),
                 gr.update(interactive=True),
@@ -4531,16 +4549,38 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             logger.error(f"Failed to validate model '{model_choice}': {e}")
             return gr.update(value=f"Error validating model: {e}")
 
+    def validate_and_update_model_info_with_block_swap(model_choice):
+        """Update model info and adjust block swap counter maximum based on model."""
+        # Get model info update
+        model_info_update = validate_and_update_model_info(model_choice)
+        
+        # Get model filename and block count
+        try:
+            if model_choice and "Error:" not in model_choice and "No SeedVR2" not in model_choice:
+                model_filename = util_extract_model_filename_from_dropdown(model_choice)
+                if model_filename:
+                    block_count = util_get_model_block_count(model_filename)
+                    # Maximum swappable blocks is block_count - 1 (keep at least 1 block on GPU)
+                    max_swappable = block_count - 1
+                    logger.info(f"Model {model_filename} has {block_count} blocks, max swappable: {max_swappable}")
+                    # Return both model info update and block swap counter update
+                    return model_info_update, gr.update(maximum=max_swappable)
+        except Exception as e:
+            logger.error(f"Failed to update block swap maximum: {e}")
+        
+        # Return model info and keep current block swap maximum
+        return model_info_update, gr.update()
+    
     seedvr2_model_dropdown.change(
-        fn=validate_and_update_model_info,
+        fn=validate_and_update_model_info_with_block_swap,
         inputs=[seedvr2_model_dropdown],
-        outputs=[seedvr2_model_info_display]
+        outputs=[seedvr2_model_info_display, seedvr2_block_swap_counter_slider]
     )
 
     for component in [seedvr2_enable_block_swap_check, seedvr2_block_swap_counter_slider]:
         component.change(
             fn=update_block_swap_controls,
-            inputs=[seedvr2_enable_block_swap_check, seedvr2_block_swap_counter_slider],
+            inputs=[seedvr2_enable_block_swap_check, seedvr2_block_swap_counter_slider, seedvr2_model_dropdown],
             outputs=[
                 seedvr2_block_swap_counter_slider,
                 seedvr2_block_swap_offload_io_check,

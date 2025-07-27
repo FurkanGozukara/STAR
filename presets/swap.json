@@ -140,7 +140,7 @@
         "enable_multi_gpu": false,
         "gpu_devices": "0",
         "enable_block_swap": true,
-        "block_swap_counter": 20,
+        "block_swap_counter": 25,
         "block_swap_offload_io": false,
         "block_swap_model_caching": false,
         "temporal_overlap": 2,

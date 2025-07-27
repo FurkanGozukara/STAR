@@ -48,6 +48,27 @@ def util_scan_seedvr2_models(logger: Optional[logging.Logger] = None, include_mi
     model_manager = get_seedvr2_model_manager(logger)
     return model_manager.scan_available_models(include_missing=include_missing)
 
+def util_get_model_block_count(model_filename: str) -> int:
+    """
+    Get the number of blocks in a SeedVR2 model based on its name.
+    
+    Args:
+        model_filename: The model filename to check
+        
+    Returns:
+        Number of blocks in the model
+    """
+    if not model_filename:
+        return 20  # Default safe value
+    
+    model_lower = model_filename.lower()
+    if '3b' in model_lower:
+        return 32  # 3B models have 32 blocks
+    elif '7b' in model_lower:
+        return 36  # 7B models have 36 blocks (estimated, adjust if different)
+    else:
+        return 20  # Safe default for unknown models
+
 def util_format_model_info_display(model_filename: str, logger: Optional[logging.Logger] = None) -> str:
     """
     Format model information for display in UI
