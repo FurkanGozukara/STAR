@@ -679,10 +679,11 @@ def process_single_scene(
                             logger.warning(f"Src frame {src} not found for scene context chunk video.")
                     
                     if frames_for_this_video_chunk:
-                        # Use duration-preserved video creation for context chunks
-                        from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
-                        create_video_from_frames_with_duration_preservation(
-                            chunk_temp_assembly_dir, chunk_video_path, scene_video_path,
+                        # Create chunk video using proper FPS
+                        # For chunks, use scene FPS directly instead of duration preservation
+                        # which incorrectly uses total scene duration for chunk FPS calculation
+                        util_create_video_from_frames(
+                            chunk_temp_assembly_dir, chunk_video_path, scene_fps,
                             ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger)
                         
                         # Apply RIFE interpolation to chunk if enabled
@@ -981,10 +982,11 @@ def process_single_scene(
                     logger.info(f"Scene {scene_index + 1} Chunk {chunk_idx+1}: Found {len(frames_for_this_video_chunk)} out of {len(output_frame_names)} expected frames")
                     
                     if frames_for_this_video_chunk:
-                        # Use duration-preserved video creation for regular chunks
-                        from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
-                        create_video_from_frames_with_duration_preservation(
-                            chunk_temp_assembly_dir, chunk_video_path, scene_video_path,
+                        # Create chunk video using proper FPS
+                        # For chunks, use scene FPS directly instead of duration preservation
+                        # which incorrectly uses total scene duration for chunk FPS calculation
+                        util_create_video_from_frames(
+                            chunk_temp_assembly_dir, chunk_video_path, scene_fps,
                             ffmpeg_preset, ffmpeg_quality_value, ffmpeg_use_gpu, logger=logger)
                         
                         # Apply RIFE interpolation to chunk if enabled

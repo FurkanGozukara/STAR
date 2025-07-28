@@ -62,20 +62,38 @@ def get_next_filename(output_dir, logger=None):
     """
     os.makedirs(output_dir, exist_ok=True)
     max_num = 0
-    existing_mp4_files = [f for f in os.listdir(output_dir) if f.endswith('.mp4')]
-    for f_name in existing_mp4_files:
-        try:
-            num = int(os.path.splitext(f_name)[0])
-            if num > max_num:
-                max_num = num
-        except ValueError:
-            continue
+    
+    # Check for existing MP4 files AND existing subdirectories with numeric names
+    existing_entries = os.listdir(output_dir)
+    for entry in existing_entries:
+        # Check MP4 files
+        if entry.endswith('.mp4'):
+            try:
+                num = int(os.path.splitext(entry)[0])
+                if num > max_num:
+                    max_num = num
+            except ValueError:
+                continue
+        # Check directories with numeric names (e.g., "0215")
+        elif os.path.isdir(os.path.join(output_dir, entry)):
+            try:
+                num = int(entry)
+                if num > max_num:
+                    max_num = num
+            except ValueError:
+                continue
 
     current_num_to_try = max_num + 1
     while True:
         base_filename_no_ext = f"{current_num_to_try:04d}"
         tmp_lock_file_path = os.path.join(output_dir, f"{base_filename_no_ext}.tmp")
         full_output_path = os.path.join(output_dir, f"{base_filename_no_ext}.mp4")
+        session_dir_path = os.path.join(output_dir, base_filename_no_ext)
+
+        # Check if either the tmp file, the output directory, or the mp4 file already exists
+        if os.path.exists(tmp_lock_file_path) or os.path.exists(session_dir_path) or os.path.exists(full_output_path):
+            current_num_to_try += 1
+            continue
 
         try:
             fd = os.open(tmp_lock_file_path, os.O_CREAT | os.O_EXCL | os.O_RDWR)
