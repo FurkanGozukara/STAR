@@ -167,6 +167,19 @@ DEFAULT_SEEDVR2_BLOCK_SWAP_COUNTER = 0  # 0 = disabled, 1-12+ = number of blocks
 DEFAULT_SEEDVR2_BLOCK_SWAP_OFFLOAD_IO = False  # I/O component offloading
 DEFAULT_SEEDVR2_BLOCK_SWAP_MODEL_CACHING = False  # Keep model cached in RAM between runs
 
+# SeedVR2 Memory Optimization Mode
+DEFAULT_SEEDVR2_MEMORY_OPTIMIZATION = "auto"  # Options: "auto", "performance", "balanced", "memory_saver"
+# Auto mode intelligently configures based on GPU detection
+
+# SeedVR2 Memory Management Configuration (Advanced - Auto-configured)
+DEFAULT_SEEDVR2_MEMORY_RESERVED_THRESHOLD = 4.0  # GB - threshold for conservative memory management
+DEFAULT_SEEDVR2_MEMORY_FRACTION_LOW_RESERVED = 0.8  # 80% when reserved < threshold
+DEFAULT_SEEDVR2_MEMORY_FRACTION_HIGH_RESERVED = 0.6  # 60% when reserved >= threshold
+DEFAULT_SEEDVR2_MEMORY_FRACTION_NO_BLOCKSWAP = 1.0  # 100% when block swap not configured
+DEFAULT_SEEDVR2_BLOCK_MEMORY_CLEANUP_THRESHOLD = 0.7  # 70% GPU usage triggers cleanup
+DEFAULT_SEEDVR2_IO_MEMORY_CLEANUP_THRESHOLD = 0.9  # 90% GPU usage triggers cleanup
+DEFAULT_SEEDVR2_BLOCK_CLEANUP_FIRST_N = 3  # Always cleanup cache for first N blocks
+
 # SeedVR2 Temporal Consistency Settings
 DEFAULT_SEEDVR2_TEMPORAL_OVERLAP = 2  # Frames of overlap between temporal chunks (minimum 2 for consistency)
 DEFAULT_SEEDVR2_SCENE_AWARENESS = True  # Enable scene-aware temporal processing
@@ -458,6 +471,18 @@ class SeedVR2Config:
     block_swap_counter: int = DEFAULT_SEEDVR2_BLOCK_SWAP_COUNTER
     block_swap_offload_io: bool = DEFAULT_SEEDVR2_BLOCK_SWAP_OFFLOAD_IO
     block_swap_model_caching: bool = DEFAULT_SEEDVR2_BLOCK_SWAP_MODEL_CACHING
+    
+    # Memory optimization mode (user-friendly)
+    memory_optimization: str = DEFAULT_SEEDVR2_MEMORY_OPTIMIZATION
+    
+    # Memory management configuration (auto-configured based on mode)
+    memory_reserved_threshold: float = DEFAULT_SEEDVR2_MEMORY_RESERVED_THRESHOLD
+    memory_fraction_low_reserved: float = DEFAULT_SEEDVR2_MEMORY_FRACTION_LOW_RESERVED
+    memory_fraction_high_reserved: float = DEFAULT_SEEDVR2_MEMORY_FRACTION_HIGH_RESERVED
+    memory_fraction_no_blockswap: float = DEFAULT_SEEDVR2_MEMORY_FRACTION_NO_BLOCKSWAP
+    block_memory_cleanup_threshold: float = DEFAULT_SEEDVR2_BLOCK_MEMORY_CLEANUP_THRESHOLD
+    io_memory_cleanup_threshold: float = DEFAULT_SEEDVR2_IO_MEMORY_CLEANUP_THRESHOLD
+    block_cleanup_first_n: int = DEFAULT_SEEDVR2_BLOCK_CLEANUP_FIRST_N
     
     # Temporal consistency settings
     temporal_overlap: int = DEFAULT_SEEDVR2_TEMPORAL_OVERLAP

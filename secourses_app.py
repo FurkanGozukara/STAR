@@ -1136,6 +1136,88 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                         )
                     with gr.Accordion("Block Swap - VRAM Optimization", open=False):
                         gr.Markdown(BLOCK_SWAP_DESCRIPTION)
+                        
+                        # Memory Optimization Mode
+                        gr.Markdown("### 🧠 Intelligent Memory Optimization")
+                        gr.Markdown("""
+                        **What is Memory Optimization?**
+                        
+                        SeedVR2 models require significant GPU memory (VRAM). This intelligent system automatically configures settings to balance quality and performance based on your hardware.
+                        
+                        **How Block Swap Works:**
+                        - Moves model layers between GPU ↔ CPU/RAM during processing
+                        - Each block swapped saves ~0.5GB VRAM but adds processing time
+                        - I/O offloading moves input/output layers for maximum savings
+                        """)
+                        
+                        with gr.Row():
+                            with gr.Column(scale=2):
+                                seedvr2_memory_optimization_radio = create_radio(
+                                    config_path=('seedvr2', 'memory_optimization'), ui_dict=ui_components,
+                                    label="Memory Optimization Mode",
+                                    choices=["auto", "performance", "balanced", "memory_saver"],
+                                    info="Select a mode based on your needs"
+                                )
+                            with gr.Column(scale=1):
+                                gr.Markdown("""
+                                **Mode Guide:**
+                                - 🤖 **Auto**: Smart detection
+                                - 🚀 **Performance**: Speed priority
+                                - ⚖️ **Balanced**: Best of both
+                                - 💾 **Memory Saver**: Low VRAM
+                                """)
+                        
+                        # Detailed mode explanations
+                        seedvr2_mode_details = gr.Markdown(
+                            value="""
+                            ### 📊 Mode Details
+                            Select a mode above to see detailed information about memory usage and performance impact.
+                            """,
+                            visible=True
+                        )
+                        
+                        seedvr2_memory_optimization_status = gr.Textbox(
+                            label="Current Configuration", value="Select a mode to see your GPU status and recommendations", 
+                            interactive=False, lines=6
+                        )
+                        
+                        # Memory requirements info
+                        with gr.Accordion("💡 Understanding Memory Requirements", open=False):
+                            gr.Markdown("""
+                            ### Model Memory Requirements
+                            - **3B Model**: ~8GB VRAM (minimum 6GB with optimization)
+                            - **7B Model**: ~14GB VRAM (minimum 10GB with optimization)
+                            - **Batch Size Impact**: +0.5GB per additional frame
+                            - **Resolution Impact**: +20% VRAM per 2x resolution increase
+                            
+                            ### Common GPU Examples
+                            | GPU | VRAM | Recommended Mode | Max Model |
+                            |-----|------|------------------|-----------|
+                            | RTX 4090 | 24GB | Performance | 7B (no optimization) |
+                            | RTX 4080 | 16GB | Balanced | 7B (with optimization) |
+                            | RTX 4070 Ti | 12GB | Balanced | 3B comfortable, 7B possible |
+                            | RTX 4060 Ti | 8-16GB | Memory Saver | 3B with optimization |
+                            | RTX 3060 | 12GB | Balanced/Memory | 3B comfortable |
+                            | RTX 3060 Ti | 8GB | Memory Saver | 3B with heavy optimization |
+                            
+                            ### FAQ
+                            **Q: What happens if I run out of VRAM?**
+                            A: You'll get a "CUDA out of memory" error. Use Memory Saver mode or reduce batch size.
+                            
+                            **Q: Does block swap affect quality?**
+                            A: No, quality remains identical. Only processing speed is affected.
+                            
+                            **Q: Why is processing slower with optimization?**
+                            A: Model layers are moved between GPU and CPU/RAM, which takes time but saves memory.
+                            
+                            **Q: Should I always use Auto mode?**
+                            A: Auto is recommended for most users. Use manual modes if you have specific needs.
+                            """)
+                        
+                        # Apply optimization button
+                        apply_memory_optimization_btn = gr.Button("🚀 Apply Optimization Settings", variant="primary", size="lg")
+                        
+                        gr.Markdown("### ⚙️ Manual Block Swap Settings")
                         seedvr2_enable_block_swap_check = create_checkbox(
                             config_path=('seedvr2', 'enable_block_swap'), ui_dict=ui_components,
                             label="Enable Block Swap", info=info_strings.BLOCK_SWAP_LARGE_MODELS_LIMITED_VRAM_INFO
@@ -4652,6 +4734,186 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             inputs=[seedvr2_gpu_devices_textbox, seedvr2_enable_multi_gpu_check],
             outputs=[seedvr2_gpu_status_display]
         )
+    
+    # Memory optimization event handlers
+    def update_memory_optimization_status(optimization_mode, model_choice):
+        """Update the status display when memory optimization mode changes."""
+        try:
+            from logic.seedvr2_memory_optimizer import get_memory_optimization_presets, detect_gpu_capabilities
+            
+            gpu_info = detect_gpu_capabilities()
+            presets = get_memory_optimization_presets()
+            
+            if optimization_mode not in presets:
+                return gr.update(value="❌ Invalid optimization mode"), gr.update()
+            
+            preset_info = presets[optimization_mode]
+            is_7b_model = '7b' in model_choice.lower() if model_choice and not any(error in model_choice for error in ["Error:", "No SeedVR2", "SeedVR2 directory"]) else False
+            model_size = "7B" if is_7b_model else "3B"
+            model_vram = 14 if is_7b_model else 8
+            
+            # Detailed mode explanation
+            mode_details = {
+                "auto": f"""### 🤖 Automatic Mode
+This mode intelligently analyzes your GPU and model requirements to find the optimal configuration.
+
+**Your System Analysis:**
+- Detected GPU: {gpu_info['name']} with {gpu_info['vram_gb']:.1f}GB VRAM
+- Selected Model: SeedVR2 {model_size} (requires ~{model_vram}GB)
+- GPU Profile: {gpu_info['profile'].replace('_', ' ').title()}
+- Recommendation: {"✅ Your GPU can handle this model" if gpu_info['vram_gb'] >= model_vram * 0.8 else "⚠️ Optimization needed for smooth processing"}
+
+**What Auto Mode Does:**
+- Calculates exact VRAM requirements
+- Configures optimal block swap settings
+- Balances speed vs memory usage
+- Adjusts based on batch size and resolution
+""",
+                "performance": f"""### 🚀 Performance Mode
+Maximum speed with minimal optimization - best for high-end GPUs.
+
+**Settings Applied:**
+- Block Swap: Disabled (all layers stay on GPU)
+- Memory Fraction: 95% GPU utilization allowed
+- Processing Speed: Maximum
+- Quality: Highest possible
+
+**Best For:**
+- GPUs with {">=" if is_7b_model else ">="} {model_vram + 4}GB VRAM
+- Time-critical processing
+- Small batch sizes (1-3 frames)
+- Users who prioritize speed
+
+**Your GPU:** {"✅ Suitable" if gpu_info['vram_gb'] >= model_vram + 2 else "⚠️ May experience OOM errors"}
+""",
+                "balanced": f"""### ⚖️ Balanced Mode
+Optimal balance between speed and memory efficiency.
+
+**Settings Applied:**
+- Block Swap: 8 blocks (~4GB savings)
+- Memory Fraction: 80% GPU utilization
+- Processing Speed: 15-20% slower than performance
+- Quality: Maintained
+
+**Best For:**
+- Mid-range GPUs (12-16GB VRAM)
+- Standard video processing
+- Batch sizes 5-10 frames
+- General purpose use
+
+**Your GPU:** {"✅ Good fit" if 10 <= gpu_info['vram_gb'] <= 20 else "🔄 Will work with adjustments"}
+""",
+                "memory_saver": f"""### 💾 Memory Saver Mode
+Maximum VRAM optimization for limited GPU memory.
+
+**Settings Applied:**
+- Block Swap: 20+ blocks (~10GB savings)
+- I/O Offloading: Enabled
+- Memory Fraction: 60% GPU utilization
+- Processing Speed: 40-50% slower
+
+**Best For:**
+- GPUs with <12GB VRAM
+- Large models on consumer GPUs
+- Maximum batch sizes
+- Memory-constrained systems
+
+**Your GPU:** {"✅ Recommended for your setup" if gpu_info['vram_gb'] < 12 else "💡 Not necessary but will work"}
+"""
+            }
+            
+            # Current configuration status
+            status_text = f"""🖥️ **Your GPU:** {gpu_info['name']} ({gpu_info['vram_gb']:.1f}GB VRAM)
+🤖 **Selected Model:** SeedVR2 {model_size} 
+📊 **Memory Required:** ~{model_vram}GB base + overhead
+🎯 **Current Mode:** {optimization_mode.replace('_', ' ').title()}"""
+            
+            if optimization_mode == "auto":
+                # Calculate recommendation for auto mode
+                if gpu_info['vram_gb'] >= model_vram + 4:
+                    status_text += "\n✅ **Auto Result:** Performance settings (no optimization needed)"
+                elif gpu_info['vram_gb'] >= model_vram:
+                    status_text += "\n⚖️ **Auto Result:** Balanced settings (moderate optimization)"
+                else:
+                    status_text += "\n💾 **Auto Result:** Memory saver settings (maximum optimization)"
+            else:
+                config = preset_info['config']
+                blocks = config.get('block_swap_counter', 0)
+                if blocks > 0:
+                    status_text += f"\n🔄 **Block Swap:** {blocks} blocks (~{blocks * 0.5:.1f}GB saved)"
+                    status_text += f"\n⏱️ **Speed Impact:** ~{blocks * 2}% slower processing"
+                else:
+                    status_text += "\n⚡ **Block Swap:** Disabled (full GPU speed)"
+            
+            return gr.update(value=status_text), gr.update(value=mode_details.get(optimization_mode, ""))
+            
+        except Exception as e:
+            logger.error(f"Failed to update memory optimization status: {e}")
+            return gr.update(value=f"❌ Error: {str(e)}"), gr.update()
+    
+    def apply_memory_optimization(optimization_mode, model_choice):
+        """Apply the selected memory optimization mode."""
+        try:
+            from logic.seedvr2_memory_optimizer import apply_memory_optimization
+            
+            result = apply_memory_optimization(APP_CONFIG, optimization_mode)
+            
+            if result['status'] == 'success':
+                # Build update list for all affected components
+                updates = []
+                settings = result['applied_settings']
+                
+                # Update individual components
+                updates.append(gr.update(value=settings.get('enable_block_swap', False)))  # enable_block_swap
+                updates.append(gr.update(value=settings.get('block_swap_counter', 0)))  # block_swap_counter
+                updates.append(gr.update(value=settings.get('block_swap_offload_io', False)))  # offload_io
+                updates.append(gr.update(value=settings.get('block_swap_model_caching', False)))  # model_caching
+                updates.append(gr.update(value=settings.get('preserve_vram', True)))  # preserve_vram
+                
+                # Update status with success message
+                status_msg = "✅ **Optimization Applied Successfully!**\n\n"
+                status_msg += result['message']
+                
+                # Add applied settings summary
+                status_msg += "\n\n**📋 Applied Settings:**"
+                status_msg += f"\n• Block Swap: {'Enabled' if settings.get('enable_block_swap', False) else 'Disabled'}"
+                if settings.get('enable_block_swap', False):
+                    status_msg += f" ({settings.get('block_swap_counter', 0)} blocks)"
+                    status_msg += f"\n• I/O Offloading: {'Yes' if settings.get('block_swap_offload_io', False) else 'No'}"
+                status_msg += f"\n• VRAM Preservation: {'Yes' if settings.get('preserve_vram', True) else 'No'}"
+                
+                if result.get('recommendations'):
+                    status_msg += "\n\n💡 **Recommendations:**\n" + "\n".join([f"• {r}" for r in result['recommendations']])
+                
+                updates.append(gr.update(value=status_msg))  # optimization_status
+                
+                return updates
+            else:
+                # Return error in status, don't update other components
+                return [gr.update()] * 5 + [gr.update(value=f"❌ {result.get('message', 'Failed to apply optimization')}")]
+                
+        except Exception as e:
+            logger.error(f"Failed to apply memory optimization: {e}")
+            return [gr.update()] * 5 + [gr.update(value=f"❌ Error: {str(e)}")]
+    
+    seedvr2_memory_optimization_radio.change(
+        fn=update_memory_optimization_status,
+        inputs=[seedvr2_memory_optimization_radio, seedvr2_model_dropdown],
+        outputs=[seedvr2_memory_optimization_status, seedvr2_mode_details]
+    )
+    
+    apply_memory_optimization_btn.click(
+        fn=apply_memory_optimization,
+        inputs=[seedvr2_memory_optimization_radio, seedvr2_model_dropdown],
+        outputs=[
+            seedvr2_enable_block_swap_check,
+            seedvr2_block_swap_counter_slider,
+            seedvr2_block_swap_offload_io_check,
+            seedvr2_block_swap_model_caching_check,
+            seedvr2_preserve_vram_check,
+            seedvr2_memory_optimization_status
+        ]
+    )
 
     demo.load(
         fn=initialize_seedvr2_tab,

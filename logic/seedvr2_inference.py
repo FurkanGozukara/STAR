@@ -186,12 +186,19 @@ class SeedVR2InferenceEngine:
             block_swap_config = None
             blocks_to_swap = getattr(config, 'seedvr2_blocks_to_swap', 0)
             if blocks_to_swap > 0:
+                # Get seedvr2 config if available for memory management settings
+                seedvr2_config = getattr(config, 'seedvr2', None) if hasattr(config, 'seedvr2') else None
+                
                 block_swap_config = {
                     'blocks_to_swap': blocks_to_swap,
                     'offload_io_components': getattr(config, 'seedvr2_offload_io', False),
                     'cache_model': getattr(config, 'seedvr2_cache_model', False),
                     'use_non_blocking': True,
-                    'enable_debug': getattr(config, 'debug_mode', False)
+                    'enable_debug': getattr(config, 'debug_mode', False),
+                    # Add memory management configuration
+                    'block_memory_cleanup_threshold': getattr(seedvr2_config, 'block_memory_cleanup_threshold', 0.7) if seedvr2_config else 0.7,
+                    'io_memory_cleanup_threshold': getattr(seedvr2_config, 'io_memory_cleanup_threshold', 0.9) if seedvr2_config else 0.9,
+                    'block_cleanup_first_n': getattr(seedvr2_config, 'block_cleanup_first_n', 3) if seedvr2_config else 3
                 }
             
             # Load model
@@ -311,12 +318,19 @@ class SeedVR2InferenceEngine:
             block_swap_config = None
             blocks_to_swap = getattr(config, 'seedvr2_blocks_to_swap', 0)
             if blocks_to_swap > 0:
+                # Get seedvr2 config if available for memory management settings
+                seedvr2_config = getattr(config, 'seedvr2', None) if hasattr(config, 'seedvr2') else None
+                
                 block_swap_config = {
                     'blocks_to_swap': blocks_to_swap,
                     'offload_io_components': getattr(config, 'seedvr2_offload_io', False),
                     'cache_model': getattr(config, 'seedvr2_cache_model', False),
                     'use_non_blocking': True,
-                    'enable_debug': getattr(config, 'debug_mode', False)
+                    'enable_debug': getattr(config, 'debug_mode', False),
+                    # Add memory management configuration
+                    'block_memory_cleanup_threshold': getattr(seedvr2_config, 'block_memory_cleanup_threshold', 0.7) if seedvr2_config else 0.7,
+                    'io_memory_cleanup_threshold': getattr(seedvr2_config, 'io_memory_cleanup_threshold', 0.9) if seedvr2_config else 0.9,
+                    'block_cleanup_first_n': getattr(seedvr2_config, 'block_cleanup_first_n', 3) if seedvr2_config else 3
                 }
             
             # Load model
