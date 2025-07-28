@@ -146,6 +146,7 @@ def process_video_with_seedvr2(
         raise ValueError(error_msg)
     
     process_start_time = time.time()
+    overall_process_start_time = process_start_time  # For metadata saving
     if logger:
         logger.info(f"Starting SeedVR2 processing with model: {seedvr2_config.model}")
         logger.info(f"Input video: {os.path.basename(input_video_path)}")
@@ -460,6 +461,21 @@ def process_video_with_seedvr2(
     if logger:
         logger.info(f"SeedVR2 target resolution calculated: {calculated_resolution}")
     
+    # Determine output path early (before processing) for cancellation handling
+    if is_batch_mode and batch_output_dir and original_filename:
+        from .file_utils import get_batch_filename
+        _, output_video_path, _ = get_batch_filename(
+            batch_output_dir, original_filename, suffix="_seedvr2_upscaled"
+        )
+    else:
+        from .file_utils import get_next_filename
+        _, output_video_path = get_next_filename(
+            output_dir, base_output_filename_no_ext, suffix="_seedvr2_upscaled", logger=logger
+        )
+    
+    if logger:
+        logger.info(f"Output video path determined: {output_video_path}")
+    
     # Process frames with SeedVR2
     status_log.append(f"Processing {len(frame_chunks)} chunks with SeedVR2...")
     if progress:
@@ -491,7 +507,7 @@ def process_video_with_seedvr2(
                 else:
                     # Single GPU processing for this chunk
                     chunk_result = _process_single_gpu(
-                        chunk_tensor, seedvr2_config, runner, calculated_resolution, logger, None  # Don't pass progress for individual chunks
+                        chunk_tensor, seedvr2_config, runner, calculated_resolution, current_seed, logger, None  # Don't pass progress for individual chunks
                     )
                 
                 processed_chunks.append(chunk_result)
@@ -728,18 +744,6 @@ def process_video_with_seedvr2(
     status_log.append("Creating output video...")
     if progress:
         progress(0.90, "🎬 Creating output video...")
-    
-    # Determine output path using global file naming conventions
-    if is_batch_mode and batch_output_dir and original_filename:
-        from .file_utils import get_batch_filename
-        _, output_video_path, _ = get_batch_filename(
-            batch_output_dir, original_filename, suffix="_seedvr2_upscaled"
-        )
-    else:
-        from .file_utils import get_next_filename
-        _, output_video_path = get_next_filename(
-            output_dir, base_output_filename_no_ext, suffix="_seedvr2_upscaled", logger=logger
-        )
     
     try:
         # Determine which frames directory to use for video creation
@@ -1224,31 +1228,83 @@ def _setup_gpu_configuration(seedvr2_config, logger=None) -> List[str]:
     return ["0"]
 
 
-def _process_single_gpu(frames_tensor: torch.Tensor, seedvr2_config, runner, calculated_resolution: int, logger=None, progress=None) -> torch.Tensor:
-    """Process frames using a single GPU."""
+def _process_single_gpu(frames_tensor: torch.Tensor, seedvr2_config, runner, calculated_resolution: int, current_seed: int, logger=None, progress=None) -> torch.Tensor:
+    """Process frames using a single GPU with cancellation support."""
+    
+    # Import cancellation manager at function level
+    from .cancellation_manager import cancellation_manager, CancelledError
     
     # Move to GPU
     device = f"cuda:{seedvr2_config.gpu_devices.split(',')[0].strip()}" if seedvr2_config.gpu_devices else "cuda:0"
     frames_tensor = frames_tensor.to(device)
     
+    # For cancellation support, we need to process in smaller sub-batches
+    # that allow us to check for cancellation between them
+    max_frames_per_iteration = min(seedvr2_config.batch_size, 25)  # Process max 25 frames at a time
+    total_frames = frames_tensor.shape[0]
+    
+    if total_frames <= max_frames_per_iteration:
+        # Small chunk, process normally
+        return _process_single_gpu_batch(frames_tensor, seedvr2_config, runner, calculated_resolution, current_seed, logger, progress)
+    
+    # Process in sub-batches with cancellation checks
+    processed_sub_batches = []
+    
+    for sub_batch_start in range(0, total_frames, max_frames_per_iteration):
+        # Check for cancellation before each sub-batch
+        try:
+            cancellation_manager.check_cancel()
+        except CancelledError:
+            if logger:
+                logger.info(f"Cancellation detected during sub-batch processing at frame {sub_batch_start}")
+            # Return what we've processed so far
+            if processed_sub_batches:
+                return torch.cat(processed_sub_batches, dim=0)
+            else:
+                raise  # Re-raise if nothing processed yet
+        
+        sub_batch_end = min(sub_batch_start + max_frames_per_iteration, total_frames)
+        sub_batch_tensor = frames_tensor[sub_batch_start:sub_batch_end]
+        
+        if logger:
+            logger.info(f"Processing sub-batch: frames {sub_batch_start}-{sub_batch_end-1}")
+        
+        # Process this sub-batch
+        sub_batch_result = _process_single_gpu_batch(
+            sub_batch_tensor, seedvr2_config, runner, calculated_resolution, current_seed,
+            logger, progress, 
+            sub_batch_info=(sub_batch_start, sub_batch_end, total_frames)
+        )
+        
+        processed_sub_batches.append(sub_batch_result)
+    
+    # Combine all sub-batches
+    return torch.cat(processed_sub_batches, dim=0)
+
+
+def _process_single_gpu_batch(frames_tensor: torch.Tensor, seedvr2_config, runner, calculated_resolution: int, current_seed: int, logger=None, progress=None, sub_batch_info=None) -> torch.Tensor:
+    """Process a single batch of frames on GPU (helper function)."""
+    
     # Setup generation parameters
     generation_params = {
         "cfg_scale": seedvr2_config.cfg_scale,
         "seed": seedvr2_config.seed if seedvr2_config.seed >= 0 else current_seed,
-        "res_w": _calculate_seedvr2_resolution(input_video_path, enable_target_res, target_h, target_w, target_res_mode, upscale_factor=2.0, logger=logger),
+        "res_w": calculated_resolution,
         "batch_size": seedvr2_config.batch_size,
         "preserve_vram": seedvr2_config.preserve_vram,
-        "temporal_overlap": seedvr2_config.temporal_overlap,
+        "temporal_overlap": 0,  # Disable overlap for sub-batches to avoid complexity
         "debug": logger.level <= logging.DEBUG if logger else False
     }
     
     # Add progress callback if available
-    if progress:
+    if progress and sub_batch_info:
+        sub_start, sub_end, total_frames = sub_batch_info
         def progress_callback(batch_num, total_batches, current_frame, status):
-            # Map to progress range 0.35 to 0.8 (processing phase)
-            batch_progress = batch_num / total_batches if total_batches > 0 else 0
-            overall_progress = 0.35 + (batch_progress * 0.45)
-            progress(overall_progress, f"🚀 {status} (Batch {batch_num}/{total_batches})")
+            # Calculate overall progress including sub-batch position
+            sub_batch_progress = sub_start / total_frames
+            within_sub_batch_progress = (batch_num / total_batches if total_batches > 0 else 0) * ((sub_end - sub_start) / total_frames)
+            overall_progress = 0.35 + (sub_batch_progress + within_sub_batch_progress) * 0.45
+            progress(overall_progress, f"🚀 {status} (Sub-batch frames {sub_start}-{sub_end-1})")
         
         generation_params["progress_callback"] = progress_callback
     
@@ -1266,8 +1322,15 @@ def _process_single_gpu(frames_tensor: torch.Tensor, seedvr2_config, runner, cal
         return result_tensor
         
     except Exception as e:
+        # Check if this is a ComfyUI interruption (cancellation)
+        if "InterruptProcessingException" in str(type(e).__name__):
+            if logger:
+                logger.info("ComfyUI processing interruption detected - treating as cancellation")
+            from .cancellation_manager import CancelledError
+            raise CancelledError("Processing was cancelled by the user.")
+        
         if logger:
-            logger.error(f"Single GPU processing failed: {e}")
+            logger.error(f"Single GPU batch processing failed: {e}")
         raise
 
 

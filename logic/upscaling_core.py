@@ -1120,6 +1120,14 @@ def run_upscale (
                 logger.info("SeedVR2 upscaling completed successfully")
                 yield None, "\n".join(status_log), last_chunk_video_path, "SeedVR2 upscaling complete", None
                 
+            except CancelledError as e:
+                # Handle cancellation specifically - don't treat as error
+                logger.info("SeedVR2 processing cancelled by user")
+                status_log.append("SeedVR2 processing cancelled")
+                # The generator should have already yielded partial results if available
+                # Just re-raise to be handled by the outer cancellation handler
+                raise
+                
             except Exception as e:
                 logger.error(f"Error in SeedVR2 processing: {e}", exc_info=True)
                 status_log.append(f"SeedVR2 error: {e}")
@@ -2211,8 +2219,31 @@ def run_upscale (
             if os .path .exists (silent_upscaled_video_path ):
                 # Use a temporary file for the merge to avoid FFmpeg "same input/output file" error
                 temp_merged_video = os .path .join (temp_dir ,"temp_merged_with_audio.mp4")
-                # Remove -shortest flag to preserve full video length, use -avoid_negative_ts for robust merging
-                util_run_ffmpeg_command (f'ffmpeg -y -i "{silent_upscaled_video_path}" -i "{audio_source_video}" -c:v copy -c:a copy -map 0:v:0 -map 1:a:0? -avoid_negative_ts make_zero "{temp_merged_video}"',"Final Video and Audio Merge",logger =logger )
+                
+                # Check if this is a partial video by looking at the filename
+                is_partial_video = "_partial_cancelled" in str(final_output_path) if final_output_path else False
+                
+                if is_partial_video:
+                    # For partial videos, we need to trim audio to match video duration
+                    # First get the duration of the partial video
+                    try:
+                        import subprocess
+                        duration_cmd = f'ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "{silent_upscaled_video_path}"'
+                        result = subprocess.run(duration_cmd, shell=True, capture_output=True, text=True)
+                        video_duration = float(result.stdout.strip())
+                        logger.info(f"Partial video duration: {video_duration:.3f}s - will trim audio to match")
+                        
+                        # Use -t to limit audio duration to match video
+                        merge_cmd = f'ffmpeg -y -i "{silent_upscaled_video_path}" -i "{audio_source_video}" -t {video_duration:.3f} -c:v copy -c:a copy -map 0:v:0 -map 1:a:0? -avoid_negative_ts make_zero "{temp_merged_video}"'
+                        util_run_ffmpeg_command(merge_cmd, "Final Video and Audio Merge (Partial)", logger=logger)
+                    except Exception as e:
+                        logger.warning(f"Could not determine partial video duration: {e}")
+                        # Fallback to using -shortest flag which will match audio to video length
+                        merge_cmd = f'ffmpeg -y -i "{silent_upscaled_video_path}" -i "{audio_source_video}" -c:v copy -c:a copy -map 0:v:0 -map 1:a:0? -shortest -avoid_negative_ts make_zero "{temp_merged_video}"'
+                        util_run_ffmpeg_command(merge_cmd, "Final Video and Audio Merge (Partial with -shortest)", logger=logger)
+                else:
+                    # Normal merge - preserve full audio length
+                    util_run_ffmpeg_command (f'ffmpeg -y -i "{silent_upscaled_video_path}" -i "{audio_source_video}" -c:v copy -c:a copy -map 0:v:0 -map 1:a:0? -avoid_negative_ts make_zero "{temp_merged_video}"',"Final Video and Audio Merge",logger =logger )
                 
                 # Move the temporary merged file to the final output path
                 if os .path .exists (temp_merged_video ):

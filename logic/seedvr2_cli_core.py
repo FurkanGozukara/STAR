@@ -1014,6 +1014,9 @@ def process_video_with_seedvr2_cli(
         # ✅ FIX: Use the base filename from main pipeline for output video
         output_path = output_dir / f"{base_output_filename_no_ext}.mp4"
         
+        # Initialize is_partial_result here so it's available throughout the function
+        is_partial_result = False
+        
         logger.info(f"Using existing session directory from main pipeline: {session_output_path}")
         logger.info(f"Output video will be saved as: {output_path}")
         logger.info(f"✅ Consistent naming: session={session_output_path.name}, video={base_output_filename_no_ext}.mp4")
@@ -1288,10 +1291,11 @@ def process_video_with_seedvr2_cli(
                 final_result = processing_result
         
         # Extract final results
+        final_status = None
         if final_result:
             if len(final_result) == 4:
                 # New format with status message
-                result_tensor, chunk_results, last_chunk_video_path, _ = final_result
+                result_tensor, chunk_results, last_chunk_video_path, final_status = final_result
             else:
                 # Old format without status message
                 result_tensor, chunk_results, last_chunk_video_path = final_result
@@ -1304,6 +1308,11 @@ def process_video_with_seedvr2_cli(
         if result_tensor is None or result_tensor.numel() == 0:
             if logger:
                 logger.warning("⚠️ Result tensor is empty, attempting to read from saved processed frames...")
+            
+            # Check if this is due to cancellation by looking at the status message
+            if final_status and ("cancel" in final_status.lower() or "error" in final_status.lower()):
+                is_partial_result = True
+                logger.info("Detected partial result due to cancellation/error")
             
             # Try to read from saved processed frames if they exist
             if save_frames and processed_frames_permanent_save_path and processed_frames_permanent_save_path.exists():
@@ -1392,9 +1401,6 @@ def process_video_with_seedvr2_cli(
         if progress_callback:
             progress_callback(0.8, "Processing complete, saving chunks and output video")
         
-        # Check for cancellation
-        cancellation_manager.check_cancel()
-        
         # ✅ FIX: Use chunk preview path from processing if available
         if not last_chunk_video_path and chunks_permanent_save_path and chunk_results:
             if status_callback:
@@ -1424,6 +1430,12 @@ def process_video_with_seedvr2_cli(
         
         if status_callback:
             status_callback("💾 Saving processed video...")
+        
+        # Update output path if this is a partial result
+        if is_partial_result:
+            partial_output_name = output_path.stem + "_partial_cancelled" + output_path.suffix
+            output_path = output_path.parent / partial_output_name
+            logger.info(f"Creating partial video due to cancellation: {output_path}")
         
         # ✅ FIX: Use shared STAR pipeline for final video generation
         # This integrates with duration preservation, RIFE, and all global settings
@@ -1478,18 +1490,40 @@ def process_video_with_seedvr2_cli(
                     if logger:
                         logger.warning("Created placeholder black frame for video generation")
             
-            # Use STAR's shared pipeline for video creation with duration preservation
-            from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
-            
-            video_creation_success = create_video_from_frames_with_duration_preservation(
-                frames_source_dir,
-                str(output_path),
-                str(input_video_path),  # Use the parameter passed to this function
-                ffmpeg_preset=processing_args.get('ffmpeg_preset', 'medium'),
-                ffmpeg_quality_value=processing_args.get('ffmpeg_quality', 23),
-                ffmpeg_use_gpu=processing_args.get('ffmpeg_use_gpu', False),
-                logger=logger
-            )
+            # Use appropriate video creation based on whether this is a partial result
+            if is_partial_result:
+                # For partial results, don't preserve duration - use actual frame count
+                from .ffmpeg_utils import create_video_from_frames
+                
+                # Count actual frames processed
+                frame_files = sorted([f for f in Path(frames_source_dir).iterdir() 
+                                    if f.suffix.lower() in ['.png', '.jpg', '.jpeg']])
+                actual_frame_count = len(frame_files)
+                
+                logger.info(f"Creating partial video with {actual_frame_count} frames at original FPS")
+                
+                video_creation_success = create_video_from_frames(
+                    frames_source_dir,
+                    str(output_path),
+                    original_fps or 30.0,  # Use original FPS
+                    ffmpeg_preset=processing_args.get('ffmpeg_preset', 'medium'),
+                    ffmpeg_quality_value=processing_args.get('ffmpeg_quality', 23),
+                    ffmpeg_use_gpu=processing_args.get('ffmpeg_use_gpu', False),
+                    logger=logger
+                )
+            else:
+                # Use STAR's shared pipeline for video creation with duration preservation
+                from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
+                
+                video_creation_success = create_video_from_frames_with_duration_preservation(
+                    frames_source_dir,
+                    str(output_path),
+                    str(input_video_path),  # Use the parameter passed to this function
+                    ffmpeg_preset=processing_args.get('ffmpeg_preset', 'medium'),
+                    ffmpeg_quality_value=processing_args.get('ffmpeg_quality', 23),
+                    ffmpeg_use_gpu=processing_args.get('ffmpeg_use_gpu', False),
+                    logger=logger
+                )
             
             if not video_creation_success or not output_path.exists():
                 error_msg = "Video creation failed using STAR pipeline"
@@ -1545,7 +1579,43 @@ def process_video_with_seedvr2_cli(
         
     except CancelledError:
         logger.info("SeedVR2 processing cancelled by user")
-        yield (None, "SeedVR2 processing cancelled by user", None, "Cancelled", None)
+        
+        # Try to create a partial video from any processed frames
+        partial_video_path = None
+        if save_frames and processed_frames_permanent_save_path and processed_frames_permanent_save_path.exists():
+            try:
+                frame_files = sorted([f for f in processed_frames_permanent_save_path.glob("*.png")])
+                if frame_files:
+                    logger.info(f"Creating partial video from {len(frame_files)} processed frames...")
+                    
+                    # Create partial output filename
+                    partial_output_name = output_path.stem + "_partial_cancelled" + output_path.suffix
+                    partial_output_path = output_path.parent / partial_output_name
+                    
+                    # Create video from saved frames
+                    util_create_video_from_frames(
+                        input_frames_dir=str(processed_frames_permanent_save_path),
+                        output_video_path=str(partial_output_path),
+                        fps=original_fps or 30.0,
+                        preset=ffmpeg_preset,
+                        quality_value=ffmpeg_quality,
+                        use_gpu=ffmpeg_use_gpu,
+                        logger=logger
+                    )
+                    
+                    partial_video_path = str(partial_output_path)
+                    logger.info(f"Partial video created: {partial_video_path}")
+                    
+                    yield (partial_video_path, f"SeedVR2 processing cancelled - partial video saved ({len(frame_files)} frames)", 
+                           last_chunk_video_path, "Cancelled - Partial result saved", None)
+                else:
+                    yield (None, "SeedVR2 processing cancelled - no frames processed", None, "Cancelled", None)
+            except Exception as e:
+                logger.error(f"Failed to create partial video: {e}")
+                yield (None, "SeedVR2 processing cancelled", None, "Cancelled", None)
+        else:
+            yield (None, "SeedVR2 processing cancelled", None, "Cancelled", None)
+        
         raise
     except Exception as e:
         logger.error(f"Error during SeedVR2 processing: {e}")
@@ -2169,9 +2239,16 @@ def _process_single_gpu_cli_generator(
             # Get the result
             status, result = shared_queues.result.get()
             if status == 'error':
-                raise result
-            
-            result_tensor = result
+                # Check if this is a cancellation error
+                if isinstance(result, CancelledError) or "CancelledError" in str(type(result).__name__):
+                    logger.info("Processing was cancelled - will create partial video")
+                    is_partial_result = True
+                    # Set result_tensor to empty so we'll use saved frames
+                    result_tensor = torch.zeros(0, dtype=torch.float16)
+                else:
+                    raise result
+            else:
+                result_tensor = result
             logger.info(f"✅ Generation completed successfully: output shape {result_tensor.shape}")
             
             # Trim output to original frame count (remove padding)

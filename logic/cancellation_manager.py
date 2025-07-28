@@ -25,6 +25,16 @@ class CancellationManager:
             return False
             
         self._cancel_event.set()
+        
+        # Also trigger ComfyUI's interruption for SeedVR2 compatibility
+        try:
+            import comfy.model_management
+            comfy.model_management.interrupt_current_processing()
+            self._logger.info("ComfyUI processing interruption triggered")
+        except ImportError:
+            self._logger.debug("ComfyUI not available for interruption")
+        except Exception as e:
+            self._logger.warning(f"Failed to trigger ComfyUI interruption: {e}")
         with self._lock:
             if self._active_process:
                 try:
@@ -68,6 +78,19 @@ class CancellationManager:
         self._cancel_event.clear()
         with self._lock:
             self._active_process = None
+            
+        # Also reset ComfyUI's interruption state
+        try:
+            import comfy.model_management
+            # Reset the interrupt flag if it was set
+            if comfy.model_management.processing_interrupted():
+                comfy.model_management.interrupt_processing = False
+                self._logger.debug("ComfyUI interruption state reset")
+        except ImportError:
+            pass
+        except Exception as e:
+            self._logger.debug(f"Failed to reset ComfyUI interruption: {e}")
+            
         if was_cancelled:
             self._logger.info("Cancellation manager state reset (was previously cancelled)")
         else:
