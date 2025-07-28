@@ -139,7 +139,7 @@
         "color_correction": true,
         "enable_multi_gpu": false,
         "gpu_devices": "0",
-        "tiled_vae": true,
+        "tiled_vae": false,
         "tile_size": [
             64,
             64

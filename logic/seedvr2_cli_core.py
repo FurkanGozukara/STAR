@@ -273,6 +273,9 @@ class SeedVR2SessionManager:
                     temporal_overlap=effective_args.get("temporal_overlap", 0),
                     debug=effective_args.get("debug", False),
                     block_swap_config=self.block_swap_config,  # ✅ Pass block_swap_config for proper device management
+                    tiled_vae=effective_args.get("tiled_vae", False),
+                    tile_size=effective_args.get("tile_size", (64, 64)),
+                    tile_stride=effective_args.get("tile_stride", (32, 32))
                 )
                 
             except AssertionError as ae:
@@ -311,6 +314,9 @@ class SeedVR2SessionManager:
                                 temporal_overlap=effective_args.get("temporal_overlap", 0),
                                 debug=effective_args.get("debug", False),
                                 block_swap_config=self.block_swap_config,  # ✅ Pass block_swap_config for proper device management
+                                tiled_vae=effective_args.get("tiled_vae", False),
+                                tile_size=effective_args.get("tile_size", (64, 64)),
+                                tile_stride=effective_args.get("tile_stride", (32, 32))
                             )
                             self.logger.info("✅ Fallback processing succeeded")
                         except Exception as fallback_error:
@@ -1206,6 +1212,7 @@ def process_video_with_seedvr2_cli(
         )
         
         logger.info(f"Calculated SeedVR2 resolution: {calculated_resolution}")
+        logger.info(f"🔍 Tiled VAE settings - enabled: {seedvr2_config.tiled_vae}, tile_size: {seedvr2_config.tile_size}, tile_stride: {seedvr2_config.tile_stride}")
         
         # Prepare processing arguments
         processing_args = {
@@ -1223,6 +1230,9 @@ def process_video_with_seedvr2_cli(
             "ffmpeg_quality": ffmpeg_quality,
             "ffmpeg_use_gpu": ffmpeg_use_gpu,
             "res_w": calculated_resolution,  # Add the calculated resolution
+            "tiled_vae": seedvr2_config.tiled_vae,  # Add tiled VAE setting
+            "tile_size": seedvr2_config.tile_size,  # Add tile size
+            "tile_stride": seedvr2_config.tile_stride,  # Add tile stride
         }
         
         # Setup multi-GPU if enabled
@@ -2100,7 +2110,10 @@ def _process_single_gpu_cli_generator(
                         debug=processing_args.get("debug", False),
                         block_swap_config=session_manager.block_swap_config,
                         progress_callback=generation_progress_callback,
-                        frame_save_callback=enhanced_frame_save_callback
+                        frame_save_callback=enhanced_frame_save_callback,
+                        tiled_vae=processing_args.get("tiled_vae", False),
+                        tile_size=processing_args.get("tile_size", (64, 64)),
+                        tile_stride=processing_args.get("tile_stride", (32, 32))
                     )
                     shared_queues.result.put(('success', result))
                 except Exception as e:
