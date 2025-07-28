@@ -1190,6 +1190,20 @@ def process_video_with_seedvr2_cli(
         # Setup SeedVR2 processing
         logger.info("Setting up SeedVR2 processing")
         
+        # Calculate target resolution using the unified resolution calculation
+        from .seedvr2_resolution_utils import calculate_seedvr2_resolution
+        calculated_resolution = calculate_seedvr2_resolution(
+            input_path=input_video_path,
+            enable_target_res=enable_target_res,
+            target_h=target_h,
+            target_w=target_w,
+            target_res_mode=target_res_mode,
+            upscale_factor=getattr(seedvr2_config, 'upscale_factor', 4.0),
+            logger=logger
+        )
+        
+        logger.info(f"Calculated SeedVR2 resolution: {calculated_resolution}")
+        
         # Prepare processing arguments
         processing_args = {
             "model": seedvr2_config.model,
@@ -1205,6 +1219,7 @@ def process_video_with_seedvr2_cli(
             "ffmpeg_preset": ffmpeg_preset,
             "ffmpeg_quality": ffmpeg_quality,
             "ffmpeg_use_gpu": ffmpeg_use_gpu,
+            "res_w": calculated_resolution,  # Add the calculated resolution
         }
         
         # Setup multi-GPU if enabled
