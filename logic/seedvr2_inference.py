@@ -235,10 +235,19 @@ class SeedVR2InferenceEngine:
             if progress_callback:
                 progress_callback(0.1, "Starting upscaling...")
             
-            # Extract tiled VAE settings
-            tiled_vae = getattr(config, 'seedvr2_tiled_vae', False)
-            tile_size = getattr(config, 'seedvr2_tile_size', (64, 64))
-            tile_stride = getattr(config, 'seedvr2_tile_stride', (32, 32))
+            # Extract tiled VAE settings from nested config
+            seedvr2_config = getattr(config, 'seedvr2', None)
+            if seedvr2_config:
+                tiled_vae = getattr(seedvr2_config, 'tiled_vae', False)
+                tile_size = getattr(seedvr2_config, 'tile_size', (64, 64))
+                tile_stride = getattr(seedvr2_config, 'tile_stride', (32, 32))
+                self.logger.info(f"🔍 Tiled VAE config from seedvr2: enabled={tiled_vae}, tile_size={tile_size}, tile_stride={tile_stride}")
+            else:
+                # Fallback for flat config structure
+                tiled_vae = getattr(config, 'seedvr2_tiled_vae', False)
+                tile_size = getattr(config, 'seedvr2_tile_size', (64, 64))
+                tile_stride = getattr(config, 'seedvr2_tile_stride', (32, 32))
+                self.logger.info(f"🔍 Tiled VAE config from flat: enabled={tiled_vae}, tile_size={tile_size}, tile_stride={tile_stride}")
             
             upscaled_frames = generation_loop(
                 self.model_manager.runner,
@@ -351,10 +360,19 @@ class SeedVR2InferenceEngine:
             if progress_callback:
                 progress_callback(0.2, "Starting upscaling...")
             
-            # Extract tiled VAE settings
-            tiled_vae = getattr(config, 'seedvr2_tiled_vae', False)
-            tile_size = getattr(config, 'seedvr2_tile_size', (64, 64))
-            tile_stride = getattr(config, 'seedvr2_tile_stride', (32, 32))
+            # Extract tiled VAE settings from nested config
+            seedvr2_config = getattr(config, 'seedvr2', None)
+            if seedvr2_config:
+                tiled_vae = getattr(seedvr2_config, 'tiled_vae', False)
+                tile_size = getattr(seedvr2_config, 'tile_size', (64, 64))
+                tile_stride = getattr(seedvr2_config, 'tile_stride', (32, 32))
+                self.logger.info(f"🔍 Tiled VAE config from seedvr2: enabled={tiled_vae}, tile_size={tile_size}, tile_stride={tile_stride}")
+            else:
+                # Fallback for flat config structure
+                tiled_vae = getattr(config, 'seedvr2_tiled_vae', False)
+                tile_size = getattr(config, 'seedvr2_tile_size', (64, 64))
+                tile_stride = getattr(config, 'seedvr2_tile_stride', (32, 32))
+                self.logger.info(f"🔍 Tiled VAE config from flat: enabled={tiled_vae}, tile_size={tile_size}, tile_stride={tile_stride}")
             
             upscaled_frame = generation_loop(
                 self.model_manager.runner,

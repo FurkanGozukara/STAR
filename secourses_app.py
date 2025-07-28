@@ -2260,7 +2260,9 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             config.seedvr2.tile_stride = (tile_stride_h, tile_stride_w)
             
             # Get tiled_vae value
-            config.seedvr2.tiled_vae = ui_values.get(seedvr2_tiled_vae_check, False)
+            tiled_vae_value = ui_values.get(seedvr2_tiled_vae_check, False)
+            config.seedvr2.tiled_vae = tiled_vae_value
+            logger.info(f"🔍 DEBUG: Setting config.seedvr2.tiled_vae = {tiled_vae_value}")
         
         # Handle values that are not in ui_components or need special logic
         config.input_video_path = ui_values.get(input_video)
