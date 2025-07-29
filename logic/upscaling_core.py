@@ -986,8 +986,21 @@ def run_upscale (
                     
                     # Scene processing parameters
                     enable_scene_split=enable_scene_split,
+                    scene_split_mode=scene_split_mode,
                     scene_min_scene_len=scene_min_scene_len,
+                    scene_drop_short=scene_drop_short,
+                    scene_merge_last=scene_merge_last,
+                    scene_frame_skip=scene_frame_skip,
                     scene_threshold=scene_threshold,
+                    scene_min_content_val=scene_min_content_val,
+                    scene_frame_window=scene_frame_window,
+                    scene_copy_streams=scene_copy_streams,
+                    scene_use_mkvmerge=scene_use_mkvmerge,
+                    scene_rate_factor=scene_rate_factor,
+                    scene_preset=scene_preset,
+                    scene_quiet_ffmpeg=scene_quiet_ffmpeg,
+                    scene_manual_split_type=scene_manual_split_type,
+                    scene_manual_split_value=scene_manual_split_value,
                     
                     # Output parameters
                     output_folder=main_output_dir,

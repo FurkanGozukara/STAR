@@ -952,8 +952,21 @@ def process_video_with_seedvr2_cli(
     
     # Scene processing parameters
     enable_scene_split: bool = False,
+    scene_split_mode: str = "detect",
     scene_min_scene_len: int = 30,
+    scene_drop_short: bool = True,
+    scene_merge_last: bool = True,
+    scene_frame_skip: int = 5,
     scene_threshold: float = 0.3,
+    scene_min_content_val: float = 15.0,
+    scene_frame_window: int = 1,
+    scene_copy_streams: bool = True,
+    scene_use_mkvmerge: bool = False,
+    scene_rate_factor: Optional[int] = None,
+    scene_preset: str = "medium",
+    scene_quiet_ffmpeg: bool = True,
+    scene_manual_split_type: Optional[str] = None,
+    scene_manual_split_value: Optional[int] = None,
     
     # Output parameters
     output_folder: str = "output",
@@ -1045,6 +1058,65 @@ def process_video_with_seedvr2_cli(
     
     # Ensure session directory exists
     session_output_path.mkdir(parents=True, exist_ok=True)
+    
+    # Check if scene splitting is enabled
+    if enable_scene_split:
+        logger.info("Scene splitting enabled for SeedVR2 processing")
+        
+        # Import scene processing module
+        from .seedvr2_scene_processing import process_seedvr2_with_scenes
+        
+        # Prepare scene split parameters (matching STAR format)
+        scene_split_params = {
+            'split_mode': scene_split_mode,
+            'min_scene_len': scene_min_scene_len,
+            'threshold': scene_threshold,
+            'drop_short_scenes': scene_drop_short,
+            'merge_last_scene': scene_merge_last,
+            'frame_skip': scene_frame_skip,
+            'min_content_val': scene_min_content_val,
+            'frame_window': scene_frame_window,
+            'weights': [1.0, 1.0, 1.0, 0.0],
+            'copy_streams': scene_copy_streams,
+            'use_mkvmerge': scene_use_mkvmerge,
+            'rate_factor': scene_rate_factor,
+            'preset': scene_preset,
+            'quiet_ffmpeg': scene_quiet_ffmpeg,
+            'show_progress': True,
+            'manual_split_type': scene_manual_split_type,
+            'manual_split_value': scene_manual_split_value,
+            'use_gpu': ffmpeg_use_gpu
+        }
+        
+        # Delegate to scene-based processing
+        yield from process_seedvr2_with_scenes(
+            input_video_path=input_video_path,
+            seedvr2_config=seedvr2_config,
+            scene_split_params=scene_split_params,
+            enable_target_res=enable_target_res,
+            target_h=target_h,
+            target_w=target_w,
+            target_res_mode=target_res_mode,
+            save_frames=save_frames,
+            save_metadata=save_metadata,
+            save_chunks=save_chunks,
+            save_chunk_frames=save_chunk_frames,
+            output_folder=output_folder,
+            temp_folder=temp_folder,
+            create_comparison_video=create_comparison_video,
+            session_output_dir=str(session_output_path),
+            base_output_filename_no_ext=base_output_filename_no_ext,
+            max_chunk_len=max_chunk_len,
+            progress_callback=progress_callback,
+            status_callback=status_callback,
+            scene_progress_callback=None,  # Could be added if needed
+            ffmpeg_preset=ffmpeg_preset,
+            ffmpeg_quality=ffmpeg_quality,
+            ffmpeg_use_gpu=ffmpeg_use_gpu,
+            seed=seed,
+            logger=logger
+        )
+        return  # Exit after scene-based processing
     
     # Setup permanent frame saving directories (STAR standard structure)
     input_frames_permanent_save_path = None
