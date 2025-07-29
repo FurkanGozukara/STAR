@@ -1566,14 +1566,19 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                         cut_and_save_btn = gr.Button("Cut and Save", variant="primary", icon="icons/cut_paste.png")
                         cut_and_upscale_btn = gr.Button("Cut and Move to Upscale", variant="primary", icon="icons/move_icon.png")
                     with gr.Accordion("Cutting Settings", open=True):
-                        cutting_mode = gr.Radio(label="Cutting Mode", choices=['time_ranges', 'frame_ranges'], value='time_ranges', info=info_strings.CUTTING_MODE_TIME_FRAME_BASED_INFO)
+                        cutting_mode = create_radio(
+                            config_path=('video_editing', 'cutting_mode'), ui_dict=ui_components,
+                            label="Cutting Mode", choices=['time_ranges', 'frame_ranges'], info=info_strings.CUTTING_MODE_TIME_FRAME_BASED_INFO
+                        )
                         with gr.Group() as time_range_controls:
-                            time_ranges_input = gr.Textbox(
+                            time_ranges_input = create_textbox(
+                                config_path=('video_editing', 'time_ranges_input'), ui_dict=ui_components,
                                 label="Time Ranges (seconds)", placeholder="1-3,5-8,10-15 or 1:30-2:45,3:00-4:30",
                                 info=info_strings.TIME_RANGES_FORMAT_DECIMAL_MM_SS_INFO, lines=2
                             )
                         with gr.Group(visible=False) as frame_range_controls:
-                            frame_ranges_input = gr.Textbox(
+                            frame_ranges_input = create_textbox(
+                                config_path=('video_editing', 'frame_ranges_input'), ui_dict=ui_components,
                                 label="Frame Ranges", placeholder="30-90,150-210,300-450",
                                 info=info_strings.FRAME_RANGES_FORMAT_ZERO_INDEXED_INFO, lines=2
                             )
@@ -1736,6 +1741,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
         enable_fps_decrease, fps_decrease_mode, fps_multiplier_preset, fps_multiplier_custom,
         target_fps, fps_interpolation_method,
         # Edit Videos Tab
+        cutting_mode, time_ranges_input, frame_ranges_input,
         precise_cutting_mode, preview_first_segment,
         # Face Restoration Tab
         input_video_face_restoration, face_restoration_mode, batch_input_folder_face, batch_output_folder_face,

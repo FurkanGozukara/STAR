@@ -539,10 +539,11 @@ class StandaloneFaceRestorationConfig:
 @dataclass
 class VideoEditingConfig:
     """Configuration for video editing settings."""
+    cutting_mode: str = 'time_ranges'
+    time_ranges_input: str = ''
+    frame_ranges_input: str = ''
     precise_cutting_mode: str = DEFAULT_PRECISE_CUTTING_MODE
     preview_first_segment: bool = DEFAULT_PREVIEW_FIRST_SEGMENT
-    # Note: Video editing components like ranges_input are handled separately
-    # as they are complex objects that don't fit well in the preset system
 
 @dataclass
 class PresetSystemConfig:

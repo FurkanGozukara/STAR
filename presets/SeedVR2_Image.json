@@ -25,7 +25,7 @@
         "target_w": 2560,
         "upscale_factor": 4,
         "enable_auto_aspect_resolution": true,
-        "auto_resolution_status": "\u2705 Optimal uses full constraint: 3840x3840 (14,745,600 pixels, 100.0% of constraint)",
+        "auto_resolution_status": "No video loaded",
         "pixel_budget": 1048576,
         "last_video_aspect_ratio": 1.0,
         "auto_calculated_h": 1024,
@@ -130,7 +130,7 @@
     },
     "seedvr2": {
         "enable": true,
-        "model": "seedvr2_ema_7b_fp16.safetensors",
+        "model": "seedvr2_ema_3b_fp16.safetensors",
         "batch_size": 5,
         "quality_preset": "quality",
         "use_gpu": true,
@@ -148,10 +148,18 @@
             8,
             8
         ],
-        "enable_block_swap": false,
-        "block_swap_counter": 0,
+        "enable_block_swap": true,
+        "block_swap_counter": 5,
         "block_swap_offload_io": false,
         "block_swap_model_caching": false,
+        "memory_optimization": "auto",
+        "memory_reserved_threshold": 4.0,
+        "memory_fraction_low_reserved": 0.8,
+        "memory_fraction_high_reserved": 0.6,
+        "memory_fraction_no_blockswap": 1.0,
+        "block_memory_cleanup_threshold": 0.7,
+        "io_memory_cleanup_threshold": 0.9,
+        "block_cleanup_first_n": 3,
         "temporal_overlap": 2,
         "scene_awareness": true,
         "temporal_quality": "balanced",
@@ -194,6 +202,9 @@
         "codeformer_model": null
     },
     "video_editing": {
+        "cutting_mode": "time_ranges",
+        "time_ranges_input": "",
+        "frame_ranges_input": "",
         "precise_cutting_mode": "precise",
         "preview_first_segment": true
     },

@@ -245,10 +245,21 @@ def migrate_preset_data(config_dict: Dict[str, Any]) -> Dict[str, Any]:
     
     if 'video_editing' not in config_dict:
         config_dict['video_editing'] = {
+            'cutting_mode': 'time_ranges',
+            'time_ranges_input': '',
+            'frame_ranges_input': '',
             'precise_cutting_mode': 'precise',
             'preview_first_segment': True
         }
         logger.info("Added missing video_editing section to preset")
+    else:
+        # Add missing fields to existing video_editing section
+        if 'cutting_mode' not in config_dict['video_editing']:
+            config_dict['video_editing']['cutting_mode'] = 'time_ranges'
+        if 'time_ranges_input' not in config_dict['video_editing']:
+            config_dict['video_editing']['time_ranges_input'] = ''
+        if 'frame_ranges_input' not in config_dict['video_editing']:
+            config_dict['video_editing']['frame_ranges_input'] = ''
     
     # Add missing seedvr2 section if not present
     if 'seedvr2' not in config_dict:
