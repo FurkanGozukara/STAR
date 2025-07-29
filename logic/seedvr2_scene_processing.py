@@ -75,6 +75,22 @@ def process_seedvr2_with_scenes(
     if logger:
         logger.info("Starting SeedVR2 scene-based processing")
     
+    # Get original video FPS to ensure consistency across all scenes
+    import cv2
+    original_fps = 30.0  # Default fallback
+    try:
+        cap = cv2.VideoCapture(input_video_path)
+        if cap.isOpened():
+            original_fps = cap.get(cv2.CAP_PROP_FPS)
+            if original_fps <= 0:
+                original_fps = 30.0
+            cap.release()
+            if logger:
+                logger.info(f"Original video FPS: {original_fps}")
+    except Exception as e:
+        if logger:
+            logger.warning(f"Failed to get original video FPS, using default 30: {e}")
+    
     # Create temp directory for scene processing
     scene_temp_dir = os.path.join(temp_folder, f"seedvr2_scenes_{int(time.time())}")
     os.makedirs(scene_temp_dir, exist_ok=True)
@@ -131,6 +147,8 @@ def process_seedvr2_with_scenes(
                 ffmpeg_quality=ffmpeg_quality,
                 ffmpeg_use_gpu=ffmpeg_use_gpu,
                 seed=seed,
+                force_consistent_fps=False,  # Don't force FPS for non-scene processing
+                target_fps=None,
                 logger=logger
             )
             return
@@ -189,6 +207,8 @@ def process_seedvr2_with_scenes(
                 ffmpeg_quality=ffmpeg_quality,
                 ffmpeg_use_gpu=ffmpeg_use_gpu,
                 seed=seed,
+                force_consistent_fps=True,  # Force consistent FPS for scenes
+                target_fps=original_fps,    # Use original video FPS
                 logger=logger
             )
             

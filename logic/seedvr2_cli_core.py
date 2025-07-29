@@ -990,6 +990,10 @@ def process_video_with_seedvr2_cli(
     ffmpeg_use_gpu: bool = False,
     seed: int = -1,
     
+    # Scene processing specific
+    force_consistent_fps: bool = False,  # Force consistent FPS for scene processing
+    target_fps: Optional[float] = None,  # Target FPS to use when force_consistent_fps is True
+    
     logger: Optional[logging.Logger] = None
 ) -> Generator[Tuple[Optional[str], str, Optional[str], str, Optional[str]], None, None]:
     """
@@ -1596,18 +1600,35 @@ def process_video_with_seedvr2_cli(
                     logger=logger
                 )
             else:
-                # Use STAR's shared pipeline for video creation with duration preservation
-                from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
-                
-                video_creation_success = create_video_from_frames_with_duration_preservation(
-                    frames_source_dir,
-                    str(output_path),
-                    str(input_video_path),  # Use the parameter passed to this function
-                    ffmpeg_preset=processing_args.get('ffmpeg_preset', 'medium'),
-                    ffmpeg_quality_value=processing_args.get('ffmpeg_quality', 23),
-                    ffmpeg_use_gpu=processing_args.get('ffmpeg_use_gpu', False),
-                    logger=logger
-                )
+                # Check if we should force consistent FPS (for scene processing)
+                if force_consistent_fps and target_fps is not None:
+                    # Use simple frame creation with fixed FPS for scene consistency
+                    from .ffmpeg_utils import create_video_from_frames
+                    
+                    logger.info(f"Using fixed FPS {target_fps} for scene consistency")
+                    
+                    video_creation_success = create_video_from_frames(
+                        frames_source_dir,
+                        str(output_path),
+                        target_fps,  # Use the specified target FPS
+                        ffmpeg_preset=processing_args.get('ffmpeg_preset', 'medium'),
+                        ffmpeg_quality_value=processing_args.get('ffmpeg_quality', 23),
+                        ffmpeg_use_gpu=processing_args.get('ffmpeg_use_gpu', False),
+                        logger=logger
+                    )
+                else:
+                    # Use STAR's shared pipeline for video creation with duration preservation
+                    from .ffmpeg_utils import create_video_from_frames_with_duration_preservation
+                    
+                    video_creation_success = create_video_from_frames_with_duration_preservation(
+                        frames_source_dir,
+                        str(output_path),
+                        str(input_video_path),  # Use the parameter passed to this function
+                        ffmpeg_preset=processing_args.get('ffmpeg_preset', 'medium'),
+                        ffmpeg_quality_value=processing_args.get('ffmpeg_quality', 23),
+                        ffmpeg_use_gpu=processing_args.get('ffmpeg_use_gpu', False),
+                        logger=logger
+                    )
             
             if not video_creation_success or not output_path.exists():
                 error_msg = "Video creation failed using STAR pipeline"
