@@ -2121,7 +2121,7 @@ def _process_single_gpu_cli_generator(
                                 chunk_result = {
                                     'frames_tensor': chunk_frames,
                                     'chunk_id': chunk_id,
-                                    'frame_count': len(chunk_frames_list),
+                                    'frame_count': chunk_frames.shape[0],
                                     'processing_time': time.time(),
                                     'device_id': device_id,
                                     'chunk_start_frame': chunk_start + 1,
