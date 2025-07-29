@@ -1065,12 +1065,12 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                     with gr.Accordion("Processing Settings", open=True):
                         seedvr2_batch_size_slider = create_slider(
                             config_path=('seedvr2', 'batch_size'), ui_dict=ui_components,
-                            label=BATCH_SIZE_TEMPORAL_CONSISTENCY_LABEL, minimum=5, maximum=32, step=1,
+                            label=BATCH_SIZE_TEMPORAL_CONSISTENCY_LABEL, minimum=5, maximum=201, step=4,
                             info=SEEDVR2_BATCH_SIZE_INFO
                         )
                         seedvr2_temporal_overlap_slider = create_slider(
                             config_path=('seedvr2', 'temporal_overlap'), ui_dict=ui_components,
-                            label="Temporal Overlap", minimum=0, maximum=8, step=1, info=SEEDVR2_TEMPORAL_OVERLAP_INFO
+                            label="Temporal Overlap", minimum=0, maximum=100, step=1, info=SEEDVR2_TEMPORAL_OVERLAP_INFO
                         )
                         seedvr2_quality_preset_radio = create_radio(
                             config_path=('seedvr2', 'quality_preset'), ui_dict=ui_components,
