@@ -21,8 +21,8 @@
     "resolution": {
         "enable_target_res": true,
         "target_res_mode": "Ratio Upscale",
-        "target_h": 720,
-        "target_w": 1280,
+        "target_h": 768,
+        "target_w": 768,
         "upscale_factor": 4,
         "enable_auto_aspect_resolution": true,
         "auto_resolution_status": "\u2705 Optimal uses full constraint: 1280x720 (921,600 pixels, 100.0% of constraint)",

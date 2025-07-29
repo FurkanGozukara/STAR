@@ -169,7 +169,7 @@ def process_seedvr2_with_scenes(
                 target_h=target_h,
                 target_w=target_w,
                 target_res_mode=target_res_mode,
-                save_frames=save_frames and (scene_idx == 0),  # Only save frames for first scene
+                save_frames=save_frames,  # Save frames for all scenes if requested
                 save_metadata=save_metadata,
                 save_chunks=save_chunks,
                 save_chunk_frames=save_chunk_frames,

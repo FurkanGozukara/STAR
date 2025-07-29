@@ -1141,10 +1141,12 @@ def process_video_with_seedvr2_cli(
         
         # If chunk preview is enabled but frames aren't being saved, we still need processed frames path
         if seedvr2_config.enable_chunk_preview and not save_frames:
-            processed_frames_permanent_save_path = session_output_path / "temp_processed_frames"
+            # Use standard "processed_frames" name even when frames aren't being saved permanently
+            # This ensures consistency across all scenes
+            processed_frames_permanent_save_path = session_output_path / "processed_frames"
             processed_frames_permanent_save_path.mkdir(parents=True, exist_ok=True)
             if logger:
-                logger.info(f"Temp frame path for chunk preview: {processed_frames_permanent_save_path}")
+                logger.info(f"Chunk preview frame path: {processed_frames_permanent_save_path}")
         
         if logger:
             logger.info(f"Chunk preview enabled - Chunks: {chunks_permanent_save_path}")
