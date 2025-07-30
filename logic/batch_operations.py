@@ -627,12 +627,25 @@ def process_batch_videos_from_app_config(app_config, run_upscale_func, logger, p
             # Using SeedVR2 for batch image processing
             enable_image_upscaler = False  # Not using traditional image upscaler
             image_upscaler_model = None
-            # SeedVR2 model will be taken from seedvr2 config
+            # Create a copy of seedvr2 config and update with target resolution settings
+            from .star_dataclasses import SeedVR2Config
+            seedvr2_config_for_batch = SeedVR2Config()
+            # Copy settings from app config
+            if hasattr(app_config, 'seedvr2'):
+                for attr in dir(app_config.seedvr2):
+                    if not attr.startswith('_') and hasattr(seedvr2_config_for_batch, attr):
+                        setattr(seedvr2_config_for_batch, attr, getattr(app_config.seedvr2, attr))
+            # Now set the target resolution settings from the resolution config
+            seedvr2_config_for_batch.enable_target_res = app_config.resolution.enable_target_res
+            seedvr2_config_for_batch.target_h = app_config.resolution.target_h
+            seedvr2_config_for_batch.target_w = app_config.resolution.target_w
+            seedvr2_config_for_batch.target_res_mode = app_config.resolution.target_res_mode
         else:
             # Using Image Based Upscalers
             enable_image_upscaler = True
             # Use the model from Image Based (GAN) tab
             image_upscaler_model = app_config.image_upscaler.model
+            seedvr2_config_for_batch = None
         
         # Get custom suffix from single image upscale config
         custom_suffix = app_config.single_image_upscale.custom_suffix
@@ -642,6 +655,7 @@ def process_batch_videos_from_app_config(app_config, run_upscale_func, logger, p
         image_upscaler_model = app_config.image_upscaler.model
         custom_suffix = ""
         single_image_upscaler_type = None
+        seedvr2_config_for_batch = None
     
     return process_batch_videos(
         batch_input_folder_val=app_config.batch.input_folder,
@@ -734,6 +748,6 @@ def process_batch_videos_from_app_config(app_config, run_upscale_func, logger, p
         enable_direct_image_upscaling_val=app_config.batch.enable_direct_image_upscaling,  # NEW: Direct image upscaling parameter
         custom_suffix_val=custom_suffix if app_config.batch.enable_direct_image_upscaling else "",
         single_image_upscaler_type_val=single_image_upscaler_type if app_config.batch.enable_direct_image_upscaling else None,
-        seedvr2_config_val=app_config.seedvr2 if app_config.batch.enable_direct_image_upscaling and use_seedvr2 else None,
+        seedvr2_config_val=seedvr2_config_for_batch if app_config.batch.enable_direct_image_upscaling else None,
         progress=progress
     )

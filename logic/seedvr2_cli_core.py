@@ -2051,12 +2051,15 @@ def _process_single_gpu_cli_generator(
             current_height, current_width = frames_tensor.shape[1], frames_tensor.shape[2]
             
             # Calculate target resolution
+            logger.info(f"DEBUG: processing_args keys at resolution check: {list(processing_args.keys())}")
+            logger.info(f"DEBUG: res_w={processing_args.get('res_w')}, resolution={processing_args.get('resolution')}")
+            
             if processing_args.get("res_w"):
                 res_w = processing_args["res_w"]
                 logger.info(f"Using provided res_w: {res_w}")
             elif processing_args.get("resolution"):
                 res_w = processing_args["resolution"]
-                logger.info(f"Using provided resolution: {res_w}")
+                logger.info(f"Using provided resolution: {res_w} (WARNING: should be using res_w!)")
             else:
                 # Use larger dimension as base, cap at reasonable size
                 base_res = max(current_height, current_width)
@@ -2781,7 +2784,8 @@ def _process_batch_with_seedvr2_model(
         if debug:
             print(f"🚀 Processing batch with REUSED SeedVR2 model")
         
-        result_tensor = session_manager.process_batch(batch_frames)
+        # Pass the processing_args as batch_args to ensure res_w is used
+        result_tensor = session_manager.process_batch(batch_frames, processing_args)
         
         if debug:
             print(f"✅ Batch processed successfully: {result_tensor.shape}")

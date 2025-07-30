@@ -402,6 +402,20 @@ def _process_with_seedvr2(
     if progress:
         progress(0.4, "🔧 Configuring SeedVR2 model...")
     
+    # Calculate resolution first for debugging
+    calculated_res_w = calculate_seedvr2_resolution(
+        input_path=input_image_path,
+        enable_target_res=getattr(seedvr2_config, 'enable_target_res', False),
+        target_h=getattr(seedvr2_config, 'target_h', 2048),
+        target_w=getattr(seedvr2_config, 'target_w', 2048),
+        target_res_mode=getattr(seedvr2_config, 'target_res_mode', 'Ratio Upscale'),
+        upscale_factor=4.0,  # SeedVR2 default
+        logger=logger
+    )
+    
+    if logger:
+        logger.info(f"DEBUG: calculate_seedvr2_resolution returned: {calculated_res_w}")
+    
     # Setup CLI-based SeedVR2 processing parameters (matching video pipeline)
     processing_args = {
         "model": seedvr2_config.model,
@@ -410,16 +424,8 @@ def _process_with_seedvr2(
         "debug": logger.level <= logging.DEBUG if logger else False,
         "cfg_scale": getattr(seedvr2_config, 'cfg_scale', 7.5),
         "seed": getattr(seedvr2_config, 'seed', current_seed) if getattr(seedvr2_config, 'seed', -1) >= 0 else current_seed,
-        # Calculate resolution using the main function
-        "res_w": calculate_seedvr2_resolution(
-            input_path=input_image_path,
-            enable_target_res=getattr(seedvr2_config, 'enable_target_res', False),
-            target_h=getattr(seedvr2_config, 'target_h', 2048),
-            target_w=getattr(seedvr2_config, 'target_w', 2048),
-            target_res_mode=getattr(seedvr2_config, 'target_res_mode', 'Ratio Upscale'),
-            upscale_factor=4.0,  # SeedVR2 default
-            logger=logger
-        ),
+        # Use the calculated resolution
+        "res_w": calculated_res_w,
         "batch_size": getattr(seedvr2_config, 'batch_size', 1),
         "temporal_overlap": 0,  # No temporal processing for single image
         # Add missing features from video pipeline
