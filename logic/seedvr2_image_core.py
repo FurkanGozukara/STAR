@@ -548,12 +548,21 @@ def _process_with_image_upscaler(
     # Get upscale models directory
     upscale_models_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'upscale_models')
     
+    # Build full model path
+    model_path = os.path.join(upscale_models_dir, actual_model_filename)
+    
+    # Determine device
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    
     try:
         # Load the upscaler model
-        model, device = load_model(actual_model_filename, upscale_models_dir, logger=logger)
+        model = load_model(model_path, device=device, logger=logger)
+        
+        if model is None:
+            raise RuntimeError(f"Failed to load model: {actual_model_filename}")
         
         if logger:
-            logger.info(f"Image upscaler model loaded: {actual_model_filename}")
+            logger.info(f"Image upscaler model loaded: {actual_model_filename} on {device}")
     
     except Exception as e:
         error_msg = f"Failed to load image upscaler model: {e}"

@@ -1001,3 +1001,58 @@ def extract_model_filename_from_dropdown(dropdown_value: str) -> str:
         return dropdown_value.split("(")[0].strip()
     
     return dropdown_value.strip()
+
+def get_model_scale_from_name(model_name: str, upscale_models_dir: str, logger: logging.Logger = None) -> Optional[int]:
+    """
+    Get the scale factor from a model name by loading its info.
+    
+    Args:
+        model_name: The model filename
+        upscale_models_dir: Directory containing upscaler models
+        logger: Logger instance
+        
+    Returns:
+        Scale factor (e.g., 2, 4) or None if unable to determine
+    """
+    if not model_name:
+        return None
+    
+    # Extract actual filename if it's a dropdown value
+    actual_filename = extract_model_filename_from_dropdown(model_name)
+    if not actual_filename:
+        return None
+    
+    # Build model path
+    model_path = os.path.join(upscale_models_dir, actual_filename)
+    
+    # Get model info
+    info = get_model_info(model_path, logger)
+    
+    if "error" in info:
+        if logger:
+            logger.warning(f"Could not get scale for model {actual_filename}: {info['error']}")
+        return None
+    
+    scale = info.get('scale', None)
+    
+    # Validate scale
+    if scale is not None and isinstance(scale, (int, float)) and scale > 1:
+        return int(scale)
+    
+    # Try to infer scale from filename as fallback
+    if logger:
+        logger.debug(f"Could not determine scale from model info, trying to infer from filename: {actual_filename}")
+    
+    # Common patterns in model names
+    if "2x" in actual_filename.lower() or "_2x" in actual_filename.lower():
+        return 2
+    elif "4x" in actual_filename.lower() or "_4x" in actual_filename.lower():
+        return 4
+    elif "8x" in actual_filename.lower() or "_8x" in actual_filename.lower():
+        return 8
+    
+    # Default to 4 if unable to determine
+    if logger:
+        logger.warning(f"Could not determine scale for model {actual_filename}, defaulting to 4x")
+    
+    return 4

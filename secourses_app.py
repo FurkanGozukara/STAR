@@ -67,7 +67,9 @@ from logic.gpu_utils import (
 )
 from logic.image_upscaler_utils import (
     scan_for_models as util_scan_for_models,
-    get_model_info as util_get_model_info
+    get_model_info as util_get_model_info,
+    extract_model_filename_from_dropdown as util_extract_model_filename_from_dropdown,
+    get_model_scale_from_name as util_get_model_scale_from_name
 )
 from logic.manual_comparison import (
     generate_manual_comparison_video as util_generate_manual_comparison_video,
@@ -5035,7 +5037,7 @@ Maximum VRAM optimization for limited GPU memory.
                 internal_upscaler_type = "image_upscaler"
                 # Get model-specific upscale factor
                 if image_upscaler_model:
-                    model_scale = util_get_model_scale_from_name(image_upscaler_model)
+                    model_scale = util_get_model_scale_from_name(image_upscaler_model, APP_CONFIG.paths.upscale_models_dir, logger)
                     effective_upscale_factor = model_scale if model_scale else 4.0
                     model_name = f"{image_upscaler_model} ({effective_upscale_factor}x)"
                     selected_model_display = f"\n🎯 **Selected Model:** {image_upscaler_model}"
@@ -5178,44 +5180,118 @@ Maximum VRAM optimization for limited GPU memory.
                 # Set seed
                 seedvr2_config.seed = seed_value
                 image_upscaler_model = None
+                # SeedVR2 pipeline
+                from logic.seedvr2_image_core import process_single_image as util_process_single_image, format_image_info_display as util_format_image_info_display
+                
+                # Handle seed generation similar to video processing
+                actual_seed = seed_value
+                if use_random_seed:
+                    actual_seed = np.random.randint(0, 2**31)
+                    logger.info(f"Random seed checkbox is checked. Using generated seed: {actual_seed}")
+                elif seed_value == -1:
+                    actual_seed = np.random.randint(0, 2**31)
+                    logger.info(f"Seed input is -1. Using generated seed: {actual_seed}")
+                else:
+                    logger.info(f"Using provided seed: {actual_seed}")
+                current_seed = actual_seed
+                
+                # Use the create_comparison setting from the config
+                results = list(util_process_single_image(
+                    input_image_path=input_image_path,
+                    upscaler_type="seedvr2",
+                    seedvr2_config=seedvr2_config,
+                    image_upscaler_model=None,
+                    output_format=output_format,
+                    output_quality=output_quality,
+                    preserve_aspect_ratio=preserve_aspect_ratio,
+                    preserve_metadata=preserve_metadata,
+                    custom_suffix=custom_suffix,
+                    create_comparison=create_comparison,  # Use config setting
+                    output_dir=None,  # Will use default STAR/outputs_images
+                    logger=logger,
+                    progress=progress,
+                    util_get_gpu_device=util_get_gpu_device,
+                    format_time=format_time,
+                    current_seed=current_seed
+                ))
             else:
-                actual_upscaler_type = "image_upscaler"
-                seedvr2_config = None
-                image_upscaler_model = image_upscaler_model_val
-            
-            from logic.seedvr2_image_core import process_single_image as util_process_single_image, format_image_info_display as util_format_image_info_display
-            
-            # Handle seed generation similar to video processing
-            actual_seed = seed_value
-            if use_random_seed:
-                actual_seed = np.random.randint(0, 2**31)
-                logger.info(f"Random seed checkbox is checked. Using generated seed: {actual_seed}")
-            elif seed_value == -1:
-                actual_seed = np.random.randint(0, 2**31)
-                logger.info(f"Seed input is -1. Using generated seed: {actual_seed}")
-            else:
-                logger.info(f"Using provided seed: {actual_seed}")
-            current_seed = actual_seed
-            
-            # Use the create_comparison setting from the config
-            results = list(util_process_single_image(
-                input_image_path=input_image_path,
-                upscaler_type=actual_upscaler_type,
-                seedvr2_config=seedvr2_config,
-                image_upscaler_model=image_upscaler_model,
-                output_format=output_format,
-                output_quality=output_quality,
-                preserve_aspect_ratio=preserve_aspect_ratio,
-                preserve_metadata=preserve_metadata,
-                custom_suffix=custom_suffix,
-                create_comparison=create_comparison,  # Use config setting
-                output_dir=None,  # Will use default STAR/outputs_images
-                logger=logger,
-                progress=progress,
-                util_get_gpu_device=util_get_gpu_device,
-                format_time=format_time,
-                current_seed=current_seed
-            ))
+                # Use Image Based Upscalers - use the direct pipeline
+                from logic.image_upscaler_utils import process_single_image_direct
+                from logic.seedvr2_image_core import _extract_image_info, format_image_info_display as util_format_image_info_display
+                
+                logger.info(f"Using Image Based Upscalers with model dropdown value: '{image_upscaler_model_val}'")
+                
+                # If the dropdown value is already a filename (ends with extension), use it directly
+                if image_upscaler_model_val and any(image_upscaler_model_val.endswith(ext) for ext in ['.pth', '.safetensors', '.pt', '.bin', '.onnx']):
+                    actual_model_filename = image_upscaler_model_val
+                    logger.info(f"Using model filename directly: {actual_model_filename}")
+                else:
+                    # Extract actual model filename from dropdown format
+                    actual_model_filename = util_extract_model_filename_from_dropdown(image_upscaler_model_val) if image_upscaler_model_val else None
+                    logger.info(f"Extracted model filename: {actual_model_filename}")
+                
+                # Check if it's a status message rather than a model
+                if not actual_model_filename or "No models found" in str(image_upscaler_model_val) or "Error scanning" in str(image_upscaler_model_val):
+                    error_msg = f"No image upscaler model selected. Please select a model from the Image Based (GAN) tab. Got: '{image_upscaler_model_val}'"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+                
+                # Generate output filename  
+                input_stem = Path(input_image_path).stem
+                input_ext = Path(input_image_path).suffix or '.png'
+                if custom_suffix:
+                    output_filename = f"{input_stem}{custom_suffix}{input_ext}"
+                else:
+                    output_filename = f"{input_stem}_upscaled{input_ext}"
+                
+                # Use the same output directory as SeedVR2 pipeline: STAR/outputs_images
+                output_dir = os.path.join(os.path.dirname(__file__), 'outputs_images')
+                os.makedirs(output_dir, exist_ok=True)
+                
+                # Generate output path with auto-increment if file exists
+                counter = 0
+                output_path = os.path.join(output_dir, output_filename)
+                
+                while os.path.exists(output_path):
+                    counter += 1
+                    if custom_suffix:
+                        output_filename = f"{input_stem}{custom_suffix}_{counter:04d}{input_ext}"
+                    else:
+                        output_filename = f"{input_stem}_upscaled_{counter:04d}{input_ext}"
+                    output_path = os.path.join(output_dir, output_filename)
+                
+                # Process using the direct image upscaler pipeline
+                success, result_path, processing_time = process_single_image_direct(
+                    image_path=input_image_path,
+                    output_path=output_path,
+                    model_name=actual_model_filename,
+                    upscale_models_dir=APP_CONFIG.paths.upscale_models_dir,
+                    apply_target_resolution=enable_target_res_val,
+                    target_h=target_h_val,
+                    target_w=target_w_val,
+                    target_res_mode=target_res_mode_val,
+                    device="cuda" if torch.cuda.is_available() else "cpu",
+                    logger=logger
+                )
+                
+                if not success:
+                    raise RuntimeError(f"Image upscaling failed")
+                
+                # Create comparison if requested
+                comparison_path = None
+                if create_comparison and result_path:
+                    # TODO: Generate comparison image
+                    pass
+                
+                # Get image info for display
+                output_info = _extract_image_info(result_path) if result_path else {}
+                
+                results = [(
+                    result_path,
+                    comparison_path,
+                    f"✅ Image upscaled successfully in {processing_time:.2f}s",
+                    output_info
+                )]
             if results:
                 output_image_path, comparison_image_path, status_message, image_info = results[0]
                 logger.info(f"Image upscale wrapper - output path: {output_image_path}")

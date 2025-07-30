@@ -117,6 +117,8 @@ def process_batch_videos(
 
     # NEW: Direct image upscaling parameter
     enable_direct_image_upscaling_val=False,
+    # Custom suffix for output files
+    custom_suffix_val="",
 
     progress=gr.Progress(track_tqdm=True)
 ):
@@ -217,7 +219,12 @@ def process_batch_videos(
                         # Generate output path for image
                         input_stem = Path(input_file).stem
                         input_ext = Path(input_file).suffix
-                        output_image_path = os.path.join(batch_output_folder_val, f"{input_stem}_upscaled{input_ext}")
+                        # Apply custom suffix if provided, otherwise keep the same filename
+                        if custom_suffix_val:
+                            output_filename = f"{input_stem}{custom_suffix_val}{input_ext}"
+                        else:
+                            output_filename = f"{input_stem}{input_ext}"
+                        output_image_path = os.path.join(batch_output_folder_val, output_filename)
                         
                         # Check if output exists and skip if requested
                         if batch_skip_existing_val and os.path.exists(output_image_path):
@@ -583,6 +590,23 @@ def process_batch_videos_from_app_config(app_config, run_upscale_func, logger, p
     Returns:
         tuple: (None, status_message) from batch processing
     """
+    # When Direct Image Upscaling is enabled, we need to use single image upscale config
+    if app_config.batch.enable_direct_image_upscaling:
+        # Check if single image upscale is configured to use SeedVR2
+        use_seedvr2 = app_config.single_image_upscale.upscaler_type == "Use SeedVR2 for Images"
+        # For batch processing of images, we currently only support Image Based Upscalers
+        # since SeedVR2 would require different handling. So we force image upscaler mode.
+        enable_image_upscaler = True
+        # Use the model from Image Based (GAN) tab
+        image_upscaler_model = app_config.image_upscaler.model
+        # Get custom suffix from single image upscale config
+        custom_suffix = app_config.single_image_upscale.custom_suffix
+    else:
+        # For video processing, use the regular settings
+        enable_image_upscaler = app_config.image_upscaler.enable
+        image_upscaler_model = app_config.image_upscaler.model
+        custom_suffix = ""
+    
     return process_batch_videos(
         batch_input_folder_val=app_config.batch.input_folder,
         batch_output_folder_val=app_config.batch.output_folder,
@@ -661,8 +685,8 @@ def process_batch_videos_from_app_config(app_config, run_upscale_func, logger, p
         batch_cogvlm_quant_val=app_config.cogvlm.quant_value,
         batch_cogvlm_unload_val=app_config.cogvlm.unload_after_use,
         current_seed=app_config.seed.seed,
-        enable_image_upscaler_val=app_config.image_upscaler.enable,
-        image_upscaler_model_val=app_config.image_upscaler.model,
+        enable_image_upscaler_val=enable_image_upscaler,
+        image_upscaler_model_val=image_upscaler_model,
         image_upscaler_batch_size_val=app_config.image_upscaler.batch_size,
         enable_face_restoration_val=app_config.face_restoration.enable,
         face_restoration_fidelity_val=app_config.face_restoration.fidelity_weight,
@@ -672,5 +696,6 @@ def process_batch_videos_from_app_config(app_config, run_upscale_func, logger, p
         codeformer_model_val=app_config.face_restoration.model,
         face_restoration_batch_size_val=app_config.face_restoration.batch_size,
         enable_direct_image_upscaling_val=app_config.batch.enable_direct_image_upscaling,  # NEW: Direct image upscaling parameter
+        custom_suffix_val=custom_suffix if app_config.batch.enable_direct_image_upscaling else "",
         progress=progress
     )
