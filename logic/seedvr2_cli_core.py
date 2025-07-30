@@ -1805,14 +1805,23 @@ def process_video_with_seedvr2_cli(
         yield (None, f"SeedVR2 processing error: {e}", None, f"Error: {e}", None)
         raise
     finally:
-        # ✅ CLEANUP SESSION: Clean up the global session at the end of ALL processing
+        # ✅ SMART CLEANUP: Use same logic as single image processing
         try:
-            cleanup_global_session()
-            logger.info("SeedVR2 session cleaned up successfully")
+            if seedvr2_config.preserve_vram:
+                # When preserve_vram is True, only clean VRAM but keep models loaded
+                logger.info("🧹 Cleaning up VRAM only, keeping models for reuse (preserve_vram=True)...")
+                cleanup_vram_only()
+                force_cleanup_gpu_memory()
+                logger.info("✅ VRAM cleaned, models kept for next video")
+            else:
+                # When preserve_vram is False, do full cleanup
+                logger.info("🧹 Full cleanup requested (preserve_vram=False)...")
+                cleanup_global_session()
+                logger.info("✅ Full session cleanup completed")
         except Exception as cleanup_error:
             logger.warning(f"Session cleanup error: {cleanup_error}")
         
-        # Cleanup
+        # Always do final garbage collection
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -2784,8 +2793,12 @@ def _process_batch_with_seedvr2_model(
             import traceback
             traceback.print_exc()
         
-        # On error, cleanup and try placeholder
-        cleanup_global_session()
+        # On error, do smart cleanup based on preserve_vram setting
+        if processing_args.get("preserve_vram", True):
+            cleanup_vram_only()
+            force_cleanup_gpu_memory()
+        else:
+            cleanup_global_session()
         return _apply_placeholder_upscaling(batch_frames, debug)
 
 
