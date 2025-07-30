@@ -130,7 +130,7 @@
     },
     "seedvr2": {
         "enable": true,
-        "model": "seedvr2_ema_3b_fp16.safetensors",
+        "model": "seedvr2_ema_7b_fp16.safetensors",
         "batch_size": 5,
         "quality_preset": "quality",
         "use_gpu": true,
@@ -141,20 +141,28 @@
         "gpu_devices": "0",
         "tiled_vae": false,
         "tile_size": [
-            64,
-            64
+            16,
+            16
         ],
         "tile_stride": [
-            32,
-            32
+            8,
+            8
         ],
-        "enable_block_swap": true,
-        "block_swap_counter": 25,
+        "enable_block_swap": false,
+        "block_swap_counter": 0,
         "block_swap_offload_io": true,
         "block_swap_model_caching": false,
+        "memory_optimization": "auto",
+        "memory_reserved_threshold": 4.0,
+        "memory_fraction_low_reserved": 0.8,
+        "memory_fraction_high_reserved": 0.6,
+        "memory_fraction_no_blockswap": 1.0,
+        "block_memory_cleanup_threshold": 0.7,
+        "io_memory_cleanup_threshold": 0.9,
+        "block_cleanup_first_n": 3,
         "temporal_overlap": 2,
         "scene_awareness": true,
-        "temporal_quality": "balanced",
+        "temporal_quality": "quality",
         "consistency_validation": true,
         "chunk_optimization": true,
         "enable_temporal_consistency": true,
@@ -194,6 +202,9 @@
         "codeformer_model": null
     },
     "video_editing": {
+        "cutting_mode": "time_ranges",
+        "time_ranges_input": "",
+        "frame_ranges_input": "",
         "precise_cutting_mode": "precise",
         "preview_first_segment": true
     },

@@ -306,6 +306,9 @@ def load_initial_preset():
                             else:
                                 setattr(section_obj, key, DEFAULT_GPU_DEVICE)
                         else:
+                            # Add specific logging for seedvr2.model
+                            if section_name == 'seedvr2' and key == 'model':
+                                logger.info(f"Setting seedvr2.model from preset: '{value}'")
                             setattr(section_obj, key, value)
         return base_config
     else:
@@ -340,6 +343,9 @@ def load_initial_preset():
                                 else:
                                     setattr(section_obj, key, DEFAULT_GPU_DEVICE)
                             else:
+                                # Add specific logging for seedvr2.model
+                                if section_name == 'seedvr2' and key == 'model':
+                                    logger.info(f"[FALLBACK] Setting seedvr2.model from preset: '{value}'")
                                 setattr(section_obj, key, value)
             return base_config
         else:
@@ -1009,23 +1015,36 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
 
                         # Convert stored filename to display name for initial value
                         def convert_seedvr2_filename_to_display_name(filename, available_models_list, model_choices_list):
+                            logger.info(f"[INIT] Converting SeedVR2 filename '{filename}' to display name")
+                            
                             if not model_choices_list:
+                                logger.warning("[INIT] No model choices available")
                                 return "No SeedVR2 models found"
                             
                             # If we have a filename from config/preset, try to find it
                             if filename and available_models_list:
-                                for model_info in available_models_list:
-                                    if model_info.get('filename') == filename:
-                                        return util_format_model_display_name(model_info)
+                                logger.info(f"[INIT] Looking for filename '{filename}' in {len(available_models_list)} available models")
+                                for i, model_info in enumerate(available_models_list):
+                                    model_filename = model_info.get('filename', '')
+                                    logger.debug(f"[INIT] Comparing '{model_filename}' with '{filename}'")
+                                    if model_filename == filename:
+                                        display_name = util_format_model_display_name(model_info)
+                                        logger.info(f"[INIT] Found exact match: {filename} -> {display_name}")
+                                        return display_name
+                                logger.warning(f"[INIT] No exact match found for filename '{filename}'")
                             
                             # Only if no filename specified in config/preset - look for 3B FP8 model as default
                             if not filename:
+                                logger.info("[INIT] No filename specified, looking for 3B FP8 default")
                                 for choice in model_choices_list:
                                     if "3B" in choice and "FP8" in choice:
+                                        logger.info(f"[INIT] Found 3B FP8 default: {choice}")
                                         return choice
                             
                             # If 3B FP8 not found or filename was specified but not found, return first available choice
-                            return model_choices_list[0]
+                            default_choice = model_choices_list[0]
+                            logger.info(f"[INIT] Using first available choice as default: {default_choice}")
+                            return default_choice
 
                         # Get the model to display (respecting config/preset if set, otherwise defaulting to 3B FP8)
                         initial_seedvr2_display = convert_seedvr2_filename_to_display_name(
@@ -1033,6 +1052,11 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                         )
                         
                         logger.info(f"SeedVR2 Model Dropdown - Config model: {INITIAL_APP_CONFIG.seedvr2.model}, Choices: {model_choices}, Selected: {initial_seedvr2_display}")
+                        
+                        # Double-check that the selected display name is in the choices
+                        if initial_seedvr2_display not in model_choices:
+                            logger.warning(f"Selected display '{initial_seedvr2_display}' not in choices, using first available")
+                            initial_seedvr2_display = model_choices[0] if model_choices else "No SeedVR2 models found"
 
                         # Calculate initial block swap maximum based on selected model
                         initial_model_filename = INITIAL_APP_CONFIG.seedvr2.model
@@ -1723,6 +1747,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
         seedvr2_enable_frame_padding_check, seedvr2_flash_attention_check, seedvr2_scene_awareness_check,
         seedvr2_consistency_validation_check, seedvr2_chunk_optimization_check, seedvr2_temporal_quality_radio,
         seedvr2_use_gpu_check, seedvr2_enable_multi_gpu_check, seedvr2_gpu_devices_textbox,
+        seedvr2_memory_optimization_radio,
         seedvr2_enable_block_swap_check, seedvr2_block_swap_counter_slider, seedvr2_block_swap_offload_io_check,
         seedvr2_block_swap_model_caching_check, seedvr2_tiled_vae_check, seedvr2_tile_size_h, seedvr2_tile_size_w,
         seedvr2_tile_stride_h, seedvr2_tile_stride_w, seedvr2_cfg_scale_slider, seedvr2_enable_chunk_preview_check,
@@ -4161,28 +4186,40 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
         def reverse_seedvr2_model_filename_to_display_name(filename):
             """Convert SeedVR2 model filename to display name for dropdown"""
             try:
+                logger.info(f"Converting SeedVR2 filename '{filename}' to display name")
                 available_models = util_scan_seedvr2_models(logger=logger)
                 if available_models:
                     model_choices = [util_format_model_display_name(model) for model in available_models]
+                    logger.info(f"Available model choices: {model_choices}")
                     
                     # If we have a filename from preset, try to find it
                     if filename:
                         for model_info in available_models:
+                            logger.debug(f"Checking model: {model_info.get('filename')} against {filename}")
                             if model_info.get('filename') == filename:
-                                return util_format_model_display_name(model_info)
+                                display_name = util_format_model_display_name(model_info)
+                                logger.info(f"Found matching model: {filename} -> {display_name}")
+                                return display_name
+                        
+                        # If exact filename match not found, log warning
+                        logger.warning(f"No exact match found for filename '{filename}' in available models")
                     
                     # Only if no filename in preset - look for 3B FP8 model as default
                     if not filename:
                         for choice in model_choices:
                             if "3B" in choice and "FP8" in choice:
+                                logger.info(f"No filename provided, defaulting to 3B FP8: {choice}")
                                 return choice
                     
                     # If 3B FP8 not found or filename was specified but not found, return first available model
-                    return model_choices[0]
+                    default_choice = model_choices[0] if model_choices else "No SeedVR2 models found"
+                    logger.info(f"Using default choice: {default_choice}")
+                    return default_choice
                 else:
+                    logger.warning("No SeedVR2 models available")
                     return "No SeedVR2 models found"
             except Exception as e:
-                logger.warning(f"Failed to convert SeedVR2 filename to display name: {e}")
+                logger.error(f"Failed to convert SeedVR2 filename to display name: {e}", exc_info=True)
                 return "No SeedVR2 models found"
 
         for component in preset_components:
@@ -4457,14 +4494,14 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
         try:
             dep_status = check_seedvr2_dependencies()
             gpu_status = update_gpu_status()
-            models_update = refresh_seedvr2_models()
-            default_model = models_update.get('value', 'No SeedVR2 models found')
-            model_info = update_seedvr2_model_info(default_model) if default_model != 'No SeedVR2 models found' else gr.update(value="No models available")
-            return [dep_status, gpu_status, models_update, model_info]
+            # Don't update the model dropdown - it already has the correct value from preset
+            # Just update the model info based on the initial selection
+            logger.info(f"Initializing SeedVR2 tab, keeping existing model selection")
+            return [dep_status, gpu_status]
         except Exception as e:
             logger.error(f"Failed to initialize SeedVR2 tab: {e}")
             error_status = gr.update(value=f"❌ Initialization failed: {e}")
-            return [error_status, error_status, error_status, error_status]
+            return [error_status, error_status]
 
     def update_gpu_status():
         try:
@@ -4926,7 +4963,7 @@ Maximum VRAM optimization for limited GPU memory.
     demo.load(
         fn=initialize_seedvr2_tab,
         inputs=[],
-        outputs=[seedvr2_dependency_status, seedvr2_gpu_status_display, seedvr2_model_dropdown, seedvr2_model_info_display]
+        outputs=[seedvr2_dependency_status, seedvr2_gpu_status_display]
     )
 
     def refresh_block_swap_status(enable_block_swap, block_swap_counter):

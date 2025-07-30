@@ -88,6 +88,10 @@ class SeedVR2ModelManager:
             model_path = os.path.join(self.models_dir, model_file)
             model_exists = os.path.exists(model_path)
             
+            # Log scanning for debugging
+            if self.logger:
+                self.logger.debug(f"Scanning model: {model_file}, exists: {model_exists}, include_missing: {include_missing}")
+            
             # Skip missing models unless explicitly requested
             if not model_exists and not include_missing:
                 continue
@@ -100,6 +104,10 @@ class SeedVR2ModelManager:
                 'available': model_exists,
                 'size_mb': self._get_file_size_mb(model_path) if model_exists else 0
             })
+            
+            # Log for debugging preset loading
+            if self.logger:
+                self.logger.debug(f"Scanned model: filename='{model_file}', available={model_exists}, display_name='{model_info.get('display_name', 'N/A')}'")
             
             models.append(model_info)
         

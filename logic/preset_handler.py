@@ -266,13 +266,74 @@ def migrate_preset_data(config_dict: Dict[str, Any]) -> Dict[str, Any]:
         config_dict['seedvr2'] = {
             'enable': False,
             'model': None,
-            'batch_size': 1,
+            'batch_size': 8,
+            'temporal_overlap': 2,
             'quality_preset': 'quality',
-            'use_gpu': True
+            'use_gpu': True,
+            'preserve_vram': False,
+            'color_correction': True,
+            'enable_frame_padding': True,
+            'flash_attention': True,
+            'scene_awareness': False,
+            'consistency_validation': False,
+            'chunk_optimization': False,
+            'temporal_quality': 'balanced',
+            'enable_multi_gpu': False,
+            'gpu_devices': '0',
+            'memory_optimization': 'auto',
+            'enable_block_swap': False,
+            'block_swap_counter': 0,
+            'block_swap_offload_io': False,
+            'block_swap_model_caching': True,
+            'tiled_vae': False,
+            'tile_size': (64, 64),
+            'tile_stride': (32, 32),
+            'cfg_scale': 1.0,
+            'enable_chunk_preview': False,
+            'chunk_preview_frames': 125,
+            'keep_last_chunks': 5
         }
-        logger.info("Added missing seedvr2 section to preset")
+        logger.info("Added missing seedvr2 section to preset with all fields")
     else:
-        # Ensure seedvr2 model is null for consistency
+        # Ensure all fields exist in existing seedvr2 section
+        seedvr2_defaults = {
+            'enable': False,
+            'model': None,
+            'batch_size': 8,
+            'temporal_overlap': 2,
+            'quality_preset': 'quality',
+            'use_gpu': True,
+            'preserve_vram': False,
+            'color_correction': True,
+            'enable_frame_padding': True,
+            'flash_attention': True,
+            'scene_awareness': False,
+            'consistency_validation': False,
+            'chunk_optimization': False,
+            'temporal_quality': 'balanced',
+            'enable_multi_gpu': False,
+            'gpu_devices': '0',
+            'memory_optimization': 'auto',
+            'enable_block_swap': False,
+            'block_swap_counter': 0,
+            'block_swap_offload_io': False,
+            'block_swap_model_caching': True,
+            'tiled_vae': False,
+            'tile_size': (64, 64),
+            'tile_stride': (32, 32),
+            'cfg_scale': 1.0,
+            'enable_chunk_preview': False,
+            'chunk_preview_frames': 125,
+            'keep_last_chunks': 5
+        }
+        
+        # Add any missing fields
+        for key, default_value in seedvr2_defaults.items():
+            if key not in config_dict['seedvr2']:
+                config_dict['seedvr2'][key] = default_value
+                logger.info(f"Added missing seedvr2 field '{key}' with default value: {default_value}")
+        
+        # Handle model field migration
         if config_dict['seedvr2'].get('model') == "Model will be available soon":
             config_dict['seedvr2']['model'] = None
             logger.info("Migrated seedvr2 model from placeholder to null")

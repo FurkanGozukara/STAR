@@ -162,7 +162,7 @@
         "block_cleanup_first_n": 3,
         "temporal_overlap": 2,
         "scene_awareness": true,
-        "temporal_quality": "balanced",
+        "temporal_quality": "quality",
         "consistency_validation": true,
         "chunk_optimization": true,
         "enable_temporal_consistency": true,

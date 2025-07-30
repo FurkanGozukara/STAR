@@ -139,6 +139,7 @@ def _prepare_metadata_dict(params_dict: dict, status_info: dict = None) -> dict:
         seedvr2_fields = {
             "seedvr2_model": params_dict.get("seedvr2_model"),
             "seedvr2_batch_size": params_dict.get("seedvr2_batch_size"),
+            "seedvr2_temporal_overlap": params_dict.get("seedvr2_temporal_overlap"),
             "seedvr2_device": params_dict.get("seedvr2_device"),
             "seedvr2_frame_overlap": params_dict.get("seedvr2_frame_overlap"),
             "seedvr2_preserve_vram": params_dict.get("seedvr2_preserve_vram"),
@@ -147,6 +148,7 @@ def _prepare_metadata_dict(params_dict: dict, status_info: dict = None) -> dict:
             "seedvr2_flash_attention": params_dict.get("seedvr2_flash_attention"),
             "seedvr2_enable_multi_gpu": params_dict.get("seedvr2_enable_multi_gpu"),
             "seedvr2_gpu_devices": params_dict.get("seedvr2_gpu_devices"),
+            "seedvr2_memory_optimization": params_dict.get("seedvr2_memory_optimization"),
             "seedvr2_cfg_scale": params_dict.get("seedvr2_cfg_scale"),
             "seedvr2_frames_processed": params_dict.get("seedvr2_frames_processed"),
             "seedvr2_frames_failed": params_dict.get("seedvr2_frames_failed"),
@@ -167,6 +169,10 @@ def _prepare_metadata_dict(params_dict: dict, status_info: dict = None) -> dict:
             "seedvr2_seed": params_dict.get("seedvr2_seed"),
             "seedvr2_upscale_factor": params_dict.get("seedvr2_upscale_factor"),
             "seedvr2_total_frames": params_dict.get("seedvr2_total_frames"),
+            # Tiled VAE settings
+            "seedvr2_tiled_vae": params_dict.get("seedvr2_tiled_vae"),
+            "seedvr2_tile_size": params_dict.get("seedvr2_tile_size"),
+            "seedvr2_tile_stride": params_dict.get("seedvr2_tile_stride"),
         }
         
         # Add processing time if available
