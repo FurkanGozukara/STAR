@@ -4,6 +4,7 @@ Handles processing multiple videos in sequence.
 """
 
 import os
+import time
 import gradio as gr
 from pathlib import Path
 from .cancellation_manager import cancellation_manager, CancelledError
@@ -119,6 +120,10 @@ def process_batch_videos(
     enable_direct_image_upscaling_val=False,
     # Custom suffix for output files
     custom_suffix_val="",
+    # Single image upscaler type (for respecting user's choice)
+    single_image_upscaler_type_val=None,
+    # SeedVR2 config for batch image processing
+    seedvr2_config_val=None,
 
     progress=gr.Progress(track_tqdm=True)
 ):
@@ -212,75 +217,96 @@ def process_batch_videos(
                 
                 # Handle direct image upscaling
                 if enable_direct_image_upscaling_val and file_type == "image":
-                    # Process image file directly with image upscaler
+                    # Use the single image upscale pipeline through the app config
                     try:
-                        from .image_upscaler_utils import process_single_image_direct
+                        # Check for cancellation before processing
+                        cancellation_manager.check_cancel("batch image upscaling")
                         
-                        # Generate output path for image
-                        input_stem = Path(input_file).stem
-                        input_ext = Path(input_file).suffix
-                        # Apply custom suffix if provided, otherwise keep the same filename
-                        if custom_suffix_val:
-                            output_filename = f"{input_stem}{custom_suffix_val}{input_ext}"
+                        # Import the single image processing function
+                        from .seedvr2_image_core import process_single_image as process_single_image_core
+                        from .image_upscaler_utils import extract_model_filename_from_dropdown
+                        import torch
+                        
+                        # Determine upscaler type from passed parameters
+                        # Respect the user's choice in Single Image tab
+                        if single_image_upscaler_type_val == "Use SeedVR2 for Images":
+                            upscaler_type = "seedvr2"
+                            seedvr2_config = seedvr2_config_val  # Use the passed SeedVR2 config
+                            actual_model_filename = None  # SeedVR2 doesn't use image upscaler models
                         else:
-                            output_filename = f"{input_stem}{input_ext}"
-                        output_image_path = os.path.join(batch_output_folder_val, output_filename)
+                            upscaler_type = "image_upscaler"
+                            seedvr2_config = None
+                        
+                        # Extract actual model filename only for image upscaler
+                        if upscaler_type == "image_upscaler":
+                            actual_model_filename = extract_model_filename_from_dropdown(image_upscaler_model_val) if image_upscaler_model_val else None
+                            if not actual_model_filename:
+                                logger.error(f"No image upscaler model selected for {file_name}")
+                                failed_files.append((input_file, "No image upscaler model selected"))
+                                continue
                         
                         # Check if output exists and skip if requested
-                        if batch_skip_existing_val and os.path.exists(output_image_path):
-                            logger.info(f"Skipping {file_name} - output already exists: {output_image_path}")
+                        input_stem = Path(input_file).stem
+                        input_ext = Path(input_file).suffix
+                        # Apply custom suffix if provided
+                        if custom_suffix_val:
+                            expected_output_filename = f"{input_stem}{custom_suffix_val}{input_ext}"
+                        else:
+                            expected_output_filename = f"{input_stem}{input_ext}"
+                        expected_output_path = os.path.join(batch_output_folder_val, expected_output_filename)
+                        
+                        if batch_skip_existing_val and os.path.exists(expected_output_path):
+                            logger.info(f"Skipping {file_name} - output already exists: {expected_output_path}")
                             skipped_files.append(input_file)
                             continue
                         
-                        # Force image upscaler mode for direct image processing
-                        if not enable_image_upscaler_val:
-                            logger.info(f"Auto-enabling image upscaler for direct image processing of {file_name}")
+                        # Track processing time
+                        start_time = time.time()
                         
-                        # Determine upscale models directory
-                        # Look for upscale_models in parent directories
-                        potential_models_dirs = [
-                            os.path.join(os.path.dirname(batch_input_folder_val), '..', 'upscale_models'),
-                            os.path.join(os.path.dirname(batch_input_folder_val), 'upscale_models'),
-                            'upscale_models'
-                        ]
-                        models_dir = None
-                        for potential_dir in potential_models_dirs:
-                            if os.path.exists(potential_dir):
-                                models_dir = potential_dir
-                                break
+                        # Process using the single image pipeline
+                        results = list(process_single_image_core(
+                            input_image_path=input_file,
+                            upscaler_type=upscaler_type,
+                            seedvr2_config=seedvr2_config,  # Pass the config based on user's choice
+                            image_upscaler_model=actual_model_filename if upscaler_type == "image_upscaler" else None,
+                            output_format="PNG",  # Default format
+                            output_quality=95,
+                            preserve_aspect_ratio=True,
+                            preserve_metadata=True,
+                            custom_suffix=custom_suffix_val if custom_suffix_val else "",
+                            create_comparison=False,  # No comparison for batch
+                            output_dir=batch_output_folder_val,  # Use batch output folder
+                            logger=logger,
+                            progress=None,  # No sub-progress for batch items
+                            util_get_gpu_device=None,
+                            format_time=None,
+                            current_seed=current_seed
+                        ))
                         
-                        if not models_dir:
-                            models_dir = potential_models_dirs[0]  # Use first option as fallback
+                        # Check for cancellation after processing
+                        cancellation_manager.check_cancel("batch image upscaling")
                         
-                        # Process the image directly
-                        success, result_path, processing_time = process_single_image_direct(
-                            image_path=input_file,
-                            output_path=output_image_path,
-                            model_name=image_upscaler_model_val,
-                            upscale_models_dir=models_dir,
-                            apply_target_resolution=enable_target_res_check_val,
-                            target_h=target_h_num_val,
-                            target_w=target_w_num_val,
-                            target_res_mode=target_res_mode_radio_val,
-                            device="cuda" if torch.cuda.is_available() else "cpu",
-                            logger=logger
-                        )
-                        
-                        if success and result_path and os.path.exists(result_path):
-                            processed_files.append({
-                                "input": input_file,
-                                "output": result_path,
-                                "status": "success",
-                                "prompt_source": "not_applicable",
-                                "caption_saved": False,
-                                "auto_resolution_used": False,
-                                "effective_resolution": None,
-                                "processing_time": processing_time
-                            })
-                            logger.info(f"Successfully processed image {file_name} in {processing_time:.2f}s")
+                        if results:
+                            output_path, _, status_msg, _ = results[0]
+                            if output_path and os.path.exists(output_path):
+                                processing_time = time.time() - start_time
+                                processed_files.append({
+                                    "input": input_file,
+                                    "output": output_path,
+                                    "status": "success",
+                                    "prompt_source": "not_applicable",
+                                    "caption_saved": False,
+                                    "auto_resolution_used": False,
+                                    "effective_resolution": None,
+                                    "processing_time": processing_time
+                                })
+                                logger.info(f"Successfully processed image {file_name}")
+                            else:
+                                failed_files.append((input_file, "Image processing failed"))
+                                logger.error(f"Failed to process image {file_name}")
                         else:
-                            failed_files.append((input_file, "Image processing failed or output not created"))
-                            logger.error(f"Failed to process image {file_name}")
+                            failed_files.append((input_file, "No results returned"))
+                            logger.error(f"No results for image {file_name}")
                         
                         continue  # Skip to next file
                         
@@ -592,13 +618,22 @@ def process_batch_videos_from_app_config(app_config, run_upscale_func, logger, p
     """
     # When Direct Image Upscaling is enabled, we need to use single image upscale config
     if app_config.batch.enable_direct_image_upscaling:
-        # Check if single image upscale is configured to use SeedVR2
-        use_seedvr2 = app_config.single_image_upscale.upscaler_type == "Use SeedVR2 for Images"
-        # For batch processing of images, we currently only support Image Based Upscalers
-        # since SeedVR2 would require different handling. So we force image upscaler mode.
-        enable_image_upscaler = True
-        # Use the model from Image Based (GAN) tab
-        image_upscaler_model = app_config.image_upscaler.model
+        # Get settings from single image upscale config
+        single_image_upscaler_type = app_config.single_image_upscale.upscaler_type
+        use_seedvr2 = single_image_upscaler_type == "Use SeedVR2 for Images"
+        
+        # Pass the upscaler type for batch processing
+        if use_seedvr2:
+            # Using SeedVR2 for batch image processing
+            enable_image_upscaler = False  # Not using traditional image upscaler
+            image_upscaler_model = None
+            # SeedVR2 model will be taken from seedvr2 config
+        else:
+            # Using Image Based Upscalers
+            enable_image_upscaler = True
+            # Use the model from Image Based (GAN) tab
+            image_upscaler_model = app_config.image_upscaler.model
+        
         # Get custom suffix from single image upscale config
         custom_suffix = app_config.single_image_upscale.custom_suffix
     else:
@@ -606,6 +641,7 @@ def process_batch_videos_from_app_config(app_config, run_upscale_func, logger, p
         enable_image_upscaler = app_config.image_upscaler.enable
         image_upscaler_model = app_config.image_upscaler.model
         custom_suffix = ""
+        single_image_upscaler_type = None
     
     return process_batch_videos(
         batch_input_folder_val=app_config.batch.input_folder,
@@ -697,5 +733,7 @@ def process_batch_videos_from_app_config(app_config, run_upscale_func, logger, p
         face_restoration_batch_size_val=app_config.face_restoration.batch_size,
         enable_direct_image_upscaling_val=app_config.batch.enable_direct_image_upscaling,  # NEW: Direct image upscaling parameter
         custom_suffix_val=custom_suffix if app_config.batch.enable_direct_image_upscaling else "",
+        single_image_upscaler_type_val=single_image_upscaler_type if app_config.batch.enable_direct_image_upscaling else None,
+        seedvr2_config_val=app_config.seedvr2 if app_config.batch.enable_direct_image_upscaling and use_seedvr2 else None,
         progress=progress
     )
