@@ -550,6 +550,11 @@ def destroy_global_session_completely():
     logger = logging.getLogger('video_to_video')
     logger.info("🔥 Destroying global session manager completely...")
     
+    # Get current memory stats before cleanup
+    if torch.cuda.is_available():
+        mem_before = torch.cuda.memory_allocated() / 1024**3
+        logger.info(f"📊 Memory before destruction: {mem_before:.2f}GB allocated")
+    
     # First do normal cleanup
     if _global_session_manager:
         try:
@@ -571,14 +576,19 @@ def destroy_global_session_completely():
     gc.collect()  # Second collection to catch cyclic references
     gc.collect()  # Third collection for good measure
     
-    # Force unload only SeedVR2 src modules from sys.modules (not logic modules!)
+    # Force unload ALL SeedVR2 related modules from sys.modules
     modules_to_remove = []
     for module_name in list(sys.modules.keys()):
-        # Only remove src.* modules, NOT logic.* modules
-        if 'src.' in module_name:
-            module = sys.modules.get(module_name)
-            if module and hasattr(module, '__file__') and module.__file__ and 'SeedVR2' in module.__file__:
+        # Remove any module that has SeedVR2 in its path
+        module = sys.modules.get(module_name)
+        if module and hasattr(module, '__file__') and module.__file__:
+            if 'SeedVR2' in module.__file__:
                 modules_to_remove.append(module_name)
+        # Also check for src.* modules without file path
+        elif module_name.startswith('src.'):
+            modules_to_remove.append(module_name)
+    
+    logger.info(f"🧹 Found {len(modules_to_remove)} SeedVR2 modules to remove")
     
     for module_name in modules_to_remove:
         try:
@@ -586,21 +596,21 @@ def destroy_global_session_completely():
                 # Get the module and clear its dict before deletion
                 module = sys.modules[module_name]
                 if hasattr(module, '__dict__'):
-                    # Clear all global variables in the module
-                    for attr_name in list(module.__dict__.keys()):
+                    # Clear ALL attributes in the module, not just large ones
+                    module_dict_copy = list(module.__dict__.keys())
+                    for attr_name in module_dict_copy:
                         if not attr_name.startswith('__'):
                             try:
-                                # Clear any large objects
-                                attr_value = getattr(module, attr_name)
-                                if hasattr(attr_value, '__len__'):
-                                    try:
-                                        # Check if it's a large object
-                                        if sys.getsizeof(attr_value) > 1024 * 1024:  # > 1MB
-                                            delattr(module, attr_name)
-                                    except:
-                                        pass
+                                # Delete the attribute
+                                delattr(module, attr_name)
                             except:
                                 pass
+                    # Clear the module dict itself
+                    try:
+                        module.__dict__.clear()
+                    except:
+                        pass
+                # Remove from sys.modules
                 del sys.modules[module_name]
         except Exception as e:
             logger.warning(f"Failed to remove module {module_name}: {e}")
@@ -656,6 +666,14 @@ def destroy_global_session_completely():
             logger.info("✅ Windows working set trimmed")
     except Exception as e:
         logger.warning(f"Platform-specific memory release failed: {e}")
+    
+    # Final memory report
+    if torch.cuda.is_available():
+        mem_after = torch.cuda.memory_allocated() / 1024**3
+        if 'mem_before' in locals():
+            logger.info(f"📊 Memory after destruction: {mem_after:.2f}GB allocated (freed {mem_before - mem_after:.2f}GB)")
+        else:
+            logger.info(f"📊 Memory after destruction: {mem_after:.2f}GB allocated")
     
     logger.info("✅ Global session destroyed completely")
 
@@ -2663,90 +2681,83 @@ def _process_batch_with_seedvr2_model(
         needs_reinit = False
         requested_model = processing_args.get('model', '')
         
-        if session_manager.is_initialized and hasattr(session_manager, 'current_model'):
-            if session_manager.current_model != requested_model:
-                # Log model change even when not in debug mode
-                if session_manager.logger:
-                    session_manager.logger.info(f"🔄 SeedVR2 model change detected: {session_manager.current_model} -> {requested_model}")
-                if debug:
-                    print(f"🔄 Model changed from {session_manager.current_model} to {requested_model}")
-                    print("🧹 Cleaning up previous session...")
-                
-                # Check if switching from FP8 to FP16 (most problematic transition)
-                is_fp8_to_fp16_switch = False
-                if session_manager.current_model and requested_model:
-                    old_is_fp8 = 'fp8' in session_manager.current_model.lower() or 'e4m3fn' in session_manager.current_model.lower()
-                    new_is_fp16 = 'fp16' in requested_model.lower()
-                    is_fp8_to_fp16_switch = old_is_fp8 and new_is_fp16
-                    if is_fp8_to_fp16_switch and session_manager.logger:
-                        session_manager.logger.warning("⚠️ FP8 to FP16 transition detected - applying COMPLETE session destruction")
-                
-                # For FP8 to FP16, use complete destruction instead of normal cleanup
+        # FIXED: Store the previous model before any cleanup
+        previous_model = getattr(session_manager, 'current_model', None) if session_manager.is_initialized else None
+        
+        # Check if we need to switch models
+        if previous_model is not None and previous_model != requested_model:
+            # Model change detected - ALWAYS use aggressive cleanup
+            logger = logging.getLogger('video_to_video')
+            logger.info(f"🔄 SeedVR2 model change detected: {previous_model} -> {requested_model}")
+            if debug:
+                print(f"🔄 Model changed from {previous_model} to {requested_model}")
+                print("🧹 Applying COMPLETE session destruction for model switch...")
+            
+            # Check if switching from FP8 to FP16 (most problematic transition)
+            is_fp8_to_fp16_switch = False
+            if previous_model and requested_model:
+                old_is_fp8 = 'fp8' in previous_model.lower() or 'e4m3fn' in previous_model.lower()
+                new_is_fp16 = 'fp16' in requested_model.lower()
+                is_fp8_to_fp16_switch = old_is_fp8 and new_is_fp16
                 if is_fp8_to_fp16_switch:
-                    destroy_global_session_completely()
-                    # Force re-creation of session manager on next access
-                    session_manager = None
-                else:
-                    # Normal cleanup for other transitions
-                    session_manager.cleanup_session()
-                
-                # Force aggressive GPU memory cleanup
-                force_cleanup_gpu_memory()
-                
-                # Additional cleanup for model switching
-                # Clear any remaining CUDA context
-                if torch.cuda.is_available():
-                    try:
-                        # Wait a bit for cleanup to complete
-                        import time
-                        time.sleep(0.5 if not is_fp8_to_fp16_switch else 1.0)  # Longer wait for FP8->FP16
+                    logger.warning("⚠️ FP8 to FP16 transition detected - extra aggressive cleanup")
+            
+            # FIXED: Always use complete destruction for ANY model switch
+            logger.info("🔥 Destroying session completely for model switch...")
+            destroy_global_session_completely()
+            
+            # Force aggressive GPU memory cleanup
+            force_cleanup_gpu_memory()
+            
+            # Additional cleanup for model switching
+            if torch.cuda.is_available():
+                try:
+                    # Wait for cleanup to complete
+                    import time
+                    time.sleep(1.0 if is_fp8_to_fp16_switch else 0.5)
+                    
+                    # Multiple rounds of cleanup
+                    iterations = 7 if is_fp8_to_fp16_switch else 5
+                    for i in range(iterations):
+                        torch.cuda.empty_cache()
+                        torch.cuda.ipc_collect()
+                        gc.collect()
+                        if i < iterations - 1:
+                            time.sleep(0.1)
+                    
+                    # For FP8 to FP16 transitions, extra cleanup
+                    if is_fp8_to_fp16_switch:
+                        # Reset all CUDA memory stats
+                        torch.cuda.reset_peak_memory_stats()
+                        torch.cuda.reset_accumulated_memory_stats()
                         
-                        # Additional cache clearing
-                        iterations = 5 if is_fp8_to_fp16_switch else 3
-                        for i in range(iterations):
+                        # Force full garbage collection
+                        gc.collect(2)  # Collect all generations
+                        
+                        # Final aggressive cache clear
+                        for _ in range(5):
+                            torch.cuda.synchronize()
                             torch.cuda.empty_cache()
-                            torch.cuda.ipc_collect()
                             gc.collect()
-                            if is_fp8_to_fp16_switch and i < iterations - 1:
-                                time.sleep(0.2)  # Brief pauses for FP8->FP16
-                        
-                        # For FP8 to FP16 transitions, try even more aggressive cleanup
-                        if is_fp8_to_fp16_switch:
-                            # Reset all CUDA memory stats
-                            torch.cuda.reset_peak_memory_stats()
-                            torch.cuda.reset_accumulated_memory_stats()
-                            
-                            # Force full garbage collection
-                            gc.collect(2)  # Collect all generations
-                            
-                            # Final aggressive cache clear
-                            for _ in range(3):
-                                torch.cuda.synchronize()
-                                torch.cuda.empty_cache()
-                        
-                        # Log final VRAM state (only if session_manager still exists)
-                        if session_manager and session_manager.logger:
-                            vram_status = session_manager.get_vram_usage()
-                            session_manager.logger.info(f"📊 VRAM after model switch cleanup: {vram_status['allocated']:.2f}GB allocated, {vram_status['reserved']:.2f}GB reserved")
-                        else:
-                            # Log directly if session manager was destroyed
-                            logger = logging.getLogger('video_to_video')
-                            if torch.cuda.is_available():
-                                allocated = torch.cuda.memory_allocated() / 1024**3
-                                reserved = torch.cuda.memory_reserved() / 1024**3
-                                logger.info(f"📊 VRAM after complete destruction: {allocated:.2f}GB allocated, {reserved:.2f}GB reserved")
-                    except Exception as e:
-                        logger = logging.getLogger('video_to_video')
-                        logger.warning(f"Additional cleanup error: {e}")
-                
-                needs_reinit = True
-        
-        # Re-get session manager if it was destroyed
-        if session_manager is None:
+                    
+                    # Log final memory state
+                    allocated = torch.cuda.memory_allocated() / 1024**3
+                    reserved = torch.cuda.memory_reserved() / 1024**3
+                    logger.info(f"📊 Memory after model switch cleanup: {allocated:.2f}GB allocated, {reserved:.2f}GB reserved")
+                    
+                except Exception as e:
+                    logger.warning(f"Additional cleanup error: {e}")
+            
+            # Force re-get session manager after destruction
             session_manager = get_session_manager()
+            needs_reinit = True
         
-        # Initialize session if needed or model changed
-        if not session_manager.is_initialized or needs_reinit:
+        elif not session_manager.is_initialized:
+            # First time initialization
+            needs_reinit = True
+        
+        # Initialize session if needed
+        if needs_reinit:
             if debug:
                 print(f"🔧 Initializing SeedVR2 session with model: {requested_model}")
             
