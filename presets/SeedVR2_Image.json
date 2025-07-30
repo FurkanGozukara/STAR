@@ -130,7 +130,7 @@
     },
     "seedvr2": {
         "enable": true,
-        "model": "seedvr2_ema_3b_fp16.safetensors",
+        "model": "seedvr2_ema_7b_fp16.safetensors",
         "batch_size": 5,
         "quality_preset": "quality",
         "use_gpu": true,
@@ -148,8 +148,8 @@
             8,
             8
         ],
-        "enable_block_swap": true,
-        "block_swap_counter": 5,
+        "enable_block_swap": false,
+        "block_swap_counter": 0,
         "block_swap_offload_io": false,
         "block_swap_model_caching": false,
         "memory_optimization": "auto",

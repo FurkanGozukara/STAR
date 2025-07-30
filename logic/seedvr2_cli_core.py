@@ -374,35 +374,24 @@ class SeedVR2SessionManager:
                 
                 # Proper cleanup of runner components if not caching
                 if not keep_model_cached:
-                    # Clean up all model components thoroughly
-                    components_to_cleanup = ['dit', 'vae', 'text_encoder', 'tokenizer', 'scheduler', 
-                                           'unet', 'controlnet', 'safety_checker', 'feature_extractor',
-                                           'model', 'pipe', 'pipeline']  # Added more possible component names
-                    
-                    for component_name in components_to_cleanup:
-                        if hasattr(self.runner, component_name):
-                            component = getattr(self.runner, component_name)
-                            if component is not None:
-                                try:
-                                    # Move to CPU first to free VRAM
-                                    if hasattr(component, 'cpu'):
-                                        component.cpu()
-                                    # Delete all references
-                                    if hasattr(component, 'to'):
-                                        component.to('cpu')
-                                    # Clear any internal caches in the component
-                                    if hasattr(component, 'clear_cache'):
-                                        component.clear_cache()
-                                    setattr(self.runner, component_name, None)
-                                    del component
-                                except Exception as e:
-                                    self.logger.warning(f"Failed to cleanup {component_name}: {e}")
+                    # More aggressive cleanup - clear ALL attributes of runner
+                    if hasattr(self.runner, '__dict__'):
+                        runner_attrs = list(self.runner.__dict__.keys())
+                        for attr_name in runner_attrs:
+                            try:
+                                attr_value = getattr(self.runner, attr_name)
+                                # Clear the attribute
+                                setattr(self.runner, attr_name, None)
+                                # Try to delete if it's a torch module or has state_dict
+                                if hasattr(attr_value, 'state_dict') or hasattr(attr_value, 'parameters'):
+                                    del attr_value
+                            except Exception as e:
+                                self.logger.warning(f"Failed to cleanup runner.{attr_name}: {e}")
                     
                     # Clean up any cached tensors or buffers
                     if hasattr(self.runner, '_cached_tensors'):
                         for tensor_name, tensor in list(getattr(self.runner, '_cached_tensors', {}).items()):
-                            if tensor is not None and hasattr(tensor, 'cpu'):
-                                tensor.cpu()
+                            # Don't move to CPU - just delete
                             del tensor
                         self.runner._cached_tensors = {}
                     
@@ -412,15 +401,12 @@ class SeedVR2SessionManager:
                             for module in self.runner.modules():
                                 if hasattr(module, '_buffers'):
                                     for buffer_name in list(module._buffers.keys()):
-                                        buffer = getattr(module, buffer_name, None)
-                                        if buffer is not None and hasattr(buffer, 'cpu'):
-                                            buffer.cpu()
-                                        delattr(module, buffer_name)
+                                        # Don't move to CPU - just delete
+                                        module._buffers[buffer_name] = None
                                 if hasattr(module, '_parameters'):
                                     for param_name in list(module._parameters.keys()):
-                                        param = getattr(module, param_name, None)
-                                        if param is not None and hasattr(param, 'cpu'):
-                                            param.cpu()
+                                        # Don't move to CPU - just delete
+                                        module._parameters[param_name] = None
                         except:
                             pass  # Module iteration might fail, continue cleanup
                 
@@ -527,15 +513,38 @@ def get_session_manager(logger: Optional[logging.Logger] = None) -> SeedVR2Sessi
     return _global_session_manager
 
 def cleanup_global_session():
-    """Cleanup the global session manager."""
+    """Cleanup the global session manager but keep it for reuse."""
     global _global_session_manager
     if _global_session_manager:
         _global_session_manager.cleanup_session()
-        _global_session_manager = None
+        # Don't set to None - keep the session manager for reuse!
+        # Just run garbage collection to clean up any freed memory
+        import gc
+        gc.collect()
+
+def cleanup_vram_only():
+    """Clean up VRAM only, keeping the session and models for reuse."""
+    global _global_session_manager
+    if _global_session_manager and _global_session_manager.is_initialized:
+        # Just clear VRAM caches without destroying anything
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+        
+        # Run garbage collection
+        import gc
+        gc.collect()
+        
+        logger = logging.getLogger('video_to_video')
+        if logger:
+            logger.info("✅ VRAM cleaned, session and models kept for reuse")
 
 
 def destroy_global_session_completely():
     """Completely destroy the global session manager and force module cleanup."""
+    import sys  # Import sys locally to avoid import errors
+    import gc
+    
     global _global_session_manager
     
     logger = logging.getLogger('video_to_video')
@@ -557,18 +566,44 @@ def destroy_global_session_completely():
         
         _global_session_manager = None
     
-    # Force unload SeedVR2 modules from sys.modules
+    # Force Python to release memory by clearing all references
+    gc.collect()  # First collection
+    gc.collect()  # Second collection to catch cyclic references
+    gc.collect()  # Third collection for good measure
+    
+    # Force unload only SeedVR2 src modules from sys.modules (not logic modules!)
     modules_to_remove = []
     for module_name in list(sys.modules.keys()):
-        if 'seedvr2' in module_name.lower() or 'src.' in module_name:
-            modules_to_remove.append(module_name)
+        # Only remove src.* modules, NOT logic.* modules
+        if 'src.' in module_name:
+            module = sys.modules.get(module_name)
+            if module and hasattr(module, '__file__') and module.__file__ and 'SeedVR2' in module.__file__:
+                modules_to_remove.append(module_name)
     
     for module_name in modules_to_remove:
         try:
             if module_name in sys.modules:
+                # Get the module and clear its dict before deletion
+                module = sys.modules[module_name]
+                if hasattr(module, '__dict__'):
+                    # Clear all global variables in the module
+                    for attr_name in list(module.__dict__.keys()):
+                        if not attr_name.startswith('__'):
+                            try:
+                                # Clear any large objects
+                                attr_value = getattr(module, attr_name)
+                                if hasattr(attr_value, '__len__'):
+                                    try:
+                                        # Check if it's a large object
+                                        if sys.getsizeof(attr_value) > 1024 * 1024:  # > 1MB
+                                            delattr(module, attr_name)
+                                    except:
+                                        pass
+                            except:
+                                pass
                 del sys.modules[module_name]
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to remove module {module_name}: {e}")
     
     # Remove SeedVR2 from sys.path
     seedvr2_paths = []
@@ -582,6 +617,17 @@ def destroy_global_session_completely():
         except:
             pass
     
+    # Clear any global PyTorch caches
+    if hasattr(torch, '_C'):
+        if hasattr(torch._C, '_jit_clear_class_registry'):
+            torch._C._jit_clear_class_registry()
+        if hasattr(torch._C, '_jit_clear_function_schema_cache'):
+            torch._C._jit_clear_function_schema_cache()
+    
+    # Clear torch hub cache directory reference (not the files, just the reference)
+    if hasattr(torch.hub, '_get_cache_dir'):
+        torch.hub._hub_dir = None
+    
     # Force aggressive garbage collection
     for _ in range(10):
         gc.collect()
@@ -591,6 +637,25 @@ def destroy_global_session_completely():
     
     # Try to reset CUDA allocator
     reset_cuda_allocator()
+    
+    # Platform-specific memory release
+    try:
+        import platform
+        if platform.system() == "Linux":
+            # On Linux, try to release memory back to OS
+            import ctypes
+            libc = ctypes.CDLL("libc.so.6")
+            libc.malloc_trim(0)
+            logger.info("✅ Linux malloc_trim executed")
+        elif platform.system() == "Windows":
+            # On Windows, try to trim working set
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.GetCurrentProcess()
+            kernel32.SetProcessWorkingSetSize(handle, -1, -1)
+            logger.info("✅ Windows working set trimmed")
+    except Exception as e:
+        logger.warning(f"Platform-specific memory release failed: {e}")
     
     logger.info("✅ Global session destroyed completely")
 
@@ -632,13 +697,8 @@ def force_cleanup_gpu_memory():
     """Force aggressive GPU memory cleanup for model switching."""
     try:
         # Clear any cached models in torch hub (use public API)
-        try:
-            # Clear the hub cache using public methods
-            if hasattr(torch.hub, 'list'):
-                # This is a safe way to check if hub is available
-                torch.hub.list('pytorch/vision', force_reload=True)
-        except:
-            pass  # Hub clearing is optional, continue with memory cleanup
+        # NOTE: Removed torch.hub.list() call as it was causing RAM leaks by downloading
+        # the entire pytorch/vision repository repeatedly without cleanup
         
         # Clear CUDA cache aggressively
         if torch.cuda.is_available():
