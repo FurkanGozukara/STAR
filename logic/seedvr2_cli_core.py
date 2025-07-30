@@ -199,7 +199,8 @@ class SeedVR2SessionManager:
                 base_cache_dir=processing_args["model_dir"],
                 preserve_vram=processing_args["preserve_vram"],
                 debug=processing_args["debug"],
-                block_swap_config=block_swap_config
+                block_swap_config=block_swap_config,
+                cached_runner=self.runner  # Pass existing runner for reuse
             )
             
             self.current_model = processing_args["model"]
