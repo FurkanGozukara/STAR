@@ -653,6 +653,11 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                                 label="Preserve Image Metadata",
                                 info=IMAGE_PRESERVE_METADATA_INFO
                             )
+                            image_create_comparison = create_checkbox(
+                                config_path=('single_image_upscale', 'create_comparison'), ui_dict=ui_components,
+                                label="Generate Comparison Image",
+                                info="Create a side-by-side comparison image with the original"
+                            )
                         with gr.Row():
                             image_custom_suffix = create_textbox(
                                 config_path=('single_image_upscale', 'custom_suffix'), ui_dict=ui_components,
@@ -5108,7 +5113,7 @@ Maximum VRAM optimization for limited GPU memory.
 
     def image_upscale_wrapper(
         input_image_path, upscaler_type, image_upscaler_model_val, output_format, output_quality,
-        preserve_aspect_ratio, preserve_metadata, custom_suffix,
+        preserve_aspect_ratio, preserve_metadata, custom_suffix, create_comparison,
         seedvr2_model_val, seedvr2_batch_size_val, seedvr2_cfg_scale_val,
         seedvr2_enable_block_swap_val, seedvr2_block_swap_counter_val,
         enable_target_res_val, target_h_val, target_w_val, target_res_mode_val,
@@ -5192,7 +5197,7 @@ Maximum VRAM optimization for limited GPU memory.
                 logger.info(f"Using provided seed: {actual_seed}")
             current_seed = actual_seed
             
-            # Always create comparison for the slider
+            # Use the create_comparison setting from the config
             results = list(util_process_single_image(
                 input_image_path=input_image_path,
                 upscaler_type=actual_upscaler_type,
@@ -5203,7 +5208,7 @@ Maximum VRAM optimization for limited GPU memory.
                 preserve_aspect_ratio=preserve_aspect_ratio,
                 preserve_metadata=preserve_metadata,
                 custom_suffix=custom_suffix,
-                create_comparison=True,  # Always create for slider
+                create_comparison=create_comparison,  # Use config setting
                 output_dir=None,  # Will use default STAR/outputs_images
                 logger=logger,
                 progress=progress,
@@ -5226,8 +5231,8 @@ Maximum VRAM optimization for limited GPU memory.
                 # Force reload the image by creating a new path reference
                 output_image_update = gr.update(value=str(output_image_path), visible=True)
                 
-                # Update image slider with before/after images
-                if output_image_path:
+                # Update image slider with before/after images if comparison was created
+                if comparison_image_path and os.path.exists(comparison_image_path):
                     slider_update = gr.update(value=(input_image_path, output_image_path), visible=True)
                 else:
                     slider_update = gr.update(visible=False)
@@ -5343,6 +5348,7 @@ Maximum VRAM optimization for limited GPU memory.
             image_preserve_aspect_ratio,
             image_preserve_metadata,
             image_custom_suffix,
+            image_create_comparison,
             seedvr2_model_dropdown,
             seedvr2_batch_size_slider,
             seedvr2_cfg_scale_slider,

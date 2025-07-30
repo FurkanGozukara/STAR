@@ -50,7 +50,7 @@
         "fps": 24
     },
     "scene_split": {
-        "enable": false,
+        "enable": true,
         "mode": "automatic",
         "min_scene_len": 0.6,
         "threshold": 3,
@@ -181,7 +181,7 @@
         "input_path": null,
         "output_format": "PNG",
         "preserve_metadata": true,
-        "create_comparison": true,
+        "create_comparison": false,
         "upscaler_type": "Use SeedVR2 for Images",
         "preserve_aspect_ratio": true,
         "quality_level": 95,
