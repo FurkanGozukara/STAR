@@ -309,6 +309,8 @@
                 <div class="sidebar">
                     <ul class="sidebar-nav">
                         <li><a href="#overview" class="nav-link"><i class="fas fa-home"></i>Overview</a></li>
+                        <li><a href="#v7" class="nav-link"><i class="fas fa-rocket"></i>Version 7.0</a></li>
+                        <li><a href="#v5" class="nav-link"><i class="fas fa-fire"></i>Version 5.0</a></li>
                         <li><a href="#v4" class="nav-link"><i class="fas fa-crown"></i>Version 4.0</a></li>
                         <li><a href="#v3" class="nav-link"><i class="fas fa-fire"></i>Version 3.0</a></li>
                         <li><a href="#v2" class="nav-link"><i class="fas fa-star"></i>Version 2.0</a></li>
@@ -337,7 +339,204 @@
 
                             <div class="alert-info">
                                 <i class="fas fa-info-circle me-2"></i>
-                                <strong>Latest Version:</strong> 5.0 | <strong>Last Updated:</strong> 26 July 2025 | <strong>Support:</strong> Windows & Linux
+                                <strong>Latest Version:</strong> 7.0 | <strong>Last Updated:</strong> 30 July 2025 | <strong>Support:</strong> Windows & Linux
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Version 7.0 Section -->
+                    <section id="v7" class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Version 7.0</h2>
+                            <p class="section-subtitle">Major SeedVR2 Improvements - Scene Split, RAM/VRAM Optimization & Enhanced Batch Processing</p>
+                        </div>
+
+                        <div class="version-card">
+                            <div class="version-header">
+                                <span class="version-badge">v7.0</span>
+                                <div>
+                                    <h3 class="version-title">SeedVR2 Performance & Stability Update</h3>
+                                    <p class="version-date">30 July 2025</p>
+                                </div>
+                            </div>
+
+                            <p class="version-description">
+                                Version 7.0 brings significant improvements to SeedVR2 upscaling with enhanced scene split processing, fixed memory leaks, improved single image pipeline, and comprehensive batch processing enhancements. This release focuses on stability, performance, and VRAM optimization for better user experience.
+                            </p>
+
+                            <div class="alert-success">
+                                <i class="fas fa-check-circle me-2"></i>
+                                <strong>Major Improvements:</strong> Scene split processing now fully working with SeedVR2, RAM/VRAM leakage fixed, single image pipeline perfected, and batch processing significantly enhanced.
+                            </div>
+
+                            <h4><i class="fas fa-star text-primary me-2"></i>Core SeedVR2 Improvements</h4>
+                            <ul class="feature-list">
+                                <li>
+                                    <i class="fas fa-check feature-icon feature-fixed"></i>
+                                    <div>
+                                        <strong>Scene Split Processing:</strong> Scene split based processing now fully working with SeedVR2 and is recommended for optimal results
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-check feature-icon feature-fixed"></i>
+                                    <div>
+                                        <strong>Automatic Resolution Determination:</strong> Resolution detection and setting mechanism fixed for accurate upscaling
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-check feature-icon feature-fixed"></i>
+                                    <div>
+                                        <strong>Single Image Pipeline:</strong> Single image processing pipeline fixed and working perfectly
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-check feature-icon feature-fixed"></i>
+                                    <div>
+                                        <strong>Preset System:</strong> Preset save and load functionality fixed for SeedVR2 configurations
+                                    </div>
+                                </li>
+                            </ul>
+
+                            <h4><i class="fas fa-memory text-success me-2"></i>Memory Optimization</h4>
+                            <ul class="feature-list">
+                                <li>
+                                    <i class="fas fa-check feature-icon feature-fixed"></i>
+                                    <div>
+                                        <strong>RAM/VRAM Leak Fixed:</strong> Major memory leakage issues resolved with significantly improved VRAM usage patterns
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-arrow-up feature-icon feature-improved"></i>
+                                    <div>
+                                        <strong>VRAM Usage Optimization:</strong> 24 GB GPU can now upscale single images to 2560x2560px (6.55 megapixels) in under 30 seconds
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-arrow-up feature-icon feature-improved"></i>
+                                    <div>
+                                        <strong>Video VRAM Management:</strong> 24 GB GPU can upscale videos to 1280x720px with batch size 9 (VAE decoding uses 23.5 GB peak)
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-info feature-icon"></i>
+                                    <div>
+                                        <strong>Batch Size Optimization:</strong> Due to model restrictions, batch size can only increase by 4 (5, 9, 13, 17, etc.)
+                                    </div>
+                                </li>
+                            </ul>
+
+                            <h4><i class="fas fa-images text-info me-2"></i>Batch Processing Enhancements</h4>
+                            <ul class="feature-list">
+                                <li>
+                                    <i class="fas fa-arrow-up feature-icon feature-improved"></i>
+                                    <div>
+                                        <strong>Batch Image Upscaling:</strong> Significantly improved with bug fixes and performance optimizations
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-plus feature-icon feature-new"></i>
+                                    <div>
+                                        <strong>Settings Synchronization:</strong> Batch image upscaling now uses settings from Single Image tab for consistency
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-plus feature-icon feature-new"></i>
+                                    <div>
+                                        <strong>Multi-Model Support:</strong> Batch upscale now works with both SeedVR2 and Image Upscalers like 2xLiveActionV1_SPAN_490000.pth
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-arrow-up feature-icon feature-improved"></i>
+                                    <div>
+                                        <strong>Quality Recommendation:</strong> SeedVR2 upscale recommended as it provides SUPIR-level quality or better depending on task
+                                    </div>
+                                </li>
+                            </ul>
+
+                            <h4><i class="fas fa-exclamation-triangle text-warning me-2"></i>Known Limitations</h4>
+                            <ul class="feature-list">
+                                <li>
+                                    <i class="fas fa-times feature-icon feature-breaking"></i>
+                                    <div>
+                                        <strong>Block Swapping:</strong> Currently not working and temporarily disabled until tiled VAE encoding/decoding arrives
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-times feature-icon feature-breaking"></i>
+                                    <div>
+                                        <strong>Tiled VAE Decoding:</strong> Not yet implemented but coming soon for significant VRAM reduction
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-times feature-icon feature-breaking"></i>
+                                    <div>
+                                        <strong>FP8 Precision Models:</strong> Not useful yet pending further optimization
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-times feature-icon feature-breaking"></i>
+                                    <div>
+                                        <strong>SeedVR2 3B FP16 Model:</strong> Has VRAM doubling issue - do not use until fixed
+                                    </div>
+                                </li>
+                            </ul>
+
+                            <h4><i class="fas fa-check-circle text-success me-2"></i>Working Models & Recommendations</h4>
+                            <ul class="feature-list">
+                                <li>
+                                    <i class="fas fa-check feature-icon feature-new"></i>
+                                    <div>
+                                        <strong>SeedVR2 7B FP16 Model:</strong> Working perfectly and recommended for best quality
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-info feature-icon"></i>
+                                    <div>
+                                        <strong>Testing Presets:</strong> Start testing with SeedVR2_Image and SeedVR2_Video presets for optimal results
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-info feature-icon"></i>
+                                    <div>
+                                        <strong>VRAM Management:</strong> If out of VRAM, reduce max resolution from Resolution & Scene Split settings
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-info feature-icon"></i>
+                                    <div>
+                                        <strong>Performance Testing:</strong> RTX 3090 Ti (24GB) confirmed for all specified performance benchmarks
+                                    </div>
+                                </li>
+                            </ul>
+
+                            <h4><i class="fas fa-bug text-danger me-2"></i>Additional Fixes</h4>
+                            <ul class="feature-list">
+                                <li>
+                                    <i class="fas fa-check feature-icon feature-fixed"></i>
+                                    <div>
+                                        <strong>Batch Size Slider:</strong> Fixed to properly increment by 4 as required by model architecture
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-check feature-icon feature-fixed"></i>
+                                    <div>
+                                        <strong>Performance Improvements:</strong> Numerous other bug fixes and performance optimizations throughout the codebase
+                                    </div>
+                                </li>
+                            </ul>
+
+                            <div class="alert-info">
+                                <i class="fas fa-info-circle me-2"></i>
+                                <strong>Coming Soon:</strong> Tiled VAE implementation will significantly reduce VRAM usage, allowing larger upscale sizes with bigger batch sizes.
+                            </div>
+
+                            <div class="code-block">
+                                # Recommended workflow:
+                                1. Use SeedVR2 7B FP16 model
+                                2. Enable scene split processing
+                                3. Start with SeedVR2_Image or SeedVR2_Video presets
+                                4. Adjust max resolution if VRAM issues occur
+                                5. Use batch sizes of 5, 9, 13, 17 etc.
                             </div>
                         </div>
                     </section>

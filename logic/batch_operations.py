@@ -263,25 +263,55 @@ def process_batch_videos(
                         # Track processing time
                         start_time = time.time()
                         
-                        # Process using the single image pipeline
-                        results = list(process_single_image_core(
-                            input_image_path=input_file,
-                            upscaler_type=upscaler_type,
-                            seedvr2_config=seedvr2_config,  # Pass the config based on user's choice
-                            image_upscaler_model=actual_model_filename if upscaler_type == "image_upscaler" else None,
-                            output_format="PNG",  # Default format
-                            output_quality=95,
-                            preserve_aspect_ratio=True,
-                            preserve_metadata=True,
-                            custom_suffix=custom_suffix_val if custom_suffix_val else "",
-                            create_comparison=False,  # No comparison for batch
-                            output_dir=batch_output_folder_val,  # Use batch output folder
-                            logger=logger,
-                            progress=None,  # No sub-progress for batch items
-                            util_get_gpu_device=None,
-                            format_time=None,
-                            current_seed=current_seed
-                        ))
+                        # For image upscaler, use the direct pipeline that works
+                        if upscaler_type == "image_upscaler":
+                            # Use the same direct pipeline as single image upscaling
+                            from .image_upscaler_utils import process_single_image_direct
+                            
+                            # Generate output path
+                            output_path = os.path.join(batch_output_folder_val, expected_output_filename)
+                            
+                            # Get upscale models directory (correct path)
+                            upscale_models_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'STAR', 'upscale_models')
+                            
+                            # Process using the direct pipeline
+                            success, result_path, processing_time = process_single_image_direct(
+                                image_path=input_file,
+                                output_path=output_path,
+                                model_name=actual_model_filename,
+                                upscale_models_dir=upscale_models_dir,
+                                apply_target_resolution=enable_target_res_check_val,
+                                target_h=target_h_num_val,
+                                target_w=target_w_num_val,
+                                target_res_mode=target_res_mode_radio_val,
+                                device="cuda" if torch.cuda.is_available() else "cpu",
+                                logger=logger
+                            )
+                            
+                            if success and result_path and os.path.exists(result_path):
+                                results = [(result_path, None, f"✅ Image upscaled successfully in {processing_time:.2f}s", {})]
+                            else:
+                                results = []
+                        else:
+                            # For SeedVR2, use the seedvr2_image_core pipeline
+                            results = list(process_single_image_core(
+                                input_image_path=input_file,
+                                upscaler_type=upscaler_type,
+                                seedvr2_config=seedvr2_config,  # Pass the config based on user's choice
+                                image_upscaler_model=None,  # SeedVR2 doesn't use image upscaler models
+                                output_format="PNG",  # Default format
+                                output_quality=95,
+                                preserve_aspect_ratio=True,
+                                preserve_metadata=True,
+                                custom_suffix=custom_suffix_val if custom_suffix_val else "",
+                                create_comparison=False,  # No comparison for batch
+                                output_dir=batch_output_folder_val,  # Use batch output folder
+                                logger=logger,
+                                progress=None,  # No sub-progress for batch items
+                                util_get_gpu_device=None,
+                                format_time=None,
+                                current_seed=current_seed
+                            ))
                         
                         # Check for cancellation after processing
                         cancellation_manager.check_cancel("batch image upscaling")

@@ -166,7 +166,7 @@ FACE_RESTORATION_HELP = """
 """
 
 # Main App Title and Headers
-APP_TITLE = "# SECourses Video and Image Upscaler Pro V5 - https://www.patreon.com/posts/134405610"
+APP_TITLE = "# SECourses Video and Image Upscaler Pro V7 - https://www.patreon.com/posts/134405610"
 
 ENHANCED_INPUT_HEADER = "### 📁 Enhanced Input: Video Files & Frame Folders"
 ENHANCED_INPUT_DESCRIPTION = "*Auto-detects whether your input is a single video file or a folder containing frame sequences*"

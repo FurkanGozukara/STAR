@@ -568,7 +568,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                     output_video = gr.Video(label="Upscaled Video", interactive=False, height=512)
                     with gr.Row():
                         how_to_use_button = gr.Button("📖 How To Use Documentation", variant="secondary")
-                        version_history_button = gr.Button("📋 Version History V4", variant="secondary")
+                        version_history_button = gr.Button("📋 Version History V7", variant="secondary")
                         open_output_folder_button = gr.Button("Open Outputs Folder", icon="icons/folder.png", variant="primary")
                     status_textbox = gr.Textbox(label="Log", interactive=False, lines=10, max_lines=15)
                     with gr.Accordion("Save/Load Presets", open=True):
