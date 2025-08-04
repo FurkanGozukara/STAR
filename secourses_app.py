@@ -2993,12 +2993,13 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
     def batch_wrapper(*args):
         app_config = build_app_config_from_ui(*args)
         result = process_batch_videos_wrapper(app_config)
-        return result
+        # Switch to main tab after starting batch processing
+        return result[0], result[1], gr.Tabs(selected="main_tab")
 
     batch_process_button.click(
         fn=batch_wrapper,
         inputs=click_inputs,
-        outputs=[output_video, status_textbox],
+        outputs=[output_video, status_textbox, main_tabs],
         show_progress_on=[output_video]
     )
 
