@@ -74,6 +74,24 @@ class SeedVR2ModelManager:
             
         models = []
         
+        # Log the exact directory being scanned
+        if self.logger:
+            self.logger.info(f"[SEEDVR2] Scanning models directory: {self.models_dir}")
+            if not os.path.exists(self.models_dir):
+                self.logger.error(f"[SEEDVR2] Models directory does not exist: {self.models_dir}")
+            else:
+                # List all files in the directory for debugging
+                try:
+                    files_in_dir = os.listdir(self.models_dir)
+                    self.logger.info(f"[SEEDVR2] Files found in models directory: {files_in_dir}")
+                    safetensor_files = [f for f in files_in_dir if f.endswith('.safetensors')]
+                    if safetensor_files:
+                        self.logger.info(f"[SEEDVR2] SafeTensor files found: {safetensor_files}")
+                    else:
+                        self.logger.warning("[SEEDVR2] No .safetensors files found in models directory")
+                except Exception as e:
+                    self.logger.error(f"[SEEDVR2] Error listing directory contents: {e}")
+        
         # Expected model files
         expected_models = [
             "seedvr2_ema_3b_fp16.safetensors",
@@ -84,13 +102,32 @@ class SeedVR2ModelManager:
             "seedvr2_ema_7b_sharp_fp8_e4m3fn.safetensors"
         ]
         
+        # Also check for any .safetensors files that might be SeedVR2 models with different names
+        if os.path.exists(self.models_dir):
+            try:
+                all_files = os.listdir(self.models_dir)
+                for file in all_files:
+                    if file.endswith('.safetensors') and file not in expected_models:
+                        # Check if it might be a SeedVR2 model based on name patterns
+                        file_lower = file.lower()
+                        if 'seedvr2' in file_lower or ('3b' in file_lower or '7b' in file_lower):
+                            if self.logger:
+                                self.logger.info(f"[SEEDVR2] Found potential SeedVR2 model with non-standard name: {file}")
+                            expected_models.append(file)
+            except Exception as e:
+                if self.logger:
+                    self.logger.error(f"[SEEDVR2] Error checking for additional models: {e}")
+        
         for model_file in expected_models:
             model_path = os.path.join(self.models_dir, model_file)
             model_exists = os.path.exists(model_path)
             
-            # Log scanning for debugging
+            # Log scanning for debugging with full path
             if self.logger:
-                self.logger.debug(f"Scanning model: {model_file}, exists: {model_exists}, include_missing: {include_missing}")
+                self.logger.debug(f"[SEEDVR2] Checking model: {model_file}")
+                self.logger.debug(f"[SEEDVR2]   Full path: {model_path}")
+                self.logger.debug(f"[SEEDVR2]   Exists: {model_exists}")
+                self.logger.debug(f"[SEEDVR2]   Include missing: {include_missing}")
             
             # Skip missing models unless explicitly requested
             if not model_exists and not include_missing:
@@ -110,6 +147,17 @@ class SeedVR2ModelManager:
                 self.logger.debug(f"Scanned model: filename='{model_file}', available={model_exists}, display_name='{model_info.get('display_name', 'N/A')}'")
             
             models.append(model_info)
+        
+        # Log summary of scan results
+        if self.logger:
+            found_count = len([m for m in models if m.get('available', False)])
+            total_count = len(models)
+            if found_count == 0:
+                self.logger.warning(f"[SEEDVR2] Model scan complete: No models found out of {len(expected_models)} expected models")
+                self.logger.warning(f"[SEEDVR2] Please ensure models are placed in: {self.models_dir}")
+                self.logger.warning("[SEEDVR2] Expected model names: " + ", ".join(expected_models[:3]) + "...")
+            else:
+                self.logger.info(f"[SEEDVR2] Model scan complete: Found {found_count} available models out of {total_count} total")
         
         self.available_models = models
         return models

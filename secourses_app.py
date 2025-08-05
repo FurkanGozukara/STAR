@@ -1014,10 +1014,16 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                         )
                     with gr.Accordion("Model Selection", open=True):
                         try:
+                            logger.info("[INIT] Starting SeedVR2 model scan...")
                             available_models = util_scan_seedvr2_models(logger=logger)
-                            model_choices = [util_format_model_display_name(m) for m in available_models] if available_models else ["No SeedVR2 models found"]
+                            if available_models:
+                                logger.info(f"[INIT] Found {len(available_models)} SeedVR2 models")
+                                model_choices = [util_format_model_display_name(m) for m in available_models]
+                            else:
+                                logger.warning("[INIT] No SeedVR2 models found during scan")
+                                model_choices = ["No SeedVR2 models found"]
                         except Exception as e:
-                            logger.warning(f"Failed to scan for SeedVR2 models: {e}")
+                            logger.error(f"[INIT] Failed to scan for SeedVR2 models: {e}", exc_info=True)
                             model_choices = [info_strings.ERROR_SCANNING_SEEDVR2_MODELS_DIRECTORY_STATUS]
 
                         # Convert stored filename to display name for initial value
@@ -4398,9 +4404,15 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                 seedvr2_models_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'SeedVR2', 'models')
                 if not os.path.exists(seedvr2_models_path):
                     logger.warning(f"SeedVR2 models directory not found: {seedvr2_models_path}")
-                    return gr.update(choices=["SeedVR2 directory not found"], value="SeedVR2 directory not found")
+                    return gr.update(choices=[f"SeedVR2 directory not found: {seedvr2_models_path}"], value=f"SeedVR2 directory not found: {seedvr2_models_path}")
                 else:
-                    logger.info("SeedVR2 models directory exists but no models found")
+                    logger.info(f"SeedVR2 models directory exists but no models found at: {seedvr2_models_path}")
+                    # List files for debugging
+                    try:
+                        files = os.listdir(seedvr2_models_path)
+                        logger.info(f"Files in directory: {files}")
+                    except Exception as e:
+                        logger.error(f"Error listing directory: {e}")
                     return gr.update(choices=[SEEDVR2_NO_MODELS_STATUS], value=SEEDVR2_NO_MODELS_STATUS)
         except Exception as e:
             logger.error(f"Failed to refresh SeedVR2 models: {e}")
