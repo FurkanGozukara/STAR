@@ -309,6 +309,7 @@
                 <div class="sidebar">
                     <ul class="sidebar-nav">
                         <li><a href="#overview" class="nav-link"><i class="fas fa-home"></i>Overview</a></li>
+                        <li><a href="#v8" class="nav-link"><i class="fas fa-tools"></i>Version 8.0</a></li>
                         <li><a href="#v7" class="nav-link"><i class="fas fa-rocket"></i>Version 7.0</a></li>
                         <li><a href="#v5" class="nav-link"><i class="fas fa-fire"></i>Version 5.0</a></li>
                         <li><a href="#v4" class="nav-link"><i class="fas fa-crown"></i>Version 4.0</a></li>
@@ -339,7 +340,187 @@
 
                             <div class="alert-info">
                                 <i class="fas fa-info-circle me-2"></i>
-                                <strong>Latest Version:</strong> 7.0 | <strong>Last Updated:</strong> 30 July 2025 | <strong>Support:</strong> Windows & Linux
+                                <strong>Latest Version:</strong> 8.0 | <strong>Last Updated:</strong> 14 August 2025 | <strong>Support:</strong> Windows & Linux
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Version 8.0 Section -->
+                    <section id="v8" class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Version 8.0</h2>
+                            <p class="section-subtitle">Critical Image Upscaler Validation Fix & UI Stability Improvements</p>
+                        </div>
+
+                        <div class="version-card">
+                            <div class="version-header">
+                                <span class="version-badge">v8.0</span>
+                                <div>
+                                    <h3 class="version-title">Image Upscaler Validation & Stability Update</h3>
+                                    <p class="version-date">14 August 2025</p>
+                                </div>
+                            </div>
+
+                            <p class="version-description">
+                                Version 8.0 addresses a critical bug that prevented the image-based upscaler from functioning due to gradio slider validation errors. This release includes comprehensive fixes for slider value validation, upscaler type switching, and enhanced error prevention mechanisms to ensure stable operation across all upscaler modes.
+                            </p>
+
+                            <div class="alert-success">
+                                <i class="fas fa-check-circle me-2"></i>
+                                <strong>Critical Fix:</strong> Image-based upscaler now works correctly without validation errors when switching between different upscaler types.
+                            </div>
+
+                            <h4><i class="fas fa-bug text-danger me-2"></i>Critical Bug Fixes</h4>
+                            <ul class="feature-list">
+                                <li>
+                                    <i class="fas fa-check feature-icon feature-fixed"></i>
+                                    <div>
+                                        <strong>Gradio Validation Error:</strong> Fixed "Value 1 is less than minimum value 5" error that occurred when using image-based upscaler due to incorrect slider value validation
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-check feature-icon feature-fixed"></i>
+                                    <div>
+                                        <strong>Slider Value Constraints:</strong> Resolved issue where SeedVR2 batch size slider (minimum=5) was receiving value=1 from image upscaler settings during upscaler type switching
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-check feature-icon feature-fixed"></i>
+                                    <div>
+                                        <strong>STAR Model Steps Validation:</strong> Fixed diffusion steps slider validation to ensure values are always ≥5 regardless of upscaler type selection
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-check feature-icon feature-fixed"></i>
+                                    <div>
+                                        <strong>Preview Frame Count Validation:</strong> Corrected chunk preview frames slider to maintain minimum valid values during runtime processing
+                                    </div>
+                                </li>
+                            </ul>
+
+                            <h4><i class="fas fa-shield-alt text-success me-2"></i>Enhanced Validation System</h4>
+                            <ul class="feature-list">
+                                <li>
+                                    <i class="fas fa-plus feature-icon feature-new"></i>
+                                    <div>
+                                        <strong>Component Creation Validation:</strong> Added automatic slider value correction during component initialization to respect minimum constraints
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-plus feature-icon feature-new"></i>
+                                    <div>
+                                        <strong>Runtime Value Updates:</strong> Implemented change handlers that automatically set valid minimum values when switching between upscaler types
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-plus feature-icon feature-new"></i>
+                                    <div>
+                                        <strong>Cross-Component Validation:</strong> Enhanced validation system ensures sliders from inactive upscaler modes don't cause processing failures
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-plus feature-icon feature-new"></i>
+                                    <div>
+                                        <strong>Validation Logging:</strong> Added comprehensive logging to track when slider values are automatically corrected for debugging purposes
+                                    </div>
+                                </li>
+                            </ul>
+
+                            <h4><i class="fas fa-arrows-alt-h text-primary me-2"></i>Upscaler Type Switching Improvements</h4>
+                            <ul class="feature-list">
+                                <li>
+                                    <i class="fas fa-arrow-up feature-icon feature-improved"></i>
+                                    <div>
+                                        <strong>SeedVR2 Controls Update:</strong> When switching away from SeedVR2, batch size and preview frame sliders are automatically set to valid minimum values (≥5)
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-arrow-up feature-icon feature-improved"></i>
+                                    <div>
+                                        <strong>STAR Model Controls Update:</strong> When switching away from STAR model, diffusion steps slider is automatically validated to ensure minimum value compliance
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-arrow-up feature-icon feature-improved"></i>
+                                    <div>
+                                        <strong>Image Upscaler Isolation:</strong> Image-based upscaler controls now operate independently without affecting other upscaler type settings
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-arrow-up feature-icon feature-improved"></i>
+                                    <div>
+                                        <strong>State Consistency:</strong> Upscaler type changes now maintain consistent UI state and prevent cross-contamination of settings between different modes
+                                    </div>
+                                </li>
+                            </ul>
+
+                            <h4><i class="fas fa-code text-info me-2"></i>Technical Enhancements</h4>
+                            <ul class="feature-list">
+                                <li>
+                                    <i class="fas fa-cog feature-icon"></i>
+                                    <div>
+                                        <strong>Enhanced create_component():</strong> Added automatic minimum value enforcement for all Slider components during creation with warning logs
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-cog feature-icon"></i>
+                                    <div>
+                                        <strong>Improved update_steps_display():</strong> Enhanced STAR model steps validation using max(5, value) to prevent values below minimum threshold
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-cog feature-icon"></i>
+                                    <div>
+                                        <strong>New Change Handlers:</strong> Added update_seedvr2_controls_on_upscaler_change() and update_star_controls_on_upscaler_change() functions
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-cog feature-icon"></i>
+                                    <div>
+                                        <strong>Gradio Event Management:</strong> Enhanced upscaler_type_radio change events to handle multiple slider updates simultaneously
+                                    </div>
+                                </li>
+                            </ul>
+
+                            <h4><i class="fas fa-wrench text-warning me-2"></i>Stability Improvements</h4>
+                            <ul class="feature-list">
+                                <li>
+                                    <i class="fas fa-arrow-up feature-icon feature-improved"></i>
+                                    <div>
+                                        <strong>Form Processing Robustness:</strong> Enhanced form submission handling to prevent validation errors during batch processing or single video operations
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-arrow-up feature-icon feature-improved"></i>
+                                    <div>
+                                        <strong>Error Prevention:</strong> Proactive validation prevents gradio.exceptions.Error during runtime instead of reactive error handling
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-arrow-up feature-icon feature-improved"></i>
+                                    <div>
+                                        <strong>UI Consistency:</strong> Maintained consistent user interface behavior regardless of upscaler type selection order or preset loading
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-arrow-up feature-icon feature-improved"></i>
+                                    <div>
+                                        <strong>Preset Compatibility:</strong> Fixed compatibility issues with existing presets that may have slider values below minimum constraints
+                                    </div>
+                                </li>
+                            </ul>
+
+                            <div class="alert-warning">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                <strong>Important:</strong> This update ensures backward compatibility with all existing presets while preventing validation errors. No manual intervention required for existing configurations.
+                            </div>
+
+                            <div class="code-block">
+                                # Technical Fix Summary:
+                                1. Component creation: Added min value validation
+                                2. Runtime updates: Enhanced change handlers  
+                                3. Cross-component validation: Isolated upscaler settings
+                                4. Prevented gradio validation errors during form processing
                             </div>
                         </div>
                     </section>

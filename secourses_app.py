@@ -444,6 +444,12 @@ def create_component(component_type, config_path, ui_dict, **kwargs):
         else:
             kwargs['value'] = None
 
+    # For Slider components, ensure value respects minimum constraint
+    if component_type == gr.Slider and 'value' in kwargs and 'minimum' in kwargs:
+        if kwargs['value'] is not None and kwargs['value'] < kwargs['minimum']:
+            logger.warning(f"Slider value {kwargs['value']} is less than minimum {kwargs['minimum']} for config {config_path}. Setting to minimum.")
+            kwargs['value'] = kwargs['minimum']
+
     # Create the component
     component = component_type(**kwargs)
     
@@ -568,7 +574,7 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
                     output_video = gr.Video(label="Upscaled Video", interactive=False, height=512)
                     with gr.Row():
                         how_to_use_button = gr.Button("📖 How To Use Documentation", variant="secondary")
-                        version_history_button = gr.Button("📋 Version History V7", variant="secondary")
+                        version_history_button = gr.Button("📋 Version History V8", variant="secondary")
                         open_output_folder_button = gr.Button("Open Outputs Folder", icon="icons/folder.png", variant="primary")
                     status_textbox = gr.Textbox(label="Log", interactive=False, lines=10, max_lines=15)
                     with gr.Accordion("Save/Load Presets", open=True):
@@ -1800,7 +1806,9 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
 
     def update_steps_display(mode):
         if mode == 'fast':
-            return gr.update(value=INITIAL_APP_CONFIG.star_model.steps, interactive=False)
+            # Ensure the value is at least 5 (minimum for the slider)
+            steps_value = max(5, INITIAL_APP_CONFIG.star_model.steps)
+            return gr.update(value=steps_value, interactive=False)
         else:
             from logic.star_dataclasses import DEFAULT_DIFFUSION_STEPS_NORMAL
             return gr.update(value=DEFAULT_DIFFUSION_STEPS_NORMAL, interactive=True)
@@ -1852,10 +1860,38 @@ with gr.Blocks(css=css, theme=gr.themes.Soft()) as demo:
             gr.update(interactive=enable_controls)
         ]
 
+    def update_seedvr2_controls_on_upscaler_change(upscaler_type_selection):
+        """Ensure SeedVR2 sliders have valid values when upscaler type changes"""
+        if upscaler_type_selection != "Use SeedVR2 Video Upscaler":
+            # When not using SeedVR2, ensure batch size and preview frames are at minimum valid values
+            return [gr.update(value=5), gr.update(value=5)]  # batch_size_slider and chunk_preview_frames_slider minimums
+        else:
+            return [gr.update(), gr.update()]  # no changes
+            
+    def update_star_controls_on_upscaler_change(upscaler_type_selection):
+        """Ensure STAR model sliders have valid values when upscaler type changes"""
+        if upscaler_type_selection != "Use STAR Model Upscaler":
+            # When not using STAR, ensure steps is at minimum valid value
+            return gr.update(value=5)  # minimum value for steps_slider
+        else:
+            return gr.update()  # no change
+
     upscaler_type_radio.change(
         fn=update_image_upscaler_controls,
         inputs=upscaler_type_radio,
         outputs=[image_upscaler_model_dropdown, image_upscaler_batch_size_slider]
+    )
+
+    upscaler_type_radio.change(
+        fn=update_seedvr2_controls_on_upscaler_change,
+        inputs=upscaler_type_radio,
+        outputs=[seedvr2_batch_size_slider, seedvr2_chunk_preview_frames_slider]
+    )
+
+    upscaler_type_radio.change(
+        fn=update_star_controls_on_upscaler_change,
+        inputs=upscaler_type_radio,
+        outputs=[steps_slider]
     )
 
     def update_face_restoration_controls(enable_face_restoration):
