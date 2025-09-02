@@ -309,6 +309,7 @@
                 <div class="sidebar">
                     <ul class="sidebar-nav">
                         <li><a href="#overview" class="nav-link"><i class="fas fa-home"></i>Overview</a></li>
+                        <li><a href="#v9" class="nav-link"><i class="fas fa-magic"></i>Version 9.0</a></li>
                         <li><a href="#v8" class="nav-link"><i class="fas fa-tools"></i>Version 8.0</a></li>
                         <li><a href="#v7" class="nav-link"><i class="fas fa-rocket"></i>Version 7.0</a></li>
                         <li><a href="#v5" class="nav-link"><i class="fas fa-fire"></i>Version 5.0</a></li>
@@ -340,8 +341,51 @@
 
                             <div class="alert-info">
                                 <i class="fas fa-info-circle me-2"></i>
-                                <strong>Latest Version:</strong> 8.0 | <strong>Last Updated:</strong> 14 August 2025 | <strong>Support:</strong> Windows & Linux
+                                <strong>Latest Version:</strong> 9.0 | <strong>Last Updated:</strong> 2 September 2025 | <strong>Support:</strong> Windows & Linux
                             </div>
+                        </div>
+                    </section>
+
+                    <!-- Version 9.0 Section -->
+                    <section id="v9" class="section">
+                        <div class="section-header">
+                            <h2 class="section-title">Version 9.0</h2>
+                            <p class="section-subtitle">Face Restoration Fix & Video Processing Stability</p>
+                        </div>
+
+                        <div class="version-card">
+                            <div class="version-header">
+                                <span class="version-badge">v9.0</span>
+                                <div>
+                                    <h3 class="version-title">Face Restoration & Processing Improvements</h3>
+                                    <p class="version-date">2 September 2025</p>
+                                </div>
+                            </div>
+
+                            <p class="version-description">
+                                Version 9.0 fixes a critical issue with single video input face restoration that was causing unpacking errors during video processing. This release ensures stable face restoration functionality for all video processing workflows.
+                            </p>
+
+                            <div class="alert-success">
+                                <i class="fas fa-check-circle me-2"></i>
+                                <strong>Critical Fix:</strong> Single video input face restoration now works correctly without unpacking errors.
+                            </div>
+
+                            <h4><i class="fas fa-bug text-danger me-2"></i>Critical Bug Fixes</h4>
+                            <ul class="feature-list">
+                                <li>
+                                    <i class="fas fa-check feature-icon feature-fixed"></i>
+                                    <div>
+                                        <strong>Face Restoration Unpacking Error:</strong> Fixed "too many values to unpack (expected 2)" error in face_restoration_utils.py when processing single video inputs
+                                    </div>
+                                </li>
+                                <li>
+                                    <i class="fas fa-check feature-icon feature-fixed"></i>
+                                    <div>
+                                        <strong>get_next_filename Function:</strong> Corrected unpacking of return values to handle all three returned parameters (base_filename_no_ext, output_video_path, tmp_lock_file_path)
+                                    </div>
+                                </li>
+                            </ul>
                         </div>
                     </section>
 

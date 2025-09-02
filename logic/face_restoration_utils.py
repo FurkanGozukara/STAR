@@ -834,7 +834,7 @@ def restore_video_frames(
         from .file_utils import get_next_filename
         
         # Get next numbered folder (e.g., "0003") for this face restoration session
-        base_output_filename_no_ext, output_video_path = get_next_filename(output_dir, logger=logger)
+        base_output_filename_no_ext, output_video_path, tmp_lock_file_path = get_next_filename(output_dir, logger=logger)
         session_output_dir = os.path.join(output_dir, base_output_filename_no_ext)
         os.makedirs(session_output_dir, exist_ok=True)
         
